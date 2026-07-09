@@ -375,53 +375,88 @@ export const layer = Layer.effect(
               }),
             )
       const ctx = yield* InstanceState.context
-      const msg: SessionV1.Assistant = {
-        id: MessageID.ascending(),
-        role: "assistant",
-        parentID: input.parentID,
-        sessionID: input.sessionID,
-        mode: "compaction",
-        agent: "compaction",
-        variant: userMessage.model.variant,
-        summary: true,
-        path: {
-          cwd: ctx.directory,
-          root: ctx.worktree,
-        },
-        cost: 0,
-        tokens: {
-          output: 0,
-          input: 0,
-          reasoning: 0,
-          cache: { read: 0, write: 0 },
-        },
-        modelID: model.id,
-        providerID: model.providerID,
-        time: {
-          created: Date.now(),
-        },
-      }
-      yield* session.updateMessage(msg)
-      const processor = yield* processors.create({
-        assistantMessage: msg,
-        sessionID: input.sessionID,
-        model,
-      })
-      const result = yield* processor.process({
-        user: userMessage,
-        agent,
-        sessionID: input.sessionID,
-        tools: {},
-        system: [],
-        messages: [
-          ...modelMessages,
-          {
-            role: "user",
-            content: [{ type: "text", text: nextPrompt }],
+      const attemptSummary = Effect.fn("SessionCompaction.attempt")(function* (promptText: string) {
+        const msg: SessionV1.Assistant = {
+          id: MessageID.ascending(),
+          role: "assistant",
+          parentID: input.parentID,
+          sessionID: input.sessionID,
+          mode: "compaction",
+          agent: "compaction",
+          variant: userMessage.model.variant,
+          summary: true,
+          path: {
+            cwd: ctx.directory,
+            root: ctx.worktree,
           },
-        ],
-        model,
+          cost: 0,
+          tokens: {
+            output: 0,
+            input: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          modelID: model.id,
+          providerID: model.providerID,
+          time: {
+            created: Date.now(),
+          },
+        }
+        yield* session.updateMessage(msg)
+        const processor = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: input.sessionID,
+          model,
+        })
+        const result = yield* processor.process({
+          user: userMessage,
+          agent,
+          sessionID: input.sessionID,
+          tools: {},
+          system: [],
+          messages: [
+            ...modelMessages,
+            {
+              role: "user",
+              content: [{ type: "text", text: promptText }],
+            },
+          ],
+          model,
+        })
+        return { msg, processor, result }
       })
+
+      // Weak local models sometimes answer the summary request with raw tool-call
+      // markup instead of prose (observed on Ornith-9B). Storing that as the summary
+      // both stalls the turn and poisons every later compaction, so retry with an
+      // explicit corrective instruction before accepting the result.
+      const SUMMARY_ATTEMPTS = 3
+      const leaky = (text: string | undefined) => text !== undefined && /<tool_call>|<\/?function[=>]|<parameter=/i.test(text)
+      let attempt = yield* attemptSummary(nextPrompt)
+      for (let retry = 1; retry < SUMMARY_ATTEMPTS; retry++) {
+        if (attempt.result !== "continue") break
+        const saved = (yield* session.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)).find(
+          (item) => item.info.id === attempt.msg.id,
+        )
+        const text = saved ? summaryText(saved) : undefined
+        if (!leaky(text)) break
+        yield* Effect.logWarning("compaction summary contained tool-call markup, retrying", { retry })
+        // Mark the bad attempt as errored so completedCompactions never treats it
+        // as a usable summary.
+        attempt.processor.message.error = new SessionV1.APIError({
+          message: "Compaction summary contained raw tool-call markup; retried.",
+          isRetryable: true,
+        }).toObject()
+        attempt.processor.message.finish = "error"
+        yield* session.updateMessage(attempt.processor.message)
+        attempt = yield* attemptSummary(
+          nextPrompt +
+            "\n\nIMPORTANT: Your previous attempt emitted raw tool-call markup instead of a summary. " +
+            "You cannot call tools here. Write ONLY the prose summary text — never output <tool_call>, " +
+            "<function=...>, <parameter=...> or any XML-like tags.",
+        )
+      }
+      const { msg, processor, result } = attempt
 
       if (result === "compact") {
         processor.message.error = new SessionV1.ContextOverflowError({

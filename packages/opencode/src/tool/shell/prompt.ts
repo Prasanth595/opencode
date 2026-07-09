@@ -26,6 +26,10 @@ export function parameterSchema(description: string) {
     workdir: Schema.optional(Schema.String).annotate({
       description: `The working directory to run the command in. Defaults to the current directory. Use this instead of 'cd' commands.`,
     }),
+    background: Schema.optional(Schema.Boolean).annotate({
+      description:
+        "Run the command as a detached background process that SURVIVES after this tool call returns. Use for long-running processes (dev servers, watchers). Returns immediately with the PID and a log file path — check the log with the read tool. Do NOT use '&', 'nohup' or 'setsid' instead of this flag: processes started that way are killed when the tool call ends.",
+    }),
     description: Schema.String.annotate({ description }),
   })
 }

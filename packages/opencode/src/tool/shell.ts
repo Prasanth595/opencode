@@ -688,6 +688,40 @@ export const ShellTool = Tool.define(
                 }),
               )
 
+              // Detached background launch: survives the tool call (the normal path's
+              // process tree dies with the call — pipes close / timeout kills the
+              // group — which strands dev servers started with '&' or nohup).
+              if (params.background) {
+                const env = yield* shellEnv(ctx, cwd)
+                return yield* Effect.promise(async () => {
+                  const { spawn } = await import("node:child_process")
+                  const { mkdirSync, openSync } = await import("node:fs")
+                  const os = await import("node:os")
+                  const dir = path.join(os.tmpdir(), "opencode-bg")
+                  mkdirSync(dir, { recursive: true })
+                  const log = path.join(dir, `${Date.now()}-${(ctx.callID ?? "bg").slice(0, 8)}.log`)
+                  const fd = openSync(log, "a")
+                  const child = spawn(params.command, [], {
+                    shell,
+                    cwd,
+                    env,
+                    detached: true,
+                    stdio: ["ignore", fd, fd],
+                  })
+                  child.unref()
+                  const output = [
+                    `Background process started (pid ${child.pid}).`,
+                    `Logs: ${log}`,
+                    `Check progress with the read tool on the log file; stop it with: kill ${child.pid}`,
+                  ].join("\n")
+                  return {
+                    title: params.description,
+                    metadata: { output, exit: null as number | null, description: params.description },
+                    output,
+                  }
+                })
+              }
+
               return yield* run(
                 {
                   shell,
