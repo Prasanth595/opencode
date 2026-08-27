@@ -554,6 +554,78 @@ describe("session.llm.ai-sdk adapter", () => {
     if (events[1].type !== "step-finish") throw new Error("expected step-finish")
     expect(events[1].providerMetadata?.copilot).toBeUndefined()
   })
+
+  // TUI aggregation sums llama.cpp timings across every step-finish part in a
+  // tool-calling turn (see AssistantMessage's llamaTotals memo) — that only
+  // works if each round-trip's own providerMetadata.llamacpp.timings survives
+  // per-step, distinct from the others, rather than being merged/overwritten.
+  test("preserves distinct llama.cpp timings per step-finish across a multi-step turn", async () => {
+    const firstTimings = {
+      promptN: 16,
+      promptMs: 300,
+      promptPerSecond: 53.3,
+      predictedN: 10,
+      predictedMs: 200,
+      predictedPerSecond: 50,
+    }
+    const secondTimings = {
+      promptN: 40,
+      promptMs: 500,
+      promptPerSecond: 80,
+      predictedN: 90,
+      predictedMs: 1000,
+      predictedPerSecond: 90,
+    }
+
+    const events = await adapt([
+      {
+        type: "finish-step",
+        response: { id: "msg_step_1", timestamp: new Date(0), modelId: "ornith-35b" },
+        finishReason: "tool-calls",
+        rawFinishReason: "tool_calls",
+        usage: {
+          inputTokens: 16,
+          outputTokens: 10,
+          totalTokens: 26,
+          inputTokenDetails: { noCacheTokens: 16, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          outputTokenDetails: { textTokens: 10, reasoningTokens: undefined },
+        },
+        providerMetadata: { llamacpp: { timings: firstTimings } },
+      },
+      {
+        type: "finish-step",
+        response: { id: "msg_step_2", timestamp: new Date(0), modelId: "ornith-35b" },
+        finishReason: "stop",
+        rawFinishReason: "stop",
+        usage: {
+          inputTokens: 40,
+          outputTokens: 90,
+          totalTokens: 130,
+          inputTokenDetails: { noCacheTokens: 40, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          outputTokenDetails: { textTokens: 90, reasoningTokens: undefined },
+        },
+        providerMetadata: { llamacpp: { timings: secondTimings } },
+      },
+    ])
+
+    expect(events).toHaveLength(2)
+    expect(events[0]).toMatchObject({ type: "step-finish", providerMetadata: { llamacpp: { timings: firstTimings } } })
+    expect(events[1]).toMatchObject({
+      type: "step-finish",
+      providerMetadata: { llamacpp: { timings: secondTimings } },
+    })
+
+    // Sanity-check the aggregation math the TUI performs over these two steps
+    // (summed counts/times, rates recomputed from the sums — not averaged).
+    const promptMs = firstTimings.promptMs + secondTimings.promptMs
+    const promptN = firstTimings.promptN + secondTimings.promptN
+    const predictedMs = firstTimings.predictedMs + secondTimings.predictedMs
+    const predictedN = firstTimings.predictedN + secondTimings.predictedN
+    expect(promptMs).toBe(800)
+    expect(predictedMs).toBe(1200)
+    expect(promptN / (promptMs / 1000)).toBeCloseTo(70, 5)
+    expect(predictedN / (predictedMs / 1000)).toBeCloseTo(83.333, 2)
+  })
 })
 
 type Capture = {

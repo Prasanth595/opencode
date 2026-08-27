@@ -179,7 +179,7 @@ export function DialogSessionList() {
 
       const isDeleting = toDelete() === x.id
       const status = sync.data.session_status?.[x.id]
-      const isWorking = status?.type === "busy" || status?.type === "retry"
+      const isWorking = status?.type === "busy" || status?.type === "retry" || status?.type === "loading"
       const slot = slotByID.get(x.id)
       const gutter = isWorking
         ? () => <Spinner />

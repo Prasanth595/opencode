@@ -165,7 +165,7 @@ const blockingProcessor = Layer.succeed(
   }),
 )
 
-function makePrompt(input?: { processor?: "blocking" }) {
+function makePrompt(input?: { processor?: "blocking"; plugin?: Layer.Layer<Plugin.Service> }) {
   const deps = Layer.mergeAll(
     Session.defaultLayer,
     Snapshot.defaultLayer,
@@ -174,7 +174,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     AgentSvc.defaultLayer,
     Command.defaultLayer,
     Permission.defaultLayer,
-    Plugin.defaultLayer,
+    input?.plugin ?? Plugin.defaultLayer,
     Config.defaultLayer,
     ProviderSvc.defaultLayer,
     lsp,
@@ -234,7 +234,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
   )
 }
 
-function makeHttp(input?: { processor?: "blocking" }) {
+function makeHttp(input?: { processor?: "blocking"; plugin?: Layer.Layer<Plugin.Service> }) {
   return Layer.mergeAll(TestLLMServer.layer, makePrompt(input))
 }
 
@@ -332,6 +332,22 @@ const waitForBusy = (sessionID: SessionID, duration: Duration.Input = "2 seconds
     `session ${sessionID} never became busy`,
     duration,
   )
+
+// Test-only Plugin.Service whose "chat.message" hook is fully controlled by
+// the test, so the loading-status bracket in createUserMessage (capture
+// prevStatus -> set "loading" -> restore prevStatus on Effect.onExit) can be
+// exercised deterministically instead of racing the real hook system.
+function pluginLayer(chatMessage: (input: unknown, output: unknown) => Effect.Effect<unknown>) {
+  return Layer.succeed(
+    Plugin.Service,
+    Plugin.Service.of({
+      trigger: ((name: string, input: unknown, output: unknown) =>
+        name === "chat.message" ? chatMessage(input, output) : Effect.succeed(output)) as Plugin.Interface["trigger"],
+      list: () => Effect.succeed([]),
+      init: () => Effect.void,
+    }),
+  )
+}
 
 const hasBash = Effect.sync(() => Bun.which("bash") !== null)
 
@@ -1021,6 +1037,94 @@ it.instance(
       yield* prompt.cancel(chat.id)
       yield* Fiber.await(fiber)
       expect((yield* status.get(chat.id)).type).toBe("idle")
+    }),
+  3_000,
+)
+
+// "loading" status (Feature B) — set for the duration of the "chat.message"
+// plugin trigger inside createUserMessage, always restored to whatever the
+// status was before via Effect.onExit. These three cases are the ones an
+// independent audit found broken under a naive catchAll-based reset.
+
+const withPlugin = (plugin: Layer.Layer<Plugin.Service>) => testEffect(makeHttp({ plugin }))
+
+withPlugin(pluginLayer(() => Effect.die(new Error("boom")))).instance(
+  "loading status is restored even when the chat.message plugin throws synchronously",
+  () =>
+    Effect.gen(function* () {
+      const { llm: _llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const status = yield* SessionStatus.Service
+      const chat = yield* sessions.create({})
+
+      const exit = yield* prompt
+        .prompt({ sessionID: chat.id, agent: "build", noReply: true, parts: [{ type: "text", text: "hi" }] })
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      // A defect from a misbehaving plugin must not strand the session on
+      // "loading" forever — it must fall back to whatever it was before.
+      expect((yield* status.get(chat.id)).type).toBe("idle")
+    }),
+  3_000,
+)
+
+withPlugin(pluginLayer((_input, output) => Effect.succeed(output))).instance(
+  "loading status does not leak past a noReply: true prompt (workflow.ts's start path)",
+  () =>
+    Effect.gen(function* () {
+      const { llm: _llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const status = yield* SessionStatus.Service
+      const chat = yield* sessions.create({})
+
+      // noReply: true returns from createUserMessage before runLoop ever
+      // runs — the old catchAll-based design relied on runLoop to clear the
+      // status, which never happens on this path.
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "hi" }],
+      })
+
+      expect((yield* status.get(chat.id)).type).toBe("idle")
+    }),
+  3_000,
+)
+
+withPlugin(pluginLayer((_input, output) => Effect.succeed(output))).instance(
+  "a follow-up message sent while busy reads back busy, not stuck on loading",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const status = yield* SessionStatus.Service
+      const chat = yield* sessions.create({})
+
+      yield* llm.hang
+
+      const fiber = yield* prompt
+        .prompt({ sessionID: chat.id, agent: "build", parts: [{ type: "text", text: "hi" }] })
+        .pipe(Effect.forkChild)
+      yield* waitForBusy(chat.id)
+
+      // A follow-up message arrives while the session is mid-generation: the
+      // status must read back "busy" (its value before this call), never
+      // stuck showing "loading" while an LLM stream is actively running.
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "follow up" }],
+      })
+      expect((yield* status.get(chat.id)).type).toBe("busy")
+
+      yield* prompt.cancel(chat.id)
+      yield* Fiber.await(fiber)
     }),
   3_000,
 )
