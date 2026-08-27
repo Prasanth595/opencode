@@ -129,7 +129,7 @@ export const layer = Layer.effect(
         reply: input.reply,
       })
 
-      if (input.reply === "reject") {
+      if (input.reply === "reject" || input.reply === "never") {
         yield* Deferred.fail(
           existing.deferred,
           input.message
@@ -137,13 +137,34 @@ export const layer = Layer.effect(
             : new PermissionV1.RejectedError(),
         )
 
+        // "never" denies this call AND persists a deny rule so the same
+        // pattern is never asked again — the inverse of "always".
+        if (input.reply === "never") {
+          for (const pattern of existing.info.always) {
+            approved.push({
+              permission: existing.info.permission,
+              pattern,
+              action: "deny",
+            })
+          }
+        }
+
         for (const [id, item] of pending.entries()) {
           if (item.info.sessionID !== existing.info.sessionID) continue
+          if (input.reply === "never") {
+            // Unlike a plain "reject", "never" only cascades to other
+            // pending asks that the new deny rule actually now covers —
+            // unrelated asks in the same session keep waiting.
+            const nowDenied = item.info.patterns.some(
+              (pattern) => evaluate(item.info.permission, pattern, approved).action === "deny",
+            )
+            if (!nowDenied) continue
+          }
           pending.delete(id)
           yield* events.publish(Event.Replied, {
             sessionID: item.info.sessionID,
             requestID: item.info.id,
-            reply: "reject",
+            reply: input.reply,
           })
           yield* Deferred.fail(item.deferred, new PermissionV1.RejectedError())
         }

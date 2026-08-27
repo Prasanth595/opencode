@@ -807,6 +807,94 @@ it.instance(
 )
 
 it.instance(
+  "reply - never persists a deny rule and rejects this call",
+  () =>
+    Effect.gen(function* () {
+      const fiber = yield* ask({
+        id: PermissionV1.ID.make("per_test_never1"),
+        sessionID: SessionID.make("session_test"),
+        permission: "bash",
+        patterns: ["python3 -c 'evil'"],
+        metadata: {},
+        always: ["python3 -c 'evil' *"],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+
+      yield* waitForPending(1)
+      yield* reply({ requestID: PermissionV1.ID.make("per_test_never1"), reply: "never" })
+
+      const exit = yield* Fiber.await(fiber)
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(PermissionV1.RejectedError)
+
+      // The pattern is now denied without asking again, even in a new session.
+      const err = yield* fail(
+        ask({
+          sessionID: SessionID.make("session_test2"),
+          permission: "bash",
+          patterns: ["python3 -c 'evil'"],
+          metadata: {},
+          always: [],
+          ruleset: [],
+        }),
+      )
+      expect(err).toBeInstanceOf(PermissionV1.DeniedError)
+    }),
+  { git: true },
+)
+
+it.instance(
+  "reply - never only cascades to other pending asks the new deny rule actually covers",
+  () =>
+    Effect.gen(function* () {
+      const a = yield* ask({
+        id: PermissionV1.ID.make("per_test_never2a"),
+        sessionID: SessionID.make("session_never2"),
+        permission: "bash",
+        patterns: ["python3 -c 'evil'"],
+        metadata: {},
+        always: ["python3 *"],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+
+      const b = yield* ask({
+        id: PermissionV1.ID.make("per_test_never2b"),
+        sessionID: SessionID.make("session_never2"),
+        permission: "bash",
+        patterns: ["python3 -c 'also evil'"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+
+      const c = yield* ask({
+        id: PermissionV1.ID.make("per_test_never2c"),
+        sessionID: SessionID.make("session_never2"),
+        permission: "edit",
+        patterns: ["foo.ts"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+
+      yield* waitForPending(3)
+      yield* reply({ requestID: PermissionV1.ID.make("per_test_never2a"), reply: "never" })
+
+      const [ea, eb] = yield* Effect.all([Fiber.await(a), Fiber.await(b)])
+      expect(Exit.isFailure(ea)).toBe(true)
+      expect(Exit.isFailure(eb)).toBe(true)
+
+      // "foo.ts" doesn't match the new "python3 *" deny rule, so it must
+      // still be waiting rather than swept up like a plain "reject" would.
+      const pending = yield* list()
+      expect(pending.map((p) => p.id)).toEqual([PermissionV1.ID.make("per_test_never2c")])
+      yield* reply({ requestID: PermissionV1.ID.make("per_test_never2c"), reply: "reject" })
+      yield* Fiber.await(c)
+    }),
+  { git: true },
+)
+
+it.instance(
   "reply - reject cancels all pending for same session",
   () =>
     Effect.gen(function* () {
