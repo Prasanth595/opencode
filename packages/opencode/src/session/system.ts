@@ -60,10 +60,18 @@ export const layer = Layer.effect(
     const skill = yield* Skill.Service
     const workflow = yield* Workflow.Service
     const locations = yield* LocationServiceMap
+    // Pinned once per instance instead of recomputed on every agent step: a
+    // long-running local-LLM session that happens to cross midnight would
+    // otherwise see this line change mid-conversation, invalidating the
+    // provider's exact-prefix cache for the entire system prompt on the very
+    // next request. A little date staleness across a midnight boundary is
+    // preferable to that.
+    const dateState = yield* InstanceState.make(() => Effect.sync(() => new Date().toDateString()))
 
     return Service.of({
       environment: Effect.fn("SystemPrompt.environment")(function* (model: Provider.Model) {
         const ctx = yield* InstanceState.context
+        const today = yield* InstanceState.get(dateState)
         const references = yield* Effect.gen(function* () {
           yield* (yield* PluginBoot.Service).wait()
           return (yield* (yield* Reference.Service).list()).filter((reference) => reference.description !== undefined)
@@ -77,7 +85,7 @@ export const layer = Layer.effect(
             `  Workspace root folder: ${ctx.worktree}`,
             `  Is directory a git repo: ${ctx.project.vcs === "git" ? "yes" : "no"}`,
             `  Platform: ${process.platform}`,
-            `  Today's date: ${new Date().toDateString()}`,
+            `  Today's date: ${today}`,
             `</env>`,
           ].join("\n"),
           references.length === 0

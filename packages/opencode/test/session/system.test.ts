@@ -1,6 +1,7 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, spyOn } from "bun:test"
 import { Effect, Layer } from "effect"
 import type { Agent } from "../../src/agent/agent"
+import type { Provider } from "@/provider/provider"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { Skill } from "../../src/skill"
 import { Permission } from "../../src/permission"
@@ -9,6 +10,31 @@ import { ULTRACODE_SYSTEM_SECTION, WORKFLOW_TRIGGER_GUIDANCE } from "../../src/t
 import { LocationServiceMap } from "@opencode-ai/core/location-layer"
 import { testEffect } from "../lib/effect"
 import { Workflow } from "../../src/workflow/workflow"
+import { ProviderV2 } from "@opencode-ai/core/provider"
+import { ModelV2 } from "@opencode-ai/core/model"
+import { withTmpdirInstance } from "../fixture/fixture"
+
+const model: Provider.Model = {
+  id: ModelV2.ID.make("test-model"),
+  providerID: ProviderV2.ID.make("test"),
+  api: { id: "test-model", url: "https://example.com", npm: "@ai-sdk/openai" },
+  name: "Test Model",
+  capabilities: {
+    temperature: true,
+    reasoning: false,
+    attachment: false,
+    toolcall: true,
+    input: { text: true, audio: false, image: false, video: false, pdf: false },
+    output: { text: true, audio: false, image: false, video: false, pdf: false },
+    interleaved: false,
+  },
+  cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+  limit: { context: 0, input: 0, output: 0 },
+  status: "active",
+  options: {},
+  headers: {},
+  release_date: "2026-01-01",
+}
 
 const skills: Skill.Info[] = [
   {
@@ -187,5 +213,25 @@ describe("session.system", () => {
       // The deny also hides the workflow roster itself (pre-existing behavior).
       expect(output).not.toContain("<available_workflows>")
     }),
+  )
+
+  // A long-running local-LLM session that crosses midnight must not see this
+  // line change mid-conversation — that would bust the provider's
+  // exact-prefix prompt cache for the whole system prompt on the next request.
+  it.effect("today's date is pinned per instance instead of recomputed every call", () =>
+    Effect.gen(function* () {
+      const spy = spyOn(Date.prototype, "toDateString")
+      try {
+        spy.mockReturnValueOnce("Mon Jan 01 2024").mockReturnValue("Tue Jan 02 2024")
+        const prompt = yield* SystemPrompt.Service
+        const first = (yield* prompt.environment(model)).join("\n")
+        const second = (yield* prompt.environment(model)).join("\n")
+        expect(first).toContain("Today's date: Mon Jan 01 2024")
+        expect(second).toContain("Today's date: Mon Jan 01 2024")
+        expect(second).not.toContain("Tue Jan 02 2024")
+      } finally {
+        spy.mockRestore()
+      }
+    }).pipe(withTmpdirInstance()),
   )
 })
