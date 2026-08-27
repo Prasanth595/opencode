@@ -79,7 +79,10 @@ async function writePluginFile(dir: string, fileName: string, workflows: Record<
 
 async function writePlugin(dir: string, workflows: Record<string, string>) {
   const spec = await writePluginFile(dir, "workflow-plugin.ts", workflows)
-  await Bun.write(path.join(dir, "opencode.json"), JSON.stringify({ $schema: "https://opencode.ai/config.json", plugin: [spec] }))
+  await Bun.write(
+    path.join(dir, "opencode.json"),
+    JSON.stringify({ $schema: "https://opencode.ai/config.json", plugin: [spec] }),
+  )
 }
 
 function pluginWorkflowSource(name: string, marker: string) {
@@ -350,154 +353,174 @@ export async function run(args, ctx) { ctx.setPhase("run"); ctx.log("running"); 
     ),
   )
 
-  it.live("plugin workflow appears in discovery", () =>
-    provideTmpdirInstance((dir) =>
-      Effect.gen(function* () {
-        yield* Effect.promise(() => writePlugin(dir, { "plugin-list": pluginWorkflowSource("plugin-list", "from plugin") }))
-
-        const workflow = yield* Workflow.Service
-        const info = (yield* workflow.list()).find((item) => item.name === "plugin-list")
-
-        expect(info?.valid).toBe(true)
-        expect(info?.path).toBe("plugin:plugin-list")
-        expect(info?.meta.description).toBe("from plugin")
-      }),
-    ),
-    15000,
-  )
-
-  it.live("first loaded plugin wins duplicate workflow names", () =>
-    provideTmpdirInstance((dir) =>
-      Effect.gen(function* () {
-        yield* Effect.promise(async () => {
-          const first = await writePluginFile(dir, "workflow-plugin-first.ts", {
-            duplicate: pluginWorkflowSource("duplicate", "from first plugin"),
-          })
-          const second = await writePluginFile(dir, "workflow-plugin-second.ts", {
-            duplicate: pluginWorkflowSource("duplicate", "from second plugin"),
-          })
-          await Bun.write(
-            path.join(dir, "opencode.json"),
-            JSON.stringify({ $schema: "https://opencode.ai/config.json", plugin: [first, second] }),
+  it.live(
+    "plugin workflow appears in discovery",
+    () =>
+      provideTmpdirInstance((dir) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() =>
+            writePlugin(dir, { "plugin-list": pluginWorkflowSource("plugin-list", "from plugin") }),
           )
-        })
 
-        const workflow = yield* Workflow.Service
-        const info = (yield* workflow.list()).find((item) => item.name === "duplicate")
+          const workflow = yield* Workflow.Service
+          const info = (yield* workflow.list()).find((item) => item.name === "plugin-list")
 
-        expect(info?.valid).toBe(true)
-        expect(info?.meta.description).toBe("from first plugin")
-      }),
-    ),
+          expect(info?.valid).toBe(true)
+          expect(info?.path).toBe("plugin:plugin-list")
+          expect(info?.meta.description).toBe("from plugin")
+        }),
+      ),
     15000,
   )
 
-  it.live("project workflow shadows plugin workflow with same name", () =>
-    provideTmpdirInstance((dir) =>
-      Effect.gen(function* () {
-        yield* Effect.promise(async () => {
-          await writePlugin(dir, { shadowed: pluginWorkflowSource("shadowed", "from plugin") })
-          await writeWorkflow(
-            dir,
-            "shadowed",
-            `export const meta = { name: "shadowed", description: "from project" }
+  it.live(
+    "first loaded plugin wins duplicate workflow names",
+    () =>
+      provideTmpdirInstance((dir) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(async () => {
+            const first = await writePluginFile(dir, "workflow-plugin-first.ts", {
+              duplicate: pluginWorkflowSource("duplicate", "from first plugin"),
+            })
+            const second = await writePluginFile(dir, "workflow-plugin-second.ts", {
+              duplicate: pluginWorkflowSource("duplicate", "from second plugin"),
+            })
+            await Bun.write(
+              path.join(dir, "opencode.json"),
+              JSON.stringify({ $schema: "https://opencode.ai/config.json", plugin: [first, second] }),
+            )
+          })
+
+          const workflow = yield* Workflow.Service
+          const info = (yield* workflow.list()).find((item) => item.name === "duplicate")
+
+          expect(info?.valid).toBe(true)
+          expect(info?.meta.description).toBe("from first plugin")
+        }),
+      ),
+    15000,
+  )
+
+  it.live(
+    "project workflow shadows plugin workflow with same name",
+    () =>
+      provideTmpdirInstance((dir) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(async () => {
+            await writePlugin(dir, { shadowed: pluginWorkflowSource("shadowed", "from plugin") })
+            await writeWorkflow(
+              dir,
+              "shadowed",
+              `export const meta = { name: "shadowed", description: "from project" }
 export async function run() { return { marker: "from project" } }
 `,
-          )
-        })
+            )
+          })
 
-        const workflow = yield* Workflow.Service
-        const info = (yield* workflow.list()).find((item) => item.name === "shadowed")
+          const workflow = yield* Workflow.Service
+          const info = (yield* workflow.list()).find((item) => item.name === "shadowed")
 
-        expect(info?.valid).toBe(true)
-        expect(info?.path.endsWith(path.join(".opencode", "workflows", "shadowed.ts"))).toBe(true)
-        expect(info?.meta.description).toBe("from project")
-      }),
-    ),
+          expect(info?.valid).toBe(true)
+          expect(info?.path.endsWith(path.join(".opencode", "workflows", "shadowed.ts"))).toBe(true)
+          expect(info?.meta.description).toBe("from project")
+        }),
+      ),
     15000,
   )
 
-  it.live("global workflow shadows plugin workflow with same name", () =>
-    provideTmpdirInstance((dir) =>
-      Effect.gen(function* () {
-        const name = `global-plugin-shadow-${Date.now()}`
-        const globalFile = path.join(Global.Path.config, "workflows", `${name}.ts`)
-        yield* Effect.addFinalizer(() => Effect.promise(() => fs.rm(globalFile, { force: true })))
-        yield* Effect.promise(async () => {
-          await writePlugin(dir, { [name]: pluginWorkflowSource(name, "from plugin") })
-          await fs.mkdir(path.dirname(globalFile), { recursive: true })
-          await Bun.write(
-            globalFile,
-            `export const meta = { name: ${JSON.stringify(name)}, description: "from global" }
+  it.live(
+    "global workflow shadows plugin workflow with same name",
+    () =>
+      provideTmpdirInstance((dir) =>
+        Effect.gen(function* () {
+          const name = `global-plugin-shadow-${Date.now()}`
+          const globalFile = path.join(Global.Path.config, "workflows", `${name}.ts`)
+          yield* Effect.addFinalizer(() => Effect.promise(() => fs.rm(globalFile, { force: true })))
+          yield* Effect.promise(async () => {
+            await writePlugin(dir, { [name]: pluginWorkflowSource(name, "from plugin") })
+            await fs.mkdir(path.dirname(globalFile), { recursive: true })
+            await Bun.write(
+              globalFile,
+              `export const meta = { name: ${JSON.stringify(name)}, description: "from global" }
 export async function run() { return { marker: "from global" } }
 `,
+            )
+          })
+
+          const workflow = yield* Workflow.Service
+          const info = (yield* workflow.list()).find((item) => item.name === name)
+
+          expect(info?.valid).toBe(true)
+          expect(info?.path).toBe(globalFile)
+          expect(info?.meta.description).toBe("from global")
+        }),
+      ),
+    15000,
+  )
+
+  it.live(
+    "plugin workflow shadows built-in workflow with same name",
+    () =>
+      provideTmpdirInstance((dir) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() =>
+            writePlugin(dir, { "deep-research": pluginWorkflowSource("deep-research", "from plugin") }),
           )
-        })
 
-        const workflow = yield* Workflow.Service
-        const info = (yield* workflow.list()).find((item) => item.name === name)
+          const workflow = yield* Workflow.Service
+          const info = (yield* workflow.list()).find((item) => item.name === "deep-research")
 
-        expect(info?.valid).toBe(true)
-        expect(info?.path).toBe(globalFile)
-        expect(info?.meta.description).toBe("from global")
-      }),
-    ),
+          expect(info?.valid).toBe(true)
+          expect(info?.path).toBe("plugin:deep-research")
+          expect(info?.source_kind).toBeUndefined()
+          expect(info?.meta.description).toBe("from plugin")
+        }),
+      ),
     15000,
   )
 
-  it.live("plugin workflow shadows built-in workflow with same name", () =>
-    provideTmpdirInstance((dir) =>
-      Effect.gen(function* () {
-        yield* Effect.promise(() => writePlugin(dir, { "deep-research": pluginWorkflowSource("deep-research", "from plugin") }))
+  it.live(
+    "starts plugin workflow",
+    () =>
+      provideTmpdirInstance((dir) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() =>
+            writePlugin(dir, { "plugin-run": pluginWorkflowSource("plugin-run", "from plugin") }),
+          )
 
-        const workflow = yield* Workflow.Service
-        const info = (yield* workflow.list()).find((item) => item.name === "deep-research")
+          const tool = yield* workflowTool()
+          const result = yield* tool.execute(
+            { action: "start", name: "plugin-run", args: { value: 42 } },
+            requestRecorder().ctx,
+          )
 
-        expect(info?.valid).toBe(true)
-        expect(info?.path).toBe("plugin:deep-research")
-        expect(info?.source_kind).toBeUndefined()
-        expect(info?.meta.description).toBe("from plugin")
-      }),
-    ),
+          expect(result.output).toContain('"marker": "from plugin"')
+          expect(result.output).toContain('"value": 42')
+        }),
+      ),
     15000,
   )
 
-  it.live("starts plugin workflow", () =>
-    provideTmpdirInstance((dir) =>
-      Effect.gen(function* () {
-        yield* Effect.promise(() => writePlugin(dir, { "plugin-run": pluginWorkflowSource("plugin-run", "from plugin") }))
-
-        const tool = yield* workflowTool()
-        const result = yield* tool.execute(
-          { action: "start", name: "plugin-run", args: { value: 42 } },
-          requestRecorder().ctx,
-        )
-
-        expect(result.output).toContain('"marker": "from plugin"')
-        expect(result.output).toContain('"value": 42')
-      }),
-    ),
-    15000,
-  )
-
-  it.live("invalid plugin workflow source fails clearly", () =>
-    provideTmpdirInstance((dir) =>
-      Effect.gen(function* () {
-        yield* Effect.promise(() =>
-          writePlugin(dir, {
-            "bad-plugin": `export const meta = { name: dynamicName }
+  it.live(
+    "invalid plugin workflow source fails clearly",
+    () =>
+      provideTmpdirInstance((dir) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() =>
+            writePlugin(dir, {
+              "bad-plugin": `export const meta = { name: dynamicName }
 export async function run() { return null }
 `,
-          }),
-        )
+            }),
+          )
 
-        const tool = yield* workflowTool()
-        const exit = yield* Effect.exit(tool.execute({ action: "start", name: "bad-plugin" }, requestRecorder().ctx))
+          const tool = yield* workflowTool()
+          const exit = yield* Effect.exit(tool.execute({ action: "start", name: "bad-plugin" }, requestRecorder().ctx))
 
-        expect(Exit.isFailure(exit)).toBe(true)
-        expect(Exit.isFailure(exit) ? Cause.pretty(exit.cause) : "").toContain("Invalid workflow plugin:bad-plugin")
-      }),
-    ),
+          expect(Exit.isFailure(exit)).toBe(true)
+          expect(Exit.isFailure(exit) ? Cause.pretty(exit.cause) : "").toContain("Invalid workflow plugin:bad-plugin")
+        }),
+      ),
     15000,
   )
 
@@ -1099,53 +1122,49 @@ export async function run(args, ctx) {
 
   // Item 23 (Stufe 2): workflows.lint='deny' fails create on findings — BEFORE
   // any write, so the file never reaches disk.
-  it.live(
-    "create with workflows.lint=deny fails on findings and writes nothing",
-    () =>
-      provideTmpdirInstance(
-        (dir) =>
-          Effect.gen(function* () {
-            const tool = yield* workflowTool()
-            const recorder = requestRecorder()
-            const source = `import { spawn } from "child_process"
+  it.live("create with workflows.lint=deny fails on findings and writes nothing", () =>
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          const tool = yield* workflowTool()
+          const recorder = requestRecorder()
+          const source = `import { spawn } from "child_process"
 export const meta = { name: "Spawny", description: "Spawns." }
 export async function run(args, ctx) { return "ok" }
 `
-            const exit = yield* Effect.exit(tool.execute({ action: "create", name: "spawny", source }, recorder.ctx))
-            expect(Exit.isFailure(exit)).toBe(true)
-            expect(Exit.isFailure(exit) ? Cause.pretty(exit.cause) : "").toContain("rejected by lint")
-            // Nothing was written (the deny fires before the ask/write).
-            const written = yield* Effect.promise(() =>
-              fs
-                .stat(path.join(dir, ".opencode", "workflows", "spawny.ts"))
-                .then(() => true)
-                .catch(() => false),
-            )
-            expect(written).toBe(false)
-          }),
-        { config: { workflows: { lint: "deny" } } },
-      ),
+          const exit = yield* Effect.exit(tool.execute({ action: "create", name: "spawny", source }, recorder.ctx))
+          expect(Exit.isFailure(exit)).toBe(true)
+          expect(Exit.isFailure(exit) ? Cause.pretty(exit.cause) : "").toContain("rejected by lint")
+          // Nothing was written (the deny fires before the ask/write).
+          const written = yield* Effect.promise(() =>
+            fs
+              .stat(path.join(dir, ".opencode", "workflows", "spawny.ts"))
+              .then(() => true)
+              .catch(() => false),
+          )
+          expect(written).toBe(false)
+        }),
+      { config: { workflows: { lint: "deny" } } },
+    ),
   )
 
   // Item 23 (Stufe 2): a clean source under 'deny' still creates fine, and a
   // clean create's output carries NO <lint> block (zero findings ⇒ no noise).
-  it.live(
-    "create with workflows.lint=deny passes a clean source and emits no lint block",
-    () =>
-      provideTmpdirInstance(
-        () =>
-          Effect.gen(function* () {
-            const tool = yield* workflowTool()
-            const recorder = requestRecorder()
-            const source = `export const meta = { name: "Clean", description: "No capabilities." }
+  it.live("create with workflows.lint=deny passes a clean source and emits no lint block", () =>
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const tool = yield* workflowTool()
+          const recorder = requestRecorder()
+          const source = `export const meta = { name: "Clean", description: "No capabilities." }
 export async function run(args, ctx) { return "ok" }
 `
-            const result = yield* tool.execute({ action: "create", name: "clean", source }, recorder.ctx)
-            expect(result.output).toContain("Workflow file created and validated.")
-            expect(result.output).not.toContain("<lint>")
-          }),
-        { config: { workflows: { lint: "deny" } } },
-      ),
+          const result = yield* tool.execute({ action: "create", name: "clean", source }, recorder.ctx)
+          expect(result.output).toContain("Workflow file created and validated.")
+          expect(result.output).not.toContain("<lint>")
+        }),
+      { config: { workflows: { lint: "deny" } } },
+    ),
   )
 
   it.live("inspects a finished run: summary carries args, result, and logs view works", () =>

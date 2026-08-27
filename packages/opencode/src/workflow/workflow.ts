@@ -19,7 +19,7 @@ import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
-import { scanCommand } from "@/tool/shell"
+import { scanCommand, EVAL_PERMISSION } from "@/tool/shell"
 import { ShellID } from "@/tool/shell/id"
 import { TurnBudget } from "@/session/turn-budget"
 import { ToolCatalog } from "@/tool/catalog"
@@ -1979,7 +1979,9 @@ function registeredPluginWorkflows(hooks: readonly Hooks[]): Discovered[] {
         }
       }
       const source = pluginWorkflowSource(name, definition)
-      return source.ok ? { name, path, source: source.source, kind: "plugin" as const } : { name, path, kind: "plugin" as const, error: source.error }
+      return source.ok
+        ? { name, path, source: source.source, kind: "plugin" as const }
+        : { name, path, kind: "plugin" as const, error: source.error }
     }),
   )
 }
@@ -2893,8 +2895,7 @@ export const layer = Layer.effect(
         journalSeq: input.resume_of && replayMode === "prefix" ? journalSeq : undefined,
         journalSeqCursor: 0,
         replayBroken: false,
-        invalidateSet:
-          input.resume_of && replayMode === "prefix" ? new Set(input.invalidate_agents ?? []) : undefined,
+        invalidateSet: input.resume_of && replayMode === "prefix" ? new Set(input.invalidate_agents ?? []) : undefined,
         resumeOf: input.resume_of,
         questionJournal: input.resume_of && questionJournal.size > 0 ? questionJournal : undefined,
         // Item 12: the caller session's resolved model — default-agent steps
@@ -3820,23 +3821,21 @@ export const layer = Layer.effect(
                   .pipe(Effect.orDie),
             }
 
-            const native = (
-              yield* catalog.tools({
-                providerID: model.providerID,
-                modelID: ModelV2.ID.make(model.id),
-                agent: selected,
-                ultracode: false,
-              })
-            ).find((tool) => tool.id === name)
+            const native = (yield* catalog.tools({
+              providerID: model.providerID,
+              modelID: ModelV2.ID.make(model.id),
+              agent: selected,
+              ultracode: false,
+            })).find((tool) => tool.id === name)
             if (native) {
               yield* plugin.trigger(
                 "tool.execute.before",
                 { tool: name, sessionID: ctx.sessionID, callID: ctx.callID },
                 { args: toolArgs },
               )
-              const result = yield* native.execute(toolArgs, ctx).pipe(
-                Effect.onInterrupt(() => Effect.sync(() => controller.abort())),
-              )
+              const result = yield* native
+                .execute(toolArgs, ctx)
+                .pipe(Effect.onInterrupt(() => Effect.sync(() => controller.abort())))
               const output = {
                 ...result,
                 attachments: result.attachments?.map((attachment) => ({
@@ -4006,6 +4005,20 @@ export const layer = Layer.effect(
                     permission: ShellID.ToolID,
                     patterns: Array.from(scan.patterns),
                     always: Array.from(scan.always),
+                    sessionID: askSessionID,
+                    ruleset: active.shellRuleset,
+                    metadata: { command, cwd, workflow: active.run.workflow, source: "workflow.shell" },
+                  })
+                  .pipe(Effect.mapError(denied))
+              }
+              // Opaque interpreter+inline-code commands (`python3 -c ...`) are
+              // never blanket-approvable — see EVAL_PERMISSION in tool/shell.ts.
+              if (scan.evalPatterns.size > 0) {
+                yield* permission
+                  .ask({
+                    permission: EVAL_PERMISSION,
+                    patterns: Array.from(scan.evalPatterns),
+                    always: [],
                     sessionID: askSessionID,
                     ruleset: active.shellRuleset,
                     metadata: { command, cwd, workflow: active.run.workflow, source: "workflow.shell" },
@@ -4708,7 +4721,9 @@ export const layer = Layer.effect(
               .pipe(Effect.catchCause(() => Effect.succeed([] as SessionV1.WithParts[])))
           : []
         const lines =
-          msgs.length > 0 ? msgs.map((m) => JSON.stringify({ info: m.info, parts: m.parts })) : [JSON.stringify({ node })]
+          msgs.length > 0
+            ? msgs.map((m) => JSON.stringify({ info: m.info, parts: m.parts }))
+            : [JSON.stringify({ node })]
         yield* write(name, lines.join("\n") + "\n")
       }
       return { path: dir, files }

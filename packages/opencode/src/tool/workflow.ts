@@ -1153,9 +1153,7 @@ export const WorkflowTool = Tool.define(
                 "Workflow file created and validated.",
                 // Item 23 (Stufe 2): non-blocking lint findings as a <lint>
                 // block, so the author sees which capabilities the script uses.
-                ...(formatLintFindings(lintFindings) !== undefined
-                  ? ["", formatLintFindings(lintFindings)!]
-                  : []),
+                ...(formatLintFindings(lintFindings) !== undefined ? ["", formatLintFindings(lintFindings)!] : []),
                 "",
                 formatWorkflow({ name: params.name, path: filepath, meta: validated.meta, valid: true }),
                 formatAgentRoster(yield* agents.list()),

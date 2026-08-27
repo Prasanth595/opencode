@@ -394,9 +394,7 @@ export async function run(args, ctx) { return { ok: true } }
 
       // Cleanup the per-run export dir (the data dir is test-scoped, but leave
       // nothing behind locally).
-      yield* Effect.promise(() =>
-        fs.rm(path.dirname(exported["path"] as string), { recursive: true, force: true }),
-      )
+      yield* Effect.promise(() => fs.rm(path.dirname(exported["path"] as string), { recursive: true, force: true }))
     }).pipe(Effect.provide(CrossSpawnSpawner.defaultLayer)),
   )
 

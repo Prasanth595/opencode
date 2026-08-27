@@ -6116,7 +6116,14 @@ export async function run() { return { from: "global" } }
         // B sieht ihn nicht — kein Export, kein Verzeichnis.
         expect(yield* workflow.export(idA).pipe(provideInstance(b))).toBeUndefined()
         const foreignDir = path.join(Global.Path.data, "workflow", idA, "transcripts")
-        expect(yield* Effect.promise(() => fs.stat(foreignDir).then(() => true).catch(() => false))).toBe(false)
+        expect(
+          yield* Effect.promise(() =>
+            fs
+              .stat(foreignDir)
+              .then(() => true)
+              .catch(() => false),
+          ),
+        ).toBe(false)
         // Unbekannte ID ⇒ undefined.
         expect(yield* workflow.export(Workflow.RunID.make("job_export_unknown"))).toBeUndefined()
         // A selbst kann exportieren (der geseedete Node hat keine Session ⇒
@@ -7680,44 +7687,44 @@ export async function run(args, ctx) {
   it.instance(
     "ctx.shell with no timeout has its OS child killed on cancel (no process leak)",
     () =>
-    Effect.gen(function* () {
-      const test = yield* TestInstance
-      yield* Effect.promise(() => writeWorkflow(test.directory, SHELL_LEAK_FIXTURE, SHELL_LEAK_WORKFLOW))
-      const workflow = yield* Workflow.Service
-      const running = path.join(test.directory, "shell-running.marker")
-      const leaked = path.join(test.directory, "shell-leaked.marker")
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* Effect.promise(() => writeWorkflow(test.directory, SHELL_LEAK_FIXTURE, SHELL_LEAK_WORKFLOW))
+        const workflow = yield* Workflow.Service
+        const running = path.join(test.directory, "shell-running.marker")
+        const leaked = path.join(test.directory, "shell-leaked.marker")
 
-      const run = yield* workflow.start({ name: SHELL_LEAK_FIXTURE, args: { running, leaked } })
+        const run = yield* workflow.start({ name: SHELL_LEAK_FIXTURE, args: { running, leaked } })
 
-      // Wait until the shell child is actually live (it just wrote `running`).
-      yield* pollWithTimeout(
-        Effect.promise(() =>
+        // Wait until the shell child is actually live (it just wrote `running`).
+        yield* pollWithTimeout(
+          Effect.promise(() =>
+            fs
+              .stat(running)
+              .then(() => true as const)
+              .catch(() => undefined),
+          ),
+          "shell child never started (running marker not written)",
+        )
+
+        // Cancel mid-sleep: the scope close interrupts the shell fiber, which (with
+        // the fix) aborts the controller and SIGTERMs the OS child.
+        yield* workflow.cancel(run.id)
+        const after = yield* workflow.get(run.id)
+        expect(after?.status).toBe("cancelled")
+
+        // Give the child MORE than its 3s sleep to (incorrectly) fire the second
+        // touch if it were leaked. With the child killed, the leaked marker never
+        // appears; if the process leaked, it would appear ~3s after the touch ran.
+        yield* Effect.sleep("4 seconds")
+        const leakedExists = yield* Effect.promise(() =>
           fs
-            .stat(running)
-            .then(() => true as const)
-            .catch(() => undefined),
-        ),
-        "shell child never started (running marker not written)",
-      )
-
-      // Cancel mid-sleep: the scope close interrupts the shell fiber, which (with
-      // the fix) aborts the controller and SIGTERMs the OS child.
-      yield* workflow.cancel(run.id)
-      const after = yield* workflow.get(run.id)
-      expect(after?.status).toBe("cancelled")
-
-      // Give the child MORE than its 3s sleep to (incorrectly) fire the second
-      // touch if it were leaked. With the child killed, the leaked marker never
-      // appears; if the process leaked, it would appear ~3s after the touch ran.
-      yield* Effect.sleep("4 seconds")
-      const leakedExists = yield* Effect.promise(() =>
-        fs
-          .stat(leaked)
-          .then(() => true)
-          .catch(() => false),
-      )
-      expect(leakedExists).toBe(false)
-    }),
+            .stat(leaked)
+            .then(() => true)
+            .catch(() => false),
+        )
+        expect(leakedExists).toBe(false)
+      }),
     // Item 23: kill-switch — see the budget shell test above.
     { config: { workflows: { shell_permission: false } } },
     // The body sleeps 4s by design (leak window) — the 5s default timeout
