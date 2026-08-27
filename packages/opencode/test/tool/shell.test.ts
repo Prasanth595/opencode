@@ -1072,10 +1072,7 @@ describe("tool.shell permissions", () => {
           const err = new Error("stop after permission")
           const requests: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">> = []
           expect(
-            yield* fail(
-              { command: `python3 -c "print(1)"`, description: "Run inline python" },
-              capture(requests, err),
-            ),
+            yield* fail({ command: `python3 -c "print(1)"`, description: "Run inline python" }, capture(requests, err)),
           ).toMatchObject({ message: err.message })
           const evalReq = requests.find((r) => r.permission === EVAL_PERMISSION)
           const bashReq = requests.find((r) => r.permission === "bash")
@@ -1096,10 +1093,7 @@ describe("tool.shell permissions", () => {
           const err = new Error("stop after permission")
           const requests: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">> = []
           expect(
-            yield* fail(
-              { command: "python3 script.py", description: "Run a python script" },
-              capture(requests, err),
-            ),
+            yield* fail({ command: "python3 script.py", description: "Run a python script" }, capture(requests, err)),
           ).toMatchObject({ message: err.message })
           const evalReq = requests.find((r) => r.permission === EVAL_PERMISSION)
           const bashReq = requests.find((r) => r.permission === "bash")

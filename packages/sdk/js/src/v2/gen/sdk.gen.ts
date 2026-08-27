@@ -3088,7 +3088,7 @@ export class Permission extends HeyApiClient {
       requestID: string
       directory?: string
       workspace?: string
-      reply?: "once" | "always" | "reject"
+      reply?: "once" | "always" | "reject" | "never"
       message?: string
     },
     options?: Options<never, ThrowOnError>,
@@ -3132,7 +3132,7 @@ export class Permission extends HeyApiClient {
       permissionID: string
       directory?: string
       workspace?: string
-      response?: "once" | "always" | "reject"
+      response?: "once" | "always" | "reject" | "never"
     },
     options?: Options<never, ThrowOnError>,
   ) {

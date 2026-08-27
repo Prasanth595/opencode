@@ -1576,9 +1576,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
         p.type === "step-finish" && !!(p.metadata?.["llamacpp"] as { timings?: unknown } | undefined)?.timings,
     )
     if (steps.length === 0) return undefined
-    const t = steps.map(
-      (p) => (p.metadata!["llamacpp"] as { timings: LlamaCppTimings }).timings,
-    )
+    const t = steps.map((p) => (p.metadata!["llamacpp"] as { timings: LlamaCppTimings }).timings)
     const promptMs = t.reduce((a, x) => a + x.promptMs, 0)
     const promptN = t.reduce((a, x) => a + x.promptN, 0)
     const predictedMs = t.reduce((a, x) => a + x.predictedMs, 0)

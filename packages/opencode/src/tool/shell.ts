@@ -98,7 +98,10 @@ const EVAL_FLAGS: Record<string, Set<string>> = {
 
 function isOpaqueEval(cmd: string | undefined, tokens: string[]): boolean {
   if (!cmd) return false
-  const name = path.basename(cmd).toLowerCase().replace(/\.exe$/, "")
+  const name = path
+    .basename(cmd)
+    .toLowerCase()
+    .replace(/\.exe$/, "")
   const flags = EVAL_FLAGS[name]
   if (!flags) return false
   return tokens.slice(1).some((token) => flags.has(token.toLowerCase()))
