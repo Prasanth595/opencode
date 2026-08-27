@@ -812,6 +812,130 @@ describe("session.compaction.prune", () => {
       }),
     ),
   )
+
+  // Reproduces the "spec read at session start, then pruned after a much
+  // later interrupt" bug: an early `read` result must survive even though a
+  // huge tool output right after it already exceeds the PRUNE_PROTECT tail
+  // budget on its own — without head protection, the read would be treated
+  // as just more stale output once the tail window has moved past it.
+  it.live(
+    "protects an early read result even after the tail budget is already blown",
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          const compact = yield* SessionCompaction.Service
+          const ssn = yield* SessionNs.Service
+          const info = yield* ssn.create({})
+          const a = yield* ssn.updateMessage({
+            id: MessageID.ascending(),
+            role: "user",
+            sessionID: info.id,
+            agent: "build",
+            model: ref,
+            time: { created: Date.now() },
+          })
+          yield* ssn.updatePart({
+            id: PartID.ascending(),
+            messageID: a.id,
+            sessionID: info.id,
+            type: "text",
+            text: "read the spec first",
+          })
+          const b: SessionV1.Assistant = {
+            id: MessageID.ascending(),
+            role: "assistant",
+            sessionID: info.id,
+            mode: "build",
+            agent: "build",
+            path: { cwd: dir, root: dir },
+            cost: 0,
+            tokens: {
+              output: 0,
+              input: 0,
+              reasoning: 0,
+              cache: { read: 0, write: 0 },
+            },
+            modelID: ref.modelID,
+            providerID: ref.providerID,
+            parentID: a.id,
+            time: { created: Date.now() },
+            finish: "end_turn",
+          }
+          yield* ssn.updateMessage(b)
+          const readPartID = PartID.ascending()
+          yield* ssn.updatePart({
+            id: readPartID,
+            messageID: b.id,
+            sessionID: info.id,
+            type: "tool",
+            callID: crypto.randomUUID(),
+            tool: "read",
+            state: {
+              status: "completed",
+              input: {},
+              output: "spec content ".repeat(200),
+              title: "spec.md",
+              metadata: {},
+              time: { start: Date.now(), end: Date.now() },
+            },
+          })
+          yield* ssn.updatePart({
+            id: PartID.ascending(),
+            messageID: b.id,
+            sessionID: info.id,
+            type: "tool",
+            callID: crypto.randomUUID(),
+            tool: "bash",
+            state: {
+              status: "completed",
+              input: {},
+              output: "x".repeat(200_000),
+              title: "done",
+              metadata: {},
+              time: { start: Date.now(), end: Date.now() },
+            },
+          })
+          for (const text of ["second", "third"]) {
+            const msg = yield* ssn.updateMessage({
+              id: MessageID.ascending(),
+              role: "user",
+              sessionID: info.id,
+              agent: "build",
+              model: ref,
+              time: { created: Date.now() },
+            })
+            yield* ssn.updatePart({
+              id: PartID.ascending(),
+              messageID: msg.id,
+              sessionID: info.id,
+              type: "text",
+              text,
+            })
+          }
+
+          yield* compact.prune({ sessionID: info.id })
+
+          const msgs = yield* ssn.messages({ sessionID: info.id })
+          const parts = msgs.flatMap((msg) => msg.parts).filter((part) => part.type === "tool")
+          const readPart = parts.find((part) => part.id === readPartID)
+          const bashPart = parts.find((part) => part.tool === "bash")
+          expect(readPart?.type).toBe("tool")
+          expect(bashPart?.type).toBe("tool")
+          if (readPart?.type === "tool" && readPart.state.status === "completed") {
+            expect(readPart.state.time.compacted).toBeUndefined()
+          }
+          if (bashPart?.type === "tool" && bashPart.state.status === "completed") {
+            expect(bashPart.state.time.compacted).toBeNumber()
+          }
+        }),
+
+      {
+        config: {
+          compaction: { prune: true },
+        },
+      },
+    ),
+  )
 })
 
 describe("session.compaction.process", () => {

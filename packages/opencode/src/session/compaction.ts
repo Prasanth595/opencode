@@ -37,6 +37,12 @@ export const Event = {
 
 export const PRUNE_MINIMUM = 20_000
 export const PRUNE_PROTECT = 40_000
+// A spec/plan read at the start of a session is exactly the kind of context a
+// later interrupt (which forces a fresh prune pass) would otherwise erase —
+// PRUNE_PROTECT only guards the newest N tokens, so anything read before that
+// window gets pruned regardless of how relevant it still is. This protects
+// the earliest `read` results too, independent of how far back they are.
+export const PRUNE_HEAD_PROTECT = 8_000
 const TOOL_OUTPUT_MAX_CHARS = 2_000
 const PRUNE_PROTECTED_TOOLS = ["skill"]
 const DEFAULT_TAIL_TURNS = 2
@@ -260,6 +266,22 @@ export const layer = Layer.effect(
         .pipe(Effect.catchIf(NotFoundError.isInstance, () => Effect.succeed(undefined)))
       if (!msgs) return
 
+      // Forward pass (oldest first): protect the earliest `read` results, up
+      // to a small budget, regardless of how far behind the write head they
+      // are — otherwise a spec read at session start is indistinguishable
+      // from any other stale tool output once the tail window slides past it.
+      const headProtected = new Set<string>()
+      let headBudget = 0
+      head: for (const msg of msgs) {
+        for (const part of msg.parts) {
+          if (part.type !== "tool" || part.tool !== "read") continue
+          if (part.state.status !== "completed" || part.state.time.compacted) continue
+          if (headBudget >= PRUNE_HEAD_PROTECT) break head
+          headProtected.add(part.id)
+          headBudget += Token.estimate(part.state.output)
+        }
+      }
+
       let total = 0
       let pruned = 0
       const toPrune: SessionV1.ToolPart[] = []
@@ -275,6 +297,7 @@ export const layer = Layer.effect(
           if (part.type !== "tool") continue
           if (part.state.status !== "completed") continue
           if (PRUNE_PROTECTED_TOOLS.includes(part.tool)) continue
+          if (headProtected.has(part.id)) continue
           if (part.state.time.compacted) break loop
           const estimate = Token.estimate(part.state.output)
           total += estimate
@@ -431,7 +454,8 @@ export const layer = Layer.effect(
       // both stalls the turn and poisons every later compaction, so retry with an
       // explicit corrective instruction before accepting the result.
       const SUMMARY_ATTEMPTS = 3
-      const leaky = (text: string | undefined) => text !== undefined && /<tool_call>|<\/?function[=>]|<parameter=/i.test(text)
+      const leaky = (text: string | undefined) =>
+        text !== undefined && /<tool_call>|<\/?function[=>]|<parameter=/i.test(text)
       let attempt = yield* attemptSummary(nextPrompt)
       for (let retry = 1; retry < SUMMARY_ATTEMPTS; retry++) {
         if (attempt.result !== "continue") break
