@@ -1002,16 +1002,7 @@ export const layer = Layer.effect(
           },
           { message: info, parts: resolvedParts },
         )
-        .pipe(
-          Effect.onExit(() =>
-            // Never restore "idle" here. Every SSE consumer — `opencode run`
-            // most of all — treats the first idle status as "the turn is over"
-            // and stops reading, so an idle emitted between the plugin trigger
-            // and the loop truncates the run before the model says anything.
-            // The loop that always follows sets "busy" on its first iteration.
-            status.set(input.sessionID, prevStatus.type === "idle" ? { type: "busy" } : prevStatus),
-          ),
-        )
+        .pipe(Effect.onExit(() => status.set(input.sessionID, prevStatus)))
 
       const parts = yield* Effect.forEach(resolvedParts, (part) =>
         part.type === "file" && part.mime.startsWith("image/")

@@ -825,12 +825,15 @@ export const RunCommand = effectCmd({
               UI.error(err)
             }
 
-            if (
-              event.type === "session.status" &&
-              event.properties.sessionID === sessionID &&
-              event.properties.status.type === "idle"
-            ) {
-              break
+            if (event.type === "session.status" && event.properties.sessionID === sessionID) {
+              // Only an idle that follows actual work ends the run. The session
+              // briefly reports "loading" around the chat.message plugin trigger
+              // and then restores whatever it was before — idle, on a fresh
+              // session — so treating the first idle as terminal would exit with
+              // empty output before the model had produced anything.
+              const type = event.properties.status.type
+              if (type === "busy" || type === "retry") toggles.set("working", true)
+              else if (type === "idle" && toggles.get("working") === true) break
             }
 
             if (event.type === "permission.asked") {
