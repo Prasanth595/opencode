@@ -36,6 +36,7 @@ import type {
   UserMessage,
   TextPart,
   ReasoningPart,
+  StepFinishPart,
   SessionStatus,
 } from "@opencode-ai/sdk/v2"
 import { useLocal } from "../../context/local"
@@ -1535,6 +1536,15 @@ function UserMessage(props: {
   )
 }
 
+type LlamaCppTimings = {
+  promptN: number
+  promptMs: number
+  promptPerSecond: number
+  predictedN: number
+  predictedMs: number
+  predictedPerSecond: number
+}
+
 function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; last: boolean }) {
   const ctx = use()
   const local = useLocal()
@@ -1558,6 +1568,31 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
     const user = messages().find((x) => x.role === "user" && x.id === props.message.parentID)
     if (!user || !user.time) return 0
     return props.message.time.completed - user.time.created
+  })
+
+  const llamaTotals = createMemo(() => {
+    const steps = props.parts.filter(
+      (p): p is StepFinishPart =>
+        p.type === "step-finish" && !!(p.metadata?.["llamacpp"] as { timings?: unknown } | undefined)?.timings,
+    )
+    if (steps.length === 0) return undefined
+    const t = steps.map(
+      (p) => (p.metadata!["llamacpp"] as { timings: LlamaCppTimings }).timings,
+    )
+    const promptMs = t.reduce((a, x) => a + x.promptMs, 0)
+    const promptN = t.reduce((a, x) => a + x.promptN, 0)
+    const predictedMs = t.reduce((a, x) => a + x.predictedMs, 0)
+    const predictedN = t.reduce((a, x) => a + x.predictedN, 0)
+    return {
+      promptMs,
+      predictedMs,
+      // Recompute rates from summed counts/times — averaging the per-step
+      // rates would be wrong when step sizes differ (a 5-token step and a
+      // 500-token step don't deserve equal weight in the average).
+      promptPerSecond: promptN / (promptMs / 1000),
+      predictedPerSecond: predictedN / (predictedMs / 1000),
+      steps: steps.length,
+    }
   })
 
   const childShortcut = useCommandShortcut("session.child.first")
@@ -1648,6 +1683,15 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
               <span style={{ fg: theme.textMuted }}> · {model()}</span>
               <Show when={duration()}>
                 <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())}</span>
+              </Show>
+              <Show when={llamaTotals()}>
+                <span style={{ fg: theme.textMuted }}>
+                  {" "}
+                  · prefill {Locale.duration(llamaTotals()!.promptMs)} @ {llamaTotals()!.promptPerSecond.toFixed(1)}{" "}
+                  tok/s · gen {Locale.duration(llamaTotals()!.predictedMs)} @{" "}
+                  {llamaTotals()!.predictedPerSecond.toFixed(1)} tok/s
+                  <Show when={llamaTotals()!.steps > 1}> ({llamaTotals()!.steps} steps)</Show>
+                </span>
               </Show>
               <Show when={props.message.error?.name === "MessageAbortedError"}>
                 <span style={{ fg: theme.textMuted }}> · interrupted</span>

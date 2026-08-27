@@ -31,6 +31,7 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { ModelStatus } from "./model-status"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderError } from "./error"
+import { LlamaCppMetadataExtractor } from "@opencode-ai/core/plugin/provider/llamacpp-timings"
 
 const OPENAI_HEADER_TIMEOUT_DEFAULT = 10_000
 
@@ -1642,6 +1643,9 @@ export const layer = Layer.effect(
 
         if (model.api.npm.includes("@ai-sdk/openai-compatible") && options["includeUsage"] !== false) {
           options["includeUsage"] = true
+        }
+        if (model.api.npm.includes("@ai-sdk/openai-compatible") && options["metadataExtractor"] === undefined) {
+          options["metadataExtractor"] = LlamaCppMetadataExtractor
         }
 
         const baseURL = iife(() => {

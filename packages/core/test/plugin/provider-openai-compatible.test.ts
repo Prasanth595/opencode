@@ -2,6 +2,7 @@ import { describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { PluginV2 } from "@opencode-ai/core/plugin"
 import { OpenAICompatiblePlugin } from "@opencode-ai/core/plugin/provider/openai-compatible"
+import { LlamaCppMetadataExtractor } from "@opencode-ai/core/plugin/provider/llamacpp-timings"
 import { it, model } from "./provider-helper"
 
 describe("OpenAICompatiblePlugin", () => {
@@ -96,6 +97,37 @@ describe("OpenAICompatiblePlugin", () => {
         {},
       )
       expect(result.sdk).toBe(sentinel)
+    }),
+  )
+
+  it.effect("sets the llama.cpp timings metadata extractor by default", () =>
+    Effect.gen(function* () {
+      const plugin = yield* PluginV2.Service
+      yield* plugin.add(OpenAICompatiblePlugin)
+      const result = yield* plugin.trigger(
+        "aisdk.sdk",
+        { model: model("custom", "model"), package: "@ai-sdk/openai-compatible", options: { name: "custom" } },
+        {},
+      )
+      expect(result.options.metadataExtractor).toBe(LlamaCppMetadataExtractor)
+    }),
+  )
+
+  it.effect("does not overwrite a caller-set metadata extractor", () =>
+    Effect.gen(function* () {
+      const plugin = yield* PluginV2.Service
+      const sentinel = { extractMetadata: async () => undefined, createStreamExtractor: () => ({}) as any }
+      yield* plugin.add(OpenAICompatiblePlugin)
+      const result = yield* plugin.trigger(
+        "aisdk.sdk",
+        {
+          model: model("custom", "model"),
+          package: "@ai-sdk/openai-compatible",
+          options: { name: "custom", metadataExtractor: sentinel },
+        },
+        {},
+      )
+      expect(result.options.metadataExtractor).toBe(sentinel)
     }),
   )
 })
