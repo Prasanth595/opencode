@@ -20,6 +20,10 @@ exports[`tool parameters JSON Schema (wire shape) bash 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
+    "background": {
+      "description": "Run the command as a detached background process that SURVIVES after this tool call returns. Use for long-running processes (dev servers, watchers). Returns immediately with the PID and a log file path — check the log with the read tool. Do NOT use '&', 'nohup' or 'setsid' instead of this flag: processes started that way are killed when the tool call ends.",
+      "type": "boolean",
+    },
     "command": {
       "description": "The command to execute",
       "type": "string",

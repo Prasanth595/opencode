@@ -6,7 +6,7 @@ import os from "os"
 import path from "path"
 import { Config } from "@/config/config"
 import { Shell } from "@opencode-ai/core/shell"
-import { ShellTool } from "../../src/tool/shell"
+import { ShellTool, EVAL_PERMISSION } from "../../src/tool/shell"
 import { Filesystem } from "@/util/filesystem"
 import { provideInstance, testInstanceStoreLayer, tmpdirScoped } from "../fixture/fixture"
 import type { Permission } from "../../src/permission"
@@ -1013,6 +1013,124 @@ describe("tool.shell permissions", () => {
           const bashReq = requests.find((r) => r.permission === "bash")
           expect(bashReq).toBeDefined()
           expect(bashReq!.patterns).toContain("echo test > output.txt")
+        }),
+      )
+    }),
+  )
+
+  each("asks for external_directory permission when redirecting outside the project", () =>
+    Effect.gen(function* () {
+      const outerTmp = yield* tmpdirScoped()
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const requests: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">> = []
+          const file = path.join(outerTmp, "outside.txt")
+          yield* run(
+            {
+              command: `echo pwned > ${file}`,
+              description: "Redirect to external file",
+            },
+            capture(requests),
+          )
+          const extDirReq = requests.find((r) => r.permission === "external_directory")
+          expect(extDirReq).toBeDefined()
+          expect(extDirReq!.patterns).toContain(glob(path.join(outerTmp, "*")))
+        }),
+      )
+    }),
+  )
+
+  each("does not ask for external_directory permission when redirecting inside the project", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const requests: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">> = []
+          yield* run(
+            {
+              command: `echo hello > ${path.join(tmp, "output.txt")}`,
+              description: "Redirect inside project",
+            },
+            capture(requests),
+          )
+          const extDirReq = requests.find((r) => r.permission === "external_directory")
+          expect(extDirReq).toBeUndefined()
+        }),
+      )
+    }),
+  )
+
+  each("asks under EVAL_PERMISSION for opaque interpreter code execution", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const err = new Error("stop after permission")
+          const requests: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">> = []
+          expect(
+            yield* fail(
+              { command: `python3 -c "print(1)"`, description: "Run inline python" },
+              capture(requests, err),
+            ),
+          ).toMatchObject({ message: err.message })
+          const evalReq = requests.find((r) => r.permission === EVAL_PERMISSION)
+          const bashReq = requests.find((r) => r.permission === "bash")
+          expect(evalReq).toBeDefined()
+          expect(evalReq!.always).toEqual([])
+          expect(bashReq).toBeUndefined()
+        }),
+      )
+    }),
+  )
+
+  each("does not route a plain interpreter invocation through EVAL_PERMISSION", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const err = new Error("stop after permission")
+          const requests: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">> = []
+          expect(
+            yield* fail(
+              { command: "python3 script.py", description: "Run a python script" },
+              capture(requests, err),
+            ),
+          ).toMatchObject({ message: err.message })
+          const evalReq = requests.find((r) => r.permission === EVAL_PERMISSION)
+          const bashReq = requests.find((r) => r.permission === "bash")
+          expect(evalReq).toBeUndefined()
+          expect(bashReq).toBeDefined()
+          expect(bashReq!.always.length).toBeGreaterThan(0)
+        }),
+      )
+    }),
+  )
+
+  each("tracks cwd across a cd so later relative paths resolve against it", () =>
+    Effect.gen(function* () {
+      const outerTmp = yield* tmpdirScoped()
+      yield* Effect.promise(() => Bun.write(path.join(outerTmp, "inside.txt"), "x"))
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const requests: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">> = []
+          yield* run(
+            {
+              command: `cd ${outerTmp} && cat inside.txt`,
+              description: "cd then read relative file",
+            },
+            capture(requests),
+          )
+          const extDirReq = requests.find((r) => r.permission === "external_directory")
+          expect(extDirReq).toBeDefined()
+          expect(extDirReq!.patterns).toContain(glob(path.join(outerTmp, "*")))
+          expect(extDirReq!.metadata).toMatchObject({ directories: [outerTmp] })
         }),
       )
     }),

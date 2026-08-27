@@ -65,6 +65,45 @@ const CMD_FILES = new Set([
 const FLAGS = new Set(["-destination", "-literalpath", "-path"])
 const SWITCHES = new Set(["-confirm", "-debug", "-force", "-nonewline", "-recurse", "-verbose", "-whatif"])
 
+// Interpreters that can be handed a literal blob of code to execute inline
+// (`python3 -c '...'`, `node -e '...'`). A wildcard "always" grant for one of
+// these (e.g. minted from an earlier, benign `python3 script.py` call) is
+// indistinguishable at the text level from a grant covering ARBITRARY code
+// execution — the permission scanner can't see inside the string. These are
+// asked under a separate permission id (EVAL_PERMISSION) so an ordinary
+// "bash"/"python3 *" approval never silently covers them, and they're never
+// added to `scan.always`, so no reply can mint a lasting blanket grant either.
+export const EVAL_PERMISSION = `${ShellID.ToolID}_eval`
+const EVAL_FLAGS: Record<string, Set<string>> = {
+  python: new Set(["-c"]),
+  python2: new Set(["-c"]),
+  python3: new Set(["-c"]),
+  pypy: new Set(["-c"]),
+  pypy3: new Set(["-c"]),
+  node: new Set(["-e", "--eval"]),
+  nodejs: new Set(["-e", "--eval"]),
+  deno: new Set(["-e", "--eval"]),
+  bun: new Set(["-e", "--eval"]),
+  ruby: new Set(["-e"]),
+  perl: new Set(["-e", "-E"]),
+  php: new Set(["-r"]),
+  bash: new Set(["-c"]),
+  sh: new Set(["-c"]),
+  zsh: new Set(["-c"]),
+  dash: new Set(["-c"]),
+  ksh: new Set(["-c"]),
+  pwsh: new Set(["-command"]),
+  powershell: new Set(["-command"]),
+}
+
+function isOpaqueEval(cmd: string | undefined, tokens: string[]): boolean {
+  if (!cmd) return false
+  const name = path.basename(cmd).toLowerCase().replace(/\.exe$/, "")
+  const flags = EVAL_FLAGS[name]
+  if (!flags) return false
+  return tokens.slice(1).some((token) => flags.has(token.toLowerCase()))
+}
+
 type Part = {
   type: string
   text: string
@@ -76,6 +115,9 @@ export type Scan = {
   dirs: Set<string>
   patterns: Set<string>
   always: Set<string>
+  // Opaque interpreter+inline-code invocations (`python3 -c ...`), asked
+  // under EVAL_PERMISSION instead of `patterns`/`always` — see EVAL_FLAGS.
+  evalPatterns: Set<string>
 }
 
 type Chunk = {
@@ -115,6 +157,53 @@ function parts(node: Node) {
     }
     out.push({ type: child.type, text: child.text })
   }
+  return out
+}
+
+// Redirection destinations (`cmd > file`, `cmd >> file`) write to disk from
+// any command, not just ones in FILES/CMD_FILES, and are never visited by
+// `commands()`/`parts()`: bash puts the redirect as a sibling `file_redirect`
+// under the parent `redirected_statement`, and PowerShell puts it inside
+// `command_elements` as a `redirection` node that `parts()` explicitly skips
+// (line above). Both must be walked separately so a write target outside the
+// project still trips the external_directory check.
+function redirectTargets(node: Node, ps: boolean): Part[] {
+  const out: Part[] = []
+  if (ps) {
+    for (let i = 0; i < node.childCount; i++) {
+      const elements = node.child(i)
+      if (!elements || elements.type !== "command_elements") continue
+      for (let j = 0; j < elements.childCount; j++) {
+        const redirection = elements.child(j)
+        if (!redirection || redirection.type !== "redirection") continue
+        for (let k = 0; k < redirection.childCount; k++) {
+          const target = redirection.child(k)
+          if (!target || target.type !== "redirected_file_name") continue
+          for (let m = 0; m < target.childCount; m++) {
+            const token = target.child(m)
+            if (!token || token.type !== "generic_token") continue
+            out.push({ type: token.type, text: token.text })
+          }
+        }
+      }
+    }
+    return out
+  }
+
+  const walk = (n: Node) => {
+    for (let i = 0; i < n.childCount; i++) {
+      const child = n.child(i)
+      if (!child) continue
+      if (child.type === "file_redirect") {
+        const destination = child.childForFieldName("destination")
+        // fd-duplication targets (`2>&1`) parse as a bare number, not a path
+        if (destination && destination.type !== "number") out.push({ type: destination.type, text: destination.text })
+        continue
+      }
+      if (child.type === "heredoc_redirect") walk(child)
+    }
+  }
+  if (node.parent?.type === "redirected_statement") walk(node.parent)
   return out
 }
 
@@ -308,27 +397,69 @@ function makeScanner(spawner: ChildProcessSpawner["Service"], fs: FSUtil.Interfa
       dirs: new Set<string>(),
       patterns: new Set<string>(),
       always: new Set<string>(),
+      evalPatterns: new Set<string>(),
     }
     const shellKind = ShellID.toKind(Shell.name(shell))
+    // `cd`/`pushd`/`set-location` change the directory every later command in
+    // the script resolves relative paths against. Without tracking that,
+    // `cd /etc && cat shadow` resolves "shadow" against the tool call's
+    // original cwd (looks internal, no ask) instead of /etc (the real read
+    // target) — a silent bypass of the external_directory check. This walks
+    // commands in document order (same flat approximation the scanner
+    // already uses elsewhere) and threads the effective cwd forward.
+    let effectiveCwd = cwd
 
     for (const node of commands(root)) {
       const command = parts(node)
       const tokens = command.map((item) => item.text)
       const cmd = ps || shellKind === "cmd" ? tokens[0]?.toLowerCase() : tokens[0]
+      const isCwdCommand = Boolean(cmd && CWD.has(cmd))
 
       if (cmd && (FILES.has(cmd) || (shellKind === "cmd" && CMD_FILES.has(cmd)))) {
         for (const arg of pathArgs(command, ps, shellKind === "cmd")) {
-          const resolved = yield* argPath(arg, cwd, ps, shell)
+          const resolved = yield* argPath(arg, effectiveCwd, ps, shell)
           yield* Effect.logInfo("resolved path", { arg, resolved })
-          if (!resolved || containsPath(resolved, instance)) continue
-          const dir = (yield* fs.isDir(resolved)) ? resolved : path.dirname(resolved)
-          scan.dirs.add(dir)
+          if (!resolved) continue
+          const contained = containsPath(resolved, instance)
+          if (!isCwdCommand && contained) continue
+          // Only a real directory is a valid `cd` target; a bogus/typo'd
+          // argument (or `cd -`, which this static scan can't resolve) must
+          // not corrupt the tracked cwd for the rest of the script.
+          const isDir = yield* fs.isDir(resolved)
+          if (isCwdCommand && isDir) effectiveCwd = resolved
+          if (!contained) scan.dirs.add(isDir ? resolved : path.dirname(resolved))
         }
       }
 
+      // Bare `cd`/`chdir` (no argument) goes to $HOME. `pushd`/`popd` bare
+      // moves through the directory stack, which this scanner doesn't model,
+      // so it's left untracked rather than guessed at.
+      if (isCwdCommand && tokens.length === 1 && (cmd === "cd" || cmd === "chdir" || cmd === "set-location")) {
+        const home = os.homedir()
+        effectiveCwd = home
+        if (!containsPath(home, instance)) scan.dirs.add(home)
+      }
+
+      // Redirection writes to disk regardless of which command it's attached
+      // to (`curl ... > /etc/cron.d/x`), so this check is unconditional and
+      // not gated behind the FILES/CMD_FILES membership above.
+      for (const target of redirectTargets(node, ps)) {
+        const resolved = yield* argPath(target.text, effectiveCwd, ps, shell)
+        yield* Effect.logInfo("resolved redirect target", { arg: target.text, resolved })
+        if (!resolved || containsPath(resolved, instance)) continue
+        const dir = (yield* fs.isDir(resolved)) ? resolved : path.dirname(resolved)
+        scan.dirs.add(dir)
+      }
+
       if (tokens.length && (!cmd || !CWD.has(cmd))) {
-        scan.patterns.add(source(node))
-        scan.always.add(BashArity.prefix(tokens).join(" ") + " *")
+        if (isOpaqueEval(cmd, tokens)) {
+          // No `always` entry: this must never be blanket-approvable, only
+          // confirmable one call at a time.
+          scan.evalPatterns.add(source(node))
+        } else {
+          scan.patterns.add(source(node))
+          scan.always.add(BashArity.prefix(tokens).join(" ") + " *")
+        }
       }
     }
 
@@ -395,11 +526,25 @@ const ask = Effect.fn("ShellTool.ask")(function* (
     })
   }
 
-  if (scan.patterns.size === 0) return
+  if (scan.patterns.size > 0) {
+    yield* ctx.ask({
+      permission: ShellID.ToolID,
+      patterns: Array.from(scan.patterns),
+      always: Array.from(scan.always),
+      metadata: {
+        command: input.command,
+        description: input.description,
+      },
+    })
+  }
+
+  if (scan.evalPatterns.size === 0) return
   yield* ctx.ask({
-    permission: ShellID.ToolID,
-    patterns: Array.from(scan.patterns),
-    always: Array.from(scan.always),
+    permission: EVAL_PERMISSION,
+    patterns: Array.from(scan.evalPatterns),
+    // Deliberately empty: an opaque interpreter invocation must never be
+    // blanket-approvable, so no reply can mint a lasting "always" rule here.
+    always: [],
     metadata: {
       command: input.command,
       description: input.description,
