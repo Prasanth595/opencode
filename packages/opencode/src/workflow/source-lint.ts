@@ -18,17 +18,7 @@ export type Finding = { line: number; rule: string; text: string }
 // node:-builtins whose import/require flags a finding. Matched by the FIRST
 // path segment after stripping the optional `node:` prefix, so `fs/promises`
 // and `node:fs/promises` both resolve to `fs`.
-const FLAGGED_BUILTINS = new Set([
-  "fs",
-  "child_process",
-  "net",
-  "http",
-  "https",
-  "dns",
-  "os",
-  "worker_threads",
-  "vm",
-])
+const FLAGGED_BUILTINS = new Set(["fs", "child_process", "net", "http", "https", "dns", "os", "worker_threads", "vm"])
 
 // Bun.* members that reach the filesystem / spawn processes / run shell
 // commands. `$` is Bun's template shell.

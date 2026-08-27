@@ -58,16 +58,16 @@ export const DialogWorkflow: Component = () => {
   const language = useLanguage()
 
   const [workflows] = createResource(() =>
-    sdk().client.workflow
-      .list({ directory: sdk().directory })
+    sdk()
+      .client.workflow.list({ directory: sdk().directory })
       .then((response) => response.data ?? [])
       .catch(() => [] as WorkflowInfo[]),
   )
 
   const [runs, { refetch }] = createResource(
     () =>
-      sdk().client.workflow
-        .runs({ directory: sdk().directory })
+      sdk()
+        .client.workflow.runs({ directory: sdk().directory })
         .then((response) => response.data ?? [])
         .catch(() => [] as WorkflowRun[]),
     { initialValue: [] as WorkflowRun[] },

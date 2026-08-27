@@ -93,7 +93,11 @@ export type WorkflowToolResult = {
 }
 
 export interface WorkflowToolFn {
-  (name: string, args?: Record<string, unknown>, options?: WorkflowToolOptions & { onError: "null" }): Promise<WorkflowToolResult | null>
+  (
+    name: string,
+    args?: Record<string, unknown>,
+    options?: WorkflowToolOptions & { onError: "null" },
+  ): Promise<WorkflowToolResult | null>
   (name: string, args?: Record<string, unknown>, options?: WorkflowToolOptions): Promise<WorkflowToolResult>
 }
 export type WorkflowParallelOptions = { concurrencyLimit?: number }

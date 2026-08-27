@@ -328,9 +328,7 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
         .catch(() => undefined)
         .then((sessionID) => {
           if (meta.disposed) return
-          const href = sessionID
-            ? `/${base64Encode(directory)}/session/${sessionID}`
-            : `/${base64Encode(directory)}`
+          const href = sessionID ? `/${base64Encode(directory)}/session/${sessionID}` : `/${base64Encode(directory)}`
           void platform.notify(
             language.t("notification.workflow.finished.title"),
             `${run.workflow}: ${notice.done ? "done" : run.status}`,

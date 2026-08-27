@@ -443,9 +443,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         // — persist the flag now so the very first prompt already gets the
         // server-side standing opt-in (fresh session, nothing to merge).
         if (input.ultracodeSession()) {
-          void client.session
-            .update({ sessionID: created.id, metadata: { ultracode: true } })
-            .catch(() => {})
+          void client.session.update({ sessionID: created.id, metadata: { ultracode: true } }).catch(() => {})
         }
         if (shouldAutoAccept) permission.enableAutoAccept(session.id, sessionDirectory)
         local.session.promote(sessionDirectory, session.id)

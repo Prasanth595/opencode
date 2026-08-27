@@ -291,7 +291,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             }
           }
           // Activate the hits: the NEXT step's resolve registers them fully.
-          yield* activation.add(input.session.id, matches.map((entry) => entry.key))
+          yield* activation.add(
+            input.session.id,
+            matches.map((entry) => entry.key),
+          )
           const described = yield* Effect.forEach(matches, (entry) =>
             Effect.gen(function* () {
               const item = mcpEntries.find(([key]) => key === entry.key)?.[1]

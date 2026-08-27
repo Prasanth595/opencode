@@ -606,8 +606,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         // so merge the synced keys. Toggling before the first session keeps the
         // flag local; the submit path PATCHes the freshly created session.
         if (props.controls.session.id) {
-          void sdk().client.session
-            .update({
+          void sdk()
+            .client.session.update({
               sessionID: props.controls.session.id,
               metadata: { ...(info()?.metadata ?? {}), ultracode: result.next },
             })
@@ -859,8 +859,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     // entries below (their names land in existingNames) and (b) route submits
     // into session.command with the empty template — no run, no approval gate.
     // Real commands (command/mcp/skill) keep precedence over workflows.
-    const custom = sync().data.command
-      .filter((cmd) => cmd.source !== "workflow")
+    const custom = sync()
+      .data.command.filter((cmd) => cmd.source !== "workflow")
       .map((cmd) => ({
         id: `custom.${cmd.name}`,
         trigger: cmd.name,

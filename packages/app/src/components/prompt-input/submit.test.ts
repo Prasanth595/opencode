@@ -752,9 +752,7 @@ describe("ultracode injection on submit", () => {
     await flush()
 
     expect(createdSessions).toEqual(["/repo/main"])
-    expect(sessionUpdates).toEqual([
-      { directory: "/repo/main", sessionID: "session-1", metadata: { ultracode: true } },
-    ])
+    expect(sessionUpdates).toEqual([{ directory: "/repo/main", sessionID: "session-1", metadata: { ultracode: true } }])
   })
 
   test("a new session with ultracode off is never PATCHed", async () => {

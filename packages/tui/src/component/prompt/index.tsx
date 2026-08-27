@@ -53,7 +53,12 @@ import { DialogWorkflow } from "../dialog-workflow"
 import { DialogWorkflowApproval } from "../dialog-workflow-approval"
 import { approvalDecision, isSessionApproved, rememberSessionApproval } from "../dialog-workflow-approval-helpers"
 import { parseDirectWorkflowCommand, parseWorkflowCommand } from "../dialog-workflow-helpers"
-import { extractReservedBudget, listWorkflowInfos, parseWorkflowArgs, reservedSlashNames } from "./workflow-autocomplete"
+import {
+  extractReservedBudget,
+  listWorkflowInfos,
+  parseWorkflowArgs,
+  reservedSlashNames,
+} from "./workflow-autocomplete"
 import {
   confirmWorkspaceFileChanges,
   openWorkspaceSelect,
@@ -2021,6 +2026,9 @@ export function Prompt(props: PromptProps) {
                         </Show>
                       )
                     })()}
+                    <Show when={status().type === "loading"}>
+                      <text fg={theme.textMuted}>starting model server…</text>
+                    </Show>
                   </box>
                 </box>
                 <text fg={store.interrupt > 0 ? theme.primary : theme.text}>

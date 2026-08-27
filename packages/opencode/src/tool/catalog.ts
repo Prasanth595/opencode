@@ -318,10 +318,7 @@ export const defaultLayer = Layer.suspend(() =>
       Layer.provide(Truncate.defaultLayer),
       Layer.provide(Ripgrep.defaultLayer),
     )
-    .pipe(
-      Layer.provide(Database.defaultLayer),
-      Layer.provide(RuntimeFlags.defaultLayer),
-    ),
+    .pipe(Layer.provide(Database.defaultLayer), Layer.provide(RuntimeFlags.defaultLayer)),
 )
 
 export const node = LayerNode.make(layer.pipe(Layer.provide(Ripgrep.defaultLayer)), [
