@@ -6,7 +6,7 @@ import { AppProcess } from "@opencode/util/process"
 import { expect, spyOn, test } from "bun:test"
 import { Effect, FileSystem, Layer, PlatformError, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
-import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { Updater } from "../src/services/updater"
 import { testEffect } from "../../core/test/lib/effect"
@@ -15,35 +15,56 @@ const it = testEffect(NodeServices.layer)
 
 declare const OPENCODE_CLI_NAME: string | undefined
 
+type CommandResult = Partial<AppProcess.RunResult> & { error?: AppProcess.AppProcessError }
+
+function misePaths(input: { name?: string; version?: string; data?: string; binary?: string } = {}) {
+  const name = input.name ?? "@opencode/cli"
+  const directory = path.join(
+    input.data ?? "custom-data",
+    "installs",
+    `npm-${name.replace(/^@/, "").replaceAll("/", "-")}`,
+    input.version ?? "2.0.2",
+  )
+  return {
+    directory,
+    executable: path.join(directory, "node_modules", name, "bin", input.binary ?? "opencode"),
+  }
+}
+
 function fixture(
-  respond: (command: ChildProcess.StandardCommand) => Partial<AppProcess.RunResult> & {
-    error?: AppProcess.AppProcessError
-  } = () => ({}),
+  respond: (command: ChildProcess.StandardCommand, root: string) => CommandResult | Promise<CommandResult> = () => ({}),
   name = "@opencode/cli",
   failCleanup = false,
+  location = "node_modules/@opencode/cli/bin/opencode",
   releasePackage = name,
   formula?: string,
-  executableOverride?: (root: string, home: string) => Effect.Effect<string, PlatformError.PlatformError, FileSystem.FileSystem>,
+  executableOverride?: (
+    root: string,
+    home: string,
+  ) => Effect.Effect<string, PlatformError.PlatformError, FileSystem.FileSystem>,
 ) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-    const root = yield* fs.makeTempDirectoryScoped({ prefix: "opencode-updater-" })
+    const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: "opencode-updater-" }))
     const execPath = process.execPath
-    const modules = path.join(root, "node_modules")
     const executable = executableOverride
       ? yield* executableOverride(root, path.join(root, "home"))
       : formula
         ? path.join(root, "Cellar", formula, "2.0.20", "bin", "opencode")
-        : path.join(modules, "@opencode", "cli", "bin", "opencode")
+        : path.join(root, location)
     yield* fs.makeDirectory(path.dirname(executable), { recursive: true })
     yield* fs.writeFileString(executable, "binary")
     if (!formula && !executableOverride)
       yield* fs.writeFileString(
-        path.join(modules, "@opencode", "cli", "package.json"),
-        JSON.stringify({ name, bin: { opencode: "bin/opencode" } }),
+        path.join(path.dirname(path.dirname(executable)), "package.json"),
+        JSON.stringify({ name, bin: { opencode: `bin/${path.basename(executable)}` } }),
       )
     const requests: string[] = []
+    yield* fs.writeFileString(
+      path.join(root, "mise config.toml"),
+      '[tools]\n"npm:@opencode/cli" = { version = "latest", allow_builds = true, allow_low_downloads = true }\n',
+    )
     // The updater uses global fetch; scope this replacement to each install test.
     yield* Effect.acquireRelease(
       Effect.sync(() =>
@@ -108,15 +129,15 @@ function fixture(
         AppProcess.Service.of({
           ...spawner,
           run: (command) =>
-            Effect.suspend(() => {
-              if (command._tag !== "StandardCommand") return Effect.die("Unexpected piped install command")
+            Effect.gen(function* () {
+              if (command._tag !== "StandardCommand") return yield* Effect.die("Unexpected piped install command")
               const lookup = command.command === "git" && command.args[0] === "--exec-path"
               if (!lookup) commands.push([command.command, ...command.args])
               const result = lookup
                 ? { stdout: Buffer.from(`${path.join(git, "mingw64", "libexec", "git-core")}\n`) }
-                : respond(command)
-              if (result.error) return Effect.fail(result.error)
-              return Effect.succeed({
+                : yield* Effect.promise(async () => respond(command, root))
+              if (result.error) return yield* Effect.fail(result.error)
+              return {
                 command: command.command,
                 exitCode: 0,
                 stdout: Buffer.alloc(0),
@@ -124,13 +145,13 @@ function fixture(
                 stdoutTruncated: false,
                 stderrTruncated: false,
                 ...result,
-              })
+              }
             }),
           runStream: () => Stream.die("Unexpected streaming install command"),
         }),
       ),
     )
-    return { updater, commands, requests, global, fs, executable, bash }
+    return { updater, commands, requests, global, fs, executable, bash, root }
   })
 }
 
@@ -159,7 +180,7 @@ installs.forEach(({ method, command }) => {
 
 it.live("vp force-installs a renamed V2 package that replaces the existing binary owner", () =>
   Effect.gen(function* () {
-    const test = yield* fixture(() => ({}), "@opencode/cli", false, "@opencode/cli-node")
+    const test = yield* fixture(() => ({}), "@opencode/cli", false, undefined, "@opencode/cli-node")
     yield* test.updater.upgrade("vp", "v2.3.4-beta.1")
     expect(test.commands).toEqual([["vp", "install", "-g", "--force", "@opencode/cli-node@2.3.4-beta.1"]])
   }),
@@ -195,6 +216,94 @@ it.live("vp removes the package from its managed global store", () =>
     }),
   )
 })
+
+if (Bun.which("mise")) {
+  ;["latest", "2", "2.0", "2.0.2"].forEach((requested) => {
+    it.live(`real mise preserves tool options when upgrading ${requested} in an isolated config`, () =>
+      Effect.gen(function* () {
+        const registry = yield* Effect.acquireRelease(
+          Effect.sync(() =>
+            Bun.serve({
+              hostname: "127.0.0.1",
+              port: 0,
+              fetch: () =>
+                Response.json({
+                  name: "@opencode/cli",
+                  "dist-tags": { latest: "2.3.4" },
+                  versions: {
+                    "2.0.2": { name: "@opencode/cli", version: "2.0.2", dist: { tarball: "http://127.0.0.1/unused" } },
+                    "2.3.4": { name: "@opencode/cli", version: "2.3.4", dist: { tarball: "http://127.0.0.1/unused" } },
+                  },
+                  time: { "2.0.2": "2025-01-01T00:00:00Z", "2.3.4": "2025-01-02T00:00:00Z" },
+                }),
+            }),
+          ),
+          (server) => Effect.promise(() => server.stop(true)),
+        )
+        const test = yield* fixture(
+          async (command, root) => {
+            // Supply an already-installed target instead of downloading a real release.
+            // All discovery, selection and config writes still run through mise itself.
+            if (command.args[0] === "use" || command.args[0] === "install")
+              mkdirSync(path.join(root, misePaths({ version: "2.3.4" }).directory), { recursive: true })
+            const child = Bun.spawn([command.command, ...command.args], {
+              cwd: root,
+              env: {
+                PATH: process.env.PATH,
+                HOME: path.join(root, "home"),
+                MISE_DATA_DIR: path.join(root, "custom-data"),
+                MISE_CACHE_DIR: path.join(root, "cache"),
+                MISE_STATE_DIR: path.join(root, "state"),
+                MISE_CONFIG_DIR: path.join(root, "config"),
+                npm_config_registry: registry.url.toString(),
+                MISE_USE_VERSIONS_HOST: "false",
+                MISE_PIN: "1",
+                MISE_MINIMUM_RELEASE_AGE: "0",
+              },
+              stdout: "pipe",
+              stderr: "pipe",
+              timeout: 10_000,
+            })
+            const [exitCode, stdout, stderr] = await Promise.all([
+              child.exited,
+              new Response(child.stdout).arrayBuffer(),
+              new Response(child.stderr).arrayBuffer(),
+            ])
+            expect(exitCode, Buffer.from(stderr).toString()).toBe(0)
+            return { exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) }
+          },
+          "@opencode/cli",
+          false,
+          misePaths().executable,
+        )
+        yield* test.fs.writeFileString(
+          path.join(test.root, path.dirname(misePaths().directory), ".mise.backend.toml"),
+          'short = "npm:@opencode/cli"\nfull = "npm:@opencode/cli"\nexplicit_backend = true\n',
+        )
+        const config = path.join(test.root, "config/config.toml")
+        yield* test.fs.makeDirectory(path.dirname(config), { recursive: true })
+        yield* test.fs.makeDirectory(path.join(test.root, "home"), { recursive: true })
+        yield* test.fs.writeFileString(
+          config,
+          `[tools]\n"npm:@opencode/cli" = { version = "${requested}", allow_builds = ["@opencode/cli"], allow_low_downloads = true }\n`,
+        )
+        yield* test.updater.apply("2.3.4")
+        // Mise versions may serialize backend booleans as strings; both preserve the option.
+        expect(
+          [true, "true"].map((allow_low_downloads) => ({
+            tools: {
+              "npm:@opencode/cli": {
+                version: requested === "2.0" ? "2.3" : requested === "2.0.2" ? "2.3.4" : requested,
+                allow_builds: ["@opencode/cli"],
+                allow_low_downloads,
+              },
+            },
+          })),
+        ).toContainEqual<object>(Bun.TOML.parse(yield* test.fs.readFileString(config)))
+      }),
+    )
+  })
+}
 
 it.live("bun ignores install cache cleanup failures", () =>
   Effect.gen(function* () {
@@ -311,7 +420,7 @@ it.live("vp detection ignores no-match output that repeats the package name", ()
 
 it.live("Homebrew Core installs check and upgrade the Core formula", () =>
   Effect.gen(function* () {
-    const test = yield* fixture(() => ({}), "@opencode/cli", false, "anomalyco/tap/opencode-v2", "opencode")
+    const test = yield* fixture(() => ({}), "@opencode/cli", false, undefined, "anomalyco/tap/opencode-v2", "opencode")
     expect(yield* test.updater.method()).toBe("brew")
     expect(yield* test.updater.latest()).toBe("2.0.21")
     yield* test.updater.upgrade("brew", "2.0.21")
@@ -327,7 +436,7 @@ it.live("Homebrew Core installs check and upgrade the Core formula", () =>
 ;["opencode-v2", "opencode-beta"].forEach((formula) => {
   it.live(`Homebrew tap installs of ${formula} use the published tap formula`, () =>
     Effect.gen(function* () {
-      const test = yield* fixture(() => ({}), "@opencode/cli", false, `anomalyco/tap/${formula}`, formula)
+      const test = yield* fixture(() => ({}), "@opencode/cli", false, undefined, `anomalyco/tap/${formula}`, formula)
       expect(yield* test.updater.method()).toBe("brew")
       expect(yield* test.updater.latest()).toBe("2.3.4")
       yield* test.updater.upgrade("brew", "2.3.4")
@@ -345,6 +454,7 @@ const winget = (search: Partial<AppProcess.RunResult>) =>
     (command) => (command.args[0] === "search" ? search : {}),
     "@opencode/cli",
     false,
+    undefined,
     "@opencode/cli",
     undefined,
     (root) =>
@@ -481,6 +591,7 @@ windows("windows links the curl binary before the installer replaces it", () =>
       },
       "@opencode/cli",
       false,
+      undefined,
       "@opencode/cli",
       undefined,
       (_root, home) => Effect.succeed(path.join(home, ".opencode", "bin", "opencode.exe")),
@@ -504,6 +615,7 @@ unix("curl method detection resolves symlinked home directories", () =>
       () => ({}),
       "@opencode/cli",
       false,
+      undefined,
       "@opencode/cli",
       undefined,
       (root, home) =>
@@ -544,6 +656,303 @@ unix("other platforms never link the running binary", () =>
     layout.cache = test.global.cache
     yield* test.updater.upgrade("bun", "2.3.4")
     expect(yield* test.fs.readFileString(test.executable)).toBe("binary")
+  }),
+)
+
+function miseTool(root: string, requested = "latest", version = "2.0.2") {
+  return {
+    version,
+    requested_version: requested,
+    install_path: path.join(root, misePaths({ version }).directory),
+    source: { type: "mise.toml", path: path.join(root, "mise config.toml") },
+    installed: true,
+    active: true,
+  }
+}
+
+;[
+  misePaths().executable,
+  misePaths({ name: "@opencode/cli-node", binary: "opencode.exe" }).executable,
+  "custom-data/installs/opencode/2.0.2/bin/opencode",
+  ".local/share/mise/installs/npm-opencode-ai-cli/2.0.2/bin/opencode",
+].forEach((location) => {
+  it.live(`detects the resolved mise installation before global npm: ${location}`, () =>
+    Effect.gen(function* () {
+      const test = yield* fixture(() => ({ stdout: Buffer.from("@opencode/cli") }), "@opencode/cli", false, location)
+      expect(yield* test.updater.method()).toBe("mise")
+      expect(test.commands).toEqual([])
+    }),
+  )
+})
+
+it.live("mise detects platform binaries without a CLI package manifest", () =>
+  Effect.gen(function* () {
+    const test = yield* fixture(() => ({}), "@opencode/cli-darwin-arm64", false, misePaths().executable)
+    expect(yield* test.updater.method()).toBe("mise")
+    expect(test.commands).toEqual([])
+  }),
+)
+
+it.live("global npm inside mise-managed Node remains an npm installation", () =>
+  Effect.gen(function* () {
+    const test = yield* fixture(
+      (command) => ({ stdout: Buffer.from(command.command === "npm" ? "@opencode/cli" : "") }),
+      "@opencode/cli",
+      false,
+      "custom-data/installs/node/24.0.0/lib/node_modules/@opencode/cli/bin/opencode",
+    )
+    expect(yield* test.updater.method()).toBe("npm")
+  }),
+)
+;["bun", "node", "npm-opencode-cli-other"].forEach((tool) => {
+  it.live(`does not mistake mise-managed ${tool} for a mise OpenCode install`, () =>
+    Effect.gen(function* () {
+      const test = yield* fixture(() => ({}), tool, false, `custom-data/installs/${tool}/2.0.2/bin/${tool}`)
+      expect(yield* test.updater.method()).toBeUndefined()
+      expect(test.commands).toEqual([])
+    }),
+  )
+})
+;[
+  { before: "latest", after: "latest", pin: false, install: false },
+  { before: "2", after: "2", pin: false, install: true },
+  { before: "2.0", after: "2.3", pin: false, install: true },
+  { before: "2.0.2", after: "2.3.4", pin: false, install: false },
+  { before: "latest", after: "2.3.4", pin: true, install: false },
+  { before: "2.0", after: "2.3.4", pin: true, install: false },
+].forEach((selection) => {
+  it.live(`mise selects ${selection.after} from ${selection.before} with explicit pin=${selection.pin}`, () =>
+    Effect.gen(function* () {
+      const used: string[] = []
+      const test = yield* fixture(
+        (command, root) => {
+          if (command.args[0] === "use") used.push("use")
+          return {
+            stdout: Buffer.from(
+              JSON.stringify([
+                miseTool(root, used.length ? selection.after : selection.before, used.length ? "2.3.4" : "2.0.2"),
+              ]),
+            ),
+          }
+        },
+        "@opencode/cli",
+        false,
+        misePaths().executable,
+      )
+      const config = path.join(test.root, "mise config.toml")
+      const original = yield* test.fs.readFileString(config)
+      yield* test.updater.upgrade("mise", "v2.3.4", { pin: selection.pin })
+      expect(test.commands).toEqual([
+        ["mise", "ls", "--current", "--json", "npm:@opencode/cli"],
+        ...(selection.install ? [["mise", "install", "npm:@opencode/cli@2.3.4"]] : []),
+        [
+          "mise",
+          "use",
+          "--path",
+          config,
+          selection.after === "2.3.4" ? "--pin" : "--fuzzy",
+          `npm:@opencode/cli@${selection.after}`,
+        ],
+        ["mise", "ls", "--current", "--json", "npm:@opencode/cli"],
+      ])
+      // Only mise owns config edits, including allow_builds and allow_low_downloads.
+      expect(yield* test.fs.readFileString(config)).toBe(original)
+    }),
+  )
+})
+
+it.live("shared updater apply detects mise and verifies successful activation", () =>
+  Effect.gen(function* () {
+    const used: string[] = []
+    const test = yield* fixture(
+      (command, root) => {
+        if (command.args[0] === "use") used.push("use")
+        return { stdout: Buffer.from(JSON.stringify([miseTool(root, "latest", used.length ? "2.3.4" : "2.0.2")])) }
+      },
+      "@opencode/cli",
+      false,
+      misePaths().executable,
+    )
+    yield* test.updater.apply("2.3.4")
+    expect(test.commands.every((command) => command[0] === "mise")).toBe(true)
+    expect(used).toEqual(["use"])
+  }),
+)
+;[".tool-versions", "mise.staging.toml"].forEach((file) => {
+  it.live(`mise updates the selecting ${file} instead of creating a local config`, () =>
+    Effect.gen(function* () {
+      const used: string[] = []
+      const test = yield* fixture(
+        (command, root) => {
+          if (command.args[0] === "use") used.push("use")
+          return {
+            stdout: Buffer.from(
+              JSON.stringify([
+                {
+                  ...miseTool(root, used.length ? "2.3.4" : "2.0.2", used.length ? "2.3.4" : "2.0.2"),
+                  source: { type: file === ".tool-versions" ? file : "mise.toml", path: path.join(root, file) },
+                },
+              ]),
+            ),
+          }
+        },
+        "@opencode/cli",
+        false,
+        misePaths().executable,
+      )
+      yield* test.fs.writeFileString(path.join(test.root, file), "fixture")
+      yield* test.updater.apply("2.3.4")
+      expect(test.commands[1]).toEqual([
+        "mise",
+        "use",
+        "--path",
+        path.join(test.root, file),
+        "--pin",
+        "npm:@opencode/cli@2.3.4",
+      ])
+      expect(yield* test.fs.exists(path.join(test.root, "mise.toml"))).toBe(false)
+    }),
+  )
+})
+
+const ambiguousMise: { name: string; tools: (root: string) => unknown }[] = [
+  { name: "no active selection", tools: () => [] },
+  { name: "multiple active versions", tools: (root) => [miseTool(root), miseTool(root, "2", "2.1.0")] },
+  { name: "missing metadata", tools: () => [{}] },
+  { name: "wrong version", tools: (root) => [{ ...miseTool(root), version: "2.0.1" }] },
+  { name: "another install directory", tools: (root) => [{ ...miseTool(root), install_path: root }] },
+  {
+    name: "relative install path",
+    tools: (root) => [{ ...miseTool(root), install_path: "installs/npm-opencode-cli/2.0.2" }],
+  },
+  { name: "inactive version", tools: (root) => [{ ...miseTool(root), active: false }] },
+  { name: "uninstalled version", tools: (root) => [{ ...miseTool(root), installed: false }] },
+  {
+    name: "environment override",
+    tools: (root) => [
+      { ...miseTool(root), source: { type: "environment", key: "MISE_NPM_OPENCODE_CLI_VERSION", value: "2.0.2" } },
+    ],
+  },
+  {
+    name: "unknown source",
+    tools: (root) => [{ ...miseTool(root), source: { type: "unknown", path: path.join(root, "mise config.toml") } }],
+  },
+  {
+    name: "relative config",
+    tools: (root) => [{ ...miseTool(root), source: { type: "mise.toml", path: "mise.toml" } }],
+  },
+  {
+    name: "missing config",
+    tools: (root) => [{ ...miseTool(root), source: { type: "mise.toml", path: path.join(root, "missing.toml") } }],
+  },
+  {
+    name: "directory instead of config",
+    tools: (root) => [{ ...miseTool(root), source: { type: "mise.toml", path: root } }],
+  },
+  { name: "unsupported alias", tools: (root) => [miseTool(root, "stable")] },
+  { name: "path request", tools: (root) => [miseTool(root, "path:/other/install")] },
+]
+
+ambiguousMise.forEach((input) => {
+  it.live(`mise refuses ${input.name} before modifying anything`, () =>
+    Effect.gen(function* () {
+      const test = yield* fixture(
+        (command, root) => ({ stdout: Buffer.from(JSON.stringify(input.tools(root))) }),
+        "@opencode/cli",
+        false,
+        misePaths().executable,
+      )
+      yield* test.updater.apply("2.3.4").pipe(Effect.flip)
+      expect(test.commands).toEqual([["mise", "ls", "--current", "--json", "npm:@opencode/cli"]])
+      expect(yield* test.fs.exists(path.join(test.root, "missing.toml"))).toBe(false)
+    }),
+  )
+})
+;["missing", "nonzero", "malformed"].forEach((failure) => {
+  it.live(`mise ${failure} discovery never falls back to npm`, () =>
+    Effect.gen(function* () {
+      const test = yield* fixture(
+        (command, root) => ({
+          ...(failure === "missing" ? { error: new AppProcess.AppProcessError({ command: "mise" }) } : {}),
+          exitCode: failure === "nonzero" ? 1 : 0,
+          stdout: Buffer.from(failure === "malformed" ? "not json" : JSON.stringify([miseTool(root)])),
+        }),
+        "@opencode/cli",
+        false,
+        misePaths().executable,
+      )
+      expect(yield* test.updater.method()).toBe("mise")
+      yield* test.updater.apply("2.3.4").pipe(Effect.flip)
+      expect(test.commands).toEqual([["mise", "ls", "--current", "--json", "npm:@opencode/cli"]])
+    }),
+  )
+})
+;["install", "use", "activation"].forEach((failure) => {
+  it.live(`mise ${failure} failure is not reported as installed`, () =>
+    Effect.gen(function* () {
+      const test = yield* fixture(
+        (command, root) => ({
+          stdout: Buffer.from(JSON.stringify([miseTool(root, "2")])),
+          exitCode: command.args[0] === failure ? 1 : 0,
+          stderr: Buffer.from(`mise ${failure} failed`),
+        }),
+        "@opencode/cli",
+        false,
+        misePaths().executable,
+      )
+      const error = yield* test.updater.apply("2.3.4").pipe(Effect.flip)
+      expect(error.message).toContain(failure === "activation" ? "Mise did not select" : `mise ${failure} failed`)
+      expect(test.commands).toHaveLength(failure === "install" ? 2 : failure === "use" ? 3 : 4)
+    }),
+  )
+})
+
+it.live("explicit mise requires ownership and refuses package migration", () =>
+  Effect.gen(function* () {
+    const unmanaged = yield* fixture()
+    yield* unmanaged.updater.upgrade("mise", "2.3.4").pipe(Effect.flip)
+    expect(unmanaged.commands).toEqual([])
+    expect(unmanaged.updater.removal("mise")).toBeUndefined()
+    const migrated = yield* fixture(
+      (command, root) => ({ stdout: Buffer.from(JSON.stringify([miseTool(root)])) }),
+      "@opencode/cli",
+      false,
+      misePaths().executable,
+      "@opencode-ai/cli",
+    )
+    const error = yield* migrated.updater.upgrade("mise", "2.3.4").pipe(Effect.flip)
+    expect(error.message).toContain("Reinstall npm:@opencode-ai/cli@2.3.4 with mise")
+    expect(migrated.commands).toHaveLength(1)
+  }),
+)
+;[0, 1].forEach((exitCode) => {
+  it.live(`mise removal targets only the running version and handles exit ${exitCode}`, () =>
+    Effect.gen(function* () {
+      const test = yield* fixture(
+        () => ({ exitCode, stderr: Buffer.from("mise uninstall failed") }),
+        "@opencode/cli",
+        false,
+        misePaths().executable,
+      )
+      const removal = test.updater.removal("mise")
+      if (!removal) return yield* Effect.die("Missing mise removal plan")
+      expect(removal.command).toEqual(["mise", "uninstall", "npm:@opencode/cli@2.0.2"])
+      expect(removal.note).toContain("Mise config entries are kept")
+      expect(test.commands).toEqual([])
+      const result = yield* removal.run.pipe(Effect.flip, Effect.option)
+      expect(result._tag).toBe(exitCode === 0 ? "None" : "Some")
+      if (result._tag === "Some") expect(result.value.message).toBe("mise uninstall failed")
+      expect(test.commands).toEqual([["mise", "uninstall", "npm:@opencode/cli@2.0.2"]])
+    }),
+  )
+})
+
+it.live("mise removal refuses an unresolved version directory", () =>
+  Effect.gen(function* () {
+    const test = yield* fixture(() => ({}), "@opencode/cli", false, misePaths({ version: "latest" }).executable)
+    expect(yield* test.updater.method()).toBe("mise")
+    expect(test.updater.removal("mise")).toBeUndefined()
+    expect(test.commands).toEqual([])
   }),
 )
 
