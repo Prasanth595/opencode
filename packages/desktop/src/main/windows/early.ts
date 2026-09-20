@@ -6,7 +6,7 @@ import { resolveExternalURL } from "../files/external-url"
 import { windowArguments } from "./bootstrap"
 import { WINDOW_IDS_KEY } from "../storage/keys"
 import { getStore } from "../storage/store"
-import { storedBackgroundColor, titlebarOverlay } from "./defaults"
+import { storedBackgroundColor, storedZoomFactor, titlebarOverlay } from "./defaults"
 import { registerRendererProtocol } from "./protocol"
 import { loadWindow } from "./scheme"
 import { allowRendererPermissions, wireNavigationPolicy, wireRendererHeaders } from "./security"
@@ -58,6 +58,7 @@ export function createEarlyWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      zoomFactor: storedZoomFactor(),
       additionalArguments: windowArguments(id),
     },
   })
