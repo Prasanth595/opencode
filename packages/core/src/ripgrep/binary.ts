@@ -1,8 +1,8 @@
 import path from "path"
 import { Context, Duration, Effect, Layer, Stream } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
-import { ChildProcess } from "effect/unstable/process"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { ChildProcess } from "effect/process"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { CrossSpawnSpawner } from "@opencode/util/cross-spawn-spawner"
 import { makeGlobalNode } from "@opencode/util/effect/app-node"
 import { httpClient } from "@opencode/util/effect/app-node-platform"
@@ -118,7 +118,10 @@ export namespace RipgrepBinary {
       )
 
       return Service.of({
-        filepath: filepath.pipe(Effect.tapError(() => invalidate)),
+        filepath: filepath.pipe(
+          Effect.tapError((cause) => Effect.logError("ripgrep binary resolution failed", { cause })),
+          Effect.tapError(() => invalidate),
+        ),
       })
     }),
   )
