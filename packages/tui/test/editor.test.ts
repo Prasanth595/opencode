@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { normalizePromptContent, openEditor, parseEditorCommand } from "../src/editor"
+import { normalizePromptContent, openEditor, parseEditorCommand, quoteEditorArgument } from "../src/editor"
 
 const editor = process.env.EDITOR
 const visual = process.env.VISUAL
@@ -38,6 +38,15 @@ test("preserves backslashes and handles single quotes and repeated whitespace", 
   expect(parseEditorCommand("'/opt/my editor'   -w")).toEqual(["/opt/my editor", "-w"])
   expect(parseEditorCommand("vim")).toEqual(["vim"])
   expect(parseEditorCommand("   ")).toEqual([])
+})
+
+test("quotes editor arguments only when a shell launches them", () => {
+  expect(quoteEditorArgument("/mnt/c/Program Files/Notepad++/notepad++.exe", true)).toBe(
+    '"/mnt/c/Program Files/Notepad++/notepad++.exe"',
+  )
+  expect(quoteEditorArgument('say "hi"', true)).toBe('"say ""hi"""')
+  expect(quoteEditorArgument("/usr/bin/vim", false)).toBe("/usr/bin/vim")
+  expect(quoteEditorArgument("/opt/my editor", false)).toBe("/opt/my editor")
 })
 
 test("opens an editor whose path contains spaces", async () => {

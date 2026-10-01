@@ -37,6 +37,15 @@ export function parseEditorCommand(command: string) {
   return parts
 }
 
+/**
+ * Windows launches the editor through a shell, which re-joins the argument vector without quoting,
+ * so every token is quoted to keep paths with spaces intact. Unix spawns the program directly and
+ * must receive the raw value, because literal quotes would become part of the path.
+ */
+export function quoteEditorArgument(value: string, shell: boolean) {
+  return shell ? `"${value.replaceAll('"', '""')}"` : value
+}
+
 export async function openEditor(input: { value: string; renderer: CliRenderer; cwd?: string; stdin?: EditorStdio }) {
   const editor = process.env.VISUAL || process.env.EDITOR
   if (!editor) return
@@ -48,10 +57,8 @@ export async function openEditor(input: { value: string; renderer: CliRenderer; 
   input.renderer.currentRenderBuffer.clear()
   try {
     await new Promise<void>((resolve, reject) => {
-      // Windows launches the editor through a shell, which re-joins the argument vector without
-      // quoting, so quote every token to keep paths with spaces intact.
       const shell = process.platform === "win32"
-      const quote = (value: string) => (shell ? `"${value.replaceAll('"', '""')}"` : value)
+      const quote = (value: string) => quoteEditorArgument(value, shell)
       const child = spawn(quote(program), [...args, file].map(quote), {
         cwd: input.cwd && existsSync(input.cwd) ? input.cwd : process.cwd(),
         stdio: [input.stdin ?? "inherit", "inherit", "inherit"],
