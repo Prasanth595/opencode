@@ -84,6 +84,7 @@ const ListFilterFields = {
   ])
     .annotate({ description: "Filter by parent session. Use null to return only root sessions." })
     .pipe(Schema.optional),
+  archived: Schema.Boolean.pipe(Schema.optional),
 }
 
 export const ListFilter = Schema.Struct({

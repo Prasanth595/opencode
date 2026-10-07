@@ -91,6 +91,10 @@ export const SessionsQuery = Schema.Struct({
     description: "Maximum number of sessions to return. Defaults to the newest 50 sessions.",
   }),
   ...Session.ListFilter.fields,
+  archived: BooleanFromString.pipe(Schema.optional).annotate({
+    description:
+      "Filter by archive state. Use true to return only archived sessions or false to exclude them. Omit to include both.",
+  }),
   cursor: Session.ListCursor.pipe(Schema.optional),
 }).annotate({ identifier: "SessionsQuery" })
 
@@ -286,6 +290,9 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
           title: Schema.String.pipe(Schema.optional),
           metadata: Session.Metadata.pipe(Schema.optional),
           permissions: Permission.Ruleset.pipe(Schema.optional),
+          archived: Schema.Boolean.pipe(Schema.optional).annotate({
+            description: "Archive the session with true or restore it with false. Repeating the current state is a no-op.",
+          }),
         }),
         success: HttpApiSchema.NoContent,
         error: SessionNotFoundError,
