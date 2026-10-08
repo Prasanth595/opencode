@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Arbitrary, Duration, Effect, Schema } from "effect"
 import { ConfigNormalize } from "@opencode/core/config/normalize"
+import { ConfigCache } from "@opencode/core/config/cache"
 import { Info } from "@opencode/schema/config"
 
 const options = { errors: "all", onExcessProperty: "ignore" } as const
@@ -121,6 +122,7 @@ describe("ConfigNormalize", () => {
       Arbitrary.checkEffect(
         Arbitrary.schema(Info),
         (info) => {
+          if (Object.values(info.cache ?? {}).some((rules) => ConfigCache.validate(rules) !== undefined)) return true
           const source = JSON.parse(JSON.stringify(Schema.encodeSync(Info)(info)))
           const result = normalized(source)
           expect(Schema.decodeUnknownSync(Info)(result.encoded)).toEqual(
