@@ -26,6 +26,7 @@ import { classifyProviderFailure } from "../provider-error.js"
 import { isRecord, JsonObject, optionalArray, optionalNull, ProviderShared } from "./shared.js"
 import { cacheControl } from "./utils/cache.js"
 import { OpenAIOptions } from "./utils/openai-options.js"
+import { OpenResponsesOptions } from "./utils/open-responses-options.js"
 import { Lifecycle } from "./utils/lifecycle.js"
 import { ToolStream } from "./utils/tool-stream.js"
 
@@ -182,6 +183,7 @@ export const bodyFields = {
   store: Schema.optional(Schema.Boolean),
   prompt_cache_key: Schema.optional(Schema.String),
   prompt_cache_retention: Schema.optional(Schema.String),
+  prompt_cache_options: Schema.optional(OpenResponsesOptions.PromptCacheOptions),
   reasoning_effort: Schema.optional(OpenAIOptions.OpenAIReasoningEffort),
   tool_stream: Schema.optional(Schema.Boolean),
   max_completion_tokens: Schema.optional(Schema.Number),
@@ -800,6 +802,7 @@ const lowerOptions = (request: LLMRequest, supportsStore: boolean) => {
     ...(supportsStore && options.store === undefined ? { store: false } : {}),
     ...(cacheKey ? { prompt_cache_key: cacheKey } : {}),
     ...(options.promptCacheRetention !== undefined ? { prompt_cache_retention: options.promptCacheRetention } : {}),
+    ...(options.promptCacheOptions !== undefined ? { prompt_cache_options: options.promptCacheOptions } : {}),
     ...(options.reasoningEffort ? { reasoning_effort: options.reasoningEffort } : {}),
   }
 }

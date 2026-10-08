@@ -306,6 +306,8 @@ export type PromptCacheControl = { type: "ephemeral"; ttl?: "5m" | "1h" }
 
 export type PromptCacheRetention = "in_memory" | "24h"
 
+export type PromptCacheOpenAIOptions = { mode?: "implicit" | "explicit"; ttl?: "30m" }
+
 export type ConfigShellOption = { path: string; name: string; acceptable: boolean }
 
 export type LocationPublicRef = { directory: AbsolutePath }
@@ -852,7 +854,11 @@ export type VcsInfo = { provider?: string; branch: VcsBranch }
 
 export type WebSearchProvider = { id: WebSearchID; name: string }
 
-export type PromptCacheOptions = { cache_control?: PromptCacheControl; prompt_cache_retention?: PromptCacheRetention }
+export type PromptCacheOptions = {
+  cache_control?: PromptCacheControl
+  prompt_cache_retention?: PromptCacheRetention
+  prompt_cache_options?: PromptCacheOpenAIOptions
+}
 
 export type SessionMessageLocationSwitched = {
   id: SessionMessageID
