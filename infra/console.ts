@@ -261,8 +261,6 @@ new sst.cloudflare.x.SolidStart("Console", {
     bucket,
     bucketNew,
     database,
-    SECRET.UpstashRedisRestUrl,
-    SECRET.UpstashRedisRestToken,
     AUTH_API_URL,
     consoleMigration,
     STRIPE_WEBHOOK_SECRET,

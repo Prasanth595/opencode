@@ -141,14 +141,6 @@ declare module "sst" {
       "type": "sst.cloudflare.SolidStart"
       "url": string
     }
-    "UpstashRedisRestToken": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "UpstashRedisRestUrl": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
     "Web": {
       "type": "sst.cloudflare.Astro"
       "url": string
