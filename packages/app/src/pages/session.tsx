@@ -94,6 +94,7 @@ import { TerminalPanelV2 } from "@/pages/session/terminal-panel-v2"
 import { useComposerCommands } from "@/pages/session/use-composer-commands"
 import { useSessionCommands } from "@/pages/session/use-session-commands"
 import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
+import { SessionOutline } from "@/pages/session/session-outline"
 import { Identifier } from "@/utils/id"
 import { diffs as list } from "@/utils/diffs"
 import { Persist, persisted } from "@/utils/persist"
@@ -554,6 +555,63 @@ export default function Page() {
   const sessionSync = timeline.resource
   const userMessages = timeline.userMessages
   const visibleUserMessages = timeline.visibleUserMessages
+
+  // Conversation navigator data: one entry per user turn, with the prompt as the
+  // title and the assistant's first line as the subtitle.
+  const outlineItems = createMemo(() => {
+    const id = params.id
+    if (!id) return []
+    const data = sync().data
+    const messages = data.message[id] ?? []
+    const firstLine = (messageID: string) => {
+      for (const part of data.part[messageID] ?? []) {
+        if (part.type !== "text" || part.synthetic) continue
+        const line = part.text
+          .split("\n")
+          .map((value) => value.trim())
+          .find((value) => value.length > 0)
+        if (line) return line
+      }
+      return ""
+    }
+    // Index assistants by their parent once, so building the list stays O(n)
+    // instead of scanning every message for every turn.
+    const assistantsByParent = new Map<string, string[]>()
+    const position = new Map<string, number>()
+    messages.forEach((message, index) => {
+      position.set(message.id, index)
+      if (message.role !== "assistant" || !message.parentID) return
+      const list = assistantsByParent.get(message.parentID) ?? []
+      list.push(message.id)
+      assistantsByParent.set(message.parentID, list)
+    })
+    return visibleUserMessages().map((message) => {
+      const title = (data.part[message.id] ?? [])
+        .flatMap((part) => (part.type === "text" && !part.synthetic && !part.ignored ? [part.text] : []))
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim()
+      // A turn may hold several assistant messages, and the first one can be
+      // thinking/tool-only; take the first line of the first one that has prose.
+      let subtitle = ""
+      for (const assistantID of assistantsByParent.get(message.id) ?? []) {
+        subtitle = firstLine(assistantID)
+        if (subtitle) break
+      }
+      // Fallback when parent IDs are missing: scan forward to the next turn.
+      if (!subtitle) {
+        const start = position.get(message.id)
+        for (let index = (start ?? -1) + 1; start !== undefined && index < messages.length; index++) {
+          const item = messages[index]!
+          if (item.role === "user") break
+          if (item.role !== "assistant") continue
+          subtitle = firstLine(item.id)
+          if (subtitle) break
+        }
+      }
+      return { id: message.id, title, subtitle }
+    })
+  })
 
   createEffect(() => {
     const tab = activeFileTab()
@@ -2064,7 +2122,7 @@ export default function Page() {
       <Show when={!isDesktop() && !!params.id && settings.general.newLayoutDesigns() && !mobileTabsBottom()}>
         {mobileTabs(true)}
       </Show>
-      <div class="flex-1 min-h-0 overflow-hidden">
+      <div class="relative flex-1 min-h-0 overflow-hidden">
         <Switch>
           <Match when={params.id && mobileChanges()}>
             <div class="relative h-full overflow-hidden">
@@ -2126,6 +2184,18 @@ export default function Page() {
             <NewSessionView worktree={newSessionWorktree()} />
           </Match>
         </Switch>
+        <Show when={params.id && !mobileChanges()}>
+          <SessionOutline
+            scroller={() => scroller}
+            items={outlineItems}
+            onJump={(id) => {
+              const message = visibleUserMessages().find((item) => item.id === id)
+              if (!message) return
+              autoScroll.pause()
+              scrollToMessage(message, "smooth")
+            }}
+          />
+        </Show>
       </div>
 
       <Show when={(params.id || !newSessionDesign()) && !mobileChanges()}>
