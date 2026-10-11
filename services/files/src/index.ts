@@ -34,6 +34,26 @@ export default {
     }
     if (!key) return new Response(null, { status: 404, headers: cors })
 
+    if (key.startsWith("bin/latest/")) {
+      const filename = key.slice("bin/latest/".length)
+      if (!filename || filename.includes("/")) {
+        return new Response(null, { status: 404, headers: { ...cors, "Cache-Control": "no-store" } })
+      }
+      const name = filename.startsWith("opencode-desktop-") ? "desktop" : "cli"
+      const release = await fetch(`https://opencode.ai/update/api/latest/${name}/opencode`)
+      if (!release.ok) {
+        return new Response(null, { status: release.status, headers: { ...cors, "Cache-Control": "no-store" } })
+      }
+      const location = getAssetUrl(await release.json(), filename)
+      if (!location) {
+        return new Response(null, { status: 404, headers: { ...cors, "Cache-Control": "no-store" } })
+      }
+      return new Response(null, {
+        status: 302,
+        headers: { ...cors, Location: location, "Cache-Control": "no-store" },
+      })
+    }
+
     // Public object responses never vary by cookies, authorization, or origin.
     const cacheKey = new Request(url.href, { method: "GET" })
     const cacheControl = request.headers.get("Cache-Control") ?? ""
@@ -160,4 +180,15 @@ function matches(value: string, etag: string, weak: boolean) {
     const tag = part.trim()
     return tag === "*" || (weak ? tag.replace(/^W\//, "") : tag) === etag
   })
+}
+
+function getAssetUrl(input: unknown, assetName: string) {
+  if (!isRecord(input) || !isRecord(input.metadata) || !isRecord(input.metadata.files)) return
+  const asset = input.metadata.files[assetName]
+  if (!isRecord(asset) || typeof asset.url !== "string") return
+  return asset.url
+}
+
+function isRecord(input: unknown): input is Record<string, unknown> {
+  return typeof input === "object" && input !== null && !Array.isArray(input)
 }
