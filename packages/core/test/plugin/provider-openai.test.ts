@@ -156,7 +156,8 @@ describe("OpenAIPlugin", () => {
       })
       expect(direct.baseURL).toBe("https://chatgpt.com/backend-api/codex")
       expect(direct.headers).toMatchObject({ originator: "opencode", "session-id": "ses_test" })
-      expect(direct.hasHttpHooks).toBe(false)
+      // The Codex request-compression hook registers http.request for the provider.
+      expect(direct.hasHttpHooks).toBe(true)
       expect(custom.headers).not.toHaveProperty("originator")
       expect(proxy.baseURL).toBe("https://proxy.example/v1?region=us")
       expect(proxy.headers).toMatchObject({ originator: "opencode", "session-id": "ses_test" })
@@ -220,7 +221,8 @@ describe("OpenAIPlugin", () => {
       expect(direct.headers).not.toHaveProperty("originator")
       expect(direct.baseURL).toBe("https://api.openai.com/v1")
       expect(provider.headers).not.toHaveProperty("x-codex-beta-features")
-      expect(direct.hasHttpHooks).toBe(false)
+      // The Codex request-compression hook is registered regardless of credential.
+      expect(direct.hasHttpHooks).toBe(true)
       expect(provider.headers).not.toHaveProperty("originator")
       expect(required(yield* models.get(Provider.ID.openai, Model.ID.make("gpt-4.1"))).enabled).toBe(true)
     }),
@@ -310,6 +312,86 @@ describe("OpenAIPlugin", () => {
       expect(prepared.options.http).toBeUndefined()
       expect(defaulted.options.webSocket).toBeUndefined()
       expect(disabled.options.webSocket).toBeUndefined()
+    }),
+  )
+
+  it.effect("zstd-compresses Codex and Responses API requests", () =>
+    Effect.gen(function* () {
+      yield* addPlugin()
+      const hooks = yield* PluginHooks.Service
+      const context = {
+        sessionID: Session.ID.make("ses_test"),
+        agent: Agent.ID.make("build"),
+        model: Model.Ref.make({ providerID: Provider.ID.openai, id: Model.ID.make("gpt-5.5") }),
+        kind: "primary" as const,
+      }
+      const body = JSON.stringify({ model: "gpt-5.5", input: "hello" })
+      const post = (url: string) =>
+        hooks.trigger("session", "http.request", {
+          ...context,
+          request: new Request(url, {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: "Bearer test-token" },
+            body,
+          }),
+        })
+
+      for (const url of [
+        "https://chatgpt.com/backend-api/codex/responses",
+        "https://chatgpt.com/backend-api/codex/responses/compact",
+        "https://api.openai.com/v1/responses",
+        "https://api.openai.com/v1/responses/compact",
+      ]) {
+        const event = yield* post(url)
+        expect(event.request.headers.get("content-encoding")).toBe("zstd")
+        expect(event.request.headers.get("content-type")).toBe("application/json")
+        expect(event.request.headers.get("authorization")).toBe("Bearer test-token")
+        const bytes = new Uint8Array(yield* Effect.promise(() => event.request.arrayBuffer()))
+        expect(event.request.headers.get("content-length")).toBe(String(bytes.byteLength))
+        expect(Buffer.from(Bun.zstdDecompressSync(bytes)).toString()).toBe(body)
+      }
+    }),
+  )
+
+  it.effect("leaves other OpenAI traffic uncompressed", () =>
+    Effect.gen(function* () {
+      yield* addPlugin()
+      const hooks = yield* PluginHooks.Service
+      const context = {
+        sessionID: Session.ID.make("ses_test"),
+        agent: Agent.ID.make("build"),
+        model: Model.Ref.make({ providerID: Provider.ID.openai, id: Model.ID.make("gpt-5.5") }),
+        kind: "primary" as const,
+      }
+      const body = JSON.stringify({ model: "gpt-5.5", input: "hello" })
+
+      const chat = yield* hooks.trigger("session", "http.request", {
+        ...context,
+        request: new Request("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body,
+        }),
+      })
+      expect(chat.request.headers.get("content-encoding")).toBeNull()
+      expect(yield* Effect.promise(() => chat.request.text())).toBe(body)
+
+      const encoded = yield* hooks.trigger("session", "http.request", {
+        ...context,
+        request: new Request("https://chatgpt.com/backend-api/codex/responses", {
+          method: "POST",
+          headers: { "content-type": "application/json", "content-encoding": "gzip" },
+          body,
+        }),
+      })
+      expect(encoded.request.headers.get("content-encoding")).toBe("gzip")
+      expect(yield* Effect.promise(() => encoded.request.text())).toBe(body)
+
+      const get = yield* hooks.trigger("session", "http.request", {
+        ...context,
+        request: new Request("https://chatgpt.com/backend-api/codex/responses"),
+      })
+      expect(get.request.headers.get("content-encoding")).toBeNull()
     }),
   )
 })

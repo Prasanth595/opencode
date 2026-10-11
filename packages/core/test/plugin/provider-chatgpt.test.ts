@@ -864,7 +864,8 @@ describe("ChatGPTPlugin", () => {
       expect(model.settings?.transport).toBeUndefined()
       expect(direct.baseURL).toBe("https://api.openai.com/v1")
       expect(direct.headers).toEqual({})
-      expect(direct.hasHttpHooks).toBe(false)
+      // The legacy OpenAI plugin registers the Codex request-compression hook.
+      expect(direct.hasHttpHooks).toBe(true)
       expect(provider.headers).not.toHaveProperty("x-openai-chatpass-test")
       expect(required(yield* models.get(Provider.ID.openai, Model.ID.make("gpt-4.1"))).enabled).toBe(true)
     }),
