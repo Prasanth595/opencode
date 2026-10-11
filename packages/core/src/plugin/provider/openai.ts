@@ -257,13 +257,7 @@ export const OpenAIPlugin = define({
       const item = providers.get(Provider.ID.openai)
       if (!item) return
       const account = chatgpt?.metadata?.accountID
-      // Console BYOK lists `openai` and binds it to the Console credential, which the ChatGPT backend
-      // rejects. A ChatGPT login owns the provider again, and dropping the Console source connection
-      // keeps it available once its credential comes from the OpenAI integration instead.
-      if (chatgpt && item.sourceConnection)
-        providers.add({ info: item.provider, models: Array.from(item.models.values()) })
       providers.update(item.provider.id, (provider) => {
-        if (chatgpt) provider.integrationID = Integration.ID.make("openai")
         provider.settings = Provider.mergeOverlay(provider.settings, {
           transport: provider.settings?.transport ?? "websocket",
           ...(chatgpt ? { baseURL: codexBaseURL } : {}),
