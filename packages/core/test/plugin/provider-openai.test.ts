@@ -13,6 +13,7 @@ import { PluginHost } from "@opencode/core/plugin/host"
 import { PluginHooks } from "@opencode/core/plugin/hooks"
 import { GithubCopilotPlugin } from "@opencode/core/plugin/provider/github-copilot"
 import { OpenAIPlugin } from "@opencode/core/plugin/provider/openai"
+import { OpencodePlugin } from "@opencode/core/plugin/provider/opencode"
 import { Project } from "@opencode/core/project"
 import { Provider } from "@opencode/core/provider"
 import { AbsolutePath } from "@opencode/core/schema"
@@ -28,6 +29,12 @@ const addPlugin = Effect.fn(function* () {
   const plugin = yield* Plugin.Service
   const host = yield* PluginHost.make(plugin)
   yield* OpenAIPlugin.effect(host)
+})
+
+const addOpencodePlugin = Effect.fn(function* () {
+  const plugin = yield* Plugin.Service
+  const host = yield* PluginHost.make(plugin)
+  yield* OpencodePlugin.effect(host)
 })
 
 const addGithubCopilotPlugin = Effect.fn(function* () {
@@ -270,6 +277,60 @@ describe("OpenAIPlugin", () => {
       const credential = required(yield* integrations.connection.resolve(connection))
       expect(credential).toMatchObject({ type: "oauth", access: "chatgpt-token" })
     }),
+  )
+
+  it.effect("routes Codex requests with the ChatGPT token when Console BYOK lists openai", () =>
+    Effect.acquireUseRelease(
+      Effect.sync(() =>
+        Bun.serve({
+          port: 0,
+          fetch: (request) =>
+            Response.json({
+              providers: { openai: { settings: { baseURL: `${new URL(request.url).origin}/zen/v1` } } },
+            }),
+        }),
+      ),
+      (server) =>
+        Effect.gen(function* () {
+          const catalog = yield* Provider.Service
+          const credentials = yield* Credential.Service
+          const integrations = yield* Integration.Service
+          yield* catalog.transform((catalog) => {
+            catalog.update(Provider.ID.openai, (draft) => {
+              draft.package = "@opencode/ai/providers/openai"
+            })
+            catalog.models.update(Provider.ID.openai, Model.ID.make("gpt-5.5"), () => {})
+          })
+          yield* credentials.create({
+            integrationID: Integration.ID.make("opencode"),
+            value: Credential.Key.make({ type: "key", key: "zen-key", metadata: { server: server.url.origin } }),
+          })
+          yield* credentials.create({
+            integrationID: Integration.ID.make("openai"),
+            value: Credential.OAuth.make({
+              type: "oauth",
+              methodID: Integration.MethodID.make("chatgpt-headless"),
+              access: "chatgpt-token",
+              refresh: "refresh",
+              expires: Date.now() + 60_000,
+            }),
+          })
+          // Same order as ProviderPlugins: the Console plugin binds `openai` before the OpenAI plugin runs.
+          yield* addOpencodePlugin()
+          yield* addPlugin()
+
+          const provider = required(yield* catalog.get(Provider.ID.openai))
+          expect(provider.integrationID).toBe(Integration.ID.make("openai"))
+          expect(provider.settings).toMatchObject({ baseURL: "https://chatgpt.com/backend-api/codex" })
+          expect((yield* catalog.available()).map((item) => item.id)).toContain(Provider.ID.openai)
+          const connection = required(yield* integrations.connection.active(required(provider.integrationID)))
+          expect(yield* integrations.connection.resolve(connection)).toMatchObject({
+            type: "oauth",
+            access: "chatgpt-token",
+          })
+        }),
+      (server) => Effect.promise(() => server.stop(true)),
+    ),
   )
 
   it.effect("omits the default output limit from OpenAI steps and compaction", () =>
