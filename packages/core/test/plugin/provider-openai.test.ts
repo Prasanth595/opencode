@@ -226,6 +226,52 @@ describe("OpenAIPlugin", () => {
     }),
   )
 
+  it.effect("reclaims the OpenAI provider from a Console connection under a ChatGPT login", () =>
+    Effect.gen(function* () {
+      const catalog = yield* Provider.Service
+      const credentials = yield* Credential.Service
+      const integrations = yield* Integration.Service
+      yield* credentials.create({
+        integrationID: Integration.ID.make("opencode"),
+        value: Credential.Key.make({ type: "key", key: "zen-key" }),
+      })
+      const zen = required(yield* integrations.connection.active(Integration.ID.make("opencode")))
+      yield* credentials.create({
+        integrationID: Integration.ID.make("openai"),
+        value: Credential.OAuth.make({
+          type: "oauth",
+          methodID: Integration.MethodID.make("chatgpt-browser"),
+          access: "chatgpt-token",
+          refresh: "refresh",
+          expires: Date.now() + 60_000,
+          metadata: { accountID: "acct_123" },
+        }),
+      })
+      // Console BYOK lists `openai`, so the Console plugin binds it to the Console credential.
+      yield* catalog.transform((catalog) => {
+        catalog.add({
+          info: {
+            ...Provider.Info.empty(Provider.ID.openai),
+            integrationID: Integration.ID.make("opencode"),
+            package: "@opencode/ai/providers/openai",
+            settings: { baseURL: "https://opencode.ai/zen/v1" },
+          },
+          models: [Model.Info.default(Provider.ID.openai, Model.ID.make("gpt-5.5"))],
+          sourceConnection: zen,
+        })
+      })
+      yield* addPlugin()
+
+      const provider = required(yield* catalog.get(Provider.ID.openai))
+      expect(provider.integrationID).toBe(Integration.ID.make("openai"))
+      expect(provider.settings).toMatchObject({ baseURL: "https://chatgpt.com/backend-api/codex" })
+      expect((yield* catalog.available()).map((item) => item.id)).toContain(Provider.ID.openai)
+      const connection = required(yield* integrations.connection.active(required(provider.integrationID)))
+      const credential = required(yield* integrations.connection.resolve(connection))
+      expect(credential).toMatchObject({ type: "oauth", access: "chatgpt-token" })
+    }),
+  )
+
   it.effect("omits the default output limit from OpenAI steps and compaction", () =>
     Effect.gen(function* () {
       yield* addPlugin()
