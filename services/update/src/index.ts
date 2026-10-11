@@ -155,7 +155,7 @@ async function artifactDistribution(
       })
     }
     const file = isRecord(metadata) && isRecord(metadata.files) ? metadata.files[manifest] : undefined
-    if (!isRecord(file) || typeof file.url !== "string") return new Response("Not found", { status: 404 })
+    if (!isRecord(file) || typeof file.url !== "string") return json({ error: "File not found" }, 404)
     return new Response(null, { status: 302, headers: { Location: file.url, "Cache-Control": "no-store" } })
   }
   return updateResponse(decodeArtifact(artifact))
