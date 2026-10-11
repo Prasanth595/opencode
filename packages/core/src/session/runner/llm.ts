@@ -39,15 +39,9 @@ const CONTINUE_AFTER_INCOMPLETE_STREAM =
 const CONTINUE_AFTER_OUTPUT_LIMIT =
   "Your last response hit the output token limit (stop reason: length). Do not apologize, recap, or repeat yourself. Break the remaining work into smaller pieces."
 
-const STOPPING_CONTINUATIONS_KEY = "opencode.stopping.continuations"
 // A grant funds a fresh agent budget, so C=2 bounds a user turn at 3×N model
 // steps: one recovery plus one follow-through past a failure.
 const STOPPING_MAX_CONTINUATIONS = 2
-
-const stoppingContinuations = (metadata: SessionSchema.Metadata | undefined) => {
-  const value = metadata?.[STOPPING_CONTINUATIONS_KEY]
-  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : 0
-}
 
 const layer = Layer.effect(
   Service,
@@ -78,25 +72,20 @@ const layer = Layer.effect(
       // `step` cannot serve: the would-be-idle observation resets it to 1
       // just before a mid-work vote.
       let executedSteps = step - 1
+      // Hook continuations granted this turn. Drain-owned, never host
+      // metadata (which is opaque to core): fresh drains start at 0, moves
+      // and compactions carry it when the turn continues across the handoff,
+      // and hook continuations loop in-drain so they can never leak across
+      // turns. A crash loses the count while an already-admitted steer
+      // survives — one free steer per crash, bounded and self-limiting.
+      let stoppingContinuations = input.continuation?.stoppingContinuations ?? 0
       let entering = true
       const promotable = input.promotable ?? "input"
-      // Fresh drains start a new turn for the stopping counter. Hook
-      // continuations never start a drain (they loop in-drain), so this
-      // cannot self-reset. Not gated on `force`: resume() starts forced
-      // drains, and a stale counter must not leak into the fresh turn.
-      if (!continuing) yield* resetStoppingContinuations(sessionID)
       if (!force && !continuing) {
         const pending = yield* SessionInbox.nextPromotable(db, sessionID, "input")
-        const control = pending !== undefined && (pending.type === "compaction" || pending.type === "move")
-        if (!pending || (promotable === "steer" && pending.delivery === "queue" && !control)) {
-          // Pre-terminal vote before Complete(): a granted continuation falls
-          // through to activation, where the normal promote path picks up the
-          // admitted steer. Uninterruptible so trigger+admit stays atomic; the
-          // mid-work site is already inside advanceToStep's mask, and an
-          // interrupt landing mid-vote there would face the same delay.
-          const continued = yield* Effect.uninterruptible(maybeContinueStopping(sessionID, executedSteps))
-          if (!continued) return DrainResult.Complete()
-        }
+        if (!pending) return DrainResult.Complete()
+        const control = pending.type === "compaction" || pending.type === "move"
+        if (promotable === "steer" && pending.delivery === "queue" && !control) return DrainResult.Complete()
       }
       yield* plugins.awaitActivation
       yield* settleStaleCompactions(sessionID)
@@ -108,7 +97,7 @@ const layer = Layer.effect(
             while (true) {
               if (lifecycle.isClosed()) {
                 yield* restore(modelTransport.close(sessionID))
-                return DrainResult.Reloaded({ force, continuation: continuing ? { step } : undefined })
+                return DrainResult.Reloaded({ force, continuation: continuing ? { step, stoppingContinuations } : undefined })
               }
               // Location entry and idle boundaries allow queued controls, not necessarily queued prompts.
               const pending = yield* SessionInbox.serialized(
@@ -146,7 +135,7 @@ const layer = Layer.effect(
                 if (pending !== undefined) executedSteps = 0
               }
               if (pending?.type === "move")
-                return DrainResult.Moved({ continuation: continuing ? { step } : undefined })
+                return DrainResult.Moved({ continuation: continuing ? { step, stoppingContinuations } : undefined })
               if (pending?.type === "compaction") {
                 const compacted = yield* restore(
                   Effect.gen(function* () {
@@ -199,7 +188,11 @@ const layer = Layer.effect(
               if (!force && !continuing && (!pending || (pending.delivery === "queue" && promotable === "steer"))) {
                 // Already inside advanceToStep's uninterruptible mask. Like the
                 // compaction precedent below, continue loops back to promotion.
-                if (yield* maybeContinueStopping(sessionID, executedSteps)) continue
+                // The increment funds exactly the steer just admitted.
+                if (yield* maybeContinueStopping(sessionID, executedSteps, stoppingContinuations)) {
+                  stoppingContinuations++
+                  continue
+                }
                 return DrainResult.Complete()
               }
               const ready = yield* restore(
@@ -372,26 +365,13 @@ const layer = Layer.effect(
       }
     })
 
-    // Fresh-drain reset only: hook continuations loop in-drain, so the
-    // `promoted > 0` step reset must never clear this (uncapped loop).
-    const resetStoppingContinuations = Effect.fn("SessionRunner.resetStoppingContinuations")(function* (
-      sessionID: SessionSchema.ID,
-    ) {
-      if (!(yield* hooks.has("session", "experimental.stopping"))) return
-      const session = yield* store.get(sessionID)
-      if (session?.metadata?.[STOPPING_CONTINUATIONS_KEY] === undefined) return
-      const metadata = Object.fromEntries(
-        Object.entries(session.metadata).filter(([key]) => key !== STOPPING_CONTINUATIONS_KEY),
-      )
-      yield* bus.publish(SessionEvent.MetadataUpdated, { sessionID, metadata })
-    })
-
     /**
      * Pre-terminal continuation vote at natural turn end. Returns true when a
      * voter granted a continuation: a synthetic steer is admitted and the
-     * counter incremented, so the caller must not complete. Fail-closed
-     * throughout — abstention, silent cap exhaustion, and voter or infra
-     * failure all preserve natural exit. Interrupts still propagate.
+     * caller funds it by incrementing its drain-owned count, so the caller
+     * must not complete. Fail-closed throughout — abstention, silent cap
+     * exhaustion, and voter or infra failure all preserve natural exit.
+     * Interrupts still propagate.
      */
     const maybeContinueStopping = Effect.fn("SessionRunner.maybeContinueStopping")(function* (
       sessionID: SessionSchema.ID,
@@ -399,13 +379,14 @@ const layer = Layer.effect(
       // drain's turn segmentation so voters reason against the same budget
       // the `step >= steps` check enforces.
       step: number,
+      // Hook continuations granted so far this turn (pre-increment).
+      continuations: number,
     ) {
       if (!(yield* hooks.has("session", "experimental.stopping"))) return false
       return yield* Effect.gen(function* () {
-        const selected = yield* context.select(sessionID)
-        const continuations = stoppingContinuations(selected.session.metadata)
         // Cap exhaustion is silent by design: no voter call, natural exit.
         if (continuations >= STOPPING_MAX_CONTINUATIONS) return false
+        const selected = yield* context.select(sessionID)
         const stepsLimit = selected.agent.info.steps
         const event: PluginHooks.Domains["session"]["experimental.stopping"] = {
           sessionID,
@@ -418,14 +399,6 @@ const layer = Layer.effect(
         // An empty grant would spend a capped continuation and a model step on
         // nothing, so a buggy voter's empty text abstains (fail-closed).
         if (!triggered.decision.shouldContinue || triggered.decision.text.trim() === "") return false
-        // Counter before admit: a failed admit after the increment self-heals
-        // on the next fresh-drain reset, while an admitted steer without its
-        // increment would loop past the cap.
-        const metadata = selected.session.metadata ?? {}
-        yield* bus.publish(SessionEvent.MetadataUpdated, {
-          sessionID,
-          metadata: { ...metadata, [STOPPING_CONTINUATIONS_KEY]: continuations + 1 },
-        })
         yield* admission.admit({
           id: SessionMessage.ID.create(),
           sessionID,
