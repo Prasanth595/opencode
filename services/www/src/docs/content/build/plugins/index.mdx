@@ -1528,6 +1528,31 @@ Retry decisions follow these rules:
 - Invalid delays such as `NaN`, infinity, or negative values fall back to the computed delay.
 - Context-overflow recovery is separate because it compacts the conversation instead of retrying the same request.
 
+#### Stopping (experimental)
+
+Vote on whether a session turn ends or continues with a steer. The hook runs at natural turn end, before the turn
+completes. The initial `decision` stops the turn; set `shouldContinue` with `text` to steer it back to the model, for
+example when a gate's checks fail with cited work remaining.
+
+```ts
+await ctx.session.hook("experimental.stopping", (event) => {
+  if (event.continuations >= 1) return
+  if (hasFailedChecks(event.sessionID))
+    event.decision = { shouldContinue: true, text: "Checks failed; fix them and re-verify." }
+})
+```
+
+Stopping hooks follow these rules:
+
+- Multiple hooks run in registration order, and later hooks see the current decision. A gate needing the final word registers last.
+- At most two continuations are granted per turn. Cap exhaustion stops the turn silently without calling hooks.
+- `continuations` is the pre-increment count, so hooks can enforce a tighter limit against it.
+- `step` is the model steps executed this turn; `stepsLimit` is the agent's configured step limit, when set.
+- A throwing hook stops the turn instead of failing it; interruption still propagates. An empty or whitespace-only `text` abstains and the turn ends.
+- Provider scoping is unavailable for `experimental.stopping`: the event carries no model, so a `providerID` voter would never fire.
+
+This hook is experimental and its name or shape may change.
+
 #### Session reference
 
 ```ts
@@ -1546,6 +1571,7 @@ interface SessionHooks {
   "experimental.ws.send": SessionWebSocketSendHook
   "experimental.ws.receive": SessionWebSocketReceiveHook
   retry: SessionRetryHook
+  "experimental.stopping": SessionStoppingHook
 }
 
 interface SessionWebSocketHandshakeHook {
@@ -1584,6 +1610,16 @@ interface SessionRetryHook {
   decision: RetryDecision
 }
 
+type StoppingDecision = { shouldContinue: false } | { shouldContinue: true; text: string }
+
+interface SessionStoppingHook {
+  readonly sessionID: string
+  readonly step: number
+  readonly stepsLimit?: number
+  readonly continuations: number
+  decision: StoppingDecision
+}
+
 interface SessionRequestHook {
   readonly sessionID: string
   readonly model: { providerID: string; id: string; variant?: string }
@@ -1617,7 +1653,7 @@ interface SessionHookContext {
   hook<Name extends keyof SessionHooks>(
     name: Name,
     callback: (event: SessionHooks[Name]) => Promise<void> | void,
-    options?: Name extends "prompt" ? never : { providerID?: string },
+    options?: Name extends "prompt" | "experimental.stopping" ? never : { providerID?: string },
   ): Promise<Registration>
 }
 ```
