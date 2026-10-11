@@ -10,11 +10,13 @@
       "name": "opencode-dev-files",
       "routes": [{ "pattern": "dev.opencode.ai/files/*", "zone_name": "opencode.ai" }],
       "r2_buckets": [{ "binding": "FILES", "bucket_name": "opencode-dev-files" }],
+      "services": [{ "binding": "UPDATE", "service": "opencode-update" }],
     },
     "production": {
       "name": "opencode-production-files",
       "routes": [{ "pattern": "opencode.ai/files/*", "zone_name": "opencode.ai" }],
       "r2_buckets": [{ "binding": "FILES", "bucket_name": "opencode-production-files" }],
+      "services": [{ "binding": "UPDATE", "service": "opencode-update" }],
     },
   },
 }

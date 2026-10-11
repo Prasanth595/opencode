@@ -46,23 +46,25 @@ export default {
         ? "/update"
         : ""
     const pathname = url.pathname.slice(prefix.length) || "/"
-    ctx.waitUntil(
-      env.EVENTS.send([
-        {
-          source: "update",
-          type: "request",
-          timestamp: new Date().toISOString(),
-          payload: {
-            method: request.method,
-            path: pathname,
-            useragent: request.headers.get("user-agent"),
-            ip: request.headers.get("cf-connecting-ip"),
-            cf_country: request.cf?.country,
-            cf_colo: request.cf?.colo,
+    if (request.headers.get("user-agent") !== "opencode-files") {
+      ctx.waitUntil(
+        env.EVENTS.send([
+          {
+            source: "update",
+            type: "request",
+            timestamp: new Date().toISOString(),
+            payload: {
+              method: request.method,
+              path: pathname,
+              useragent: request.headers.get("user-agent"),
+              ip: request.headers.get("cf-connecting-ip"),
+              cf_country: request.cf?.country,
+              cf_colo: request.cf?.colo,
+            },
           },
-        },
-      ]).catch(() => console.error("Failed to send update request event to the data lake")),
-    )
+        ]).catch(() => console.error("Failed to send update request event to the data lake")),
+      )
+    }
 
     if (pathname === "/") return json({ service: "opencode-update" })
     if (pathname === "/admin" && request.method === "GET") return admin(request, env, prefix)

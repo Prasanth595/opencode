@@ -39,8 +39,12 @@ export default {
       if (!filename || filename.includes("/")) {
         return new Response(null, { status: 404, headers: { ...cors, "Cache-Control": "no-store" } })
       }
+      const channel = url.hostname === "dev.opencode.ai" ? "dev" : "latest"
       const name = filename.startsWith("opencode-desktop-") ? "desktop" : "cli"
-      const release = await fetch(`https://opencode.ai/update/api/latest/${name}/opencode`)
+      const headers = new Headers({ "User-Agent": "opencode-files" })
+      const ip = request.headers.get("CF-Connecting-IP")
+      if (ip !== null) headers.set("CF-Connecting-IP", ip)
+      const release = await env.UPDATE.fetch(`https://update.opencode.ai/api/${channel}/${name}/opencode`, { headers })
       if (!release.ok) {
         return new Response(null, { status: release.status, headers: { ...cors, "Cache-Control": "no-store" } })
       }
@@ -173,7 +177,7 @@ export default {
     }
     return response
   },
-} satisfies ExportedHandler<{ FILES: R2Bucket }>
+} satisfies ExportedHandler<{ FILES: R2Bucket; UPDATE: Fetcher }>
 
 function matches(value: string, etag: string, weak: boolean) {
   return value.split(",").some((part) => {
