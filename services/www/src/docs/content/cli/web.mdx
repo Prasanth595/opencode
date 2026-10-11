@@ -35,6 +35,25 @@ $ ssh -L 49374:127.0.0.1:49374 my-server
 By default the server runs on port 49374 and listens only on localhost. You can
 change this config with the `opencode service` command.
 
+### Remote access
+
+To connect from anywhere, pair through an [OpenTunnel](https://github.com/anomalyco/opentunnel)
+remote address:
+
+```bash
+$ opencode pair --remote
+```
+
+This exposes your OpenCode server to the internet. Connections go through an
+end-to-end encrypted tunnel, and every request needs the server password or a
+session from a pairing link. The first time it turns remote access on, the
+command explains this and asks you to accept; it defaults to no. To pair
+locally instead, run `opencode pair` without `--remote`.
+
+Without an interactive terminal, the command fails unless you pass `--yes` to
+accept. Once accepted, later runs skip the prompt, even after remote access has
+been turned off with `opencode service set remote false`.
+
 ## Configure
 
 Set any option with `opencode service set`:
