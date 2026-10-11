@@ -102,7 +102,7 @@ const consoleMigration = new sst.Linkable("ConsoleMigration", {
 // CONSOLE
 ////////////////
 
-// Unused since the legacy pipeline was removed; kept because deleting a non-empty R2 bucket fails the deploy.
+// Archived Zen request/response dumps (writer removed May 2026). Retained on purpose; nothing reads or writes them.
 new sst.cloudflare.Bucket("ZenData")
 new sst.cloudflare.Bucket("ZenDataNew")
 
