@@ -1,11 +1,12 @@
 import type { Hooks, Plugin, PluginInput } from "@opencode-ai/plugin"
 import { push, flush } from "./buffer.js"
 import { captureBlock } from "./capture.js"
-import { tag, setSmallModel } from "./tag.js"
+import { tag, setSmallModel, setVaultPath } from "./tag.js"
 
 const TagTimeoutMs = 10_000
 
-const ConceptTaggerPlugin: Plugin = async (ctx: PluginInput) => {
+const ConceptTaggerPlugin: Plugin = async (ctx: PluginInput, options) => {
+  setVaultPath(typeof options?.vault_path === "string" ? options.vault_path : undefined)
   const hooks: Hooks = {
     async config(cfg) {
       setSmallModel(cfg.small_model)

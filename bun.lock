@@ -159,10 +159,14 @@
     "packages/concept-tagger": {
       "name": "concept-tagger",
       "version": "0.0.0",
+      "dependencies": {
+        "gray-matter": "4.0.3",
+      },
       "devDependencies": {
         "@opencode-ai/plugin": "workspace:*",
         "@opencode-ai/sdk": "workspace:*",
         "@tsconfig/node22": "catalog:",
+        "@types/bun": "catalog:",
         "@types/node": "catalog:",
         "@typescript/native-preview": "catalog:",
         "typescript": "catalog:",
