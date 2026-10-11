@@ -97,7 +97,10 @@ const layer = Layer.effect(
             while (true) {
               if (lifecycle.isClosed()) {
                 yield* restore(modelTransport.close(sessionID))
-                return DrainResult.Reloaded({ force, continuation: continuing ? { step, stoppingContinuations } : undefined })
+                return DrainResult.Reloaded({
+                  force,
+                  continuation: continuing ? { step, stoppingContinuations } : undefined,
+                })
               }
               // Location entry and idle boundaries allow queued controls, not necessarily queued prompts.
               const pending = yield* SessionInbox.serialized(
