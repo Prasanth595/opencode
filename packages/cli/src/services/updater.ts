@@ -11,7 +11,7 @@ import { RetainedImage } from "./retained-image"
 import { action, parseReleaseVersion, type Policy } from "./updater-action"
 import { errorMessage } from "../util/error"
 
-export const methods = ["curl", "npm", "pnpm", "bun", "yarn", "vp", "brew"] as const
+export const methods = ["curl", "npm", "pnpm", "bun", "yarn", "vp", "brew", "scoop"] as const
 
 export type Method = (typeof methods)[number]
 export type RunResult = { readonly type: "available" | "installed"; readonly version: string }
@@ -53,6 +53,7 @@ const installNames: Record<Method, string> = {
   yarn: "Yarn",
   vp: "Vite+",
   brew: "Homebrew",
+  scoop: "Scoop",
 }
 
 function conciseDetail(input: string) {
@@ -146,6 +147,9 @@ const make = Effect.gen(function* () {
   const installedFormula = ["opencode", "opencode-beta", "opencode-v2"].find((name) =>
     executable.includes(`${path.sep}Cellar${path.sep}${name}${path.sep}`),
   )
+  const installedScoop = ["opencode2", "opencode"].find((name) =>
+    executable.toLowerCase().includes(`${path.sep}scoop${path.sep}apps${path.sep}${name}${path.sep}`),
+  )
 
   const readPolicy = Effect.fnUntraced(function* () {
     const values = yield* Effect.forEach(["config.json", "opencode.json", "opencode.jsonc"], (name) =>
@@ -200,6 +204,7 @@ const make = Effect.gen(function* () {
   const method = Effect.fnUntraced(function* () {
     if (executable === curlBinary) return "curl"
     if (installedFormula) return "brew"
+    if (installedScoop) return "scoop"
     if (!installedPackage) return
 
     const parts = executable.toLowerCase().split(path.sep).map((part) => part.replace(/^\./, ""))
@@ -230,7 +235,7 @@ const make = Effect.gen(function* () {
   })
 
   const removal = (method: Method) => {
-    if (method === "curl" || method === "brew" || !installedPackage) return undefined
+    if (method === "curl" || method === "brew" || method === "scoop" || !installedPackage) return undefined
     const commands = {
       npm: ["npm", "uninstall", "--global", installedPackage],
       pnpm: ["pnpm", "remove", "--global", installedPackage],
@@ -255,12 +260,15 @@ const make = Effect.gen(function* () {
     const distribution = method === "brew" ? "homebrew" : "npm"
     // Homebrew Core builds its formula on its own schedule, so the tap release does not describe it.
     const core = method === "brew" && installedFormula === "opencode"
+    const scoop = method === "scoop"
     const response = yield* Effect.tryPromise({
       try: (signal) =>
         fetch(
           core
             ? "https://formulae.brew.sh/api/formula/opencode.json"
-            : `https://opencode.ai/update/api/${encodeURIComponent(channel)}/${encodeURIComponent(OPENCODE_ARTIFACT)}/${distribution}?current=${encodeURIComponent(OPENCODE_VERSION)}`,
+            : scoop
+              ? "https://raw.githubusercontent.com/ScoopInstaller/Versions/master/bucket/opencode2.json"
+              : `https://opencode.ai/update/api/${encodeURIComponent(channel)}/${encodeURIComponent(OPENCODE_ARTIFACT)}/${distribution}?current=${encodeURIComponent(OPENCODE_VERSION)}`,
           {
             signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
           },
@@ -297,7 +305,7 @@ const make = Effect.gen(function* () {
           ),
       })
     const version = core ? data.versions?.stable : data.version
-    const packageName = core ? "opencode" : data.metadata?.package
+    const packageName = core ? "opencode" : scoop ? (installedScoop ?? "opencode2") : data.metadata?.package
     if (!version || !packageName)
       return yield* Effect.fail(
         new UpgradeError({
@@ -324,7 +332,7 @@ const make = Effect.gen(function* () {
   // while another link to it exists (see RetainedImage). Upgrades keep that link in the
   // cache; uninstall has already removed the cache, so it uses the temporary directory.
   const retaining = <A, E, R>(method: Method, effect: Effect.Effect<A, E, R>, directory = global.cache) => {
-    if (process.platform !== "win32" || method === "brew") return effect
+    if (process.platform !== "win32" || method === "brew" || method === "scoop") return effect
     // Only the installed binary is at stake; source checkouts run inside bun or node.
     const owned = method === "curl" ? executable === curlBinary : installedPackage !== undefined
     if (!owned) return effect
@@ -371,12 +379,16 @@ const make = Effect.gen(function* () {
     if (!parseReleaseVersion(input)) return yield* Effect.fail(new Error(`Invalid version: ${input}`))
     const version = input.trim().replace(/^v/, "")
     const packageName =
-      method === "brew" && installedFormula === "opencode" ? "opencode" : (yield* release(method)).package
+      method === "brew" && installedFormula === "opencode"
+        ? "opencode"
+        : method === "scoop"
+          ? (installedScoop ?? "opencode2")
+          : (yield* release(method)).package
     const target = `${packageName}@${version}`
     if (installedPackage && packageName !== installedPackage && (method === "pnpm" || method === "yarn")) {
       return yield* Effect.fail(new Error(`Reinstall ${target} with ${method} to migrate from ${installedPackage}.`))
     }
-    const commands: Record<Exclude<Method, "bun" | "curl" | "brew">, string[]> = {
+    const commands: Record<Exclude<Method, "bun" | "curl" | "brew" | "scoop">, string[]> = {
       // Keep the old package: uninstalling it can unlink the replacement command.
       npm: [
         "npm",
@@ -436,6 +448,7 @@ const make = Effect.gen(function* () {
           )
         }
         if (method === "brew") return yield* runUpgrade({ method, command: ["brew", "upgrade", packageName] })
+        if (method === "scoop") return yield* runUpgrade({ method, command: ["scoop", "update", packageName] })
         return yield* retaining(method, runUpgrade({ method, command: commands[method] }))
       }),
     ).pipe(
