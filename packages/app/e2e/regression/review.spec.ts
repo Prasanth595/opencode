@@ -534,12 +534,18 @@ test("image gestures anchor zoom, pan, and reset independently of the pane", asy
   const pane = (await panel.boundingBox())!
   const anchor = { x: Math.round(initial.x + initial.width * 0.55), y: Math.round(initial.y + initial.height * 0.55) }
   await page.mouse.move(anchor.x, anchor.y)
-  await page.keyboard.down("Control")
-  await page.mouse.wheel(0, -100)
+  // A continuous pinch catches anchor drift while the image still fits one axis.
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send("Input.synthesizePinchGesture", {
+    ...anchor,
+    scaleFactor: 2,
+    relativeSpeed: 500,
+    gestureSourceType: "mouse",
+  })
+  await cdp.detach()
   await expect(fit).toBeEnabled()
-  await page.keyboard.up("Control")
   const zoomed = (await image.boundingBox())!
-  expect(zoomed.width).toBeGreaterThan(initial.width * 2)
+  expect(zoomed.width).toBeCloseTo(initial.width * 2, 1)
   expect((anchor.x - zoomed.x) / zoomed.width).toBeCloseTo((anchor.x - initial.x) / initial.width, 4)
   expect((anchor.y - zoomed.y) / zoomed.height).toBeCloseTo((anchor.y - initial.y) / initial.height, 4)
   expect(await panel.boundingBox()).toEqual(pane)

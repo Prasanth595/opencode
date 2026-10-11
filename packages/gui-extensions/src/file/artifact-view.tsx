@@ -326,14 +326,16 @@ function ImageStage(props: MediaProps & { src: string }) {
       Math.max(1, view.height - 48) / (view.imageHeight || 1),
     )
 
-  const bound = (offset: number, image: number, viewport: number, zoom: number) => {
-    const limit = Math.max(0, (image * fit() * zoom - viewport) / 2 + 24)
+  const bound = (offset: number, image: number, zoom: number) => {
+    // Keep the fitted footprint covered, including its letterboxing. Clamping to
+    // the stage edges instead would move the anchor during small pinch increments.
+    const limit = (image * fit() * (zoom - 1)) / 2
 
     return Math.max(-limit, Math.min(limit, offset))
   }
 
-  const x = () => bound(view.x, view.imageWidth, view.width, view.zoom)
-  const y = () => bound(view.y, view.imageHeight, view.height, view.zoom)
+  const x = () => bound(view.x, view.imageWidth, view.zoom)
+  const y = () => bound(view.y, view.imageHeight, view.zoom)
   const reset = () => setView({ zoom: 1, x: 0, y: 0 })
 
   let stage: HTMLDivElement | undefined
@@ -347,8 +349,8 @@ function ImageStage(props: MediaProps & { src: string }) {
     const anchor = { x: clientX - rect.left - rect.width / 2, y: clientY - rect.top - rect.height / 2 }
     setView({
       zoom: next,
-      x: bound(anchor.x - (anchor.x - x()) * ratio, view.imageWidth, view.width, next),
-      y: bound(anchor.y - (anchor.y - y()) * ratio, view.imageHeight, view.height, next),
+      x: bound(anchor.x - (anchor.x - x()) * ratio, view.imageWidth, next),
+      y: bound(anchor.y - (anchor.y - y()) * ratio, view.imageHeight, next),
     })
   }
 
@@ -387,8 +389,8 @@ function ImageStage(props: MediaProps & { src: string }) {
 
         // Use the OS's trackpad momentum directly, with no second animation loop.
         setView({
-          x: bound(x() - event.deltaX * unit, view.imageWidth, view.width, view.zoom),
-          y: bound(y() - event.deltaY * unit, view.imageHeight, view.height, view.zoom),
+          x: bound(x() - event.deltaX * unit, view.imageWidth, view.zoom),
+          y: bound(y() - event.deltaY * unit, view.imageHeight, view.zoom),
         })
       }}
     >
