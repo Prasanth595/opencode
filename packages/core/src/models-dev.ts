@@ -41,7 +41,7 @@ type SourceModel = {
   )[]
   readonly temperature?: boolean
   readonly tool_call: boolean
-  readonly interleaved?: boolean | string | { readonly field: string }
+  readonly interleaved?: boolean | string | { readonly field: string; readonly extract?: string }
   readonly cost?: Cost
   readonly limit: { readonly context: number; readonly input?: number; readonly output: number }
   readonly modalities?: { readonly input: readonly Modality[]; readonly output: readonly Modality[] }
@@ -225,7 +225,7 @@ function modelInfo(
     modelID: Model.ID.make(model.id),
     providerID,
     name: input.name ?? model.name,
-    compatibility: Model.compatibility(model.interleaved),
+    compatibility: Model.compatibility(model.interleaved, { providerID, modelID: id }),
     family: model.family ? Model.Family.make(model.family) : undefined,
     package: pkg,
     settings: Object.keys(settings).length === 0 ? undefined : settings,

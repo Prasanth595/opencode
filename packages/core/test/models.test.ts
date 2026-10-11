@@ -19,6 +19,23 @@ test("normalizes permissive interleaved values to compatibility", () => {
   expect(Model.compatibility({ field: "vendor_reasoning" })).toEqual({ reasoningField: "vendor_reasoning" })
   expect(Model.compatibility(true)).toBeUndefined()
   expect(Model.compatibility(false)).toBeUndefined()
+  expect(Model.compatibility({ field: "reasoning_content", extract: "think-tags" })).toEqual({
+    reasoningField: "reasoning_content",
+    extractReasoning: "think-tags",
+  })
+  expect(Model.compatibility({ extract: "think-tags" })).toEqual({ extractReasoning: "think-tags" })
+})
+
+test("enables inline reasoning extraction for models that leak chain-of-thought", () => {
+  const model = { providerID: Provider.ID.make("opencode"), modelID: Model.ID.make("big-pickle") }
+  expect(Model.compatibility(undefined, model)).toEqual({ extractReasoning: "think-tags" })
+  expect(Model.compatibility({ field: "reasoning_content" }, model)).toEqual({
+    reasoningField: "reasoning_content",
+    extractReasoning: "think-tags",
+  })
+  expect(
+    Model.compatibility(undefined, { providerID: Provider.ID.make("openai"), modelID: Model.ID.make("big-pickle") }),
+  ).toBeUndefined()
 })
 
 const fixture = {
