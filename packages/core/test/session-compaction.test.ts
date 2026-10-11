@@ -28,6 +28,7 @@ import { AbsolutePath } from "@opencode/core/schema"
 import { Money } from "@opencode/schema/money"
 import { Skill } from "@opencode/schema/skill"
 import { Shell } from "@opencode/schema/shell"
+import { Token } from "@opencode/core/util/token"
 import { DateTime, Effect, Fiber, Layer, Schema, Stream } from "effect"
 import { asc, eq } from "drizzle-orm"
 import { testEffect } from "./lib/effect"
@@ -385,6 +386,95 @@ const recentWithToolOutput = (id: Session.ID, content: SessionMessage.ToolStateC
     const stored = (yield* store.context(id))[0]
     return stored?.type === "compaction" && stored.status === "completed" ? stored.recent : ""
   })
+
+it.effect("compaction keeps a long tool run within the allowance instead of its whole exchange", () =>
+  Effect.gen(function* () {
+    const store = yield* SessionStore.Service
+    const keep = 15_000
+    const user = (text: string) =>
+      SessionMessage.User.make({
+        id: SessionMessage.ID.create(),
+        type: "user",
+        text,
+        time: { created: DateTime.makeUnsafe(0) },
+      })
+    // One tool step of about 300 tokens in the kept text.
+    const steps = (count: number) =>
+      Array.from({ length: count }, () =>
+        Schema.decodeUnknownSync(SessionMessage.Assistant)({
+          id: SessionMessage.ID.create(),
+          type: "assistant",
+          agent: Agent.defaultID,
+          model: { id: "summary-model", providerID: "test" },
+          content: [
+            {
+              type: "tool",
+              id: "call_read",
+              name: "read",
+              state: { status: "completed", input: {}, content: [{ type: "text", text: "x".repeat(1_200) }] },
+              time: { created: 0 },
+            },
+          ],
+          time: { created: 0, completed: 0 },
+        }),
+      )
+    const recent = (id: string, messages: readonly SessionMessage.Info[]) =>
+      Effect.gen(function* () {
+        const session = yield* insertSession(Session.ID.make(id))
+        expect(yield* compactManually(session, messages)).toEqual({ status: "completed" })
+        const stored = (yield* store.context(session.id))[0]
+        return stored?.type === "compaction" && stored.status === "completed" ? stored.recent : ""
+      })
+
+    // The latest user message is within another allowance of the cut, so the kept part opens with it.
+    const short = yield* recent("ses_recent_short_run", [user("Earlier"), ...steps(1), user("Fix it"), ...steps(60)])
+    expect(short).toStartWith("[User]: Fix it")
+    expect(Token.estimate(short)).toBeLessThanOrEqual(2 * keep)
+    expect(Token.estimate(short)).toBeGreaterThan(keep)
+
+    // After 120 steps that message is far behind the cut: keeping its whole exchange would more than double the
+    // allowance, so the kept part starts at the cut and the message is summarized instead.
+    const long = yield* recent("ses_recent_long_run", [user("Earlier"), ...steps(1), user("Fix it"), ...steps(120)])
+    expect(long).toStartWith("[Assistant tool call]")
+    expect(Token.estimate(long)).toBeLessThanOrEqual(keep)
+    expect(JSON.stringify(requests.at(-1)?.messages)).toContain("Fix it")
+
+    // No user message since the previous checkpoint: the oldest steps are summarized along with it.
+    const checkpoint = Schema.decodeUnknownSync(SessionMessage.CompactionCompleted)({
+      id: SessionMessage.ID.create(),
+      type: "compaction",
+      status: "completed",
+      reason: "auto",
+      summary: "## Objective\n- earlier summary",
+      recent: "[User]: Fix it",
+      time: { created: 0, completed: 0 },
+    })
+    const resumed = yield* recent("ses_recent_resumed_run", [checkpoint, ...steps(120)])
+    expect(resumed).toStartWith("[Assistant tool call]")
+    expect(Token.estimate(resumed)).toBeLessThanOrEqual(keep)
+
+    // Two replies whose kept text is exactly the allowance are both kept; one character more drops the older.
+    const reply = (text: string) =>
+      Schema.decodeUnknownSync(SessionMessage.Assistant)({
+        id: SessionMessage.ID.create(),
+        type: "assistant",
+        agent: Agent.defaultID,
+        model: { id: "summary-model", providerID: "test" },
+        content: [{ type: "text", text }],
+        time: { created: 0, completed: 0 },
+      })
+    const half = (Token.chars(keep) - "[Assistant]: ".length * 2 - "\n\n".length) / 2
+    const exact = yield* recent("ses_recent_exact_fit", [checkpoint, reply("a".repeat(half)), reply("b".repeat(half))])
+    expect(exact).toHaveLength(Token.chars(keep))
+    expect(exact).toStartWith("[Assistant]: a")
+    const over = yield* recent("ses_recent_over_fit", [
+      checkpoint,
+      reply("a".repeat(half + 1)),
+      reply("b".repeat(half)),
+    ])
+    expect(over).toStartWith("[Assistant]: b")
+  }),
+)
 
 it.effect("manual compaction summarizes short context instead of no-op", () =>
   Effect.gen(function* () {

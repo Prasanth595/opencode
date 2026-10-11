@@ -98,6 +98,8 @@ const RESERVE_MIN = 16_000
 /** A common window size, assumed for the compaction request when the model's window is unknown. */
 const UNKNOWN_WINDOW = 200_000
 const TOOL_OUTPUT_MAX_CHARS = 1_250
+/** Joins the entries of the recent part of a summary. */
+const RECENT_SEPARATOR = "\n\n"
 const IMAGE_TOKEN_ESTIMATE = 1_500
 const PDF_TOKEN_ESTIMATE = 2_000
 
@@ -709,7 +711,7 @@ const splitConversation = (messages: ReadonlyArray<SessionMessage.Info>, keep: n
   const recent = entries.slice(recentStart(entries, keep, previousCompaction(messages)))
   return {
     older: messages.slice(0, recent[0]?.index ?? messages.length),
-    recent: recent.map((entry) => entry.text).join("\n\n"),
+    recent: recent.map((entry) => entry.text).join(RECENT_SEPARATOR),
   }
 }
 
@@ -718,23 +720,27 @@ const recentStart = (
   keep: number,
   previous: SessionMessage.CompactionCompleted | undefined,
 ) => {
-  // Drop the oldest entries until the rest fit the allowance, but always keep the newest one.
-  const dropped = Math.min(
-    oldestToDrop(entries, (entry) => Token.estimate(entry.text), keep),
-    entries.length - 1,
-  )
+  // Drop the oldest entries until the rest, joined, fit the allowance, but always keep the newest one. Sizes are
+  // in characters so that the kept text is measured as stored rather than estimated entry by entry.
+  const size = (entry: { readonly text: string }) => entry.text.length + RECENT_SEPARATOR.length
+  const allowance = Token.chars(keep)
+  const dropped = Math.min(oldestToDrop(entries, size, allowance + RECENT_SEPARATOR.length), entries.length - 1)
 
-  // Start at a user message so an assistant's tool calls and results stay together.
+  // Start at a user message so the kept part opens with what was asked, unless that message is more than
+  // another allowance back: one message followed by a long run of tool calls would otherwise be kept whole.
   const userBoundary = entries.findLastIndex((entry, index) => index <= dropped && entry.message.type === "user")
-  if (userBoundary > 0) return userBoundary
+  if (userBoundary > 0) {
+    const overshoot = entries.slice(userBoundary, dropped).reduce((total, entry) => total + size(entry), 0)
+    return overshoot <= allowance ? userBoundary : dropped
+  }
 
   // Everything fits. Keep only the latest exchange so there is an older part left to summarize.
   const latestUser = entries.findLastIndex((entry) => entry.message.type === "user")
   if (latestUser > 0) return latestUser
 
-  // One exchange, nothing older. Summarize it all and keep nothing, unless a previous summary already
-  // kept recent text, in which case keep everything and summarize only the summary before it.
-  return previous?.recent ? 0 : entries.length
+  // One exchange, nothing older. Summarize it all and keep nothing, unless a previous summary already kept
+  // recent text, in which case keep what fits and summarize the rest along with the summary before it.
+  return previous?.recent ? dropped : entries.length
 }
 
 const oldestToDrop = <T>(items: ReadonlyArray<T>, size: (item: T) => number, budget: number) => {
