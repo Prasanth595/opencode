@@ -86,7 +86,9 @@ test("Git initialization belongs to its session and refreshes after a session sw
   await expect(pending).toHaveCount(0)
 })
 
-test("a rejected Git init releases its session's button without showing an error in another session", async ({ page }) => {
+test("a rejected Git init releases its session's button without showing an error in another session", async ({
+  page,
+}) => {
   await openSession(page, {
     name: "ReviewInitFailure",
     project: { vcs: undefined },
@@ -497,6 +499,79 @@ test("rereads a file each time an artifact link opens it", async ({ page }) => {
 
 /** What the image case's frame probe records on the window. */
 type ImageProbe = { problems: string[]; frames: number; running: boolean }
+
+test("image gestures anchor zoom, pan, and reset independently of the pane", async ({ page }) => {
+  await openSession(page, {
+    name: "ImageGestures",
+    fileList: () => [],
+    fileContent: () => ({
+      content:
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1600"><rect width="1600" height="1600" fill="#6699aa"/></svg>',
+    }),
+    pageMessages: () => ({
+      items: [
+        {
+          id: "msg_images",
+          type: "assistant",
+          agent: "build",
+          model: { id: "test", providerID: "opencode" },
+          content: [{ type: "text", text: "[First](first.svg) [Second](second.svg)" }],
+          time: { created: 1, completed: 2 },
+        },
+      ],
+    }),
+  })
+  await page.getByRole("link", { name: "First", exact: true }).click()
+  const panel = page.locator("#review-panel")
+  const image = panel.getByRole("img", { name: "first.svg", exact: true })
+  const stage = panel.locator('[data-slot="artifact-stage"]')
+  const fit = panel.getByRole("button", { name: "Fit", exact: true })
+  await expect(image).toBeVisible()
+  await expect(fit).toBeDisabled()
+  // Wait for the side pane's opening motion before choosing a gesture anchor.
+  await image.hover()
+  const initial = (await image.boundingBox())!
+  const pane = (await panel.boundingBox())!
+  const anchor = { x: Math.round(initial.x + initial.width * 0.55), y: Math.round(initial.y + initial.height * 0.55) }
+  await page.mouse.move(anchor.x, anchor.y)
+  await page.keyboard.down("Control")
+  await page.mouse.wheel(0, -100)
+  await expect(fit).toBeEnabled()
+  await page.keyboard.up("Control")
+  const zoomed = (await image.boundingBox())!
+  expect(zoomed.width).toBeGreaterThan(initial.width * 2)
+  expect((anchor.x - zoomed.x) / zoomed.width).toBeCloseTo((anchor.x - initial.x) / initial.width, 4)
+  expect((anchor.y - zoomed.y) / zoomed.height).toBeCloseTo((anchor.y - initial.y) / initial.height, 4)
+  expect(await panel.boundingBox()).toEqual(pane)
+  expect(await page.evaluate(() => window.visualViewport?.scale)).toBe(1)
+  await page.mouse.wheel(40, 60)
+  await expect.poll(async () => (await image.boundingBox())!.x).toBeCloseTo(zoomed.x - 40, 1)
+  expect((await image.boundingBox())!.y).toBeCloseTo(zoomed.y - 60, 1)
+  // Keyboard-accessible fit restores the exact original geometry.
+  await fit.focus()
+  await page.keyboard.press("Enter")
+  await expect(fit).toBeDisabled()
+  expect(await image.boundingBox()).toEqual(initial)
+  expect(
+    await stage.evaluate((element) =>
+      element.dispatchEvent(new WheelEvent("wheel", { deltaY: 40, bubbles: true, cancelable: true })),
+    ),
+  ).toBe(true)
+  await image.click()
+  await expect(fit).toBeEnabled()
+  await page.getByRole("link", { name: "Second", exact: true }).click()
+  await expect(panel.getByRole("img", { name: "second.svg", exact: true })).toBeVisible()
+  await expect(fit).toBeDisabled()
+  await page.setViewportSize({ width: 1200, height: 700 })
+  await expect
+    .poll(async () => {
+      const frame = (await stage.boundingBox())!
+      const media = (await panel.getByRole("img", { name: "second.svg", exact: true }).boundingBox())!
+
+      return media.width <= frame.width - 47 && media.height <= frame.height - 47
+    })
+    .toBe(true)
+})
 
 test("image files load into the review panel and keep it painted while loading", async ({ page }) => {
   await page.setViewportSize({ width: 960, height: 900 })

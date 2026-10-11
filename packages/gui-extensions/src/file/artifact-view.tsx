@@ -1,4 +1,15 @@
-import { createMemo, createSignal, ErrorBoundary, For, Match, onCleanup, Show, Switch, untrack, type JSX } from "solid-js"
+import {
+  createMemo,
+  createSignal,
+  ErrorBoundary,
+  For,
+  Match,
+  onCleanup,
+  Show,
+  Switch,
+  untrack,
+  type JSX,
+} from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import { makeEventListener } from "@solid-primitives/event-listener"
@@ -37,8 +48,6 @@ type ViewerState = {
   /** Why the file shows as binary, when a viewer said. */
   readonly reason?: string
 }
-
-type ImageZoom = { readonly url: string; readonly zoom: "fit" | "actual"; readonly overflow: boolean }
 
 type MediaProps = {
   path: string
@@ -295,31 +304,62 @@ function createBlobUrl(content: () => FileContent) {
   })
 }
 
-/** Images and SVG previews: fit the pane, click to inspect at 1:1 when the image is larger. */
+/** Images and SVG previews: each decoded image owns its viewport. */
 function ArtifactImage(props: MediaProps) {
   const url = createBlobUrl(() => props.content)
-  const [size, setSize] = createStore({ width: 0, height: 0 })
-  // Zoom belongs to one image: a new one starts fitted.
-  const fitted = (): ImageZoom => ({ url: url(), zoom: "fit", overflow: false })
-  const [saved, setSaved] = createSignal(fitted())
 
-  const state = () => {
-    const value = saved()
+  return (
+    <Show when={url()} keyed>
+      {(src) => <ImageStage {...props} src={src} />}
+    </Show>
+  )
+}
 
-    return value.url === url() ? value : fitted()
+function ImageStage(props: MediaProps & { src: string }) {
+  const ctx = useExtension()
+  const [view, setView] = createStore({ width: 0, height: 0, imageWidth: 0, imageHeight: 0, zoom: 1, x: 0, y: 0 })
+
+  const fit = () =>
+    Math.min(
+      1,
+      Math.max(1, view.width - 48) / (view.imageWidth || 1),
+      Math.max(1, view.height - 48) / (view.imageHeight || 1),
+    )
+
+  const bound = (offset: number, image: number, viewport: number, zoom: number) => {
+    const limit = Math.max(0, (image * fit() * zoom - viewport) / 2 + 24)
+
+    return Math.max(-limit, Math.min(limit, offset))
   }
+
+  const x = () => bound(view.x, view.imageWidth, view.width, view.zoom)
+  const y = () => bound(view.y, view.imageHeight, view.height, view.zoom)
+  const reset = () => setView({ zoom: 1, x: 0, y: 0 })
 
   let stage: HTMLDivElement | undefined
 
-  const measure = () => {
+  const zoomAt = (zoom: number, clientX: number, clientY: number) => {
     if (!stage) return
 
-    setSaved({ ...state(), overflow: size.width > stage.clientWidth - 48 || size.height > stage.clientHeight - 48 })
+    const rect = stage.getBoundingClientRect()
+    const next = Math.max(1, Math.min(Math.max(8, 1 / fit()), zoom))
+    const ratio = next / view.zoom
+    const anchor = { x: clientX - rect.left - rect.width / 2, y: clientY - rect.top - rect.height / 2 }
+    setView({
+      zoom: next,
+      x: bound(anchor.x - (anchor.x - x()) * ratio, view.imageWidth, view.width, next),
+      y: bound(anchor.y - (anchor.y - y()) * ratio, view.imageHeight, view.height, next),
+    })
   }
 
   createResizeObserver(
     () => stage,
-    () => measure(),
+    () => {
+      if (!stage) return
+
+      setView({ width: stage.clientWidth, height: stage.clientHeight })
+      setView({ x: x(), y: y() })
+    },
   )
 
   return (
@@ -327,37 +367,66 @@ function ArtifactImage(props: MediaProps) {
       ref={stage}
       data-slot="artifact-stage"
       data-checker
-      data-zoom={state().zoom}
-      data-overflow={state().overflow || undefined}
-      class="relative min-h-0 flex-1 overflow-auto"
+      data-zoom={view.zoom === 1 ? "fit" : "actual"}
+      data-overflow={fit() < 1 || undefined}
+      class="relative min-h-0 flex-1 overflow-hidden"
+      on:wheel={(event) => {
+        if (!view.imageWidth || (!event.ctrlKey && view.zoom === 1)) return
+
+        // Chromium delivers trackpad pinch as Ctrl-wheel. Consume it here before
+        // Desktop's window-level zoom handler; ordinary fitted scrolling stays native.
+        event.preventDefault()
+        event.stopPropagation()
+        const unit = [1, 16, view.height][event.deltaMode] ?? 1
+
+        if (event.ctrlKey) {
+          zoomAt(view.zoom * Math.exp((-event.deltaY * unit) / 100), event.clientX, event.clientY)
+
+          return
+        }
+
+        // Use the OS's trackpad momentum directly, with no second animation loop.
+        setView({
+          x: bound(x() - event.deltaX * unit, view.imageWidth, view.width, view.zoom),
+          y: bound(y() - event.deltaY * unit, view.imageHeight, view.height, view.zoom),
+        })
+      }}
     >
-      <div
-        classList={{
-          "absolute inset-0 flex items-center justify-center p-6": state().zoom === "fit",
-          "flex min-h-full min-w-full w-max items-center justify-center p-6": state().zoom === "actual",
+      <img
+        data-slot="artifact-media"
+        src={props.src}
+        alt={getFilename(props.path)}
+        draggable={false}
+        class="absolute left-1/2 top-1/2 select-none"
+        style={{
+          width: `${view.imageWidth * fit()}px`,
+          height: `${view.imageHeight * fit()}px`,
+          "max-width": "none",
+          "max-height": "none",
+          transform: `translate(-50%, -50%) translate(${x()}px, ${y()}px) scale(${view.zoom})`,
         }}
-      >
-        <img
-          data-slot="artifact-media"
-          src={url()}
-          alt={getFilename(props.path)}
-          draggable={false}
-          onError={() => props.onError()}
-          onLoad={(event) => {
-            const image = event.currentTarget
+        onError={() => props.onError()}
+        onLoad={(event) => {
+          const image = event.currentTarget
 
-            setSize({ width: image.naturalWidth, height: image.naturalHeight })
-            props.onInfo({ width: image.naturalWidth, height: image.naturalHeight })
-            measure()
-          }}
-          onClick={() => {
-            const value = state()
+          setView({
+            imageWidth: image.naturalWidth,
+            imageHeight: image.naturalHeight,
+            width: stage?.clientWidth ?? 0,
+            height: stage?.clientHeight ?? 0,
+          })
+          props.onInfo({ width: image.naturalWidth, height: image.naturalHeight })
+        }}
+        onClick={(event) => {
+          if (view.zoom > 1) return reset()
 
-            if (!value.overflow && value.zoom === "fit") return
-
-            setSaved({ ...value, zoom: value.zoom === "fit" ? "actual" : "fit" })
-          }}
-        />
+          zoomAt(1 / fit(), event.clientX, event.clientY)
+        }}
+      />
+      <div class="absolute end-3 top-3">
+        <Button size="small" variant="neutral" disabled={view.zoom === 1} onClick={reset}>
+          {ctx.t("view.fit")}
+        </Button>
       </div>
     </div>
   )
