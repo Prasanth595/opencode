@@ -267,7 +267,9 @@ const make = Effect.gen(function* () {
           core
             ? "https://formulae.brew.sh/api/formula/opencode.json"
             : scoop
-              ? "https://raw.githubusercontent.com/ScoopInstaller/Versions/master/bucket/opencode2.json"
+              ? installedScoop === "opencode"
+                ? "https://raw.githubusercontent.com/ScoopInstaller/Main/master/bucket/opencode.json"
+                : "https://raw.githubusercontent.com/ScoopInstaller/Versions/master/bucket/opencode2.json"
               : `https://opencode.ai/update/api/${encodeURIComponent(channel)}/${encodeURIComponent(OPENCODE_ARTIFACT)}/${distribution}?current=${encodeURIComponent(OPENCODE_VERSION)}`,
           {
             signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
