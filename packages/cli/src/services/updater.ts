@@ -45,6 +45,10 @@ const decodeVpPackages = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.Array(Schema.Struct({ name: Schema.String }))),
 )
 
+const decodeVpMetadata = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Struct({ name: Schema.String, installId: Schema.optional(Schema.String) })),
+)
+
 const installNames: Record<Method, string> = {
   curl: "The OpenCode installer",
   npm: "npm",
@@ -132,14 +136,14 @@ const make = Effect.gen(function* () {
   const installedVersion = yield* Ref.make(OPENCODE_VERSION)
   const channel = OPENCODE_CHANNEL.replace(/[^a-zA-Z0-9._-]/g, "-")
   const executable = yield* fs.realPath(process.execPath).pipe(Effect.orElseSucceed(() => process.execPath))
+  const packageDirectory = path.dirname(path.dirname(executable))
   const installedPackage = yield* Effect.gen(function* () {
-    const directory = path.dirname(path.dirname(executable))
     const manifest: { name: string; bin?: Record<string, string> } = yield* fs
-      .readFileString(path.join(directory, "package.json"))
+      .readFileString(path.join(packageDirectory, "package.json"))
       .pipe(Effect.flatMap((text) => Effect.try(() => JSON.parse(text))))
     // Source invocations run inside Bun or Node, which may themselves be npm packages.
     if (!/^@opencode(?:-ai)?\/cli(?:-node)?$/.test(manifest.name)) return
-    if (Object.values(manifest.bin ?? {}).some((bin) => path.resolve(directory, bin) === executable))
+    if (Object.values(manifest.bin ?? {}).some((bin) => path.resolve(packageDirectory, bin) === executable))
       return manifest.name
   }).pipe(Effect.orElseSucceed(() => undefined))
   // "opencode" is Homebrew Core's formula; the others are published to anomalyco/tap.
@@ -157,7 +161,7 @@ const make = Effect.gen(function* () {
     return values.findLast((value) => value !== undefined) ?? "notify"
   })
 
-  const exec = Effect.fnUntraced(function* (command: string[], timeout: Duration.Input = "10 seconds") {
+  const exec = Effect.fnUntraced(function* (command: string[], timeout: Duration.Input = "30 seconds") {
     return yield* appProcess
       .run(ChildProcess.make(command[0], command.slice(1)), {
         timeout,
@@ -197,10 +201,57 @@ const make = Effect.gen(function* () {
     )
   })
 
+  const filesystemMethod = Effect.fnUntraced(function* (pkg: string) {
+    const bunGlobal = process.env.BUN_INSTALL ? path.resolve(process.env.BUN_INSTALL, "install", "global") : undefined
+    if (
+      packageDirectory.includes(path.join(".bun", "install", "global")) ||
+      (bunGlobal !== undefined && isWithin(bunGlobal, packageDirectory))
+    )
+      return "bun" as const
+    const normalized = process.platform === "win32" ? packageDirectory.toLowerCase() : packageDirectory
+    if (
+      normalized.includes(path.join("yarn", "global", "node_modules")) ||
+      normalized.includes(path.join("yarn", "data", "global", "node_modules")) ||
+      normalized.includes(path.join(".yarn-global", "node_modules"))
+    )
+      return "yarn" as const
+
+    const dirs = ancestors(packageDirectory)
+    const detected = yield* Effect.forEach(dirs, (current) =>
+      Effect.gen(function* () {
+        if (path.basename(current) === "packages") {
+          const raw = yield* fs
+            .readFileString(path.join(current, `${pkg}.json`))
+            .pipe(Effect.orElseSucceed(() => undefined))
+          const metadata = raw ? Option.getOrUndefined(decodeVpMetadata(raw)) : undefined
+          if (metadata?.name === pkg) {
+            const installId = metadata.installId ?? ""
+            const installDir = installId.startsWith("#")
+              ? path.join(current, `${pkg}${installId}`)
+              : path.join(current, pkg, installId)
+            const roots = yield* Effect.forEach(
+              [path.join(installDir, "lib", "node_modules", pkg), path.join(installDir, "node_modules", pkg)],
+              (candidate) => fs.realPath(candidate).pipe(Effect.orElseSucceed(() => undefined)),
+            )
+            if (roots.includes(packageDirectory)) return "vp" as const
+          }
+        }
+        const modules = path.join(current, "node_modules")
+        if (yield* fs.exists(path.join(modules, ".modules.yaml")).pipe(Effect.orElseSucceed(() => false))) {
+          const target = yield* fs.realPath(path.join(modules, pkg)).pipe(Effect.orElseSucceed(() => undefined))
+          if (target === packageDirectory) return "pnpm" as const
+        }
+      }),
+    )
+    return detected.find((item) => item !== undefined)
+  })
+
   const method = Effect.fnUntraced(function* () {
     if (executable === curlBinary) return "curl"
     if (installedFormula) return "brew"
     if (!installedPackage) return
+    const owned = yield* filesystemMethod(installedPackage)
+    if (owned) return owned
 
     const checks: ReadonlyArray<{ method: Method; command: string[] }> = [
       { method: "npm", command: ["npm", "list", "-g", "--depth=0", installedPackage] },
@@ -213,18 +264,34 @@ const make = Effect.gen(function* () {
       checks,
       (check) =>
         exec(check.command).pipe(
+          Effect.tapError((error) => Effect.logDebug("package manager check failed", { method: check.method, error })),
           Effect.orElseSucceed(() => ({ code: 1, stdout: "", stderr: "" })),
           Effect.map((result) => ({ check, result })),
         ),
       { concurrency: "unbounded" },
     )
-    return results.find((result) => {
-      if (result.check.method !== "vp") return result.result.stdout.includes(installedPackage)
-      // Vite+ repeats the filter in its successful no-match message, so substring detection would be a false positive.
-      return Option.exists(decodeVpPackages(result.result.stdout), (packages) =>
-        packages.some((item) => item.name === installedPackage),
-      )
-    })?.check.method
+    const matches = yield* Effect.forEach(results, (entry) =>
+      Effect.gen(function* () {
+        const hasPackage =
+          entry.check.method === "vp"
+            ? Option.exists(decodeVpPackages(entry.result.stdout), (packages) =>
+                packages.some((item) => item.name === installedPackage),
+              )
+            : entry.result.stdout.includes(installedPackage)
+        if (!hasPackage) return undefined
+        const prefix = outputPrefix(entry.check.method, entry.result.stdout, installedPackage)
+        if (!prefix) return { method: entry.check.method, verified: false }
+        const resolved = yield* fs.realPath(prefix).pipe(Effect.orElseSucceed(() => path.resolve(prefix)))
+        if (!isWithin(resolved, packageDirectory)) return undefined
+        return { method: entry.check.method, verified: true }
+      }),
+    )
+    const candidates = matches.filter((item): item is NonNullable<typeof item> => item !== undefined)
+    return (
+      candidates.find((item) => item.verified)?.method ??
+      candidates.find((item) => packageDirectory.toLowerCase().includes(item.method))?.method ??
+      candidates[0]?.method
+    )
   })
 
   const removal = (method: Method) => {
@@ -532,6 +599,38 @@ const make = Effect.gen(function* () {
 
   return Service.of({ run, check, apply, method, latest, upgrade, removal })
 })
+
+function ancestors(directory: string): string[] {
+  const parent = path.dirname(directory)
+  if (parent === directory) return [directory]
+  return [directory, ...ancestors(parent)]
+}
+
+function isWithin(parent: string, child: string) {
+  const normalize = (value: string) =>
+    process.platform === "win32" ? path.resolve(value).toLowerCase() : path.resolve(value)
+  const relative = path.relative(normalize(parent), normalize(child))
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
+}
+
+function outputPrefix(method: Method, stdout: string, installedPackage: string) {
+  const lines = stripVTControlCharacters(stdout)
+    .replaceAll("\r", "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.includes(installedPackage))
+  if (method === "npm") {
+    const first = lines[0]
+    return first && path.isAbsolute(first) ? first : undefined
+  }
+  if (method === "bun") {
+    const first = lines[0]?.replace(/\s+node_modules\b.*$/, "")
+    return first && path.isAbsolute(first) ? first : undefined
+  }
+  if (method === "pnpm") {
+    return lines.map((line) => line.replace(/\s+\(PRIVATE\)$/, "")).find((line) => path.isAbsolute(line))
+  }
+}
 
 export const layer = Layer.effect(Service, make)
 

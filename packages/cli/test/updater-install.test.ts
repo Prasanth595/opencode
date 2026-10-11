@@ -16,14 +16,20 @@ const it = testEffect(NodeServices.layer)
 declare const OPENCODE_CLI_NAME: string | undefined
 
 function fixture(
-  respond: (command: ChildProcess.StandardCommand) => Partial<AppProcess.RunResult> & {
+  respond: (
+    command: ChildProcess.StandardCommand,
+    options?: AppProcess.RunOptions,
+  ) => Partial<AppProcess.RunResult> & {
     error?: AppProcess.AppProcessError
   } = () => ({}),
   name = "@opencode/cli",
   failCleanup = false,
   releasePackage = name,
   formula?: string,
-  executableOverride?: (root: string, home: string) => Effect.Effect<string, PlatformError.PlatformError, FileSystem.FileSystem>,
+  executableOverride?: (
+    root: string,
+    home: string,
+  ) => Effect.Effect<string, PlatformError.PlatformError, FileSystem.FileSystem>,
 ) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem
@@ -107,14 +113,14 @@ function fixture(
         AppProcess.Service,
         AppProcess.Service.of({
           ...spawner,
-          run: (command) =>
+          run: (command, options) =>
             Effect.suspend(() => {
               if (command._tag !== "StandardCommand") return Effect.die("Unexpected piped install command")
               const lookup = command.command === "git" && command.args[0] === "--exec-path"
               if (!lookup) commands.push([command.command, ...command.args])
               const result = lookup
                 ? { stdout: Buffer.from(`${path.join(git, "mingw64", "libexec", "git-core")}\n`) }
-                : respond(command)
+                : respond(command, options)
               if (result.error) return Effect.fail(result.error)
               return Effect.succeed({
                 command: command.command,
@@ -297,6 +303,194 @@ it.live("method detection tolerates unavailable package managers", () =>
     )
     expect(yield* test.updater.method()).toBe("yarn")
     expect(test.commands).toHaveLength(5)
+  }),
+)
+
+it.live("method detection uses a 30-second probe timeout and tolerates timed-out package managers", () =>
+  Effect.gen(function* () {
+    const timeouts: unknown[] = []
+    const test = yield* fixture((command, options) => {
+      timeouts.push(options?.timeout)
+      if (command.command === "npm") return { stdout: Buffer.from("@opencode/cli@2.3.4") }
+      return {
+        error: new AppProcess.AppProcessError({
+          command: command.command,
+          cause: new Error("Timed out"),
+        }),
+      }
+    })
+    expect(yield* test.updater.method()).toBe("npm")
+    expect(timeouts).toEqual(["30 seconds", "30 seconds", "30 seconds", "30 seconds", "30 seconds"])
+  }),
+)
+
+it.live("method detection rejects a global package manager whose prefix does not own the running binary", () =>
+  Effect.gen(function* () {
+    const prefixes = { defaultGlobal: "", customPrefix: "" }
+    const test = yield* fixture(
+      (command) => ({
+        stdout: Buffer.from(
+          command.command === "npm" ? `${prefixes.defaultGlobal}\n└── @opencode/cli@2.0.16\n` : "",
+        ),
+      }),
+      "@opencode/cli",
+      false,
+      "@opencode/cli",
+      undefined,
+      (root) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem
+          prefixes.defaultGlobal = path.join(root, "global-npm", "lib")
+          prefixes.customPrefix = path.join(root, "custom-prefix", "lib")
+          yield* fs.makeDirectory(prefixes.defaultGlobal, { recursive: true })
+          const pkg = path.join(prefixes.customPrefix, "node_modules", "@opencode", "cli")
+          yield* fs.makeDirectory(pkg, { recursive: true })
+          yield* fs.writeFileString(
+            path.join(pkg, "package.json"),
+            JSON.stringify({ name: "@opencode/cli", bin: { opencode: "bin/opencode" } }),
+          )
+          return path.join(pkg, "bin", "opencode")
+        }),
+    )
+    expect(yield* test.updater.method()).toBeUndefined()
+  }),
+)
+
+it.live("method detection selects the package manager whose global prefix owns the running binary", () =>
+  Effect.gen(function* () {
+    const prefixes = { npmGlobal: "", pnpmGlobal: "" }
+    const test = yield* fixture(
+      (command) => ({
+        stdout: Buffer.from(
+          command.command === "npm"
+            ? `${prefixes.npmGlobal}\n└── @opencode/cli@2.0.16\n`
+            : command.command === "pnpm"
+              ? `Legend: production dependency\n\n${prefixes.pnpmGlobal} (PRIVATE)\n└── @opencode/cli@2.3.4\n`
+              : "",
+        ),
+      }),
+      "@opencode/cli",
+      false,
+      "@opencode/cli",
+      undefined,
+      (root) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem
+          prefixes.npmGlobal = path.join(root, "npm-global", "lib")
+          prefixes.pnpmGlobal = path.join(root, "pnpm-global", "v11")
+          yield* fs.makeDirectory(prefixes.npmGlobal, { recursive: true })
+          const pkg = path.join(prefixes.pnpmGlobal, "store", "node_modules", "@opencode", "cli")
+          yield* fs.makeDirectory(pkg, { recursive: true })
+          yield* fs.writeFileString(
+            path.join(pkg, "package.json"),
+            JSON.stringify({ name: "@opencode/cli", bin: { opencode: "bin/opencode" } }),
+          )
+          return path.join(pkg, "bin", "opencode")
+        }),
+    )
+    expect(yield* test.updater.method()).toBe("pnpm")
+  }),
+)
+
+it.live("method detection identifies bun and yarn global paths without spawning package manager probes", () =>
+  Effect.gen(function* () {
+    const bunTest = yield* fixture(
+      () => ({}),
+      "@opencode/cli",
+      false,
+      "@opencode/cli",
+      undefined,
+      (root) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem
+          const pkg = path.join(root, ".bun", "install", "global", "node_modules", "@opencode", "cli")
+          yield* fs.makeDirectory(pkg, { recursive: true })
+          yield* fs.writeFileString(
+            path.join(pkg, "package.json"),
+            JSON.stringify({ name: "@opencode/cli", bin: { opencode: "bin/opencode" } }),
+          )
+          return path.join(pkg, "bin", "opencode")
+        }),
+    )
+    expect(yield* bunTest.updater.method()).toBe("bun")
+    expect(bunTest.commands).toEqual([])
+
+    const yarnTest = yield* fixture(
+      () => ({}),
+      "@opencode/cli",
+      false,
+      "@opencode/cli",
+      undefined,
+      (root) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem
+          const pkg = path.join(root, ".config", "yarn", "global", "node_modules", "@opencode", "cli")
+          yield* fs.makeDirectory(pkg, { recursive: true })
+          yield* fs.writeFileString(
+            path.join(pkg, "package.json"),
+            JSON.stringify({ name: "@opencode/cli", bin: { opencode: "bin/opencode" } }),
+          )
+          return path.join(pkg, "bin", "opencode")
+        }),
+    )
+    expect(yield* yarnTest.updater.method()).toBe("yarn")
+    expect(yarnTest.commands).toEqual([])
+  }),
+)
+
+unix("method detection identifies pnpm and Vite+ ownership metadata from the filesystem", () =>
+  Effect.gen(function* () {
+    const pnpmTest = yield* fixture(
+      () => ({}),
+      "@opencode/cli",
+      false,
+      "@opencode/cli",
+      undefined,
+      (root) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem
+          const modules = path.join(root, "pnpm-global", "5", "node_modules")
+          const storePkg = path.join(modules, ".pnpm", "@opencode+cli@2.3.4", "node_modules", "@opencode", "cli")
+          const linkedScope = path.join(modules, "@opencode")
+          yield* fs.makeDirectory(storePkg, { recursive: true })
+          yield* fs.makeDirectory(linkedScope, { recursive: true })
+          yield* fs.writeFileString(path.join(modules, ".modules.yaml"), "storeDir: /store\n")
+          yield* fs.writeFileString(
+            path.join(storePkg, "package.json"),
+            JSON.stringify({ name: "@opencode/cli", bin: { opencode: "bin/opencode" } }),
+          )
+          yield* fs.symlink(storePkg, path.join(linkedScope, "cli"))
+          return path.join(storePkg, "bin", "opencode")
+        }),
+    )
+    expect(yield* pnpmTest.updater.method()).toBe("pnpm")
+    expect(pnpmTest.commands).toEqual([])
+
+    const vpTest = yield* fixture(
+      () => ({}),
+      "@opencode/cli",
+      false,
+      "@opencode/cli",
+      undefined,
+      (root) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem
+          const packages = path.join(root, ".vite-plus", "packages")
+          const pkg = path.join(packages, "@opencode", "cli", "active-id", "node_modules", "@opencode", "cli")
+          yield* fs.makeDirectory(pkg, { recursive: true })
+          yield* fs.writeFileString(
+            path.join(packages, "@opencode", "cli.json"),
+            JSON.stringify({ name: "@opencode/cli", installId: "active-id" }),
+          )
+          yield* fs.writeFileString(
+            path.join(pkg, "package.json"),
+            JSON.stringify({ name: "@opencode/cli", bin: { opencode: "bin/opencode" } }),
+          )
+          return path.join(pkg, "bin", "opencode")
+        }),
+    )
+    expect(yield* vpTest.updater.method()).toBe("vp")
+    expect(vpTest.commands).toEqual([])
   }),
 )
 
