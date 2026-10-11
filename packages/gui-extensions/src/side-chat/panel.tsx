@@ -168,6 +168,7 @@ export default function SideChatPanel(props: { chats: SideChatModel; session: Mo
           )}
         </For>
         <Textarea
+          class="!w-full"
           rows={2}
           value={props.chats.draft(props.id)}
           placeholder={ctx.t("composer.placeholder")}
