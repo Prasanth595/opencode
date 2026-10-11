@@ -44,11 +44,16 @@ remote address:
 $ opencode pair --remote
 ```
 
-This exposes your OpenCode server to the internet. Connections go through an
-end-to-end encrypted tunnel, and every request needs the server password or a
-session from a pairing link. The first time it turns remote access on, the
-command explains this and asks you to accept; it defaults to no. To pair
-locally instead, run `opencode pair` without `--remote`.
+The first time it turns remote access on, it asks before going ahead:
+
+```text
+▲  This will expose your OpenCode server to the internet.
+│  Traffic is end-to-end encrypted, and access requires your server password.
+│  To pair locally instead, run `opencode pair` without the --remote flag.
+│
+◆  Expose your server to the internet?
+│  ● Yes / ○ No
+```
 
 Without an interactive terminal, the command fails unless you pass `--yes` to
 accept. Once accepted, later runs skip the prompt, even after remote access has

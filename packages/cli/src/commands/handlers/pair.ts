@@ -71,9 +71,8 @@ export default Runtime.handler(
 
 export const remoteWarning = [
   "This will expose your OpenCode server to the internet.",
-  "Connections go through an end-to-end encrypted OpenTunnel connection; the relay cannot read your traffic.",
-  "Access is secured by password authentication: every request needs the server password or a session from a one-time pairing link.",
-  "To pair locally instead, run `opencode pair` without --remote.",
+  "Traffic is end-to-end encrypted, and access requires your server password.",
+  "To pair locally instead, run `opencode pair` without the --remote flag.",
 ].join(EOL)
 
 export interface RemoteConsentPrompt {
@@ -83,7 +82,7 @@ export interface RemoteConsentPrompt {
 
 const terminalPrompt: RemoteConsentPrompt = {
   interactive: () => Boolean(process.stdin.isTTY && process.stdout.isTTY),
-  confirm: () => confirm({ message: "Expose your OpenCode server to the internet?", initialValue: false }),
+  confirm: () => confirm({ message: "Expose your server to the internet?", initialValue: true }),
 }
 
 // Remote access is only explained and accepted the first time it is turned on; once accepted, pairing goes straight
@@ -95,13 +94,7 @@ export const remoteConsent = Effect.fn("cli.pair.remote-consent")(function* (
 ) {
   if (config.remote !== undefined || config.remoteAccepted === true) return true
   if (!input.yes && !terminal.interactive()) {
-    process.stderr.write(
-      [
-        remoteWarning,
-        "",
-        "Remote access was not enabled. Run `opencode pair --remote` in an interactive terminal to accept, or pass --yes to accept without a prompt.",
-      ].join(EOL) + EOL,
-    )
+    process.stderr.write([remoteWarning, "Run interactively or pass --yes to continue."].join(EOL) + EOL)
     process.exitCode = 1
     return false
   }
@@ -109,7 +102,7 @@ export const remoteConsent = Effect.fn("cli.pair.remote-consent")(function* (
   if (!input.yes) {
     const accepted = yield* Effect.promise(terminal.confirm)
     if (isCancel(accepted)) {
-      cancel("Cancelled; remote access was not enabled. To pair locally, run `opencode pair`.")
+      cancel("Remote access was not enabled. To pair locally, run `opencode pair`.")
       process.exitCode = 130
       return false
     }
