@@ -1,8 +1,10 @@
+import { useParams } from "@solidjs/router"
+import { SessionID } from "@opencode/schema/session-id"
 import { base64Encode } from "@opencode/util/encode"
 import { ServerConnection } from "@/runtime/server/registry"
 import { decode64 } from "@/runtime/persistence/base64"
 
-export function sessionHref(server: ServerConnection.Key, sessionID: string) {
+export function sessionHref(server: ServerConnection.Key, sessionID: SessionID) {
   return `/server/${base64Encode(server)}/session/${sessionID}`
 }
 
@@ -14,9 +16,9 @@ export function requireServerKey(segment: string | undefined) {
   return ServerConnection.Key.make(key)
 }
 
-type SessionParent = { id: string; parentID?: string }
+type SessionParent = { id: SessionID; parentID?: SessionID }
 
-export async function rootSession<T extends SessionParent>(session: T, get: (sessionID: string) => Promise<T>) {
+export async function rootSession<T extends SessionParent>(session: T, get: (sessionID: SessionID) => Promise<T>) {
   const seen = new Set([session.id])
   let current = session
 
@@ -27,4 +29,20 @@ export async function rootSession<T extends SessionParent>(session: T, get: (ses
   }
 
   return current
+}
+
+// Route tokens retain server-owned validation while internal consumers carry their ID identity.
+export function useSessionParams() {
+  const params = useParams<{ id?: string; dir?: string; serverKey: string }>()
+  return {
+    get id() {
+      return params.id === undefined ? undefined : SessionID.make(params.id, { disableChecks: true })
+    },
+    get dir() {
+      return params.dir
+    },
+    get serverKey() {
+      return params.serverKey
+    },
+  }
 }

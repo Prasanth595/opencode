@@ -1,3 +1,4 @@
+import type { SessionID } from "@opencode/schema/session-id"
 import type { SessionInfo } from "@opencode/client/promise"
 import { Icon } from "@opencode/ui/icon"
 import { IconButton } from "@opencode/ui/icon-button"
@@ -210,8 +211,8 @@ export function SessionProjectMenu(props: {
 }
 
 export function SessionAncestorTrail(props: {
-  sessionID: string
-  parentID: string
+  sessionID: SessionID
+  parentID: SessionID
   parentTitle?: string
   trailing: boolean
 }) {
@@ -220,13 +221,12 @@ export function SessionAncestorTrail(props: {
   const open = useOpenSessionRoute()
 
   const ancestors = createMemo(() => {
-    const path: { id: string; title: string; direct: boolean }[] = []
+    const path: { id: SessionID; title: string; direct: boolean }[] = []
     const seen = new Set([props.sessionID])
-    let id: string | undefined = props.parentID
-
+    let id: SessionID | undefined = props.parentID
     while (id && !seen.has(id)) {
       seen.add(id)
-      const info = server.ctx.data.session.get(id)
+      const info = server.ctx.data.session.get(id as any)
       path.unshift({
         id,
         title:
@@ -239,7 +239,6 @@ export function SessionAncestorTrail(props: {
 
     return path
   })
-
   return (
     <div class="flex min-w-0 max-w-full items-center">
       <div
@@ -298,11 +297,11 @@ export function useOpenSessionRoute() {
       (item) =>
         item.type === "session" &&
         item.server === server.key &&
-        (item.sessionId === from || item.routeSessionId === from),
+        (item.sessionId === from || item.routeSessionId === from) as any,
     )
 
-    if (tab?.type === "session") tabs.rememberSessionRoute(tab, id, server.ctx.data.session.get(id)?.parentID)
-    navigate(sessionHref(server.key, id), reveal ? { state: { reveal } } : undefined)
+    if (tab?.type === "session") tabs.rememberSessionRoute(tab, id as any, server.ctx.data.session.get(id as any)?.parentID)
+    navigate(sessionHref(server.key, id as any), reveal ? { state: { reveal } } : undefined)
   }
 }
 
@@ -310,14 +309,14 @@ export function SessionIdentityHeader(props: ParentProps<{ sessionID: string; se
   const server = useServer()
   const tabs = useTabs()
   const language = useLanguage()
-  const pending = createMemo(() => tabs.pendingSession(server.key, props.sessionID))
+  const pending = createMemo(() => tabs.pendingSession(server.key, props.sessionID as any))
 
   const tab = createMemo(() =>
     tabs.store.find(
       (item) =>
         item.type === "session" &&
         item.server === server.key &&
-        (item.sessionId === props.sessionID || item.routeSessionId === props.sessionID),
+        (item.sessionId === props.sessionID || item.routeSessionId === props.sessionID) as any,
     ),
   )
 
@@ -339,7 +338,7 @@ export function SessionIdentityHeader(props: ParentProps<{ sessionID: string; se
   const parent = createMemo(() => {
     const id = parentID()
 
-    return id ? server.ctx.data.session.get(id) : undefined
+    return id ? server.ctx.data.session.get(id as any) : undefined
   })
 
   const parentTitle = createMemo(() => {
@@ -388,7 +387,7 @@ export function SessionIdentityHeader(props: ParentProps<{ sessionID: string; se
               <Show when={parentID()}>
                 {(id) => (
                   <SessionAncestorTrail
-                    sessionID={props.sessionID}
+                    sessionID={props.sessionID as any}
                     parentID={id()}
                     parentTitle={parentTitle()}
                     trailing={!!title()}
@@ -397,7 +396,7 @@ export function SessionIdentityHeader(props: ParentProps<{ sessionID: string; se
               </Show>
               <Show when={parentID() && props.children}>{props.children}</Show>
               <Show when={!parentID() || !props.children}>
-                <SessionWorkingIndicator sessionID={props.sessionID} />
+                <SessionWorkingIndicator sessionID={props.sessionID as any} />
               </Show>
               <Show when={(!parentID() || !props.children) && title()}>
                 {(value) => (

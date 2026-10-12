@@ -1,4 +1,9 @@
 import { expect, test, type Page } from "@playwright/test"
+import { Event } from "@opencode/schema/event"
+import { Form } from "@opencode/schema/form"
+import { Permission } from "@opencode/schema/permission"
+import { Session } from "@opencode/schema/session"
+import { SessionMessage } from "@opencode/schema/session-message"
 import { SERVER, sessionHref } from "../utils/app"
 import { installSseTransport } from "../utils/sse-transport"
 import { expectSessionTitle } from "../utils/waits"
@@ -6,7 +11,7 @@ import { mockWorkspace, type WorkspaceInput } from "../utils/workspace"
 
 const directory = "C:/OpenCode/RequestDocks"
 
-const sessionID = "ses_request_docks"
+const sessionID = Session.ID.make("ses_request_docks", { disableChecks: true })
 
 const title = "Request dock regression"
 
@@ -14,7 +19,7 @@ test("shows a pending question dock", async ({ page }) => {
   await mockServer(page, {
     forms: [
       {
-        id: "frm_question_request",
+        id: Form.ID.make("frm_question_request", { disableChecks: true }),
         sessionID,
         title: "Questions",
         metadata: { kind: "question" },
@@ -84,7 +89,7 @@ test("shows a pending question dock", async ({ page }) => {
 })
 
 test("shows a pending permission dock", async ({ page }) => {
-  const replies: { sessionID: string; permissionID: string; body: unknown }[] = []
+  const replies: { sessionID: Session.ID; permissionID: Permission.ID; body: unknown }[] = []
   await mockServer(page, {
     onPermissionReply: (reply) => replies.push(reply),
     sessionPermissions: {
@@ -152,16 +157,16 @@ test("restores the draft caret before typing after a request dock closes", async
   const cursor = draft.length - 4
   await expect.poll(caret).toBe(cursor)
   await transport.send({
-    id: "evt_form_created",
+    id: Event.ID.make("evt_form_created", { disableChecks: true }),
     created: 1700000001000,
     type: "form.created",
     location: { directory },
     data: {
       form: {
-        id: "frm_question_caret",
+        id: Form.ID.make("frm_question_caret", { disableChecks: true }),
         sessionID,
         title: "Questions",
-        metadata: { kind: "question", tool: { messageID: "message-caret", id: "call-caret" } },
+        metadata: { kind: "question", tool: { messageID: SessionMessage.ID.make("message-caret", { disableChecks: true }), id: "call-caret" } },
         fields: [
           {
             key: "q0",
@@ -180,11 +185,11 @@ test("restores the draft caret before typing after a request dock closes", async
   await expect(editor).toHaveCount(0)
 
   await transport.send({
-    id: "evt_form_cancelled",
+    id: Event.ID.make("evt_form_cancelled", { disableChecks: true }),
     created: 1700000002000,
     type: "form.cancelled",
     location: { directory },
-    data: { sessionID, id: "frm_question_caret" },
+    data: { sessionID, id: Form.ID.make("frm_question_caret", { disableChecks: true }) },
   })
   await expect(question).toHaveCount(0)
   await expect(editor).toBeVisible()

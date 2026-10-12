@@ -5,6 +5,7 @@
 // history ring. All are async because they read config or hit the SDK, but
 // none block each other.
 import type { LocationRef } from "@opencode/client/promise"
+import { Session } from "@opencode/schema/session"
 import { resolve } from "../config"
 import { loadRunProviders } from "./catalog.shared"
 import { resolveCurrentSession, sessionHistory } from "./session.shared"
@@ -60,7 +61,7 @@ export function resolveModelInfoStrict(sdk: RunInput["sdk"], location: LocationR
 // Fetches session messages to determine if this is the first turn and build prompt history.
 export async function resolveSessionInfo(
   sdk: RunInput["sdk"],
-  sessionID: string,
+  sessionID: Session.ID,
   model: RunInput["model"],
   signal?: AbortSignal,
 ): Promise<SessionInfo> {

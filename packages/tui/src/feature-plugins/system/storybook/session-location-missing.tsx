@@ -2,6 +2,7 @@ import type { Plugin } from "@opencode/plugin/tui"
 import { useTerminalDimensions } from "@opentui/solid"
 import { TextAttributes } from "@opentui/core"
 import { createSignal } from "solid-js"
+import { Project } from "@opencode/schema/project"
 import { DialogWorkspaces } from "../../../component/dialog-workspaces"
 import { SessionLocationUnavailable } from "../../../routes/session/location-missing"
 import type { Story } from "./index"
@@ -16,7 +17,7 @@ function SessionLocationMissingStory(props: { context: Plugin.Context }) {
   const open = () =>
     props.context.ui.dialog.show(() => (
       <DialogWorkspaces
-        projectID="fixture-project"
+        projectID={Project.ID.make("fixture-project", { disableChecks: true })}
         initialDirectories={[
           { directory: "/Users/kit/code/open-source/opencode" },
           {

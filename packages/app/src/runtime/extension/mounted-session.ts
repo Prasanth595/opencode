@@ -1,3 +1,4 @@
+import { SessionID } from "@opencode/schema/session-id"
 import {
   batch,
   createMemo,
@@ -150,7 +151,7 @@ export function createMountedSession(session: SessionModel) {
 
   // Each object's memos live in its own root, which ends when the next object replaces it: a kept object stops
   // updating `project`, `listedProject` and `local`, and its other fields keep reading this session's data.
-  const create = (input: { id: string; directory: string; tab: string; visit: object }): MountedSession => {
+  const create = (input: { id: SessionID; directory: string; tab: string; visit: object }): MountedSession => {
     const id = input.id
     const directory = input.directory
     const info = () => server.ctx.data.session.get(id)
@@ -222,7 +223,7 @@ export function createMountedSession(session: SessionModel) {
   // A new object for each routed session, and for the same session once it moves to another directory or its shell tab
   // is known: its fields never change. A moment without an id keeps the last one. A move is the same routing visit.
   const mounted = createMemo<MountedSession>((previous) => {
-    const id = session.identity.sessionID() ?? ""
+    const id = session.identity.sessionID() ?? SessionID.make("", { disableChecks: true })
     const directory = session.workspace.directory()
     const tab = session.layout.tabKey() ?? ""
 

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { Session } from "@opencode/schema/session"
 import {
   defineVisualRegions,
   reportVisualStability,
@@ -52,7 +53,7 @@ test.describe("timeline tool state stability", () => {
       textPart("prt_state_following", "Following lightweight tools"),
     ]
 
-    const childID = "ses_timeline_child"
+    const childID = Session.ID.make("ses_timeline_child", { disableChecks: true })
 
     const timeline = await setupTimeline(page, {
       messages: [userMessage(), assistantMessage(initial, { completed: false })],

@@ -1,3 +1,4 @@
+import type { SessionID } from "@opencode/schema/session-id"
 import { createStore, reconcile } from "solid-js/store"
 import { Schema } from "effect"
 import { SessionError } from "@opencode/schema/session-error"
@@ -50,7 +51,7 @@ type NotificationIndex = {
 
 type NotificationTabs = Pick<ReturnType<typeof useTabs>, "addSessionTab" | "rememberSessionRoute" | "select">
 
-export function openNotificationSession(tabs: NotificationTabs, server: ServerConnection.Key, sessionID: string) {
+export function openNotificationSession(tabs: NotificationTabs, server: ServerConnection.Key, sessionID: SessionID) {
   const tab = tabs.addSessionTab({ server, sessionId: sessionID })
 
   if (tab.type !== "session") return
@@ -223,7 +224,7 @@ export function createServerNotificationState(input: {
     })
   }
 
-  const lookup = async (sessionID?: string) => {
+  const lookup = async (sessionID?: SessionID) => {
     if (!sessionID) return undefined
     const session = input.data.session.get(sessionID)
 
@@ -235,11 +236,11 @@ export function createServerNotificationState(input: {
       .catch(() => undefined)
   }
 
-  const viewedInCurrentSession = (sessionID: string) => {
+  const viewedInCurrentSession = (sessionID: SessionID) => {
     return typeof location !== "undefined" && location.pathname === sessionHref(input.key, sessionID)
   }
 
-  const handleSessionIdle = (sessionID: string, eventID: string, time: number) => {
+  const handleSessionIdle = (sessionID: SessionID, eventID: string, time: number) => {
     void lookup(sessionID).then((session) => {
       if (meta.disposed) return
 
@@ -271,7 +272,7 @@ export function createServerNotificationState(input: {
     })
   }
 
-  const handleSessionError = (sessionID: string, error: SessionError.Error, eventID: string, time: number) => {
+  const handleSessionError = (sessionID: SessionID, error: SessionError.Error, eventID: string, time: number) => {
     void lookup(sessionID).then((session) => {
       if (meta.disposed) return
 

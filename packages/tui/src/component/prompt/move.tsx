@@ -5,11 +5,13 @@ import { useDialog } from "../../ui/dialog"
 import { useClient } from "../../context/client"
 import { useToast } from "../../ui/toast"
 import { DialogWorkspaces, type WorkspaceSelection } from "../dialog-workspaces"
+import { Project } from "@opencode/schema/project"
+import { Session } from "@opencode/schema/session"
 import { useData } from "../../context/data"
 import { useLocation } from "../../context/location"
 import { useRoute } from "../../context/route"
 
-export function usePromptMove(input: { projectID: () => string | undefined; sessionID: () => string | undefined }) {
+export function usePromptMove(input: { projectID: () => Project.ID | undefined; sessionID: () => Session.ID | undefined }) {
   const dialog = useDialog()
   const client = useClient()
   const toast = useToast()
@@ -124,7 +126,7 @@ export function usePromptMove(input: { projectID: () => string | undefined; sess
       .catch(() => undefined)
   }
 
-  async function resolveSession(sessionID: string) {
+  async function resolveSession(sessionID: Session.ID) {
     const session = data.session.get(sessionID)
     if (session) return session
     await data.session.sync(sessionID).catch(() => undefined)

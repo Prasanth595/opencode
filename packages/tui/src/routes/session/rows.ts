@@ -22,6 +22,8 @@ import {
   defaultVerbosity,
 } from "./grouping/session"
 import { groupID } from "./anchors"
+import { Session } from "@opencode/schema/session"
+import { SessionMessage } from "@opencode/schema/session-message"
 export type { CacheUsage, PartRef, SessionRow } from "./grouping/session"
 
 /**
@@ -44,7 +46,7 @@ export async function completeGroupBoundary(input: {
   }
 }
 
-export function createSessionRows(sessionID: Accessor<string>, onSynced?: (sessionID: string) => void) {
+export function createSessionRows(sessionID: Accessor<Session.ID>, onSynced?: (sessionID: Session.ID) => void) {
   const data = useData()
   const client = useClient()
   const config = useConfig()
@@ -55,7 +57,7 @@ export function createSessionRows(sessionID: Accessor<string>, onSynced?: (sessi
 
   function reduce() {
     const messages = data.session.message.list(sessionID())
-    const inputs = new Set(data.session.input.list(sessionID()))
+    const inputs = new Set<string>(data.session.input.list(sessionID()))
     const pending = data.session.pending.list(sessionID())
     const queued = new Set(
       pending.flatMap((item) => (item.type === "user" && item.delivery === "queue" ? [item.id] : [])),
@@ -190,7 +192,7 @@ export function createSessionRows(sessionID: Accessor<string>, onSynced?: (sessi
       produce((draft) => {
         if (draft.some((row) => row.type === "message" && row.messageID === messageID)) return
         const pending = isPending(messageID)
-        const message = data.session.message.get(sessionID(), messageID)
+        const message = data.session.message.get(sessionID(), SessionMessage.ID.make(messageID, { disableChecks: true }))
         const index =
           message?.type === "compaction" && pending ? queuedStart(draft) : pending ? draft.length : queuedStart(draft)
         if (!pending) completePrevious(draft, index)
@@ -235,8 +237,9 @@ export function createSessionRows(sessionID: Accessor<string>, onSynced?: (sessi
     )
 
   const isPending = (messageID: string) => {
-    const message = data.session.message.get(sessionID(), messageID)
-    if (message?.type === "user" || message?.type === "synthetic") return data.session.input.has(sessionID(), messageID)
+    const id = SessionMessage.ID.make(messageID, { disableChecks: true })
+    const message = data.session.message.get(sessionID(), id)
+    if (message?.type === "user" || message?.type === "synthetic") return data.session.input.has(sessionID(), id)
     return message?.type === "compaction" && message.status === "running"
   }
 

@@ -8,7 +8,13 @@ import type {
   SessionStatus,
   SessionStructuredError,
 } from "@opencode/client/promise"
+import { Agent } from "@opencode/schema/agent"
+import { Event } from "@opencode/schema/event"
 import { EventManifest } from "@opencode/schema/event-manifest"
+import { Model } from "@opencode/schema/model"
+import { Project } from "@opencode/schema/project"
+import { Provider } from "@opencode/schema/provider"
+import { Session } from "@opencode/schema/session"
 import { SessionMessage } from "@opencode/schema/session-message"
 import type { TimelineDetail } from "@opencode/session-ui/timeline/detail"
 import { expect, test, type Page, type TestInfo } from "@playwright/test"
@@ -20,17 +26,21 @@ import { expectSessionReady } from "./waits"
 
 export const directory = "C:/OpenCode/TimelineStability"
 
-export const projectID = "proj_timeline_stability"
+export const projectID = Project.ID.make("proj_timeline_stability", { disableChecks: true })
 
-export const sessionID = "ses_timeline_stability"
+export const sessionID = Session.ID.make("ses_timeline_stability", { disableChecks: true })
 
-export const userID = "msg_1000_timeline_user"
+export const userID = SessionMessage.ID.make("msg_1000_timeline_user", { disableChecks: true })
 
-export const assistantID = "msg_1001_timeline_assistant"
+export const assistantID = SessionMessage.ID.make("msg_1001_timeline_assistant", { disableChecks: true })
 
 export const title = "Timeline visual stability"
 
-export const model = { providerID: "opencode", modelID: "claude-opus-4-6", variant: "max" }
+export const model = {
+  providerID: Provider.ID.make("opencode", { disableChecks: true }),
+  modelID: Model.ID.make("claude-opus-4-6", { disableChecks: true }),
+  variant: Model.VariantID.make("max", { disableChecks: true }),
+}
 
 const tokens = { input: 100, output: 200, reasoning: 0, cache: { read: 0, write: 0 } }
 
@@ -40,7 +50,7 @@ type TextSeed = {
   id: string
   type: "text"
   text: string
-  messageID?: string
+  messageID?: SessionMessage.ID
 }
 
 type FileSeed = {
@@ -65,14 +75,14 @@ type ReasoningSeed = {
   text: string
   time?: { start: number; end?: number }
   metadata?: Record<string, unknown>
-  messageID?: string
+  messageID?: SessionMessage.ID
 }
 
 type ToolSeed = {
   id: string
   type: "tool"
   name: string
-  messageID?: string
+  messageID?: SessionMessage.ID
   executed?: boolean
   providerState?: Record<string, unknown>
   providerResultState?: Record<string, unknown>
@@ -151,11 +161,11 @@ type ToolOptions<State extends ToolStatus> = State extends "streaming"
       ? { error?: string; metadata?: Record<string, unknown>; output?: never; title?: never }
       : { output?: string; title?: string; metadata?: Record<string, unknown>; error?: never }
 
-type PartRef = { messageID: string; type: "text" | "reasoning" | "tool"; ordinal?: number }
+type PartRef = { messageID: SessionMessage.ID; type: "text" | "reasoning" | "tool"; ordinal?: number }
 
 type TimelineState = {
   partRefs: Map<string, PartRef>
-  nextOrdinals: Map<string, { text: number; reasoning: number }>
+  nextOrdinals: Map<SessionMessage.ID, { text: number; reasoning: number }>
   startedParts: Set<string>
   toolStates: Map<string, ToolStatus>
   eventSequence: number
@@ -473,7 +483,7 @@ export async function waitForVisualSettle(page: Page, selectors: string[], stabl
 export function historyMessages(count: number): TimelineMessage[] {
   return Array.from({ length: count }, (_, index) => {
     const value = String(index).padStart(4, "0")
-    const historyUserID = `msg_0${value}_history_a_user`
+    const historyUserID = SessionMessage.ID.make(`msg_0${value}_history_a_user`, { disableChecks: true })
 
     return [
       userMessage(undefined, { id: historyUserID, created: 1690000000000 + index * 10_000 }),
@@ -486,7 +496,7 @@ export function historyMessages(count: number): TimelineMessage[] {
           },
         ],
         {
-          id: `msg_0${value}_history_b_assistant`,
+          id: SessionMessage.ID.make(`msg_0${value}_history_b_assistant`, { disableChecks: true }),
           parentID: historyUserID,
           created: 1690000001000 + index * 10_000,
         },
@@ -562,7 +572,7 @@ export function renderedPartID(partID: string) {
   return `${ref.messageID}:${ref.type}:${ref.ordinal}`
 }
 
-export function partDelta(partID: string, delta: string, messageID = assistantID) {
+export function partDelta(partID: string, delta: string, messageID: SessionMessage.ID = assistantID) {
   const ref = scenario().partRefs.get(partID)
 
   if (!ref || ref.type !== "text" || ref.ordinal === undefined) throw new Error(`Unknown text part: ${partID}`)
@@ -594,7 +604,7 @@ export function messageUpdated(info: SessionMessageAssistant) {
   })
 }
 
-export function status(type: SessionStatus["type"], attempt = 1, id = sessionID) {
+export function status(type: SessionStatus["type"], attempt = 1, id: Session.ID = sessionID) {
   if (type === "busy") return makeEvent("session.execution.started", { sessionID: id })
 
   if (type === "idle") return makeEvent("session.execution.succeeded", { sessionID: id })
@@ -620,7 +630,7 @@ export function stepStarted(message: SessionMessageAssistant) {
 
 export function userMessage(
   parts?: PartSeed<"user">[],
-  input: { id?: string; summary?: unknown; created?: number } = {},
+  input: { id?: SessionMessage.ID; summary?: unknown; created?: number } = {},
 ): SessionMessageUser {
   const id = input.id ?? userID
   const seeds = parts ?? [userText("Build the timeline stability matrix.", { id: `prt_${id}_text` })]
@@ -668,8 +678,8 @@ export function userMessage(
 export function assistantMessage(
   parts: PartSeed<"assistant">[] = [],
   input: {
-    id?: string
-    parentID?: string
+    id?: SessionMessage.ID
+    parentID?: SessionMessage.ID
     completed?: boolean
     error?: SessionStructuredError
     created?: number
@@ -689,7 +699,7 @@ export function assistantMessage(
     metadata: { parentID: input.parentID ?? userID },
     time: { created, ...(input.completed === false ? {} : { completed: created + 1_000 }) },
     model: { id: model.modelID, providerID: model.providerID, variant: model.variant },
-    agent: "build",
+    agent: Agent.ID.make("build", { disableChecks: true }),
     content,
     cost: 0.01,
     tokens,
@@ -831,7 +841,7 @@ export function session(input: Partial<Session> = {}): Session {
 
 function messageContent(
   part: PartSeed<"assistant">,
-  messageID: string,
+  messageID: SessionMessage.ID,
   ordinals: { text: number; reasoning: number },
 ): SessionMessageAssistant["content"][number] {
   const owner = scenario()
@@ -910,7 +920,7 @@ function messageContent(
   }
 }
 
-function toolEvents(part: ToolSeed, messageID: string): readonly OpenCodeEvent[] {
+function toolEvents(part: ToolSeed, messageID: SessionMessage.ID): readonly OpenCodeEvent[] {
   const toolStates = scenario().toolStates
   const previous = toolStates.get(part.id)
 
@@ -1007,7 +1017,7 @@ function toolEvents(part: ToolSeed, messageID: string): readonly OpenCodeEvent[]
   return events
 }
 
-function partRef(id: string, messageID: string, type: PartRef["type"]): PartRef {
+function partRef(id: string, messageID: SessionMessage.ID, type: PartRef["type"]): PartRef {
   const state = scenario()
   const current = state.partRefs.get(id)
 
@@ -1034,7 +1044,7 @@ function makeEvent<Type extends OpenCodeEvent["type"]>(
 ): OpenCodeEvent {
   const state = scenario()
   const sequence = ++state.eventSequence
-  const id = `evt_timeline_${String(sequence).padStart(4, "0")}`
+  const id = Event.ID.make(`evt_timeline_${String(sequence).padStart(4, "0")}`, { disableChecks: true })
   const base = { id, created: 1700000002000 + sequence, type, data, location: { directory } }
   const definition = EventManifest.ServerDefinitions.find((definition) => definition.type === type)
 
@@ -1044,7 +1054,11 @@ function makeEvent<Type extends OpenCodeEvent["type"]>(
     definition.durability === "durable"
       ? {
           ...base,
-          durable: { aggregateID: sessionID, seq: ++state.durableSequence, version: definition.durable.version },
+          durable: {
+            aggregateID: sessionID,
+            seq: Event.Seq.make(++state.durableSequence, { disableChecks: true }),
+            version: definition.durable.version,
+          },
         }
       : base
 

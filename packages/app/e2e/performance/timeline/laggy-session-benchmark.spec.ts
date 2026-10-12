@@ -1,5 +1,7 @@
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs"
 import type { SessionMessageInfo } from "@opencode/client/promise"
+import { Session } from "@opencode/schema/session"
+import { SessionMessage } from "@opencode/schema/session-message"
 import { base64Encode } from "@opencode/util/encode"
 import { timelineCategories, timelinePresets } from "@opencode/session-ui/timeline/detail"
 import { mockOpenCodeServer } from "../../utils/mock-server"
@@ -25,9 +27,9 @@ const session = file
     })
   : undefined
 
-const sourceID = "ses_laggy_benchmark_source"
+const sourceID = Session.ID.make("ses_laggy_benchmark_source", { disableChecks: true })
 
-const sourceMessageID = "msg_laggy_benchmark_source"
+const sourceMessageID = SessionMessage.ID.make("msg_laggy_benchmark_source", { disableChecks: true })
 
 const history = process.env.LAGGY_SESSION_HISTORY ?? "full"
 

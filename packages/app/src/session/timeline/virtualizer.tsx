@@ -1,3 +1,4 @@
+import type { SessionMessage } from "@opencode/schema/session-message"
 import {
   createVirtualizer,
   defaultRangeExtractor,
@@ -76,7 +77,7 @@ type Input = {
     row: TimelineRow.TimelineRow,
     disclosure: Readonly<Record<string, boolean | undefined>>,
   ) => boolean
-  setRevealMessage?: (fn: (id: string, partID?: string) => void) => void
+  setRevealMessage?: (fn: (id: SessionMessage.ID, partID?: string) => void) => void
   setScrollToEnd?: (fn: () => void) => void
   /** A tool call the route asks this timeline to open on; `done` clears it once revealed. */
   reveal?: { target: () => string | undefined; done: () => void }
@@ -389,7 +390,7 @@ export function createTimelineVirtualizer(input: Input) {
   function revealPart(target: string) {
     if (!active()) return false
 
-    const matches = (ref: { messageID: string; partID: string }) => {
+    const matches = (ref: { messageID: SessionMessage.ID; partID: string }) => {
       const content = Timeline.resolveContent(input.projection.messageByID().get(ref.messageID), ref.partID)
 
       return (

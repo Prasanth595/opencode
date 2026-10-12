@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
+import { SessionMessage } from "@opencode/schema/session-message"
 import { NO_PROVIDER, T0, provider } from "../utils/app"
 import { openDraft, openSession } from "../utils/workspace"
 
@@ -60,8 +61,12 @@ test("keeps a 25000-line crash report editable in a new session", async ({ page 
   await page.mouse.up()
   await expect(scroll.locator(".scroll-view__viewport")).toHaveJSProperty("scrollTop", 0)
   await expect(input).toBeFocused()
-  await page.keyboard.press("ControlOrMeta+Home")
-  await page.keyboard.press("ControlOrMeta+End")
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowUp" : "Control+Home")
+  await expectCaretVisible(input)
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End")
+  await expectCaretVisible(input)
+  await page.keyboard.type("?")
+  await expect.poll(() => input.innerText()).toBe(text + "!?")
   await expectCaretVisible(input)
 })
 
@@ -95,7 +100,7 @@ for (const [width, direction] of [
     await page.evaluate((direction) => (document.documentElement.dir = direction), direction)
     const suffix = "\nExisting trailing content".repeat(100)
     await input.fill("Before " + suffix)
-    await input.press("ControlOrMeta+Home")
+    await input.press(process.platform === "darwin" ? "Meta+ArrowUp" : "Control+Home")
     await input.press("ArrowRight")
     const text = "Pasted line /tmp/example.ts 123 \u0645\u0631\u062d\u0628\u0627\n".repeat(100) + "End of paste"
     await page.evaluate((text) => navigator.clipboard.writeText(text), text)
@@ -235,8 +240,9 @@ test("lists slash commands in their built-in order", async ({ page }) => {
       { name: "init", description: "Create AGENTS.md" },
       { name: "review", description: "Review changes" },
     ],
-    // A sent message enables /undo, /compact and /fork.
-    pageMessages: () => ({ items: [{ id: "msg_slash", type: "user", text: "Hello", time: { created: T0 } }] }),
+    pageMessages: () => ({
+      items: [{ id: SessionMessage.ID.make("msg_slash", { disableChecks: true }), type: "user", text: "Hello", time: { created: T0 } }],
+    }),
   })
 
   await editor.fill("/")

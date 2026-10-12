@@ -82,7 +82,10 @@ import { FrecencyProvider } from "./prompt/frecency"
 import { PromptStashProvider } from "./prompt/stash"
 import { Toast, ToastProvider, useToast } from "./ui/toast"
 import { isFallbackTitle } from "@opencode/util/session-title-fallback"
-import * as Model from "./util/model"
+import { Agent } from "@opencode/schema/agent"
+import { Provider } from "@opencode/schema/provider"
+import { Session } from "@opencode/schema/session"
+import { parse } from "./util/model"
 import { ArgsProvider, useArgs, type Args } from "./context/args"
 import { openUrl } from "@opencode/util/open"
 import { PromptRefProvider, usePromptRef } from "./context/prompt"
@@ -366,7 +369,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                               input.args.continue
                                                 ? {
                                                     type: "session",
-                                                    sessionID: "dummy",
+                                                    sessionID: Session.ID.make("dummy", { disableChecks: true }),
                                                   }
                                                 : undefined
                                             }
@@ -626,9 +629,9 @@ function App() {
   const startupPrompt = args.prompt ? { text: args.prompt, files: [], agents: [], pasted: [] } : undefined
   onMount(() => {
     batch(() => {
-      if (args.agent) local.agent.set(args.agent)
+      if (args.agent) local.agent.set(Agent.ID.make(args.agent, { disableChecks: true }))
       if (args.model) {
-        const { providerID, modelID } = Model.parse(args.model)
+        const { providerID, modelID } = parse(args.model)
         if (!providerID || !modelID)
           return toast.show({
             variant: "warning",
@@ -640,7 +643,7 @@ function App() {
       if (args.sessionID && !args.fork) {
         route.navigate({
           type: "session",
-          sessionID: args.sessionID,
+          sessionID: Session.ID.make(args.sessionID, { disableChecks: true }),
           prompt: startupPrompt,
         })
       }
@@ -680,7 +683,7 @@ function App() {
     if (forked || !args.sessionID || !args.fork) return
     forked = true
     void client.api.session
-      .fork({ sessionID: args.sessionID })
+      .fork({ sessionID: Session.ID.make(args.sessionID, { disableChecks: true }) })
       .then((result) => route.navigate({ type: "session", sessionID: result.id, prompt: startupPrompt }))
       .catch(toast.error)
   })
@@ -951,7 +954,11 @@ function App() {
         run: () => {
           dialog.replace(() => (
             <DialogIntegration
-              onConnected={(providerID) => dialog.replace(() => <DialogModel providerID={providerID} />)}
+              onConnected={(providerID) =>
+                dialog.replace(() => (
+                  <DialogModel providerID={providerID ? Provider.ID.make(providerID, { disableChecks: true }) : undefined} />
+                ))
+              }
             />
           ))
         },

@@ -1,4 +1,9 @@
 import { expect, test, type Page } from "@playwright/test"
+import { Event } from "@opencode/schema/event"
+import { Permission } from "@opencode/schema/permission"
+import { Project } from "@opencode/schema/project"
+import { Provider } from "@opencode/schema/provider"
+import { Session } from "@opencode/schema/session"
 import { REMOTE_SERVER, SERVER, expectPath, project, seed, session, sessionHref, type TabSeed } from "../utils/app"
 import { mockServers, type MockServerConfig } from "../utils/mock-server"
 import { expectSessionTitle } from "../utils/waits"
@@ -7,23 +12,23 @@ const directoryA = "C:/server-a"
 
 const directoryB = "/home/server-b"
 
-const sessionA = session({ id: "ses_server_a", directory: directoryA, title: "Server A session" })
+const sessionA = session({ id: Session.ID.make("ses_server_a", { disableChecks: true }), directory: directoryA, title: "Server A session" })
 
 const childA = session({
-  id: "ses_server_a_child",
+  id: Session.ID.make("ses_server_a_child", { disableChecks: true }),
   directory: directoryA,
   title: "Server A child",
   parentID: sessionA.id,
 })
 
-const sessionB = session({ id: "ses_server_b", directory: directoryB, title: "Server B session" })
+const sessionB = session({ id: Session.ID.make("ses_server_b", { disableChecks: true }), directory: directoryB, title: "Server B session" })
 
-type Reply = { origin: string; sessionID: string; permissionID: string; body: unknown }
+type Reply = { origin: string; sessionID: Session.ID; permissionID: Permission.ID; body: unknown }
 
 test.use({ serviceWorkers: "block" })
 
-function pending(id: string, sessionID: string) {
-  return { id, sessionID, action: "shell", resources: ["git status"], metadata: {}, save: [] }
+function pending(id: string, sessionID: Session.ID) {
+  return { id: Permission.ID.make(id, { disableChecks: true }), sessionID, action: "shell", resources: ["git status"], metadata: {}, save: [] }
 }
 
 async function setup(page: Page, input: { tabs: TabSeed[]; a?: Partial<MockServerConfig> }) {
@@ -41,11 +46,11 @@ async function setup(page: Page, input: { tabs: TabSeed[]; a?: Partial<MockServe
 
     return {
       directory,
-      project: project({ id: `proj_${id}`, directory }),
+      project: project({ id: Project.ID.make(`proj_${id}`, { disableChecks: true }), directory }),
       provider: {
-        all: [{ id, name: `${name} Provider`, models: { [id]: { id, name: `${name} Model` } } }],
-        connected: [id],
-        default: { providerID: id, modelID: id },
+        all: [{ id: Provider.ID.make(id, { disableChecks: true }), name: `${name} Provider`, models: { [id]: { id, name: `${name} Model` } } }],
+        connected: [Provider.ID.make(id, { disableChecks: true })],
+        default: { providerID: Provider.ID.make(id, { disableChecks: true }), modelID: id },
       },
       sessions,
       pageMessages: () => ({ items: [] }),
@@ -84,10 +89,10 @@ async function setup(page: Page, input: { tabs: TabSeed[]; a?: Partial<MockServe
   return { replies, sessionGets, transport: servers[SERVER]!.transport, listed, enableAutoAccept }
 }
 
-const reply = (sessionID: string, permissionID: string) => ({
+const reply = (sessionID: Session.ID, permissionID: string) => ({
   origin: SERVER,
   sessionID,
-  permissionID,
+  permissionID: Permission.ID.make(permissionID, { disableChecks: true }),
   body: { decision: "once" },
 })
 
@@ -145,7 +150,7 @@ test("auto-accept responds for an unfocused server session and its child", async
 
   for (const [index, item] of [sessionA, childA].entries()) {
     await view.transport.send({
-      id: `evt_permission_background_${index}`,
+      id: Event.ID.make(`evt_permission_background_${index}`, { disableChecks: true }),
       created: 1700000001000 + index,
       type: "permission.asked",
       location: { directory: directoryA },

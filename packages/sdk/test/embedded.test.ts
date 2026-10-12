@@ -11,7 +11,7 @@ import { WorkspaceDriver } from "@opencode/core/workspace/driver"
 import { Plugin } from "@opencode/plugin/effect"
 import { makeDurableObjectStorage } from "../../core/test/fixture/durable-object-storage"
 import { OpenCodeWorkerd } from "../src/effect/workerd"
-import { Deferred, Effect, Fiber, Latch, Layer, Option, Stream } from "effect"
+import { Deferred, Effect, Fiber, Latch, Layer, Option, Schedule, Stream } from "effect"
 import { testEffect } from "../../core/test/lib/effect"
 import { tmpdir } from "../../core/test/fixture/tmpdir"
 import type { OpenCodeEvent } from "../src/effect"
@@ -257,7 +257,9 @@ it.live(
           [
             opencode.sessions.log({ sessionID: missingSessionID }).pipe(Stream.runHead, Effect.flip),
             opencode.sessions.interrupt({ sessionID: missingSessionID }).pipe(Effect.flip),
-            opencode.sessions.message.get({ sessionID: missingSessionID, messageID: modelMessage.id }).pipe(Effect.flip),
+            opencode.sessions.message
+              .get({ sessionID: missingSessionID, messageID: modelMessage.id })
+              .pipe(Effect.flip),
             opencode.sessions.instructions.entry.list({ sessionID: missingSessionID }).pipe(Effect.flip),
             opencode.sessions.inbox.list({ sessionID: missingSessionID }).pipe(Effect.flip),
           ],
@@ -320,6 +322,12 @@ it.live("embedded client exposes plugin-backed web search", () =>
             })
           }),
       })
+
+      yield* opencode.websearch.providers({ location: location(fixture) }).pipe(
+        Effect.filterOrFail((page) => page.data.some((provider) => provider.id === providerID)),
+        Effect.retry(Schedule.spaced("10 millis")),
+        Effect.timeout("2 seconds"),
+      )
 
       const result = yield* opencode.websearch.query({
         query: "opencode",

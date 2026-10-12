@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { SessionMessage } from "@opencode/schema/session-message"
 import {
   defineVisualRegions,
   reportVisualStability,
@@ -93,10 +94,13 @@ test.describe("timeline adverse visual stability", () => {
     const targetID = "prt_virtual_shell"
 
     const messages = [
-      userMessage(undefined, { id: "msg_0000_virtual_user", created: 1700000000000 }),
+      userMessage(undefined, {
+        id: SessionMessage.ID.make("msg_0000_virtual_user", { disableChecks: true }),
+        created: 1700000000000,
+      }),
       assistantMessage([shell(targetID, "completed", lines(20))], {
-        id: "msg_0001_virtual_assistant",
-        parentID: "msg_0000_virtual_user",
+        id: SessionMessage.ID.make("msg_0001_virtual_assistant", { disableChecks: true }),
+        parentID: SessionMessage.ID.make("msg_0000_virtual_user", { disableChecks: true }),
         created: 1700000001000,
       }),
       ...history(35, 10),
@@ -249,7 +253,7 @@ function history(count: number, offset = 0): TimelineMessage[] {
   return Array.from({ length: count }, (_, index) => {
     const value = index + offset
     const prefix = `msg_0${String(value).padStart(3, "0")}_history`
-    const userID = `${prefix}_a_user`
+    const userID = SessionMessage.ID.make(`${prefix}_a_user`, { disableChecks: true })
 
     return [
       userMessage(undefined, { id: userID, created: 1699990000000 + value * 10_000 }),
@@ -261,7 +265,7 @@ function history(count: number, offset = 0): TimelineMessage[] {
           ),
         ],
         {
-          id: `${prefix}_b_assistant`,
+          id: SessionMessage.ID.make(`${prefix}_b_assistant`, { disableChecks: true }),
           parentID: userID,
           created: 1699990001000 + value * 10_000,
         },

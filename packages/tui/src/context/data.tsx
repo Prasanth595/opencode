@@ -1,5 +1,6 @@
 import { createData } from "@opencode/client/solid"
 import type { LocationRef } from "@opencode/client"
+import { Session } from "@opencode/schema/session"
 import type { Plugin } from "@opencode/plugin/tui"
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "./helper"
@@ -32,8 +33,8 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
       session: {
         ...data.session,
         title: {
-          pending: (sessionID: string) => generatingTitles[sessionID] === true,
-          async generate(sessionID: string) {
+          pending: (sessionID: Session.ID) => generatingTitles[sessionID] === true,
+          async generate(sessionID: Session.ID) {
             if (generatingTitles[sessionID]) return
             setGeneratingTitles(sessionID, true)
             await client.api.session

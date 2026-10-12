@@ -1,3 +1,4 @@
+import { SessionID } from "@opencode/schema/session-id"
 import { describe, expect, test } from "bun:test"
 import { createRoot, getOwner, onCleanup } from "solid-js"
 import { createTabMemory } from "./memory"
@@ -20,7 +21,7 @@ const server = ServerConnection.Key.make("local\nhttp://localhost:4096")
 const decodeTabs = Schema.decodeUnknownSync(Persistence.withInitial(TabStorage.Tabs, []))
 
 function sessionTab(sessionId: string): SessionTab {
-  return { type: "session", server, sessionId }
+  return { type: "session", server, sessionId: SessionID.make(sessionId, { disableChecks: true }) }
 }
 
 describe("tab migration", () => {
@@ -55,13 +56,27 @@ describe("tab migration", () => {
   })
 
   test("preserves the active child route and drops an invalid one", () => {
-    expect(decodeTabs([{ ...sessionTab("root"), routeSessionId: "child", routeParentId: "parent" }])).toEqual([
-      { ...sessionTab("root"), routeSessionId: "child", routeParentId: "parent" },
+    expect<unknown>(
+      decodeTabs([
+        {
+          ...sessionTab("root"),
+          routeSessionId: SessionID.make("child", { disableChecks: true }),
+          routeParentId: "parent",
+        },
+      ]),
+    ).toEqual([
+      {
+        ...sessionTab("root"),
+        routeSessionId: "child",
+        routeParentId: "parent",
+      },
     ])
     expect(decodeTabs([{ ...sessionTab("parent"), routeSessionId: 1 }])).toEqual([sessionTab("parent")])
-    expect(decodeTabs([{ ...sessionTab("parent"), routeSessionId: "child", routeParentId: 1 }])).toEqual([
-      { ...sessionTab("parent"), routeSessionId: "child" },
-    ])
+    expect<unknown>(
+      decodeTabs([
+        { ...sessionTab("parent"), routeSessionId: SessionID.make("child", { disableChecks: true }), routeParentId: 1 },
+      ]),
+    ).toEqual([{ ...sessionTab("parent"), routeSessionId: "child" }])
   })
 
   test("encodes only canonical tabs and preserves drafts", () => {
@@ -106,23 +121,25 @@ describe("tab migration", () => {
 
 test("session tab identity stays rooted while its href follows the child route", () => {
   const parent = sessionTab("parent")
-  const child = { ...parent, routeSessionId: "child" }
+  const child = { ...parent, routeSessionId: SessionID.make("child", { disableChecks: true }) }
 
   expect(tabKey(child)).toBe(tabKey(parent))
   expect(tabHref(child)).toContain("/session/child")
 })
 
 test("finds open root and routed session tabs", () => {
-  const tab = { ...sessionTab("root"), routeSessionId: "child" }
+  const tab = { ...sessionTab("root"), routeSessionId: SessionID.make("child", { disableChecks: true }) }
   const tabs = [tab]
 
-  expect(findSessionTab(tabs, server, "root")).toBe(tab)
-  expect(findSessionTab(tabs, server, "child")).toBe(tab)
-  expect(findSessionTab(tabs, server, "closed")).toBeUndefined()
-  expect(sessionIDHasOpenTab(tabs, server, "root")).toBe(true)
-  expect(sessionIDHasOpenTab(tabs, server, "child")).toBe(true)
-  expect(sessionIDHasOpenTab(tabs, server, "closed")).toBe(false)
-  expect(sessionIDHasOpenTab(tabs, ServerConnection.Key.make("other"), "root")).toBe(false)
+  expect(findSessionTab(tabs, server, SessionID.make("root", { disableChecks: true }))).toBe(tab)
+  expect(findSessionTab(tabs, server, SessionID.make("child", { disableChecks: true }))).toBe(tab)
+  expect(findSessionTab(tabs, server, SessionID.make("closed", { disableChecks: true }))).toBeUndefined()
+  expect(sessionIDHasOpenTab(tabs, server, SessionID.make("root", { disableChecks: true }))).toBe(true)
+  expect(sessionIDHasOpenTab(tabs, server, SessionID.make("child", { disableChecks: true }))).toBe(true)
+  expect(sessionIDHasOpenTab(tabs, server, SessionID.make("closed", { disableChecks: true }))).toBe(false)
+  expect(
+    sessionIDHasOpenTab(tabs, ServerConnection.Key.make("other"), SessionID.make("root", { disableChecks: true })),
+  ).toBe(false)
 })
 
 describe("tab memory", () => {
@@ -176,8 +193,8 @@ describe("closed tab stack", () => {
     )
 
     expect(stack).toHaveLength(25)
-    expect(stack[0]?.tab.sessionId).toBe("s5")
-    expect(stack.at(-1)?.tab.sessionId).toBe("s29")
+    expect<unknown>(stack[0]?.tab.sessionId).toBe("s5")
+    expect<unknown>(stack.at(-1)?.tab.sessionId).toBe("s29")
   })
 
   test("keeps only the newest close record for a session", () => {
@@ -200,8 +217,7 @@ describe("closed tab stack", () => {
     ]
 
     const result = takeClosedTab(stack, [])
-
-    expect(result.entry?.tab.sessionId).toBe("b")
+    expect(result.entry?.tab.sessionId).toBe(SessionID.make("b", { disableChecks: true }))
     expect(result.stack).toEqual([{ tab: sessionTab("a"), index: 0 }])
   })
 
@@ -213,7 +229,7 @@ describe("closed tab stack", () => {
 
     const result = takeClosedTab(stack, [sessionTab("b")])
 
-    expect(result.entry?.tab.sessionId).toBe("a")
+    expect(result.entry?.tab.sessionId).toBe(SessionID.make("a", { disableChecks: true }))
     expect(result.stack).toEqual([])
   })
 
@@ -224,7 +240,10 @@ describe("closed tab stack", () => {
       { tab: sessionTab("c"), index: 2 },
     ]
 
-    expect(listClosedTabs(stack, [sessionTab("b")]).map((entry) => entry.tab.sessionId)).toEqual(["c", "a"])
+    expect(listClosedTabs(stack, [sessionTab("b")]).map((entry) => entry.tab.sessionId)).toEqual([
+      SessionID.make("c", { disableChecks: true }),
+      SessionID.make("a", { disableChecks: true }),
+    ])
   })
 
   test("deduplicates previously stored close records", () => {
@@ -235,8 +254,8 @@ describe("closed tab stack", () => {
     ]
 
     expect(listClosedTabs(stack, []).map((entry) => [entry.tab.sessionId, entry.index])).toEqual([
-      ["a", 2],
-      ["b", 1],
+      [SessionID.make("a", { disableChecks: true }), 2],
+      [SessionID.make("b", { disableChecks: true }), 1],
     ])
   })
 
@@ -249,8 +268,11 @@ describe("closed tab stack", () => {
 
     const result = takeClosedTab(stack, [], sessionTab("a"))
 
-    expect(result.entry?.tab.sessionId).toBe("a")
-    expect(result.stack.map((entry) => entry.tab.sessionId)).toEqual(["b", "c"])
+    expect(result.entry?.tab.sessionId).toBe(SessionID.make("a", { disableChecks: true }))
+    expect(result.stack.map((entry) => entry.tab.sessionId)).toEqual([
+      SessionID.make("b", { disableChecks: true }),
+      SessionID.make("c", { disableChecks: true }),
+    ])
   })
 
   test("returns no entry when everything is open or empty", () => {

@@ -9,6 +9,7 @@
 //      local sessions,
 //   4. runs the prompt queue until the footer closes.
 import { SessionMessage } from "@opencode/schema/session-message"
+import { Session } from "@opencode/schema/session"
 import type { LocationRef } from "@opencode/client/promise"
 import type { Config } from "../config"
 import { newSessionLocation } from "../config/new-session-location"
@@ -103,7 +104,7 @@ type RunDemo = ReturnType<(typeof import("./demo"))["createRunDemo"]>
 
 type ResolvedSession = {
   sdk?: RunInput["sdk"]
-  sessionID: string
+  sessionID: Session.ID
   sessionTitle?: string
   location: RunInput["location"]
   model: RunInput["model"]
@@ -120,7 +121,7 @@ type RuntimeState = {
   providers: RunProvider[]
   variants: string[]
   activeVariant: string | undefined
-  sessionID: string
+  sessionID: Session.ID
   history: RunPrompt[]
   localRows: LocalReplayRow[]
   sessionTitle?: string
@@ -128,7 +129,7 @@ type RuntimeState = {
   location: LocationRef
   switching?: Promise<void>
   demo?: RunDemo
-  selectSubagent?: (sessionID: string | undefined) => void
+  selectSubagent?: (sessionID: Session.ID | undefined) => void
   session?: Promise<void>
   stream?: Promise<StreamState>
 }
@@ -216,7 +217,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     providers: [],
     variants: [],
     activeVariant: resolveVariant(ctx.variant, session.variant, savedVariant, []),
-    sessionID: "",
+    sessionID: Session.ID.make("", { disableChecks: true }),
     history: [...session.history],
     localRows: [],
     agent: ctx.agent,
@@ -394,18 +395,19 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     onQueuedPromptAction: async (action, inboxID) => {
       if (!state.sessionID) return
       log?.write(`send.pending.${action}`, { sessionID: state.sessionID, inboxID })
+      const messageID = SessionMessage.ID.make(inboxID, { disableChecks: true })
       if (action === "cancel") {
-        await state.sdk.session.inbox.cancel({ sessionID: state.sessionID, inboxID })
+        await state.sdk.session.inbox.cancel({ sessionID: state.sessionID, inboxID: messageID })
         return
       }
-      await state.sdk.session.inbox.update({ sessionID: state.sessionID, inboxID, delivery: action })
+      await state.sdk.session.inbox.update({ sessionID: state.sessionID, inboxID: messageID, delivery: action })
     },
     onSubagentInterrupt: (sessionID) => {
       log?.write("send.subagent.interrupt", { sessionID })
-      void state.sdk.session.interrupt({ sessionID }).catch(() => {})
+      void state.sdk.session.interrupt({ sessionID: Session.ID.make(sessionID, { disableChecks: true }) }).catch(() => {})
     },
     onSubagentSelect: (sessionID) => {
-      state.selectSubagent?.(sessionID)
+      state.selectSubagent?.(sessionID ? Session.ID.make(sessionID, { disableChecks: true }) : undefined)
       log?.write("subagent.select", {
         sessionID,
       })

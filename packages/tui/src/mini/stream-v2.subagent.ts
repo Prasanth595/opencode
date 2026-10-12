@@ -23,6 +23,8 @@ import type {
   SessionMessageInfo,
   SessionMessageUser,
 } from "@opencode/client/promise"
+import { Session } from "@opencode/schema/session"
+import { SessionMessage } from "@opencode/schema/session-message"
 import { Locale } from "../util/locale"
 import { createFragmentReconciler, fragmentRef, type FragmentReconciler } from "./stream-v2.fragment"
 import { toolImageCommits, userImageCommits } from "./stream-v2.image"
@@ -124,7 +126,7 @@ type ChildState = {
 }
 
 export type SubagentTrackerInput = {
-  sessionID: string
+  sessionID: Session.ID
   thinking: boolean
   directory?: string
   signal: AbortSignal
@@ -406,8 +408,11 @@ export function createSubagentTracker(input: SubagentTrackerInput): SubagentTrac
     const pendingTools = new Map(child.tools)
     let retry = false
     const task = Promise.all([
-      sdk.message.list({ sessionID: child.sessionID, limit: CHILD_MESSAGE_LIMIT, order: "desc" }, { signal }),
-      sdk.session.inbox.list({ sessionID: child.sessionID }, { signal }),
+      sdk.message.list(
+        { sessionID: Session.ID.make(child.sessionID, { disableChecks: true }), limit: CHILD_MESSAGE_LIMIT, order: "desc" },
+        { signal },
+      ),
+      sdk.session.inbox.list({ sessionID: Session.ID.make(child.sessionID, { disableChecks: true }) }, { signal }),
     ])
       .then(([response, pending]) => {
         if (!active(signal)) return
@@ -469,7 +474,15 @@ export function createSubagentTracker(input: SubagentTrackerInput): SubagentTrac
     for (let offset = 0; offset < messageIDs.length; offset += FAMILY_DISCOVERY_CONCURRENCY) {
       const batch = messageIDs.slice(offset, offset + FAMILY_DISCOVERY_CONCURRENCY)
       const messages = await Promise.allSettled(
-        batch.map((messageID) => sdk.session.message.get({ sessionID: child.sessionID, messageID }, { signal })),
+        batch.map((messageID) =>
+          sdk.session.message.get(
+            {
+              sessionID: Session.ID.make(child.sessionID, { disableChecks: true }),
+              messageID: SessionMessage.ID.make(messageID, { disableChecks: true }),
+            },
+            { signal },
+          ),
+        ),
       )
       if (!blockerCurrent(child, epoch, signal)) return permissions
       if (
@@ -533,7 +546,9 @@ export function createSubagentTracker(input: SubagentTrackerInput): SubagentTrac
     if (timer) clearTimeout(timer)
     blockerRetryTimers.delete(child.sessionID)
     const tasks = [
-      sdk.permission.list({ sessionID: child.sessionID }, { signal }).then(async (permissions) => {
+      sdk.permission
+        .list({ sessionID: Session.ID.make(child.sessionID, { disableChecks: true }) }, { signal })
+        .then(async (permissions) => {
         if (!blockerCurrent(child, epoch, signal)) return
         const resolved = await resolvePermissionTools(sdk, child, permissions, epoch, signal)
         if (!blockerCurrent(child, epoch, signal)) return
@@ -585,7 +600,10 @@ export function createSubagentTracker(input: SubagentTrackerInput): SubagentTrac
     try {
       const lineage = []
       const visited = new Set<string>()
-      let session = await job.sdk.session.get({ sessionID: job.sessionID }, { signal: job.signal })
+      let session = await job.sdk.session.get(
+        { sessionID: Session.ID.make(job.sessionID, { disableChecks: true }) },
+        { signal: job.signal },
+      )
       while (lineage.length < FAMILY_LIST_LIMIT && !visited.has(session.id)) {
         if (!active(job.signal)) return
         visited.add(session.id)

@@ -228,6 +228,8 @@ SDK icon fields use `IconName` from `@opencode/ui/icons/catalog`, a dependency-f
 
 ### Host APIs
 
+`SessionRef.id` and subagent `BackgroundTask.id` use the canonical `SessionID` from `@opencode/schema/session-id`; their runtime string values are unchanged. Shell background task identifiers may also name the original tool call.
+
 | Property                     | Type ([window](src/sdk/host-apis.ts), [main](src/sdk/main.ts)) | What it does                                                      |
 | ---------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------- |
 | `ctx.layout`                 | `Layout`                                                       | Side panel tabs, the dock, scroll offsets, settings, open project |

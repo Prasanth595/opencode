@@ -1,3 +1,4 @@
+import type { SessionID } from "@opencode/schema/session-id"
 import { createMemo, type Accessor } from "solid-js"
 import { useGlobal, useServerCtx } from "@/runtime/server/runtime"
 import { sessionPermissionRequest, sessionFormRequest } from "@/session/requests/session-request-tree"
@@ -6,7 +7,7 @@ import { useSettings } from "@/settings/model"
 
 export function useSessionTabAvatarState(
   server: Accessor<ServerConnection.Key>,
-  sessionId: Accessor<string>,
+  sessionId: Accessor<SessionID>,
   root?: Accessor<boolean>,
 ) {
   const global = useGlobal()
@@ -60,7 +61,7 @@ export function useSessionTabAvatarState(
     if (needsAttention()) return false
 
     // Like the TUI, work waiting in the inbox counts as busy; parked synthetic context does not.
-    const busy = (id: string) =>
+    const busy = (id: SessionID) =>
       data.session.status(id) === "running" || data.session.pending.list(id).some((item) => item.type !== "synthetic")
 
     if (root?.())

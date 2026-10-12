@@ -1,3 +1,4 @@
+import type { SessionMessage } from "@opencode/schema/session-message"
 import type {
   ModelRef,
   SessionMessageAssistant,
@@ -17,6 +18,8 @@ import {
 } from "../message/current-tool-state"
 import { TimelineRow, type PartGroup, type PartRef, type TimelineRowMap } from "./timeline-row"
 import { timelineCategory, timelineNoticeRequired, type TimelineDetail } from "./detail"
+import { Model } from "@opencode/schema/model"
+import { Provider } from "@opencode/schema/provider"
 
 export { TimelineRow, type PartGroup, type PartRef, type TimelineRowMap }
 
@@ -77,19 +80,21 @@ export type TimelineProjectionInput = {
   shellToolDefaultOpen?: boolean
   editToolDefaultOpen?: boolean
   timelineDetail?: TimelineDetail
-  pendingInputIDs?: ReadonlySet<string>
-  queuedCompactionIDs?: readonly string[]
+  pendingInputIDs?: ReadonlySet<SessionMessage.ID>
+  pendingUserMessageIDs?: ReadonlySet<SessionMessage.ID>
+  queuedCompactionIDs?: readonly SessionMessage.ID[]
   previousRows?: TimelineRow.TimelineRow[]
 }
 
 export function createTimelineProjection(input: TimelineProjectionInput) {
-  const sessionMessageByID = new Map(input.sessionMessages.map((message) => [message.id, message] as const))
-
+  const sessionMessageByID = new Map<SessionMessage.ID, SessionMessageInfo>(
+    input.sessionMessages.map((message) => [message.id, message] as const),
+  )
   const projection = Timeline.constructSessionMessageRows(
     input.sessionMessages,
     input.reasoningMode !== "hidden",
     input.status,
-    input.pendingInputIDs,
+    input.pendingInputIDs ?? input.pendingUserMessageIDs,
     input.shellToolDefaultOpen ?? false,
     input.editToolDefaultOpen ?? false,
     undefined,
@@ -99,9 +104,9 @@ export function createTimelineProjection(input: TimelineProjectionInput) {
 
   const rows = reuseTimelineRows(input.previousRows, projection.rows)
   const rowByKey = new Map(rows.map((row) => [TimelineRow.key(row), row] as const))
-  const messageRowIndex = new Map<string, number>()
-  const messageLastRowIndex = new Map<string, number>()
-  const lastAssistantGroupKey = new Map<string, string>()
+  const messageRowIndex = new Map<SessionMessage.ID, number>()
+  const messageLastRowIndex = new Map<SessionMessage.ID, number>()
+  const lastAssistantGroupKey = new Map<SessionMessage.ID, string>()
 
   rows.forEach((row, index) => {
     if (!messageRowIndex.has(row.userMessageID)) messageRowIndex.set(row.userMessageID, index)
@@ -131,11 +136,15 @@ export function createReactiveTimelineProjection(input: {
   shellToolDefaultOpen?: Accessor<boolean>
   editToolDefaultOpen?: Accessor<boolean>
   timelineDetail?: Accessor<TimelineDetail>
-  pendingInputIDs?: Accessor<ReadonlySet<string>>
-  queuedCompactionIDs?: Accessor<readonly string[]>
+  pendingInputIDs?: Accessor<ReadonlySet<SessionMessage.ID>>
+  pendingUserMessageIDs?: Accessor<ReadonlySet<SessionMessage.ID>>
+  queuedCompactionIDs?: Accessor<readonly SessionMessage.ID[]>
 }) {
   const sessionMessageByID = createMemo(
-    () => new Map(input.sessionMessages().map((message) => [message.id, message] as const)),
+    () =>
+      new Map<SessionMessage.ID, SessionMessageInfo>(
+        input.sessionMessages().map((message) => [message.id, message] as const),
+      ),
   )
 
   const userContextByID = createMemo(() => indexUserContext(input.sessionMessages()))
@@ -160,10 +169,10 @@ export function createReactiveTimelineProjection(input: {
       input.sessionMessages(),
       input.reasoningMode() !== "hidden",
       input.status(),
-      input.pendingInputIDs?.(),
+      input.pendingInputIDs?.() ?? input.pendingUserMessageIDs?.(),
       input.shellToolDefaultOpen?.() ?? false,
       input.editToolDefaultOpen?.() ?? false,
-      (content, showReasoning, detail) =>
+      (content: Content, showReasoning: boolean, detail?: TimelineDetail) =>
         content.type === "tool"
           ? renderable(content, showReasoning, detail)
           : (content.type === "text" || (detail ? detail.thinking.placement !== "hidden" : showReasoning)) &&
@@ -182,7 +191,7 @@ export function createReactiveTimelineProjection(input: {
   const rowByKey = createMemo(() => new Map(rows().map((row) => [TimelineRow.key(row), row] as const)))
 
   const messageRowIndex = createMemo(() => {
-    const result = new Map<string, number>()
+    const result = new Map<SessionMessage.ID, number>()
     rows().forEach((row, index) => {
       if (result.has(row.userMessageID)) return
       result.set(row.userMessageID, index)
@@ -192,14 +201,14 @@ export function createReactiveTimelineProjection(input: {
   })
 
   const messageLastRowIndex = createMemo(() => {
-    const result = new Map<string, number>()
+    const result = new Map<SessionMessage.ID, number>()
     rows().forEach((row, index) => result.set(row.userMessageID, index))
 
     return result
   })
 
   const lastAssistantGroupKey = createMemo(() => {
-    const result = new Map<string, string>()
+    const result = new Map<SessionMessage.ID, string>()
     rows().forEach((row) => {
       if (Predicate.isTagged(row, "AssistantPart")) result.set(row.userMessageID, row.group.key)
     })
@@ -226,15 +235,15 @@ export namespace Timeline {
     messages: SessionMessageInfo[],
     showReasoning: boolean,
     status: SessionStatus,
-    pendingInputIDs?: ReadonlySet<string>,
+    pendingInputIDs?: ReadonlySet<SessionMessage.ID>,
     shellToolDefaultOpen = false,
     editToolDefaultOpen = false,
     isRenderable = renderable,
     detail?: TimelineDetail,
-    queuedCompactionIDs: readonly string[] = [],
+    queuedCompactionIDs: readonly SessionMessage.ID[] = [],
   ) {
     type Turn = {
-      id: string
+      id: SessionMessage.ID
       time: { created: number }
       user?: SessionMessageUser
       shell?: SessionMessageShell
@@ -242,7 +251,7 @@ export namespace Timeline {
     }
 
     const turns: Turn[] = []
-    const turnByUserID = new Map<string, Turn>()
+    const turnByUserID = new Map<SessionMessage.ID, Turn>()
     const leading: Notice[] = []
     let current: Turn | undefined
 
@@ -420,7 +429,7 @@ export namespace Timeline {
 
   export function constructMessageRows(
     userMessage: SessionMessageUser | undefined,
-    turnID: string,
+    turnID: SessionMessage.ID,
     entries: Entry[],
     index: number,
     showReasoning: boolean,
@@ -600,7 +609,11 @@ function shellFailed(message: SessionMessageShell) {
   )
 }
 
-function groupMessages(rows: TimelineRow.TimelineRow[], detail: TimelineDetail, separate: ReadonlySet<string>) {
+function groupMessages(
+  rows: TimelineRow.TimelineRow[],
+  detail: TimelineDetail,
+  separate: ReadonlySet<SessionMessage.ID>,
+) {
   return rows.reduce<TimelineRow.TimelineRow[]>((result, row) => {
     const previous = result.at(-1)
 
@@ -676,10 +689,10 @@ export function reuseTimelineRows(previous: TimelineRow.TimelineRow[] | undefine
 }
 
 function indexUserContext(messages: SessionMessageInfo[]) {
-  const result = new Map<string, { agent: string; model: ModelRef }>()
+  const result = new Map<SessionMessage.ID, { agent: string; model: ModelRef }>()
   let agent = ""
-  let model: ModelRef = { id: "", providerID: "" }
-  let userID: string | undefined
+  let model: ModelRef = { id: Model.ID.make(""), providerID: Provider.ID.make("") }
+  let userID: SessionMessage.ID | undefined
 
   messages.forEach((message) => {
     if (message.type === "agent-switched") agent = message.agent
@@ -697,9 +710,16 @@ function indexUserContext(messages: SessionMessageInfo[]) {
           onSome: (local) => local.agent,
         }),
         model:
-          localModel && localModelID
-            ? { id: localModelID, providerID: localModel.providerID, variant: localModel.variant }
-            : model,
+          localModel &&
+          typeof localModel === "object" &&
+          !Array.isArray(localModel) &&
+          localModelID &&
+          typeof localModel.providerID === "string"
+            ? {
+                id: Model.ID.make(localModelID),
+                providerID: Provider.ID.make(localModel.providerID),
+                variant: typeof localModel.variant === "string" ? Model.VariantID.make(localModel.variant) : undefined,
+              }            : model,
       })
     }
 
@@ -716,8 +736,8 @@ function indexUserContext(messages: SessionMessageInfo[]) {
 }
 
 function indexAssistantMessages(messages: SessionMessageInfo[]) {
-  const result = new Map<string, SessionMessageAssistant[]>()
-  let userID: string | undefined
+  const result = new Map<SessionMessage.ID, SessionMessageAssistant[]>()
+  let userID: SessionMessage.ID | undefined
 
   messages.forEach((message) => {
     if (message.type === "user") userID = message.id
@@ -802,7 +822,7 @@ function renderable(content: Content, showReasoning: boolean, detail?: TimelineD
 }
 
 function groupContent(
-  items: { messageID: string; partID: string; content: Content }[],
+  items: { messageID: SessionMessage.ID; partID: string; content: Content }[],
   shellToolDefaultOpen: boolean,
   editToolDefaultOpen: boolean,
   detail?: TimelineDetail,

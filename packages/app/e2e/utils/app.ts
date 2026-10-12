@@ -1,5 +1,7 @@
 import { expect, type Page, type Request } from "@playwright/test"
 import type { SessionMessageInfo } from "@opencode/client/promise"
+import { Project } from "@opencode/schema/project"
+import { Session } from "@opencode/schema/session"
 import { base64Encode, checksum } from "@opencode/util/encode"
 
 // The mocked default server. Production builds connect to their own origin, so CI points this at the app.
@@ -133,7 +135,9 @@ function tabEntry(tab: TabSeed) {
   return { type: "draft", draftID: tab.draft, server: tab.server ?? SERVER, directory: tab.directory }
 }
 
-export function project(input: { id: string; directory: string; name?: string } & Record<string, unknown>) {
+export function project<ID extends Project.ID | string = string>(
+  input: { id: ID; directory: string; name?: string } & Record<string, unknown>,
+) {
   const { directory, ...rest } = input
 
   return {
@@ -147,8 +151,8 @@ export function project(input: { id: string; directory: string; name?: string } 
   }
 }
 
-export function session(
-  input: { id: string; directory: string; title?: string; projectID?: string; created?: number } & Record<
+export function session<ID extends Session.ID | string = Session.ID>(
+  input: { id: ID; directory: string; title?: string; projectID?: Project.ID | string; created?: number } & Record<
     string,
     unknown
   >,

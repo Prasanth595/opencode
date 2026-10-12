@@ -1,5 +1,10 @@
 import type { Plugin } from "@opencode/plugin/tui"
 import type { SessionMessageAssistant, SessionMessageAssistantText } from "@opencode/client"
+import { Agent } from "@opencode/schema/agent"
+import { Model } from "@opencode/schema/model"
+import { Provider } from "@opencode/schema/provider"
+import { SessionID } from "@opencode/schema/session-id"
+import { SessionMessage } from "@opencode/schema/session-message"
 import { useTerminalDimensions } from "@opentui/solid"
 import { createSignal } from "solid-js"
 import { useConfig } from "../../../config"
@@ -28,10 +33,13 @@ const text = `Click, double-click, drag, right-click, or Ctrl/Shift+click the li
 
 const part: SessionMessageAssistantText = { type: "text", text }
 const message: SessionMessageAssistant = {
-  id: "link-clicks",
+  id: SessionMessage.ID.make("link-clicks", { disableChecks: true }),
   type: "assistant",
-  agent: "build",
-  model: { providerID: "fixture", id: "fixture" },
+  agent: Agent.ID.make("build", { disableChecks: true }),
+  model: {
+    providerID: Provider.ID.make("fixture", { disableChecks: true }),
+    id: Model.ID.make("fixture", { disableChecks: true }),
+  },
   time: { created: 0, completed: 1 },
   content: [part],
 }
@@ -82,7 +90,7 @@ function LinkClicksStory(props: { context: Plugin.Context }) {
           get terminal() {
             return dimensions()
           },
-          sessionID: "link-clicks",
+          sessionID: SessionID.make("link-clicks", { disableChecks: true }),
           anchors: createTimelineAnchors(),
           groupExpanded: () => true,
           setGroupExpanded: () => {},

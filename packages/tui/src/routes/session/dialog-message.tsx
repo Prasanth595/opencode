@@ -8,10 +8,12 @@ import { errorMessage } from "../../util/error"
 import { DialogFork } from "./dialog-fork"
 import type { PromptInfo } from "../../prompt/history"
 import { projectedPromptInput } from "../../prompt/codec"
+import { Session } from "@opencode/schema/session"
+import { SessionMessage } from "@opencode/schema/session-message"
 
 export function DialogMessage(props: {
-  messageID: string
-  sessionID: string
+  messageID: SessionMessage.ID
+  sessionID: Session.ID
   setPrompt?: (prompt: PromptInfo) => void
 }) {
   const data = useData()

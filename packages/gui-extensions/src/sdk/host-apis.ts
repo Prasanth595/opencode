@@ -1,3 +1,4 @@
+import type { SessionID } from "@opencode/schema/session-id"
 import type { Data } from "@opencode/client/solid"
 import type { LocationRef, OpenCodeClient, ProjectListOutput, WorktreeDirectory } from "@opencode/client/promise"
 import type { Schema } from "effect"
@@ -37,8 +38,8 @@ export interface ServerRef {
 export interface SessionRef {
   /** `${server id}\n${session id}`: unique across servers. Key per-session state by it. */
   readonly key: string
-  /** The session's id on its server. */
-  readonly id: string
+  /** The session's canonical id on its server. */
+  readonly id: SessionID
   /** The key of the shell tab that owns the session. */
   readonly tab: string
   /** The session's server. */
@@ -521,20 +522,25 @@ export interface Composer {
 }
 
 /** Work the session moved to the background. */
-export interface BackgroundTask {
-  /** The task's id. */
-  id: string
-  /**
-   * What runs.
-   * - `shell`: a shell command.
-   * - `subagent`: a subagent.
-   */
-  type: "shell" | "subagent"
+export type BackgroundTask = {
   /** The task's display label. */
   label: string
-  /** The subagent's name, for `subagent` tasks. */
-  agent?: string
-}
+} & (
+  | {
+      /** The child session's canonical id. */
+      id: SessionID
+      /** A subagent running in its child session. */
+      type: "subagent"
+      /** The subagent's name, when the task reports it. */
+      agent?: string
+    }
+  | {
+      /** The shell or tool-call identifier used to match its completion notice. */
+      id: string
+      /** A background shell command. */
+      type: "shell"
+    }
+)
 
 /**
  * A routed session on the session screen: its identity and data, and nothing that acts on whichever session is

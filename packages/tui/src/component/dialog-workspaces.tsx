@@ -17,6 +17,7 @@ import { useToast } from "../ui/toast"
 import { Spinner } from "./spinner"
 import { DialogWorkspaceFileChanges } from "./dialog-workspace-file-changes"
 import type { WorktreeListOutput } from "@opencode/client"
+import { Project } from "@opencode/schema/project"
 import { useRoute } from "../context/route"
 import { DialogWorktreeName } from "./dialog-worktree-name"
 
@@ -26,7 +27,7 @@ export type WorkspaceSelection =
 type ProjectDirectory = WorktreeListOutput[number]
 
 type DialogWorkspacesProps = {
-  projectID: string
+  projectID: Project.ID
   location?: { directory: string }
   current?: WorkspaceSelection
   onSelect: (selection: WorkspaceSelection) => void

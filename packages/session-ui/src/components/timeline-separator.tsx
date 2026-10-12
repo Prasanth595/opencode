@@ -1,3 +1,5 @@
+import type { Provider } from "@opencode/schema/provider"
+import type { Model } from "@opencode/schema/model"
 import { ProviderIcon } from "@opencode/ui/provider-icon"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { Show } from "solid-js"
@@ -6,8 +8,8 @@ export function TimelineSeparator(props: {
   label: string
   value?: string
   tooltip?: string
-  providerID?: string
-  variant?: string
+  providerID?: Provider.ID
+  variant?: Model.VariantID
 }) {
   const label = () => (
     <bdi

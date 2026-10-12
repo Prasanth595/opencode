@@ -245,7 +245,7 @@ function createWorkspace(input: { storage: Storage; server: ServerRef; directory
 
     const doUpdate = async () => {
       await input.server.client.pty.update({
-        ptyID: pty.id,
+        ptyID: pty.id as any,
         location,
         title: pty.title,
         size: pty.cols && pty.rows ? { rows: pty.rows, cols: pty.cols } : undefined,
@@ -393,7 +393,7 @@ function createWorkspace(input: { storage: Storage; server: ServerRef; directory
         })
       }
 
-      await input.server.client.pty.remove({ ptyID: id, location }).catch((error) => {
+      await input.server.client.pty.remove({ ptyID: id as any, location }).catch((error) => {
         console.error("Failed to close terminal", error)
       })
     },

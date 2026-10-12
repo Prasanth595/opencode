@@ -12,9 +12,10 @@ import { Keymap } from "../../../context/keymap"
 import { useComposerTab } from "./context"
 import { withTimestampedFallback } from "@opencode/util/session-title-fallback"
 import { sessionFamily } from "../../../util/session"
+import { Session } from "@opencode/schema/session"
 
 interface SubagentEntry {
-  sessionID: string
+  sessionID: Session.ID
   agent: string
   title: string
   status: string
@@ -22,7 +23,7 @@ interface SubagentEntry {
   prefix: string
 }
 
-export function SubagentsTab(props: { sessionID: string }) {
+export function SubagentsTab(props: { sessionID: Session.ID }) {
   const route = useRouteData("session")
   const data = useData()
   const client = useClient()

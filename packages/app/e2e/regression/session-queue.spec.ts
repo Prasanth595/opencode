@@ -1,6 +1,11 @@
 import { expect, test, type Page } from "@playwright/test"
 import type { OpenCodeEvent, SessionInboxInfo, SessionMessageInfo } from "@opencode/client/promise"
+import { Agent } from "@opencode/schema/agent"
+import { Event } from "@opencode/schema/event"
+import { Model } from "@opencode/schema/model"
 import { PromptInput } from "@opencode/schema/prompt-input"
+import { Provider } from "@opencode/schema/provider"
+import { Session } from "@opencode/schema/session"
 import { SessionInbox } from "@opencode/schema/session-inbox"
 import { SessionMessage } from "@opencode/schema/session-message"
 import { Schema } from "effect"
@@ -8,7 +13,7 @@ import { provider } from "../utils/app"
 import type { MockServerConfig } from "../utils/mock-server"
 import { openSession } from "../utils/workspace"
 
-const sessionID = "ses_session_queue_regression"
+const sessionID = Session.ID.make("ses_session_queue_regression", { disableChecks: true })
 
 // The session.prompt payload, as the server's endpoint validates it.
 const PromptBody = Schema.Struct({
@@ -22,8 +27,8 @@ const PromptBody = Schema.Struct({
 const decodePromptBody = Schema.decodeUnknownSync(PromptBody)
 
 type InboxRow = {
-  id: string
-  sessionID: string
+  id: SessionMessage.ID
+  sessionID: Session.ID
   time: { created: number }
   type: "user"
   payload: {
@@ -52,7 +57,7 @@ function storedFile(file: NonNullable<typeof PromptBody.Type.files>[number]) {
 
 function createQueueMock(seed: string[], messages: SessionMessageInfo[] = []) {
   const rows: InboxRow[] = seed.map((text, index) => ({
-    id: `inb_seed_${index + 1}`,
+    id: SessionMessage.ID.make(`msg_queue_seed_${index + 1}`, { disableChecks: true }),
     sessionID,
     time: { created: 1700000000000 + index },
     type: "user",
@@ -74,10 +79,10 @@ function createQueueMock(seed: string[], messages: SessionMessageInfo[] = []) {
     sequence += 1
     // SAFETY: `type` selects `data` from the same OpenCodeEvent member, so the pair is that member.
     events.push({
-      id: `evt_queue_${sequence}`,
+      id: Event.ID.make(`evt_queue_${sequence}`, { disableChecks: true }),
       type,
       created: Date.now(),
-      durable: { aggregateID: sessionID, seq: sequence, version: type === "session.tool.success" ? 2 : 1 },
+      durable: { aggregateID: sessionID, seq: Event.Seq.make(sequence, { disableChecks: true }), version: type === "session.tool.success" ? 2 : 1 },
       data,
     } as OpenCodeEvent)
   }
@@ -97,8 +102,8 @@ function createQueueMock(seed: string[], messages: SessionMessageInfo[] = []) {
       log.push(`prompt:${body.delivery ?? "steer"}`)
 
       const row: InboxRow = {
-        id: body.id ?? `inb_mock_${sequence}`,
-        sessionID: input.sessionID,
+        id: body.id ?? SessionMessage.ID.make(`msg_queue_mock_${sequence}`, { disableChecks: true }),
+        sessionID: Session.ID.make(input.sessionID, { disableChecks: true }),
         time: { created: Date.now() },
         type: "user",
         payload: { text: body.text },
@@ -114,7 +119,7 @@ function createQueueMock(seed: string[], messages: SessionMessageInfo[] = []) {
         row.payload.agents = body.agents.map((agent) => ({ name: agent.name, mention: agent.mention }))
       rows.push(row)
       emit("session.inbox.enqueued", {
-        sessionID: input.sessionID,
+        sessionID: Session.ID.make(input.sessionID, { disableChecks: true }),
         inboxID: row.id,
         item: { type: "user", payload: row.payload, delivery: row.delivery },
       })
@@ -123,7 +128,7 @@ function createQueueMock(seed: string[], messages: SessionMessageInfo[] = []) {
       log.push("compact")
       compactions.push({
         id: Schema.decodeUnknownSync(SessionMessage.ID)(input.body.id),
-        sessionID: input.sessionID,
+        sessionID: Session.ID.make(input.sessionID, { disableChecks: true }),
         time: { created: Date.now() },
         type: "compaction",
         payload: {},
@@ -140,15 +145,18 @@ function createQueueMock(seed: string[], messages: SessionMessageInfo[] = []) {
 
       if (input.action === "cancel") {
         rows.splice(index, 1)
-        emit("session.inbox.cancelled", { sessionID: input.sessionID, inboxID: input.inboxID })
+        emit("session.inbox.cancelled", {
+          sessionID: Session.ID.make(input.sessionID, { disableChecks: true }),
+          inboxID: SessionMessage.ID.make(input.inboxID, { disableChecks: true }),
+        })
 
         return
       }
 
       row.delivery = input.action
       emit("session.inbox.delivery.changed", {
-        sessionID: input.sessionID,
-        inboxID: input.inboxID,
+        sessionID: Session.ID.make(input.sessionID, { disableChecks: true }),
+        inboxID: SessionMessage.ID.make(input.inboxID, { disableChecks: true }),
         delivery: input.action,
       })
     },
@@ -254,9 +262,9 @@ test("dragging reorders queued prompts", async ({ page }) => {
   // A re-admitted file keeps the URI it came from instead of becoming an inline snapshot.
   expect(mock.prompts[2].files).toMatchObject([{ uri: "file:///repo/main.ts", name: "main.ts" }])
   expect(mock.changes).toEqual([
-    { inboxID: "inb_seed_1", action: "cancel" },
-    { inboxID: "inb_seed_2", action: "cancel" },
-    { inboxID: "inb_seed_3", action: "cancel" },
+    { inboxID: "msg_queue_seed_1", action: "cancel" },
+    { inboxID: "msg_queue_seed_2", action: "cancel" },
+    { inboxID: "msg_queue_seed_3", action: "cancel" },
   ])
 })
 
@@ -299,9 +307,9 @@ for (const change of ["reorder", "edit"] as const) {
     // The replacements admitted before the failure are withdrawn; the originals stay in place.
     await expect.poll(() => mock.log.includes(`cancel:${mock.prompts.at(-1)?.id}`)).toBe(true)
     await expect.poll(() => mock.changes.length).toBe(mock.prompts.length)
-    expect(mock.changes.every((entry) => entry.action === "cancel" && !entry.inboxID.startsWith("inb_seed_"))).toBe(
-      true,
-    )
+    expect(
+      mock.changes.every((entry) => entry.action === "cancel" && !entry.inboxID.startsWith("msg_queue_seed_")),
+    ).toBe(true)
     await expect(view.rows.locator('[data-action="session-queue-edit"]')).toHaveText(order)
     expect(mock.rows.map((row) => row.payload.text)).toEqual(order)
 
@@ -345,8 +353,8 @@ test("editing restores the existing draft and replaces only the original queue p
   ])
   expect(mock.prompts.every((prompt) => prompt.delivery === "queue" && prompt.resume === false)).toBe(true)
   expect(mock.changes).toEqual([
-    { inboxID: "inb_seed_2", action: "cancel" },
-    { inboxID: "inb_seed_3", action: "cancel" },
+    { inboxID: "msg_queue_seed_2", action: "cancel" },
+    { inboxID: "msg_queue_seed_3", action: "cancel" },
   ])
   expect(mock.log[0]).toBe("prompt:queue")
 })
@@ -376,7 +384,7 @@ for (const change of ["reorder", "edit"] as const) {
     const order = ["first queued prompt", "second queued prompt"]
 
     const mock = createQueueMock(order, [
-      { id: "msg_queue_delivered", type: "user", text: "First prompt", time: { created: 1 } },
+      { id: SessionMessage.ID.make("msg_queue_delivered", { disableChecks: true }), type: "user", text: "First prompt", time: { created: 1 } },
     ])
 
     const view = await openQueue(page, mock, undefined, "msg_queue_delivered")
@@ -472,7 +480,7 @@ test("Undo cancels only the selected queued prompt and focuses the restored inpu
   await expect(view.rows.locator('[data-action="session-queue-edit"]')).toHaveText(rest)
   await expect(view.input).toHaveText(text)
   await expect(view.input).toBeFocused()
-  expect(mock.changes).toEqual([{ inboxID: "inb_seed_2", action: "cancel" }])
+  expect(mock.changes).toEqual([{ inboxID: "msg_queue_seed_2", action: "cancel" }])
   expect(mock.prompts).toEqual([])
 })
 
@@ -493,7 +501,7 @@ test("Undo appends to an existing draft and restores inline attachments", async 
   await expect(view.input).toHaveText("my draft\n\nqueued with image")
   await expect(view.input).toBeFocused()
   await expect(view.composer.getByRole("img", { name: "shot.png" })).toBeVisible()
-  expect(mock.changes).toEqual([{ inboxID: "inb_seed_1", action: "cancel" }])
+  expect(mock.changes).toEqual([{ inboxID: "msg_queue_seed_1", action: "cancel" }])
 })
 
 test("Undo of a comment-only prompt keeps the draft text and restores the comment once", async ({ page }) => {
@@ -618,9 +626,9 @@ test("reverting to another prompt replaces the file chips of an earlier restore"
   const mock = createQueueMock(
     [],
     [
-      { id: "msg_queue_first", type: "user", text: "First prompt", time: { created: 1 } },
+      { id: SessionMessage.ID.make("msg_queue_first", { disableChecks: true }), type: "user", text: "First prompt", time: { created: 1 } },
       {
-        id: "msg_queue_second",
+        id: SessionMessage.ID.make("msg_queue_second", { disableChecks: true }),
         type: "user",
         text: "Second prompt",
         files: [
@@ -677,7 +685,7 @@ test("/undo withdraws a pending steer without interrupting the running session",
 test("reverting a delivered prompt leaves queued prompts alone, as in the TUI", async ({ page }) => {
   const mock = createQueueMock(
     ["U2: queued follow-up"],
-    [{ id: "msg_queue_delivered", type: "user", text: "First prompt", time: { created: 1 } }],
+    [{ id: SessionMessage.ID.make("msg_queue_delivered", { disableChecks: true }), type: "user", text: "First prompt", time: { created: 1 } }],
   )
 
   const view = await openQueue(page, mock)
@@ -717,7 +725,7 @@ test("a shell command cannot wait in the queue, as in the TUI", async ({ page })
 test("/compact runs with the composer model and shows a queued compaction, as in the TUI", async ({ page }) => {
   const mock = createQueueMock(
     [],
-    [{ id: "msg_queue_delivered", type: "user", text: "First prompt", time: { created: 1 } }],
+    [{ id: SessionMessage.ID.make("msg_queue_delivered", { disableChecks: true }), type: "user", text: "First prompt", time: { created: 1 } }],
   )
 
   const view = await openQueue(page, mock)
@@ -747,7 +755,14 @@ for (const [action, status] of [
     // A steer waits behind work only once the running execution delivered input; before that it is starting.
     const delivered: SessionMessageInfo[] =
       status === "steering"
-        ? [{ id: "msg_queue_delivered", type: "user", text: "First prompt", time: { created: 1 } }]
+        ? [
+            {
+              id: SessionMessage.ID.make("msg_queue_delivered", { disableChecks: true }),
+              type: "user",
+              text: "First prompt",
+              time: { created: 1 },
+            },
+          ]
         : []
 
     const mock = createQueueMock(["U2: Also check the retry path."], delivered)
@@ -825,9 +840,12 @@ for (const delivery of ["steer", "queue"] as const) {
   test(`keeps finished tools above a pending ${delivery === "queue" ? "queue-to-steer" : "steer"} follow-up`, async ({
     page,
   }, testInfo) => {
-    const model = { id: "queue-model", providerID: "opencode" }
-    const userID = "msg_queue_initial_user"
-    const assistantID = "msg_queue_continued_assistant"
+    const model = {
+      id: Model.ID.make("queue-model", { disableChecks: true }),
+      providerID: Provider.ID.make("opencode", { disableChecks: true }),
+    }
+    const userID = SessionMessage.ID.make("msg_queue_initial_user", { disableChecks: true })
+    const assistantID = SessionMessage.ID.make("msg_queue_continued_assistant", { disableChecks: true })
     const followUp = "U2: Also check the retry path."
 
     const mock = createQueueMock(
@@ -835,9 +853,9 @@ for (const delivery of ["steer", "queue"] as const) {
       [
         { id: userID, type: "user", text: "U1: Inspect the queue ordering.", time: { created: 1700000000000 } },
         {
-          id: "msg_queue_initial_assistant",
+          id: SessionMessage.ID.make("msg_queue_initial_assistant", { disableChecks: true }),
           type: "assistant",
-          agent: "build",
+          agent: Agent.ID.make("build", { disableChecks: true }),
           model,
           content: [{ type: "text", text: "A1: I will inspect the current implementation." }],
           finish: "tool-calls",
@@ -917,7 +935,7 @@ for (const delivery of ["steer", "queue"] as const) {
     mock.emit("session.step.started", {
       sessionID,
       assistantMessageID: assistantID,
-      agent: "build",
+      agent: Agent.ID.make("build", { disableChecks: true }),
       model,
       started: Date.now(),
     })
@@ -993,8 +1011,8 @@ for (const delivery of ["steer", "queue"] as const) {
       userID,
     )
 
-    const later = { sessionID, assistantMessageID: "msg_queue_follow_up_assistant" }
-    mock.emit("session.step.started", { ...later, agent: "build", model, started: Date.now() })
+    const later = { sessionID, assistantMessageID: SessionMessage.ID.make("msg_queue_follow_up_assistant", { disableChecks: true }) }
+    mock.emit("session.step.started", { ...later, agent: Agent.ID.make("build", { disableChecks: true }), model, started: Date.now() })
     mock.emit("session.text.started", { ...later, ordinal: 0 })
     mock.emit("session.text.ended", { ...later, ordinal: 0, text: "A3: Now checking the retry path for U2." })
 

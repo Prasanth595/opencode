@@ -12,8 +12,10 @@ import { useData, useServer } from "@/runtime/server/current"
 import { showToast } from "@/shell/notifications/toast"
 import { createWorktree } from "@/workspaces/create"
 import { useDirectoryPicker } from "@/workspaces/selection/picker"
+import type { SessionID } from "@opencode/schema/session-id"
+import type { ProjectID } from "@opencode/schema/project-id"
 
-export function SessionLocationMissing(props: { sessionID: string; projectID: string; directory: string }) {
+export function SessionLocationMissing(props: { sessionID: SessionID; projectID: ProjectID; directory: string }) {
   const language = useLanguage()
   const server = useServer()
   const data = useData()
@@ -25,8 +27,8 @@ export function SessionLocationMissing(props: { sessionID: string; projectID: st
   const [worktrees] = createResource(
     () => (state.worktreesOpen ? props.projectID : undefined),
     async (projectID) => {
-      await server.ctx.sync.worktrees.refresh(projectID)
-      const items = await server.ctx.sync.worktrees.list(projectID)
+      await server.ctx.sync.worktrees.refresh(projectID as any)
+      const items = await server.ctx.sync.worktrees.list(projectID as any)
 
       if (!items) showToast({ variant: "error", title: language.t("session.location.worktreesFailed") })
 
@@ -57,7 +59,7 @@ export function SessionLocationMissing(props: { sessionID: string; projectID: st
           })))
 
       if (!destination) return
-      await server.ctx.sdk.api.session.move({ sessionID: props.sessionID, directory: destination })
+      await server.ctx.sdk.api.session.move({ sessionID: props.sessionID as any, directory: destination })
     },
     onError: (error) => {
       setState("restoreFocus", true)

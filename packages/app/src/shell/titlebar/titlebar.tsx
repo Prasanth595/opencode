@@ -239,7 +239,7 @@ export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
               if (cached) return cached
               const resolved = resolvedSession()
 
-              return resolved?.info.id === route.sessionId ? resolved.info : undefined
+              return resolved && resolved.info.id === route.sessionId ? resolved.info : undefined
             })
 
             const matchRoute = (route: LayoutRoute) => {
@@ -312,7 +312,7 @@ export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
                 if (s.parentID && resolved?.info.id !== s.id) return
                 const sessionId = resolved?.info.id === s.id ? resolved.rootID : s.id
                 const next = { server: route.server, sessionId }
-                tabsStoreActions.addSessionTab(next)
+                tabsStoreActions.addSessionTab(next as any)
               }
             })
 

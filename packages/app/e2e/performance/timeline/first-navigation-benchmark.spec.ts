@@ -92,6 +92,8 @@ benchmark.describe("performance: first navigation paint", () => {
 
   benchmark("opens a child session without a blank frame", async ({ page, report }) => {
     await setup(page)
+    await page.getByRole("button", { name: "Used 1 Agent", exact: true }).click()
+    await waitForStableTimeline(page, fixture.expected.sourceMessageIDs.at(-1)!)
     const href = sessionHref(fixture.childID)
 
     const result = await measureFirstNavigation(page, {

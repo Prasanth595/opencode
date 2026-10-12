@@ -1,5 +1,11 @@
 import type { Page } from "@playwright/test"
 import type { JsonValue, SessionMessageAssistant, SessionMessageInfo } from "@opencode/client/promise"
+import { Agent } from "@opencode/schema/agent"
+import { Model } from "@opencode/schema/model"
+import { Project } from "@opencode/schema/project"
+import { Provider } from "@opencode/schema/provider"
+import { Session } from "@opencode/schema/session"
+import { SessionMessage } from "@opencode/schema/session-message"
 import { base64Encode } from "@opencode/util/encode"
 import { createTwoFilesPatch } from "diff"
 import { SERVER, pageMessagesFrom } from "./app"
@@ -30,17 +36,21 @@ const words = [
   "vector",
 ]
 
-const sourceID = "ses_smoke_source"
+const sourceID = Session.ID.make("ses_smoke_source", { disableChecks: true })
 
-const targetID = "ses_smoke_target"
+const targetID = Session.ID.make("ses_smoke_target", { disableChecks: true })
 
-const childID = "ses_smoke_child"
+const childID = Session.ID.make("ses_smoke_child", { disableChecks: true })
 
 const directory = "C:/OpenCode/SmokeProject"
 
-const projectID = "proj_smoke_timeline"
+const projectID = Project.ID.make("proj_smoke_timeline", { disableChecks: true })
 
-const model = { providerID: "opencode", modelID: "claude-opus-4-6", variant: "max" }
+const model = {
+  providerID: Provider.ID.make("opencode", { disableChecks: true }),
+  modelID: Model.ID.make("claude-opus-4-6", { disableChecks: true }),
+  variant: Model.VariantID.make("max", { disableChecks: true }),
+}
 
 type MessagePart =
   | { id: string; type: "text"; text: string }
@@ -78,7 +88,7 @@ function id(prefix: string, value: number) {
 }
 
 function userMessage(_sessionID: string, index: number, textLength: number, diffs: unknown[] = []): SessionMessageInfo {
-  const messageID = id("msg_user", index)
+  const messageID = SessionMessage.ID.make(id("msg_user", index), { disableChecks: true })
 
   return {
     id: messageID,
@@ -95,14 +105,14 @@ function assistantMessage(
   _parentID: string,
   parts: MessagePart[],
 ): SessionMessageInfo {
-  const messageID = id("msg_assistant", index)
+  const messageID = SessionMessage.ID.make(id("msg_assistant", index), { disableChecks: true })
 
   return {
     id: messageID,
     type: "assistant",
     time: { created: 1700000000000 + index * 10_000 + 1_000, completed: 1700000000000 + index * 10_000 + 8_000 },
     model: { id: model.modelID, providerID: model.providerID, variant: model.variant },
-    agent: "build",
+    agent: Agent.ID.make("build", { disableChecks: true }),
     cost: 0.01,
     tokens: { input: 100, output: 200, reasoning: 0, cache: { read: 0, write: 0 } },
     finish: "stop",

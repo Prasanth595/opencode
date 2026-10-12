@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { SessionMessage } from "@opencode/schema/session-message"
 import { timelinePresets } from "@opencode/session-ui/timeline/detail"
 import { setupTimeline } from "../utils/timeline"
 
@@ -24,22 +25,22 @@ for (const { width, ...profile } of [
       viewport: { width, height: 900 },
       sessionMessages: [
         {
-          id: "msg_notice_user",
+          id: SessionMessage.ID.make("msg_notice_user", { disableChecks: true }),
           type: "user",
           text: "Inspect the project and report completion.",
           time: { created: 1 },
         },
         {
-          id: "msg_notice_shell",
+          id: SessionMessage.ID.make("msg_notice_shell", { disableChecks: true }),
           type: "synthetic",
           text: "Complete",
           description: descriptions[0],
           metadata: { source: "shell", state: "completed" },
           time: { created: 2 },
         },
-        { id: "msg_notice_system", type: "system", text: descriptions[1], time: { created: 3 } },
+        { id: SessionMessage.ID.make("msg_notice_system", { disableChecks: true }), type: "system", text: descriptions[1], time: { created: 3 } },
         {
-          id: "msg_notice_agent",
+          id: SessionMessage.ID.make("msg_notice_agent", { disableChecks: true }),
           type: "synthetic",
           text: "Complete",
           description: descriptions[2],

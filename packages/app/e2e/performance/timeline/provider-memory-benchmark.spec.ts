@@ -5,6 +5,7 @@ import { fixture, installStressSessionTabs, installTimelineSettings, pageMessage
 import { sessionHref } from "../../utils/app"
 import { waitForStableTimeline } from "./session-tab-switch-probe"
 import type { ModelUpdated } from "@opencode/client/promise"
+import { Event } from "@opencode/schema/event"
 
 benchmark("measures retained renderer memory with a large model catalog", async ({ page, report }) => {
   benchmark.setTimeout(120_000)
@@ -83,7 +84,7 @@ benchmark("measures retained renderer memory with a large model catalog", async 
   selected.name = "Updated catalog model"
   await mock.push([
     {
-      id: "evt_model_refresh",
+      id: Event.ID.make("evt_model_refresh", { disableChecks: true }),
       created: Date.now(),
       type: "model.updated",
       location: { directory: fixture.directory },

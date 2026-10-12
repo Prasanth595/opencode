@@ -14,6 +14,7 @@ import { useOpenSessionRoute } from "@/session/session-identity-header"
 import { errorMessage } from "@/shell/layout/helpers"
 import { showToast } from "@/shell/notifications/toast"
 import { SessionWorkingIndicator } from "./session-working-indicator"
+import { SessionID } from "@opencode/schema/session-id"
 
 const neutral = "light-dark(var(--v2-text-text-base), #ffffff)"
 
@@ -22,15 +23,15 @@ type RunningItem = {
   type: "subagent" | "shell"
   label?: string
   agent?: string
-  sessionID?: string
+  sessionID?: SessionID | string
   target: string
 }
 
 export function SessionRunningMenu(props: {
-  sessionID?: string
+  sessionID?: SessionID | string
   // The session whose running work is listed: this one, or its parent inside a subagent.
-  owner?: string
-  blocking: readonly { type: "shell" | "subagent"; partID: string; id?: string; label?: string }[]
+  owner?: SessionID | string
+  blocking: readonly { type: "shell" | "subagent"; partID: string; id?: SessionID | string; label?: string }[]
   tasks: readonly BackgroundTask[]
   onReveal?: (target: string) => void
   title?: string
@@ -47,7 +48,8 @@ export function SessionRunningMenu(props: {
     entered: boolean
   }>({ entered: false })
 
-  const sessionAgent = (id: string | undefined) => (id ? server.ctx.data.session.get(id)?.agent : undefined)
+  const sessionAgent = (id: SessionID | string | undefined) =>
+    id ? server.ctx.data.session.get(SessionID.make(id, { disableChecks: true }))?.agent : undefined
 
   // Foreground shells stay out: the timeline already shows them at the bottom.
   const items = createMemo<RunningItem[]>(() => [
@@ -66,7 +68,15 @@ export function SessionRunningMenu(props: {
     ),
     ...props.tasks.flatMap((task) =>
       task.type === "subagent"
-        ? [{ ...task, key: task.id, agent: task.agent ?? sessionAgent(task.id), sessionID: task.id, target: task.id }]
+        ? [
+            {
+              ...task,
+              key: task.id,
+              agent: task.agent ?? sessionAgent(SessionID.make(task.id, { disableChecks: true })),
+              sessionID: SessionID.make(task.id, { disableChecks: true }),
+              target: task.id,
+            },
+          ]
         : [],
     ),
     ...props.tasks.flatMap((task) => (task.type === "shell" ? [{ ...task, key: task.id, target: task.id }] : [])),
@@ -131,9 +141,9 @@ export function SessionRunningMenu(props: {
 
   const stop = (item: RunningItem) => {
     const request = item.sessionID
-      ? sdk.api.session.interrupt({ sessionID: item.sessionID })
+      ? sdk.api.session.interrupt({ sessionID: SessionID.make(item.sessionID, { disableChecks: true }) })
       : sdk.api.shell.remove({
-          id: item.target,
+          id: item.target as any,
           location: { directory: server.ctx.data.shell.get(item.target)?.location.directory },
         })
 

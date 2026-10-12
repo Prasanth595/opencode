@@ -25,6 +25,10 @@ import { useData } from "./data"
 import { usePermission } from "./permission"
 import { useLocation } from "./location"
 import { parse } from "../util/model"
+import { Agent } from "@opencode/schema/agent"
+import { Model } from "@opencode/schema/model"
+import { Provider } from "@opencode/schema/provider"
+import { Session } from "@opencode/schema/session"
 
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   name: "Local",
@@ -61,8 +65,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         (data.location.agent.list(location.ref) ?? []).filter((agent) => !agent.hidden),
       )
       const [agentStore, setAgentStore] = createStore({
-        current: undefined as string | undefined,
-        draftBySession: {} as Record<string, { agent?: string } | undefined>,
+        current: undefined as Agent.ID | undefined,
+        draftBySession: {} as Record<Session.ID, { agent?: Agent.ID } | undefined>,
       })
       onCleanup(event.on("session.deleted", (evt) => setAgentStore("draftBySession", evt.data.sessionID, undefined)))
       onCleanup(
@@ -94,7 +98,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
               : agentStore.current
           return agents().find((agent) => agent.id === selected) ?? agents().at(0)
         },
-        set(id: string) {
+        set(id: Agent.ID) {
           if (!agents().some((agent) => agent.id === id))
             return toast.show({
               variant: "warning",
@@ -136,7 +140,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const agent = createAgent()
 
     function createModel() {
-      type ModelSelection = ModelPreferenceModel & { variant?: string }
+      type ModelSelection = ModelPreferenceModel & { variant?: Model.VariantID }
       const [preferences, setPreferences] = createStore<ModelPreference & { ready: boolean }>({
         ready: false,
         recent: [],
@@ -145,14 +149,14 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       })
       const [selectionState, setSelectionState] = createStore<{
         newSessionModelByLocationAgent: Record<string, ModelPreferenceModel | undefined>
-        selectionBySessionAgent: Record<string, Record<string, ModelSelection | undefined> | undefined>
+        selectionBySessionAgent: Record<Session.ID, Record<Agent.ID, ModelSelection | undefined> | undefined>
       }>({
         newSessionModelByLocationAgent: {},
         selectionBySessionAgent: {},
       })
 
       const repository = createModelPreferenceRepository(path.join(paths.state, "model.json"))
-      const pendingSelectionCommits = new Map<string, { agentID: string; selection: string }>()
+      const pendingSelectionCommits = new Map<Session.ID, { agentID: Agent.ID; selection: string }>()
       const selectionKey = (value: ModelSelection) =>
         `${modelPreferenceKey(value)}:${normalizeModelVariant(value.variant) ?? "default"}`
 
@@ -167,24 +171,31 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
       onCleanup(repository.subscribe(applyPreferences))
 
-      const configuredModel = createMemo(() => {
+      const configuredModel = createMemo((): (ModelPreferenceModel & { variant?: Model.VariantID }) | undefined => {
         const entry = data.location.config
           .list(location.ref)
           ?.findLast((entry) => entry.type === "document" && entry.info.model !== undefined)
         const configured = entry?.type === "document" ? entry.info.model : undefined
         if (!configured) return
-        return typeof configured === "string"
-          ? { ...parse(configured), variant: undefined }
-          : { providerID: configured.providerID, modelID: configured.model, variant: configured.variant }
+        if (typeof configured === "string") {
+          const parsed = parse(configured)
+          if (!parsed.providerID || !parsed.modelID) return undefined
+          return { providerID: parsed.providerID, modelID: parsed.modelID, variant: undefined }
+        }
+        return {
+          providerID: Provider.ID.make(configured.providerID, { disableChecks: true }),
+          modelID: Model.ID.make(configured.model, { disableChecks: true }),
+          variant: configured.variant ? Model.VariantID.make(configured.variant, { disableChecks: true }) : undefined,
+        }
       })
 
-      const fallbackModel = createMemo(() => {
+      const fallbackModel = createMemo((): ModelPreferenceModel | undefined => {
         if (args.model) {
-          const { providerID, modelID } = parse(args.model)
-          if (isModelValid({ providerID, modelID })) {
-            return {
-              providerID,
-              modelID,
+          const parsed = parse(args.model)
+          if (parsed.providerID && parsed.modelID) {
+            const candidate = { providerID: parsed.providerID, modelID: parsed.modelID }
+            if (isModelValid(candidate)) {
+              return candidate
             }
           }
         }
@@ -225,10 +236,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       const currentModel = createMemo(() => {
         const selection = currentSelection()
         if (!selection) return
-        return { providerID: selection.providerID, modelID: selection.modelID }
+        return { providerID: Provider.ID.make(selection.providerID), modelID: Model.ID.make(selection.modelID) }
       })
 
-      function locationAgentKey(agentID: string) {
+      function locationAgentKey(agentID: Agent.ID) {
         const ref = location.ref ?? data.location.default()
         return `${JSON.stringify([ref.directory, ref.workspaceID])}:${agentID}`
       }
@@ -250,7 +261,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         return { ...model, variant: info?.variants.some((item) => item.id === variant) ? variant : undefined }
       }
 
-      function durableSelection(sessionID: string): ModelSelection | undefined {
+      function durableSelection(sessionID: Session.ID): ModelSelection | undefined {
         const model = data.session.get(sessionID)?.model
         if (!model) return
         return {
@@ -260,7 +271,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         }
       }
 
-      function sessionSelection(sessionID: string) {
+      function sessionSelection(sessionID: Session.ID) {
         const current = agent.current()
         if (!current) return
         const session = data.session.get(sessionID)
@@ -279,14 +290,14 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         return model && preferredSelection(model)
       }
 
-      function setSessionSelection(sessionID: string, agentID: string, selection: ModelSelection | undefined) {
+      function setSessionSelection(sessionID: Session.ID, agentID: Agent.ID, selection: ModelSelection | undefined) {
         setSelectionState("selectionBySessionAgent", sessionID, {
           ...selectionState.selectionBySessionAgent[sessionID],
           [agentID]: selection,
         })
       }
 
-      function setSessionDraft(sessionID: string, selection: ModelSelection) {
+      function setSessionDraft(sessionID: Session.ID, selection: ModelSelection) {
         const current = agent.current()
         if (!current) return
         const durable = durableSelection(sessionID)
@@ -320,7 +331,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         return true
       }
 
-      function reconcileSessionSelection(sessionID: string) {
+      function reconcileSessionSelection(sessionID: Session.ID) {
         const expected = pendingSelectionCommits.get(sessionID)
         const durable = durableSelection(sessionID)
         if (!expected || !durable || data.session.get(sessionID)?.agent !== expected.agentID) return
@@ -357,17 +368,17 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (route.data.type !== "session" || !current || !selection) return
           setSessionSelection(route.data.sessionID, current.id, { ...selection })
         },
-        available(model = currentModel()) {
+        available(model: ModelPreferenceModel | undefined = currentModel()) {
           return model ? isModelValid(model) : false
         },
         trackSessionCommit(
-          sessionID: string,
+          sessionID: Session.ID,
           value: {
-            providerID: string
-            id: string
-            variant?: string
+            providerID: Provider.ID
+            id: Model.ID
+            variant?: Model.VariantID
           },
-          agentID: string,
+          agentID: Agent.ID,
         ) {
           const committed = {
             agentID,
@@ -449,7 +460,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           setPreferences("recent", recentModels(next, preferences.recent))
           void repository.addRecent(next).catch(() => undefined)
         },
-        set(model: { providerID: string; modelID: string }, options?: { recent?: boolean }) {
+        set(model: ModelPreferenceModel, options?: { recent?: boolean }) {
           batch(() => {
             if (!isModelValid(model)) return
             if (!selectModel(model)) return
@@ -459,7 +470,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             }
           })
         },
-        toggleFavorite(model: { providerID: string; modelID: string }) {
+        toggleFavorite(model: ModelPreferenceModel) {
           batch(() => {
             if (!isModelValid(model)) return
             const exists = preferences.favorite.some(
@@ -471,7 +482,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         },
         variant: {
           selected() {
-            return currentSelection()?.variant
+            const variant = currentSelection()?.variant
+            return variant === undefined ? undefined : Model.VariantID.make(variant)
           },
           current() {
             return this.selected()
@@ -505,7 +517,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     function createSession() {
       const [sessionStore, setSessionStore] = createStore<{
         ready: boolean
-        pinned: string[]
+        pinned: Session.ID[]
       }>({
         ready: false,
         pinned: [],
@@ -534,7 +546,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (Array.isArray(pinned))
             setSessionStore(
               "pinned",
-              pinned.filter((item): item is string => typeof item === "string"),
+              pinned.flatMap((item): Session.ID[] =>
+                typeof item === "string" ? [Session.ID.make(item, { disableChecks: true })] : [],
+              ),
             )
         })
         .catch(() => {})
@@ -544,7 +558,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         })
 
       const slots = createMemo(() => {
-        const existing = new Set(
+        const existing = new Set<Session.ID>(
           data.session
             .list()
             .filter((x) => x.parentID === undefined)
@@ -553,7 +567,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         return sessionStore.pinned.filter((id) => existing.has(id)).slice(0, 9)
       })
 
-      function prune(sessionID: string) {
+      function prune(sessionID: Session.ID) {
         batch(() => {
           if (sessionStore.pinned.includes(sessionID)) {
             setSessionStore(
@@ -577,10 +591,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           return sessionStore.pinned
         },
         slots,
-        isPinned(sessionID: string) {
+        isPinned(sessionID: Session.ID) {
           return sessionStore.pinned.includes(sessionID)
         },
-        togglePin(sessionID: string) {
+        togglePin(sessionID: Session.ID) {
           batch(() => {
             const exists = sessionStore.pinned.includes(sessionID)
             const next = exists

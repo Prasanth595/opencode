@@ -160,9 +160,9 @@ export function DevToolsBar() {
       error: client.connection.error(),
     }
     const events = await (sessionID
-      ? (async () => {
+      ? (async (currentSessionID) => {
           const events: { readonly created: number }[] = []
-          for await (const event of client.api.session.log({ sessionID, follow: false })) {
+          for await (const event of client.api.session.log({ sessionID: currentSessionID, follow: false })) {
             if (event.type !== "log.synced") events.push(event)
           }
           // Durable events stay in aggregate order even when their wall-clock timestamps differ.
@@ -175,7 +175,7 @@ export function DevToolsBar() {
             events.splice(index, 0, event)
           })
           return events.slice(-100)
-        })().catch(() => client.connection.internal.history())
+        })(sessionID).catch(() => client.connection.internal.history())
       : Promise.resolve([]))
     const file = path.join(tmpdir(), `opencode-debug-${crypto.randomUUID()}.json`)
     const output =

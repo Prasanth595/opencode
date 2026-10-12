@@ -1,7 +1,9 @@
+import { SessionID } from "@opencode/schema/session-id"
+import { ProjectID } from "@opencode/schema/project-id"
 import { expect, test } from "bun:test"
 import { getEventListeners } from "node:events"
 import { createRoot } from "solid-js"
-import { createData, type CreateDataInput } from "../src/solid"
+import { createData, SyncKey, type CreateDataInput } from "../src/solid"
 import { OpenCode, type ModelInfo, type OpenCodeEvent, type Project, type SessionInfo } from "../src/promise"
 
 const session = (viewed: number): SessionInfo => ({
@@ -975,6 +977,18 @@ test.each(["success", "failure", "cancel", "cancel-retry", "cancel-page", "join-
   },
 )
 
+test("preserves wire activity keys without adding ID validation", async () => {
+  const id = SessionID.make("legacy-child", { disableChecks: true })
+  const setup = activityFixture(() => Response.json({ data: { [id]: { type: "running" } } }))
+  try {
+    setup.emit({ type: "server.connected", data: {} })
+    await wait(() => setup.data.session.status(id) === "running")
+    expect(setup.data.session.status(id)).toBe("running")
+  } finally {
+    setup.dispose()
+  }
+})
+
 test.each([
   "session.execution.succeeded",
   "session.execution.failed",
@@ -1139,3 +1153,20 @@ async function wait(check: () => boolean) {
     await Bun.sleep(10)
   }
 }
+
+test("SyncKey formats typed sync keys with correct prefixes and ID brands", () => {
+  const sessionID = SessionID.make("ses_123")
+  const projectID = ProjectID.make("prj_456")
+
+  expect(SyncKey.session(sessionID)).toBe("session:ses_123")
+  expect(SyncKey.sessionFamily(sessionID)).toBe("session.family:ses_123")
+  expect(SyncKey.sessionPending(sessionID)).toBe("session.pending:ses_123")
+  expect(SyncKey.sessionMessage(sessionID)).toBe("session.message:ses_123")
+  expect(SyncKey.sessionPermission(sessionID)).toBe("session.permission:ses_123")
+  expect(SyncKey.sessionForm(sessionID)).toBe("session.form:ses_123:")
+  expect(SyncKey.sessionForm("global", "loc_789")).toBe("session.form:global:loc_789")
+  expect(SyncKey.project()).toBe("project")
+  expect(SyncKey.projectPermission(projectID)).toBe("project.permission:prj_456")
+  expect(SyncKey.location("loc_root")).toBe("location:loc_root")
+  expect(SyncKey.locationResource("config", "loc_root")).toBe("location.config:loc_root")
+})

@@ -1,5 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import type { FileDiffInfo, LocationRef } from "@opencode/client"
+import { Session } from "@opencode/schema/session"
 import type { Vcs } from "@opencode/schema/vcs"
 import { Plugin } from "@opencode/plugin/tui"
 import type { KeymapCommand, Route } from "@opencode/plugin/tui/context"
@@ -146,7 +147,10 @@ function DiffViewer(props: { context: Plugin.Context }) {
       return {
         base: null,
         files: normalizeDiffs(
-          await props.context.client.session.diff({ sessionID: input.sessionID, context: VCS_DIFF_CONTEXT_LINES }),
+          await props.context.client.session.diff({
+            sessionID: Session.ID.make(input.sessionID, { disableChecks: true }),
+            context: VCS_DIFF_CONTEXT_LINES,
+          }),
         ),
       }
     }

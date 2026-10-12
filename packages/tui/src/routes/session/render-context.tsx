@@ -2,6 +2,8 @@ import { createContext, useContext } from "solid-js"
 import type { Renderable } from "@opentui/core"
 import type { ModelInfo } from "@opencode/client"
 import type { SessionInbox } from "@opencode/schema/session-inbox"
+import { Session } from "@opencode/schema/session"
+import { SessionMessage } from "@opencode/schema/session-message"
 import type { useConfig } from "../../config"
 import type { ThinkingMode } from "../../context/thinking"
 import type { createTimelineAnchors } from "./anchors"
@@ -18,7 +20,7 @@ export const context = createContext<{
    * resize listener per mounted component and grows with transcript length.
    */
   terminal: { width: number; height: number }
-  sessionID: string
+  sessionID: Session.ID
   anchors: ReturnType<typeof createTimelineAnchors>
   /** Saved disclosure, falling back to the verbosity default for the group kind. */
   groupExpanded: (groupID: string, kind: GroupKind) => boolean
@@ -29,12 +31,12 @@ export const context = createContext<{
   groupExploration: () => boolean
   diffWrapMode: () => "word" | "none"
   models: () => ModelInfo[]
-  messageIndex: (messageID: string) => number | undefined
+  messageIndex: (messageID: SessionMessage.ID) => number | undefined
   /** True when the session has no idle markers, so turn footers end at the next prompt. */
   legacyTurns: () => boolean
   config: ReturnType<typeof useConfig>["data"]
-  mutatePending: (action: PendingAction, inboxID: string) => Promise<boolean>
-  pendingDelivery: (inboxID: string) => SessionInbox.Delivery | undefined
+  mutatePending: (action: PendingAction, inboxID: SessionMessage.ID) => Promise<boolean>
+  pendingDelivery: (inboxID: SessionMessage.ID) => SessionInbox.Delivery | undefined
 }>()
 
 export function use() {

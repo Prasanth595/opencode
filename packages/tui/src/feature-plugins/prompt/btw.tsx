@@ -1,4 +1,5 @@
 import { Plugin } from "@opencode/plugin/tui"
+import { Session } from "@opencode/schema/session"
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import { createMemo, createSignal, Show } from "solid-js"
@@ -66,7 +67,10 @@ export default Plugin.define({
                 if (!question) return
                 setPending((count) => count + 1)
                 await context.client.session
-                  .generate({ sessionID: route.sessionID, prompt: [instructions, question].join("\n\n") })
+                  .generate({
+                    sessionID: Session.ID.make(route.sessionID, { disableChecks: true }),
+                    prompt: [instructions, question].join("\n\n"),
+                  })
                   .then((result) => {
                     context.ui.dialog.show(() => (
                       <Answer question={question} answer={result.text.trim()} markdown={plugins.markdown} />

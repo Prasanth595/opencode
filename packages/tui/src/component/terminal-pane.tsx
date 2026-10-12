@@ -2,6 +2,7 @@ import { EmbeddedTerminalRenderable, type RGBA } from "@opentui/core"
 import { rgbToOklch, type ResolvedThemeTokens } from "@opencode/theme/tui"
 import { extend, useRenderer } from "@opentui/solid"
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js"
+import { Pty } from "@opencode/schema/pty"
 import { useClient } from "../context/client"
 import { Keymap } from "../context/keymap"
 import { useTheme, useThemes } from "../context/theme"
@@ -22,7 +23,7 @@ type StreamItem =
   | { type: "ready" }
 
 export function TerminalPane(props: {
-  ptyID: string
+  ptyID: Pty.ID
   resizing?: boolean
   autoFocus?: boolean
   onAutoFocus?: () => void

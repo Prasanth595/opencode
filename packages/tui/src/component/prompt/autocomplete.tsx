@@ -389,7 +389,7 @@ export function Autocomplete(props: {
     },
     {
       initialValue: {
-        options: [],
+        options: [] as AutocompleteOption[],
         failed: false,
         mode: false as AutocompleteRef["visible"],
         query: "",

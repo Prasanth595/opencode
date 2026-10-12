@@ -7,15 +7,20 @@ import type {
   SessionMessageInfo,
   ToolContent,
 } from "@opencode/client/promise"
+import { Agent } from "@opencode/schema/agent"
+import { Model } from "@opencode/schema/model"
+import { Permission } from "@opencode/schema/permission"
+import { Provider } from "@opencode/schema/provider"
+import { Session } from "@opencode/schema/session"
 import { SessionMessage } from "@opencode/schema/session-message"
 import { EOL } from "node:os"
 import { readFile } from "node:fs/promises"
 import { nonEmptyToolContent, toolOutputText, type MiniToolPart } from "@opencode/tui/mini/tool"
 import { UI } from "./ui"
 
-type Model = {
-  providerID: string
-  modelID: string
+type NonInteractiveModel = {
+  providerID: Provider.ID
+  modelID: Model.ID
 }
 
 type File = {
@@ -26,13 +31,13 @@ type File = {
 
 type Input = {
   client: OpenCodeClient
-  sessionID: string
+  sessionID: Session.ID
   location: LocationRef
   message: string
   files: File[]
-  agent?: string
-  model?: Model
-  variant?: string
+  agent?: Agent.ID
+  model?: NonInteractiveModel
+  variant?: Model.VariantID
   thinking: boolean
   format: "default" | "json"
   auto: boolean
@@ -148,7 +153,7 @@ export async function runNonInteractivePrompt(input: Input) {
       sessionID === GLOBAL_FORM_SESSION_ID
         ? Promise.resolve(false)
         : input.client.session
-            .get({ sessionID })
+            .get({ sessionID: Session.ID.make(sessionID, { disableChecks: true }) })
             .then((session) => (session.parentID ? ownsSession(session.parentID) : false))
             .catch(() => false)
     owned.set(sessionID, result)
@@ -156,8 +161,8 @@ export async function runNonInteractivePrompt(input: Input) {
   }
 
   const replyPermission = async (request: {
-    id: string
-    sessionID: string
+    id: Permission.ID
+    sessionID: Session.ID
     action: string
     resources: ReadonlyArray<string>
   }) => {

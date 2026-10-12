@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test"
+import { SessionMessage } from "@opencode/schema/session-message"
 import {
   assistantMessage,
   event,
+  sessionID,
   toolPart,
   userMessage,
   validateTimelineEvent,
@@ -44,13 +46,18 @@ describe("timeline fixture validation", () => {
   test("rejects duplicate IDs and orphan assistants", () => {
     expect(() => validateTimelineMessages([userMessage(), userMessage()])).toThrow(/duplicate message ID/)
     expect(() =>
-      validateTimelineMessages([userMessage(), assistantMessage([], { parentID: "msg_missing_parent" })]),
+      validateTimelineMessages([
+        userMessage(),
+        assistantMessage([], {
+          parentID: SessionMessage.ID.make("msg_missing_parent", { disableChecks: true }),
+        }),
+      ]),
     ).toThrow(/parent user/)
   })
 
   test("assigns deterministic event IDs", () => {
-    const first = event("session.status", { sessionID: "ses_timeline_stability", status: { type: "busy" } })
-    const second = event("session.status", { sessionID: "ses_timeline_stability", status: { type: "idle" } })
+    const first = event("session.status", { sessionID, status: { type: "busy" } })
+    const second = event("session.status", { sessionID, status: { type: "idle" } })
     expect(first.id).toMatch(/^evt_timeline_\d{4}$/)
     expect(Number(second.id.slice(-4))).toBe(Number(first.id.slice(-4)) + 1)
   })

@@ -1,10 +1,10 @@
-export function createHistoryPrepend(input: {
-  sessionID: () => string
-  more: (sessionID: string) => boolean
-  loadMore: (sessionID: string) => Promise<void>
+export function createHistoryPrepend<ID extends string = string>(input: {
+  sessionID: () => ID
+  more: (sessionID: ID) => boolean
+  loadMore: (sessionID: ID) => Promise<void>
   height: () => number
   afterLayout: (continuation: () => void) => void
-  active: (sessionID: string) => boolean
+  active: (sessionID: ID) => boolean
   scrollBy: (amount: number) => void
 }) {
   let pending: { scrollBy: number; continuation?: () => void; after?: () => void } | undefined

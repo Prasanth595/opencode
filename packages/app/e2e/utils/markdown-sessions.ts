@@ -1,4 +1,5 @@
 import type { SessionMessageInfo } from "@opencode/client/promise"
+import { SessionMessage } from "@opencode/schema/session-message"
 import { fixture } from "./session-fixture"
 
 // Two long sessions (source, target) of 200 exchanges each, ending in formatted markdown answers.
@@ -18,12 +19,12 @@ export const messages: Record<string, SessionMessageInfo[]> = Object.fromEntries
       return [
         {
           ...user,
-          id: `msg_user_${suffix}`,
+          id: SessionMessage.ID.make(`msg_user_${suffix}`, { disableChecks: true }),
           time: { created: 1700000000000 + index * 10_000 },
         },
         {
           ...assistant,
-          id: `msg_assistant_${suffix}`,
+          id: SessionMessage.ID.make(`msg_assistant_${suffix}`, { disableChecks: true }),
           time: { created: 1700000001000 + index * 10_000, completed: 1700000008000 + index * 10_000 },
           content: [
             ...assistant.content

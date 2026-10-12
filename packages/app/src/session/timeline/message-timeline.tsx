@@ -1,3 +1,5 @@
+import { SessionID } from "@opencode/schema/session-id"
+import type { SessionMessage } from "@opencode/schema/session-message"
 import { createEffect, createMemo, createSignal, on, onCleanup, Show, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Predicate } from "effect"
@@ -85,7 +87,7 @@ type MessageTimelineProps = {
   reserveReviewToggle: boolean
   setContentRef: (el: HTMLDivElement) => void
   anchor: (id: string) => string
-  setRevealMessage?: (fn: (id: string, partID?: string) => void) => void
+  setRevealMessage?: (fn: (id: SessionMessage.ID, partID?: string) => void) => void
   setScrollToEnd?: (fn: () => void) => void
   reveal?: { target: () => string | undefined; done: () => void }
   search?: JSX.Element
@@ -460,7 +462,7 @@ function MessageTimelineView(
                   <Show when={parentID()}>
                     {(id) => (
                       <SessionAncestorTrail
-                        sessionID={sessionID() ?? ""}
+                        sessionID={sessionID() ?? SessionID.make("", { disableChecks: true })}
                         parentID={id()}
                         parentTitle={parentTitle()}
                         trailing={!!(childTitle() || title.editing)}

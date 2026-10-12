@@ -4,15 +4,16 @@ import { createStore } from "solid-js/store"
 import { createAnimatedPresence } from "@/runtime/animated-presence"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useServer } from "@/runtime/server/current"
+import { SessionID } from "@opencode/schema/session-id"
 
-export function SessionWorkingIndicator(props: { sessionID?: string }) {
+export function SessionWorkingIndicator(props: { sessionID?: SessionID | string }) {
   const language = useLanguage()
   const server = useServer()
   const [elements, setElements] = createStore<{ indicator?: HTMLSpanElement }>({})
 
   const presence = createAnimatedPresence(
     () => {
-      const id = props.sessionID
+      const id = props.sessionID ? SessionID.make(props.sessionID, { disableChecks: true }) : undefined
 
       return id && server.ctx.data.session.get(id)?.parentID && server.ctx.data.session.status(id) === "running"
         ? true

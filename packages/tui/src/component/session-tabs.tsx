@@ -43,6 +43,7 @@ import { TabPulse, unreadGlowIntensity } from "./tab-pulse"
 import { tint } from "../theme/color"
 import { SESSION_SIDEBAR_WIDTH, SESSION_TABS_COMPACT_BREAKPOINT } from "../ui/layout"
 import { projectName } from "../util/project"
+import { Session } from "@opencode/schema/session"
 import { stringWidth } from "../util/string-width"
 import { marqueeCycleWidth, marqueeOverflows, marqueeTextParts } from "../util/marquee"
 import { useDialog } from "../ui/dialog"
@@ -84,18 +85,18 @@ const RIGHT_MOUSE_BUTTON = 2
 const MOUSE_CLOSE_HOLD_MS = 5_000
 
 type MouseCloseHold = {
-  items: string[]
-  ids: string[]
+  items: Session.ID[]
+  ids: Session.ID[]
   widths: number[]
-  closed: string
-  target: string
+  closed: Session.ID
+  target: Session.ID
   x: number
 }
 
 type TabContextMenuState = {
   x: number
   y: number
-  sessionID?: string
+  sessionID?: Session.ID
   title?: string
 }
 
@@ -115,12 +116,12 @@ export type SessionTabsController = Pick<ContextController, "tabs" | "current" |
   add?: () => void
   recentlyClosed?: ContextController["recentlyClosed"]
   reopen?: ContextController["reopen"]
-  detail?: (sessionID: string) => string | undefined
-  rename?: (sessionID: string) => void
+  detail?: (sessionID: Session.ID) => string | undefined
+  rename?: (sessionID: Session.ID) => void
   search?: () => void
-  status(sessionID: string): SessionTabsStatus
+  status(sessionID: Session.ID): SessionTabsStatus
 }
-const NEW_SESSION_TAB: SessionTab = { sessionID: "new", title: NEW_SESSION_TAB_TITLE }
+const NEW_SESSION_TAB: SessionTab = { sessionID: Session.ID.make("new", { disableChecks: true }), title: NEW_SESSION_TAB_TITLE }
 const glowTextColor = (base: RGBA, glow: RGBA, index: number, width: number, level = 1) =>
   tint(base, glow, 0.12 * unreadGlowIntensity(index, width) * level)
 
@@ -278,7 +279,7 @@ function heldSessionTabLayout(hold: MouseCloseHold, tabs: readonly SessionTab[])
 
 export function createMarquee(animations: () => boolean) {
   const [offset, setOffset] = createSignal(0)
-  const [active, setActive] = createSignal<string>()
+  const [active, setActive] = createSignal<Session.ID>()
   const leading = createAnimatable({ opacity: 0 }, { enabled: animations, transition: tween({ duration: 0.25 }) })
   let delay: ReturnType<typeof setTimeout> | undefined
   let interval: ReturnType<typeof setInterval> | undefined
@@ -302,7 +303,7 @@ export function createMarquee(animations: () => boolean) {
       MARQUEE_INTERVAL,
     )
   }
-  const enter = (sessionID: string, title: string, width: number) => {
+  const enter = (sessionID: Session.ID, title: string, width: number) => {
     if (!marqueeOverflows(title, width)) {
       reset()
       return
@@ -319,7 +320,7 @@ export function createMarquee(animations: () => boolean) {
       scroll()
     }, MARQUEE_DELAY)
   }
-  const leave = (sessionID: string) => {
+  const leave = (sessionID: Session.ID) => {
     if (active() !== sessionID) return
     reset()
   }
@@ -335,16 +336,16 @@ export function createMarquee(animations: () => boolean) {
 }
 
 export function createTabMarquee(animations: () => boolean) {
-  const [hovered, setHovered] = createSignal<string>()
+  const [hovered, setHovered] = createSignal<Session.ID>()
   const marquee = createMarquee(animations)
   let hoverClear: ReturnType<typeof setTimeout> | undefined
 
-  const enter = (sessionID: string, title: string, width: number) => {
+  const enter = (sessionID: Session.ID, title: string, width: number) => {
     if (hoverClear) clearTimeout(hoverClear)
     setHovered(sessionID)
     marquee.enter(sessionID, title, width)
   }
-  const leave = (sessionID: string) => {
+  const leave = (sessionID: Session.ID) => {
     if (hoverClear) clearTimeout(hoverClear)
     hoverClear = setTimeout(() => {
       if (hovered() !== sessionID) return
@@ -578,7 +579,7 @@ function VerticalSessionTabs(props: {
   })
   const [hoverY, setHoverY] = createSignal(0)
   const [scrollTop, setScrollTop] = createSignal(0)
-  const detail = (sessionID: string) => {
+  const detail = (sessionID: Session.ID) => {
     const fixture = tabs.detail?.(sessionID)
     if (fixture !== undefined) return fixture
     const session = data?.session.get(sessionID)
@@ -593,8 +594,8 @@ function VerticalSessionTabs(props: {
     )
   }
   // OpenTUI captures the first drag target, which may differ from the tab pressed on a fast move.
-  const [dragging, setDragging] = createSignal<string>()
-  const [preview, setPreview] = createSignal<{ sessionID: string; index: number }>()
+  const [dragging, setDragging] = createSignal<Session.ID>()
+  const [preview, setPreview] = createSignal<{ sessionID: Session.ID; index: number }>()
   const [contextMenu, setContextMenu] = createSignal<TabContextMenuState>()
   const newTab = () => tabs.newTab?.() ?? false
   const activeID = createMemo(() => (newTab() ? undefined : tabs.current()))
@@ -1302,11 +1303,11 @@ function HorizontalSessionTabs(props: {
   const marquee = createTabMarquee(animations)
   const hovered = marquee.hovered
   // OpenTUI captures the first drag target, which may differ from the tab pressed on a fast move.
-  const [dragging, setDragging] = createSignal<string>()
+  const [dragging, setDragging] = createSignal<Session.ID>()
   // A drag reorders a local preview and persists one move on release instead of writing
   // per slot crossing; the preview holds after release until the store reflects the move,
   // so the strip never flashes the pre-drag order while the write is in flight.
-  const [preview, setPreview] = createSignal<{ sessionID: string; index: number }>()
+  const [preview, setPreview] = createSignal<{ sessionID: Session.ID; index: number }>()
   const [contextMenu, setContextMenu] = createSignal<TabContextMenuState>()
   const [closeHold, setCloseHold] = createSignal<MouseCloseHold>()
   let strip: { screenX: number; screenY: number; width: number; height: number } | undefined
@@ -1467,7 +1468,7 @@ function HorizontalSessionTabs(props: {
     )
   })
 
-  const holdCloseCell = (sessionID: string, x: number) => {
+  const holdCloseCell = (sessionID: Session.ID, x: number) => {
     if (!strip) return clearCloseHold()
     const current = layout()
     const index = current.tabs.findIndex((tab) => tab.sessionID === sessionID)

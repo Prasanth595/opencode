@@ -3,7 +3,7 @@ import { createStore, produce, reconcile } from "solid-js/store"
 import { isFileNotFoundError } from "@opencode/client/promise"
 import { createSimpleContext } from "@opencode/ui/context"
 import { showToast } from "@/shell/notifications/toast"
-import { useParams } from "@solidjs/router"
+import { useSessionParams } from "@/shell/routes/session"
 import { getDirectory, getFilename } from "@opencode/util/path"
 import { useWorkspaceLocation } from "@/workspaces/location"
 import { useLanguage } from "@/runtime/i18n/language"
@@ -40,7 +40,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
   gate: false,
   init: () => {
     const sdk = useWorkspaceLocation()
-    const params = useParams()
+    const params = useSessionParams()
     const serverSDK = useServerSDK()
     const language = useLanguage()
     const extensions = useExtensionAttachment()

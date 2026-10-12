@@ -21,10 +21,11 @@ export default defineConfig({
   plugins: [
     tailwindcss(),
     solidStart() as PluginOption,
+    // SAFETY: Nitro supports Vite 7, but Windows hoisting resolves its plugin types against Vite 8.
     nitro({
       ...nitroConfig,
       baseURL: process.env.OPENCODE_BASE_URL,
-    }),
+    }) as PluginOption,
   ],
   server: {
     host: "0.0.0.0",

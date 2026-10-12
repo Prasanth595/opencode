@@ -23,7 +23,7 @@ describe("buildHomeSessionRecords", () => {
       projects: () => [opened],
     })
 
-    expect(records.map((record) => record.session.id)).toEqual(["a", "b"])
+    expect<unknown>(records.map((record) => record.session.id)).toEqual(["a", "b"])
     expect(records[1]?.project).toMatchObject({ id: "project-b", worktree: "/repo/b", expanded: false })
   })
 
@@ -34,7 +34,7 @@ describe("buildHomeSessionRecords", () => {
       projects: () => [opened],
     })
 
-    expect(records.map((record) => record.session.id)).toEqual(["a"])
+    expect<unknown>(records.map((record) => record.session.id)).toEqual(["a"])
   })
 
   test("labels a worktree session with its project before that project's inventory has loaded", () => {
@@ -72,7 +72,7 @@ describe("buildHomeSessionRecords", () => {
       projects: () => [opened],
     })
 
-    expect(records.map((record) => record.session.id)).toEqual(["ses_a", "ses_z", "ses_old"])
+    expect<unknown>(records.map((record) => record.session.id)).toEqual(["ses_a", "ses_z", "ses_old"])
   })
 })
 

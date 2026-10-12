@@ -1,4 +1,9 @@
 import type { SessionMessageInfo } from "@opencode/client/promise"
+import { Agent } from "@opencode/schema/agent"
+import { Model } from "@opencode/schema/model"
+import { Provider } from "@opencode/schema/provider"
+import { Session } from "@opencode/schema/session"
+import { SessionMessage } from "@opencode/schema/session-message"
 import { expect, test, type Page } from "@playwright/test"
 import { seed, sessionHref } from "../utils/app"
 import { fixture, mockStressTimeline } from "../utils/session-fixture"
@@ -215,7 +220,7 @@ test.describe("rename", () => {
     await page.keyboard.press("Escape")
     await expect(page.getByRole("menuitem", { name: "Rename", exact: true })).toBeHidden()
     await expect(tab).toBeFocused()
-    await tab.press("Shift+F10")
+    await tab.press(process.platform === "darwin" ? "ContextMenu" : "Shift+F10")
     await page.getByRole("menuitem", { name: "Rename", exact: true }).click()
     const input = page.locator('[data-slot="tab-title"][contenteditable="true"]')
     await expect(input).toBeFocused()
@@ -257,16 +262,16 @@ test.describe("rename", () => {
 
 test.describe("revert", () => {
   const messages = [
-    { id: "msg_first", type: "user", text: "First prompt", time: { created: 1 } },
+    { id: SessionMessage.ID.make("msg_first", { disableChecks: true }), type: "user", text: "First prompt", time: { created: 1 } },
     {
-      id: "msg_first_reply",
+      id: SessionMessage.ID.make("msg_first_reply", { disableChecks: true }),
       type: "assistant",
-      agent: "build",
-      model: { id: "test", providerID: "opencode" },
+      agent: Agent.ID.make("build", { disableChecks: true }),
+      model: { id: Model.ID.make("test", { disableChecks: true }), providerID: Provider.ID.make("opencode", { disableChecks: true }) },
       content: [{ type: "text", text: "First reply" }],
       time: { created: 2, completed: 3 },
     },
-    { id: "msg_second", type: "user", text: "Second prompt", time: { created: 4 } },
+    { id: SessionMessage.ID.make("msg_second", { disableChecks: true }), type: "user", text: "Second prompt", time: { created: 4 } },
   ] satisfies SessionMessageInfo[]
 
   const workspace = {
@@ -307,7 +312,7 @@ test.describe("revert", () => {
 
     const { editor } = await openSession(page, {
       ...workspace,
-      sessions: [{ id: "ses_revert_redo", title: "Session message revert", revert: { messageID: "msg_first" } }],
+      sessions: [{ id: Session.ID.make("ses_revert_redo", { disableChecks: true }), title: "Session message revert", revert: { messageID: SessionMessage.ID.make("msg_first", { disableChecks: true }) } }],
       onRevertStage: (input) => staged.push(input),
     })
 
@@ -331,8 +336,8 @@ test.describe("revert", () => {
     await mockWorkspace(page, {
       ...workspace,
       sessions: [
-        { id: "ses_parent", title: "Parent session" },
-        { id: "ses_child", title: "Session message revert", parentID: "ses_parent" },
+        { id: Session.ID.make("ses_parent", { disableChecks: true }), title: "Parent session" },
+        { id: Session.ID.make("ses_child", { disableChecks: true }), title: "Session message revert", parentID: Session.ID.make("ses_parent", { disableChecks: true }) },
       ],
     })
     await page.goto(sessionHref("ses_child"))

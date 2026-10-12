@@ -1,4 +1,11 @@
 import type { OpenCodeEvent, SessionMessageInfo } from "@opencode/client/promise"
+import { Agent } from "@opencode/schema/agent"
+import { Event } from "@opencode/schema/event"
+import { Model } from "@opencode/schema/model"
+import { Project } from "@opencode/schema/project"
+import { Provider } from "@opencode/schema/provider"
+import { Session } from "@opencode/schema/session"
+import { SessionMessage } from "@opencode/schema/session-message"
 import { timelinePresets } from "@opencode/session-ui/timeline/detail"
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { expectPath, SERVER, sessionHref } from "../utils/app"
@@ -9,17 +16,17 @@ import { mockWorkspace } from "../utils/workspace"
 
 const directory = "C:/OpenCode/SubagentNavigation"
 
-const projectID = "proj_subagentnavigation"
+const projectID = Project.ID.make("proj_subagentnavigation", { disableChecks: true })
 
 const serverPort = new URL(SERVER).port
 
-const parentID = "ses_subagent_parent"
+const parentID = Session.ID.make("ses_subagent_parent", { disableChecks: true })
 
-const childID = "ses_subagent_child"
+const childID = Session.ID.make("ses_subagent_child", { disableChecks: true })
 
-const grandchildID = "ses_subagent_grandchild"
+const grandchildID = Session.ID.make("ses_subagent_grandchild", { disableChecks: true })
 
-const greatGrandchildID = "ses_subagent_great_grandchild"
+const greatGrandchildID = Session.ID.make("ses_subagent_great_grandchild", { disableChecks: true })
 
 const parentTitle = "Parent session"
 
@@ -76,16 +83,16 @@ test("keeps the parent title anchored when opening a subagent", async ({ page })
 })
 
 test("navigates from a running subagent card and hides background controls in the child", async ({ page }) => {
-  const runningChildID = "ses_running_child"
+  const runningChildID = Session.ID.make("ses_running_child", { disableChecks: true })
   await setupTimeline(page, {
     settings: { timelineDetail: { ...timelinePresets[2].value, subagents: { placement: "separate" } } },
     sessionMessages: [
-      { id: "msg_user", type: "user", text: "Run it", time: { created: 1 } },
+      { id: SessionMessage.ID.make("msg_user", { disableChecks: true }), type: "user", text: "Run it", time: { created: 1 } },
       {
-        id: "msg_assistant",
+        id: SessionMessage.ID.make("msg_assistant", { disableChecks: true }),
         type: "assistant",
-        agent: "build",
-        model: { id: "model", providerID: "provider" },
+        agent: Agent.ID.make("build", { disableChecks: true }),
+        model: { id: Model.ID.make("model", { disableChecks: true }), providerID: Provider.ID.make("provider", { disableChecks: true }) },
         content: [
           {
             type: "tool",
@@ -166,7 +173,7 @@ test("keeps the active nested session visible in a narrow desktop header", async
   await expect(page).toHaveURL(sessionHref(parentID))
 })
 
-test("shows parent lineage while the child timeline loads", async ({ page }) => {
+test("keeps the parent visible until the child timeline is ready", async ({ page }) => {
   await setup(page)
   const requested = Promise.withResolvers<void>()
   const release = Promise.withResolvers<void>()
@@ -183,11 +190,12 @@ test("shows parent lineage while the child timeline loads", async ({ page }) => 
   await expectSessionTitle(page, parentTitle)
   await page.getByRole("button", { name: "Used 1 Agent", exact: true }).click()
   await page.locator(`a[href="${sessionHref(childID)}"]`).click()
-  await Promise.all([requested.promise, expect(page).toHaveURL(sessionHref(childID))])
-  await Promise.all([
-    expect(page.locator('[data-slot="session-title-parent"]')).toHaveText(parentTitle),
-    expect(page.locator('[data-slot="session-title-child"]')).toHaveText(childTitle),
-  ]).finally(() => release.resolve())
+  await requested.promise
+  await Promise.all([expect(page).toHaveURL(sessionHref(parentID)), expectSessionTitle(page, parentTitle)]).finally(
+    () => release.resolve(),
+  )
+  await expect(page).toHaveURL(sessionHref(childID))
+  await expect(page.locator('[data-slot="session-title-parent"]')).toHaveText(parentTitle)
   await expectSessionTitle(page, taskDescription)
 })
 
@@ -262,10 +270,10 @@ test("shows the not found fallback when the viewed session is deleted", async ({
   await expectSessionTitle(page, taskDescription)
 
   events.push({
-    id: "evt_session_deleted",
+    id: Event.ID.make("evt_session_deleted", { disableChecks: true }),
     created: 1700000003000,
     type: "session.deleted",
-    durable: { aggregateID: childID, seq: 1, version: 2 },
+    durable: { aggregateID: childID, seq: Event.Seq.make(1, { disableChecks: true }), version: 2 },
     location: { directory },
     data: { sessionID: childID },
   })
@@ -276,8 +284,8 @@ test("shows the not found fallback when the viewed session is deleted", async ({
 })
 
 test.describe("session ID links", () => {
-  const target = "ses_0123456789abcdefghijklmnop"
-  const missing = "ses_abcdefghijklmnopqrstuvwxyz"
+  const target = Session.ID.make("ses_0123456789abcdefghijklmnop", { disableChecks: true })
+  const missing = Session.ID.make("ses_abcdefghijklmnopqrstuvwxyz", { disableChecks: true })
 
   test("opens a verified session from agent prose or inline code with the keyboard", async ({ page }) => {
     await setupTimeline(page, {
@@ -380,8 +388,8 @@ async function openChildFromParent(page: Page) {
 }
 
 function parentMessages(): SessionMessageInfo[] {
-  const userID = "msg_user_0001"
-  const assistantID = "msg_assistant_0001"
+  const userID = SessionMessage.ID.make("msg_user_0001", { disableChecks: true })
+  const assistantID = SessionMessage.ID.make("msg_assistant_0001", { disableChecks: true })
 
   return [
     {
@@ -394,8 +402,8 @@ function parentMessages(): SessionMessageInfo[] {
       id: assistantID,
       type: "assistant",
       time: { created: 1700000001000, completed: 1700000002000 },
-      model: { id: "claude-opus-4-6", providerID: "opencode" },
-      agent: "build",
+      model: { id: Model.ID.make("claude-opus-4-6", { disableChecks: true }), providerID: Provider.ID.make("opencode", { disableChecks: true }) },
+      agent: Agent.ID.make("build", { disableChecks: true }),
       cost: 0.01,
       tokens: { input: 100, output: 200, reasoning: 0, cache: { read: 0, write: 0 } },
       finish: "stop",

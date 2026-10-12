@@ -44,9 +44,9 @@ test("Promise event streams support cancellation", async () => {
     expect(await events.next()).toMatchObject({ value: { type: "server.connected" }, done: false })
     const pending = events.next()
     controller.abort()
-    const error = await pending.catch((error: unknown) => error)
-    expect(error).toMatchObject({ name: "ClientError", reason: "Transport" })
-    await events.return?.()
+    expect(await pending).toEqual({ value: undefined, done: true })
+    expect(await events.next()).toEqual({ value: undefined, done: true })
+    expect(await opencode.server.info()).toBeDefined()
   }
 })
 

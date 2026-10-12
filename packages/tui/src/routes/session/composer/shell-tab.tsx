@@ -8,8 +8,9 @@ import { Keymap } from "../../../context/keymap"
 import { useComposerTab } from "./context"
 import { useDialog } from "../../../ui/dialog"
 import { DialogShellOutput } from "../../../component/dialog-shell-output"
+import { Session } from "@opencode/schema/session"
 
-export function ShellTab(props: { sessionID: string }) {
+export function ShellTab(props: { sessionID: Session.ID }) {
   const data = useData()
   const client = useClient()
   const theme = useTheme()

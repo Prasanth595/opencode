@@ -7,15 +7,17 @@ import { Keymap } from "../../../context/keymap"
 import { SubagentsTab } from "./subagents-tab"
 import { ShellTab } from "./shell-tab"
 import { TerminalsTab } from "./terminals-tab"
+import { Session } from "@opencode/schema/session"
+import { Pty } from "@opencode/schema/pty"
 import { ComposerContext, type ComposerTab } from "./context"
 
 export type ComposerProps = {
-  sessionID: string
+  sessionID: Session.ID
   open: boolean
   defaultTab?: string
   onClose?: () => void
   terminals?: boolean
-  visibleTerminalID?: string
+  visibleTerminalID?: Pty.ID
 }
 
 export function Composer(props: ComposerProps) {

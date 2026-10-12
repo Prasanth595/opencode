@@ -9,8 +9,13 @@ import type {
   SessionMessageUser,
   SessionInboxInfo,
 } from "@opencode/client/promise"
+import { Agent } from "@opencode/schema/agent"
 import { Event } from "@opencode/schema/event"
+import { Model } from "@opencode/schema/model"
+import { Provider } from "@opencode/schema/provider"
+import { Session } from "@opencode/schema/session"
 import { SessionMessage } from "@opencode/schema/session-message"
+import { Skill } from "@opencode/schema/skill"
 import { blockerStatus, pickBlockerView } from "./session-data"
 import { writeSessionOutput } from "./stream"
 import { createFragmentReconciler, fragmentRef, type FragmentReconciler } from "./stream-v2.fragment"
@@ -45,7 +50,7 @@ type StreamInput = {
   onClient?: (sdk: OpenCodeClient) => void
   readTextFile?: (url: string) => Promise<string>
   location?: LocationRef
-  sessionID: string
+  sessionID: Session.ID
   thinking: boolean
   tools?: boolean
   replay?: boolean
@@ -310,7 +315,7 @@ function promptSkills(next: SessionTurnInput) {
     part.type === "skill"
       ? [
           {
-            id: part.id,
+            id: Skill.ID.make(part.id),
             mention: part.source
               ? { start: part.source.start, end: part.source.end, text: part.source.value }
               : undefined,
@@ -451,14 +456,19 @@ async function resolveSelectedModel(
   input: StreamInput,
   sdk: OpenCodeClient,
   next: Pick<SessionTurnInput, "model" | "variant" | "signal">,
-) {
-  if (next.model) return { providerID: next.model.providerID, id: next.model.modelID, variant: next.variant }
+): Promise<Model.Ref | undefined> {
+  if (next.model)
+    return {
+      providerID: Provider.ID.make(next.model.providerID),
+      id: Model.ID.make(next.model.modelID),
+      variant: next.variant ? Model.VariantID.make(next.variant) : undefined,
+    }
   if (!next.variant) return
 
   const session = await sdk.session
     .get({ sessionID: input.sessionID }, { signal: next.signal })
     .then((response) => response.model)
-  if (session) return { ...session, variant: next.variant }
+  if (session) return { ...session, variant: Model.VariantID.make(next.variant) }
 
   const fallback = await sdk.model
     .default(
@@ -473,7 +483,7 @@ async function resolveSelectedModel(
     )
     .then((response) => response.data)
   if (!fallback) return
-  return { providerID: fallback.providerID, id: fallback.id, variant: next.variant }
+  return { providerID: fallback.providerID, id: fallback.id, variant: Model.VariantID.make(next.variant) }
 }
 
 export async function createSessionTransport(input: StreamInput): Promise<SessionTransport> {
@@ -928,7 +938,9 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
         permissions.flatMap((request) => {
           if (request.source?.type !== "tool") return []
           const key = permissionSourceKey(request.source.messageID, request.source.id)
-          return state.toolSources.has(key) ? [] : [request.source.messageID]
+          return state.toolSources.has(key)
+            ? []
+            : [SessionMessage.ID.make(request.source.messageID, { disableChecks: true })]
         }),
       ),
     ]
@@ -1739,7 +1751,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
       return client.session.prompt(
         {
           sessionID: input.sessionID,
-          id: messageID,
+          id: SessionMessage.ID.make(messageID, { disableChecks: true }),
           text: [next.prompt.text, ...attachments.text].join("\n\n"),
           files: attachments.files.length ? attachments.files : undefined,
           agents: agents.length ? agents : undefined,
@@ -1796,7 +1808,10 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
       await waitUntilConnected(next.signal)
       const client = sdk
       if (!next.prompt.command && next.agent)
-        await client.session.switchAgent({ sessionID: input.sessionID, agent: next.agent }, { signal: next.signal })
+        await client.session.switchAgent(
+          { sessionID: input.sessionID, agent: Agent.ID.make(next.agent) },
+          { signal: next.signal },
+        )
       if (!next.prompt.command) {
         const selected = await resolveSelectedModel(input, client, next)
         if (next.variant && !selected) throw new Error("Cannot select a variant before selecting a model")
@@ -1831,7 +1846,10 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
       }
 
       if (next.agent) {
-        await client.session.switchAgent({ sessionID: input.sessionID, agent: next.agent }, { signal: next.signal })
+        await client.session.switchAgent(
+          { sessionID: input.sessionID, agent: Agent.ID.make(next.agent) },
+          { signal: next.signal },
+        )
       }
       const selected = await resolveSelectedModel(input, client, next)
       if (next.variant && !selected) throw new Error("Cannot select a variant before selecting a model")

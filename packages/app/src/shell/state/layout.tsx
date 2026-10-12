@@ -1,3 +1,5 @@
+import { SessionMessage } from "@opencode/schema/session-message"
+import { SessionID } from "@opencode/schema/session-id"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { Predicate, Schema, SchemaGetter } from "effect"
 import { batch, createEffect, createMemo, onCleanup, onMount, untrack, type Accessor } from "solid-js"
@@ -44,7 +46,7 @@ export type LayoutRoute =
   | { type: "settings" }
   | { type: "connect" }
   | { type: "draft"; draftID: string }
-  | { type: "session"; sessionId: string; server: ServerConnection.Key }
+  | { type: "session"; sessionId: SessionID; server: ServerConnection.Key }
 
 export const currentRoute = (pathname: string, search: string): LayoutRoute => {
   const parts = pathname.split("/").filter(Boolean)
@@ -66,7 +68,7 @@ export const currentRoute = (pathname: string, search: string): LayoutRoute => {
   if (parts[0] === "server" && parts[2] === "session" && parts[3]) {
     return {
       type: "session",
-      sessionId: parts[3],
+      sessionId: SessionID.make(parts[3], { disableChecks: true }),
       server: requireServerKey(parts[1]),
     }
   }
@@ -92,7 +94,7 @@ const sessionViewSchema = Persistence.struct({
   reviewOpen: Schema.optional(Persistence.array(Schema.String)),
   reviewMode: Schema.optional(Schema.Literals(["git", "branch", "turn"])),
   reviewFile: Schema.optional(Schema.String),
-  pendingMessage: Schema.optional(Schema.String),
+  pendingMessage: Schema.optional(Schema.String.pipe(Schema.brand("Session.Message.ID"))),
   pendingMessageAt: Schema.optional(Schema.Finite),
 })
 
@@ -443,7 +445,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         },
       },
       pendingMessage: {
-        set(sessionKey: string, messageID: string) {
+        set(sessionKey: string, messageID: SessionMessage.ID) {
           const at = Date.now()
           touch(sessionKey)
           const current = store.sessionView[sessionKey]

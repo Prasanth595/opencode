@@ -1,4 +1,5 @@
 import type { PersistentPtyInfo } from "@opencode/client"
+import { Session } from "@opencode/schema/session"
 import { createSignal, onCleanup } from "solid-js"
 import { createSimpleContext } from "./helper"
 import { useClient } from "./client"
@@ -26,7 +27,7 @@ export const { use: useSessionTerminals, provider: SessionTerminalsProvider } = 
       initial: {},
     })
 
-    const refresh = async (sessionID: string) => {
+    const refresh = async (sessionID: Session.ID) => {
       if (!terminals[sessionID]) updateTerminals((draft) => (draft[sessionID] = []))
       const result = await client.api.experimental.persistentPty.list({ sessionID })
       updateTerminals((draft) => (draft[sessionID] = result))
@@ -38,7 +39,7 @@ export const { use: useSessionTerminals, provider: SessionTerminalsProvider } = 
       })
     }
 
-    const selectTerminal = async (sessionID: string, ptyID: string | null) => {
+    const selectTerminal = async (sessionID: Session.ID, ptyID: string | null) => {
       if (ptyID !== null && !terminals[sessionID]?.some((terminal) => terminal.id === ptyID)) return
       setFocus(ptyID ?? undefined)
       await update((draft) => {
@@ -66,7 +67,7 @@ export const { use: useSessionTerminals, provider: SessionTerminalsProvider } = 
             setAvailable(info.capabilities?.persistentPty !== false)
             if (!available()) return
             Object.keys(terminals).forEach((sessionID) => {
-              void refresh(sessionID).catch((error) =>
+              void refresh(Session.ID.make(sessionID, { disableChecks: true })).catch((error) =>
                 console.error("Failed to refresh persistent terminal panes", error),
               )
             })
@@ -80,7 +81,7 @@ export const { use: useSessionTerminals, provider: SessionTerminalsProvider } = 
 
     return {
       available,
-      get(sessionID: string) {
+      get(sessionID: Session.ID) {
         return {
           terminals: terminals[sessionID] ?? [],
           selectedTerminalID: store.sessions[sessionID] ?? null,
@@ -88,7 +89,7 @@ export const { use: useSessionTerminals, provider: SessionTerminalsProvider } = 
       },
       refresh,
       selectTerminal,
-      async newTerminal(sessionID: string): Promise<PersistentPtyInfo> {
+      async newTerminal(sessionID: Session.ID): Promise<PersistentPtyInfo> {
         const session = data.session.get(sessionID)
         const terminal = await client.api.experimental.persistentPty.create({
           sessionID,

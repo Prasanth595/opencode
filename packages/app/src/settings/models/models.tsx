@@ -1,3 +1,4 @@
+import { Provider } from "@opencode/schema/provider"
 import { useFilteredList } from "@opencode/ui/hooks"
 import { Switch } from "@opencode/ui/switch"
 import { type Component, createEffect, createMemo, For, Show } from "solid-js"
@@ -69,7 +70,7 @@ export const SettingsModels: Component<{
   const searching = () => list.filter().length > 0
   const expanded = (key: string) => searching() || !store.collapsed[key]
 
-  const setProviderVisibility = (providerID: string, visible: boolean) =>
+  const setProviderVisibility = (providerID: Provider.ID, visible: boolean) =>
     models
       .list()
       .filter((item) => item.provider.id === providerID)
@@ -184,7 +185,7 @@ export const SettingsModels: Component<{
               expanded={expanded}
               disabled={searching()}
               onExpandedChange={(key, value) => setStore("collapsed", key, !value)}
-              onSetVisibility={setProviderVisibility}
+              onSetVisibility={(id, visible) => setProviderVisibility(Provider.ID.make(id), visible)}
               ref={(providerID, element) => sections.set(providerID, element)}
               rows={(items) => <ModelRows items={items} />}
             />

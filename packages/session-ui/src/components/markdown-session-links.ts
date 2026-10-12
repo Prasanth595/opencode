@@ -1,3 +1,5 @@
+import { SessionID } from "@opencode/schema/session-id"
+
 // Generated session IDs have a 26-character alphanumeric suffix. Require a complete token
 // so a partially streamed ID, an identifier suffix, or a path does not become a link.
 const sessionID = /(?<![A-Za-z0-9_])ses_[A-Za-z0-9]{26}(?![A-Za-z0-9_])/g
@@ -54,7 +56,7 @@ function sessionButton(id: string) {
   return button
 }
 
-export function setupSessionLinks(root: HTMLElement, open: () => ((id: string) => void) | undefined) {
+export function setupSessionLinks(root: HTMLElement, open: () => ((id: SessionID) => void) | undefined) {
   const click = (event: MouseEvent) => {
     if (event.defaultPrevented || !(event.target instanceof Element)) return
     const button = event.target.closest("button[data-session-id]")
@@ -64,7 +66,7 @@ export function setupSessionLinks(root: HTMLElement, open: () => ((id: string) =
 
     if (!handler) return
     event.stopPropagation()
-    handler(button.dataset.sessionId!)
+    handler(SessionID.make(button.dataset.sessionId!, { disableChecks: true }))
   }
 
   root.addEventListener("click", click)

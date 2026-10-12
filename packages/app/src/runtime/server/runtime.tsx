@@ -1,3 +1,5 @@
+import type { Model } from "@opencode/schema/model"
+import type { Provider } from "@opencode/schema/provider"
 import { createSimpleContext } from "@opencode/ui/context"
 import { Accessor, batch, createEffect, createMemo, createResource, createRoot, getOwner, untrack } from "solid-js"
 import { createServerProjects, RECENTLY_CLOSED_DISPLAY_LIMIT, ServerConnection, useServers } from "./registry"
@@ -137,7 +139,7 @@ function createGlobalModels() {
       return store.recent
     },
     // Marks models visible in the picker regardless of the "latest per family" default.
-    show(models: ReadonlyArray<{ providerID: string; modelID: string }>) {
+    show(models: ReadonlyArray<{ providerID: Provider.ID; modelID: Model.ID }>) {
       const seen = new Map(store.user.map((item, index) => [`${item.providerID}:${item.modelID}`, index]))
       batch(() => {
         for (const model of models) {

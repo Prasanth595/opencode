@@ -127,7 +127,8 @@ export async function installTimelineStreamProbe(
       }
 
       ;(window as Window & { __timelineStreamBenchmark?: TimelineProbeState }).__timelineStreamBenchmark = state
-      const scrollTo = Element.prototype.scrollTo
+      // SAFETY: measuredScrollTo retains both public overloads and forwards their arguments and receiver unchanged.
+      const scrollTo = Element.prototype.scrollTo as (...args: unknown[]) => void
       const scrollTop = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop")!
 
       if (profileVisual) {

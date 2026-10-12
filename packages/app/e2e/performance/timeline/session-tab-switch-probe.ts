@@ -267,6 +267,7 @@ export async function waitForStableTimeline(page: Page, lastID: string) {
 
                     const last = [...root.querySelectorAll<HTMLElement>("[data-message-id]")].some((element) => {
                       if (element.dataset.messageId !== lastID) return false
+                      if (!element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false
                       const rect = element.getBoundingClientRect()
 
                       return rect.bottom > view.top && rect.top < view.bottom

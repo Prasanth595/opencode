@@ -1,6 +1,9 @@
 import type { Page } from "@playwright/test"
 import type { OpenCodeEvent, SessionMessageInfo } from "@opencode/client/promise"
+import { Event } from "@opencode/schema/event"
 import { Permission } from "@opencode/schema/permission"
+import { Project } from "@opencode/schema/project"
+import { Session } from "@opencode/schema/session"
 import { Worktree } from "@opencode/schema/worktree"
 import { Duration, Effect, Layer, Option, Predicate, Schema } from "effect"
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http"
@@ -93,7 +96,7 @@ export interface MockServerConfig {
   // Returning true fails the next `/api/permission/request` listing with a 500.
   permissionListFailures?: () => boolean
   // Without it, permission replies answer 501 MockUnsupported.
-  onPermissionReply?: (input: { sessionID: string; permissionID: string; body: unknown }) => void
+  onPermissionReply?: (input: { sessionID: Session.ID; permissionID: Permission.ID; body: unknown }) => void
   forms?: unknown[] | (() => unknown[])
   // MCP servers. A list serves every workspace; a function receives the requested directory.
   mcp?: unknown[] | ((directory: string) => unknown[])
@@ -982,10 +985,10 @@ function mockHandlers(
             project.vcs = provider ?? "git"
             state.emit([
               {
-                id: "evt_vcs_initialized",
+                id: Event.ID.make("evt_vcs_initialized", { disableChecks: true }),
                 type: "worktree.updated",
                 created: Date.now(),
-                data: { projectID: project.id },
+                data: { projectID: Project.ID.make(project.id, { disableChecks: true }) },
               },
             ])
           }).pipe(Effect.andThen(noContent))
@@ -1208,7 +1211,7 @@ function mockHandlers(
 
             return {
               data: {
-                id: prompt?.id ?? `inb_mock_${Date.now()}`,
+                id: prompt?.id ?? `msg_mock_${Date.now()}`,
                 sessionID: ctx.params.sessionID,
                 time: { created: Date.now() },
                 type: "user",
@@ -1226,7 +1229,7 @@ function mockHandlers(
 
             return {
               data: {
-                id: Predicate.isString(body.id) ? body.id : `inb_mock_${Date.now()}`,
+                id: Predicate.isString(body.id) ? body.id : `msg_mock_${Date.now()}`,
                 sessionID: ctx.params.sessionID,
                 time: { created: Date.now() },
                 type: "compaction",
@@ -1269,8 +1272,8 @@ function mockHandlers(
           if (!reply) return unsupported("record permission replies", "onPermissionReply")
 
           return Effect.sync(() => {
-            const sessionID = ctx.params.sessionID
-            const permissionID = ctx.params.permissionID
+            const sessionID = Session.ID.make(ctx.params.sessionID, { disableChecks: true })
+            const permissionID = Permission.ID.make(ctx.params.permissionID, { disableChecks: true })
             reply({ sessionID, permissionID, body: ctx.payload })
 
             const pending = [config.sessionPermissions?.[sessionID] ?? [], resolve(config.permissions ?? [])]
@@ -1282,13 +1285,13 @@ function mockHandlers(
             })
             state.emit([
               {
-                id: `evt_permission_replied_${permissionID}`,
+                id: Event.ID.make(`evt_permission_replied_${permissionID}`, { disableChecks: true }),
                 created: Date.now(),
                 type: "permission.replied",
                 location: { directory: requestDirectory(config, ctx.request) },
                 data: {
-                  sessionID,
-                  requestID: permissionID,
+                  sessionID: Session.ID.make(sessionID, { disableChecks: true }),
+                  requestID: Permission.ID.make(permissionID, { disableChecks: true }),
                   reply: Option.getOrUndefined(decodePermissionReply(ctx.payload))?.decision ?? "once",
                 },
               },

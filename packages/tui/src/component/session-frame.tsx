@@ -17,6 +17,7 @@ import { usePromptRef } from "../context/prompt"
 import { usePanel } from "../context/panel"
 import { useStorage } from "../context/storage"
 import { useDialog } from "../ui/dialog"
+import { Session as SchemaSession } from "@opencode/schema/session"
 import { Session } from "../routes/session"
 import { Sidebar } from "../routes/session/sidebar"
 import { clampSessionPaneWidth, SESSION_SIDEBAR_WIDTH } from "../ui/layout"
@@ -26,7 +27,7 @@ import { useToast } from "../ui/toast"
 import { TerminalPane } from "./terminal-pane"
 import { PanelHost } from "./panel-host"
 
-export function SessionFrame(props: { sessionID: string; verticalTabsWidth: number }) {
+export function SessionFrame(props: { sessionID: SchemaSession.ID; verticalTabsWidth: number }) {
   const sessions = useSessionTerminals()
   const prompt = usePromptRef()
   const config = useConfig()

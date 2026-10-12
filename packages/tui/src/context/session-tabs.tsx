@@ -5,6 +5,7 @@ import { isDeepEqual } from "remeda"
 import { createSimpleContext } from "./helper"
 import { useClient } from "./client"
 import { locationKey, useData } from "./data"
+import { Session } from "@opencode/schema/session"
 import { withTimestampedFallback } from "@opencode/util/session-title-fallback"
 import { useEvent } from "./event"
 import { useRoute } from "./route"
@@ -77,7 +78,7 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
       key: "sessionID",
     })
     const fallback = empty()
-    const [promptPulses, setPromptPulses] = createSignal<Record<string, number>>({})
+    const [promptPulses, setPromptPulses] = createSignal<Record<Session.ID, number>>({})
     let history: SessionTabHistory = { entries: [], index: -1 }
     // User-closed tabs eligible for reopening; in-memory like history, deleted sessions pruned.
     const [closedTabs, setClosedTabs] = createSignal<ClosedSessionTab[]>([])
@@ -87,9 +88,9 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
     // just closed. Removing a tab marks it cancelled so any late-applying
     // registration becomes a no-op; navigating to the session again clears
     // the mark.
-    const cancelledTabs = new Set<string>()
-    const scrollAnchors = new Map<string, ScrollAnchor>()
-    const [expandedGroups, setExpandedGroups] = createStore<Record<string, Record<string, boolean> | undefined>>({})
+    const cancelledTabs = new Set<Session.ID>()
+    const scrollAnchors = new Map<Session.ID, ScrollAnchor>()
+    const [expandedGroups, setExpandedGroups] = createStore<Record<Session.ID, Record<string, boolean> | undefined>>({})
 
     const onFocus = () => setFocused(true)
     const onBlur = () => setFocused(false)
@@ -114,18 +115,19 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
       )
     }
 
-    const root = (sessionID: string) => data.session.root(sessionID)
-    const title = (sessionID: string, persisted?: string, fallback?: string) => {
-      const session = data.session.get(sessionID)
+    const root = (sessionID: Session.ID | string) =>
+      Session.ID.make(data.session.root(Session.ID.make(sessionID, { disableChecks: true })), { disableChecks: true })
+    const title = (sessionID: Session.ID | string, persisted?: string, fallback?: string) => {
+      const session = data.session.get(Session.ID.make(sessionID, { disableChecks: true }))
       return session?.title ?? persisted ?? fallback ?? (session ? withTimestampedFallback(session) : undefined)
     }
-    const isUnread = (sessionID: string) => {
-      const info = data.session.get(sessionID)
+    const isUnread = (sessionID: Session.ID | string) => {
+      const info = data.session.get(Session.ID.make(sessionID, { disableChecks: true }))
       return info?.time.idle !== undefined && (info.time.viewed === undefined || info.time.idle > info.time.viewed)
     }
-    const family = (sessionID: string) => {
+    const family = (sessionID: Session.ID | string) => {
       const session = root(sessionID)
-      const members = data.session.family(session)
+      const members = data.session.family(session).map((id) => Session.ID.make(id, { disableChecks: true }))
       return members.includes(session) ? members : [session, ...members]
     }
     const normalize = (value: TabsState) => ({
@@ -135,7 +137,7 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
       }, []),
       unread: {},
     })
-    const current = () => (route.data.type === "session" ? root(route.data.sessionID) : undefined)
+    const current = (): Session.ID | undefined => (route.data.type === "session" ? root(route.data.sessionID) : undefined)
     createSessionRetention({
       session: data.session,
       current: () =>
@@ -266,11 +268,15 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
       const sessionIDs = signature.split("\n")
       let stale = false
       void (async () => {
-        await Promise.allSettled(sessionIDs.map((sessionID) => data.session.sync(sessionID, { children: true })))
+        await Promise.allSettled(
+          sessionIDs.map((sessionID) =>
+            data.session.sync(Session.ID.make(sessionID, { disableChecks: true }), { children: true }),
+          ),
+        )
         if (stale) return
         const locations = new Map(
           sessionIDs
-            .map((sessionID) => data.session.get(sessionID)?.location)
+            .map((sessionID) => data.session.get(Session.ID.make(sessionID, { disableChecks: true }))?.location)
             .filter((location) => location !== undefined)
             .map((location) => [locationKey(location), location]),
         )
@@ -322,7 +328,7 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
       }),
     )
 
-    function remove(sessionID: string, navigate: boolean) {
+    function remove(sessionID: Session.ID | string, navigate: boolean) {
       const target = root(sessionID)
       cancelledTabs.add(target)
       family(target).forEach((id) => {
@@ -368,33 +374,34 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
       },
       current,
       status,
-      scrollAnchor(sessionID: string) {
+      scrollAnchor(sessionID: Session.ID | string) {
         const target = root(sessionID)
         if (!state().tabs.some((tab) => tab.sessionID === target)) return
-        return scrollAnchors.get(sessionID)
+        return scrollAnchors.get(Session.ID.make(sessionID, { disableChecks: true }))
       },
-      setScrollAnchor(sessionID: string, anchor: ScrollAnchor | undefined) {
+      setScrollAnchor(sessionID: Session.ID | string, anchor: ScrollAnchor | undefined) {
         const target = root(sessionID)
+        const id = Session.ID.make(sessionID, { disableChecks: true })
         if (anchor === undefined || !state().tabs.some((tab) => tab.sessionID === target)) {
-          scrollAnchors.delete(sessionID)
+          scrollAnchors.delete(id)
           return
         }
-        const current = scrollAnchors.get(sessionID)
+        const current = scrollAnchors.get(id)
         if (current && anchorKey(current.target) === anchorKey(anchor.target) && current.screenY === anchor.screenY)
           return
-        scrollAnchors.set(sessionID, anchor)
+        scrollAnchors.set(id, anchor)
       },
-      groupExpanded(sessionID: string, groupID: string) {
-        return expandedGroups[sessionID]?.[groupID]
+      groupExpanded(sessionID: Session.ID | string, groupID: string) {
+        return expandedGroups[Session.ID.make(sessionID, { disableChecks: true })]?.[groupID]
       },
-      setGroupExpanded(sessionID: string, groupID: string, expanded: boolean) {
-        setExpandedGroups(sessionID, (current) => ({ ...current, [groupID]: expanded }))
+      setGroupExpanded(sessionID: Session.ID | string, groupID: string, expanded: boolean) {
+        setExpandedGroups(Session.ID.make(sessionID, { disableChecks: true }), (current) => ({ ...current, [groupID]: expanded }))
       },
-      select(sessionID: string) {
+      select(sessionID: Session.ID | string) {
         if (!enabled()) return
         route.navigate({ type: "session", sessionID: root(sessionID) })
       },
-      open(sessionID: string) {
+      open(sessionID: Session.ID | string) {
         if (!enabled()) return
         const session = root(sessionID)
         if (state().tabs.some((tab) => tab.sessionID === session)) return
@@ -417,7 +424,7 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
           ),
         })
       },
-      close(sessionID?: string) {
+      close(sessionID?: Session.ID | string) {
         if (!enabled()) return
         const target = sessionID ? root(sessionID) : current()
         if (!target) {
@@ -432,9 +439,10 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
         if (tab) setClosedTabs((entries) => recordClosedSessionTab(entries, tab, index))
         remove(target, true)
       },
-      reopen(sessionID?: string) {
+      reopen(sessionID?: Session.ID | string) {
         if (!enabled()) return
-        const result = reopenSessionTab(closedTabs(), state().tabs, sessionID)
+        const target = sessionID ? root(sessionID) : undefined
+        const result = reopenSessionTab(closedTabs(), state().tabs, target)
         setClosedTabs(result.stack)
         const tabs = result.tabs
         if (!tabs || !result.sessionID) return
@@ -444,7 +452,7 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
         })
         route.navigate({ type: "session", sessionID: result.sessionID })
       },
-      move(sessionID: string, index: number) {
+      move(sessionID: Session.ID | string, index: number) {
         if (!enabled()) return
         const session = root(sessionID)
         if (moveSessionTab(state().tabs, session, index) === state().tabs) return

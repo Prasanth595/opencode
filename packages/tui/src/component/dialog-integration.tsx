@@ -13,6 +13,7 @@ import type {
   LocationRef,
 } from "@opencode/client"
 import { openUrl } from "@opencode/util/open"
+import { Credential } from "@opencode/schema/credential"
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useClipboard } from "../context/clipboard"
@@ -239,7 +240,7 @@ function manageConnections(
                     const label = value.trim()
                     if (!label) return
                     void client.api.credential
-                      .update({ credentialID: option.value, label })
+                      .update({ credentialID: Credential.ID.make(option.value, { disableChecks: true }), label })
                       .then(() => manageConnections(integration, methods, location, dialog, onConnected))
                       .catch(toast.error)
                   }}
@@ -256,7 +257,7 @@ function manageConnections(
               if (deleting() !== option.value) return setDeleting(option.value)
               const final = credentialConnections(current() ?? integration).length === 1
               void client.api.credential
-                .remove({ credentialID: option.value })
+                .remove({ credentialID: Credential.ID.make(option.value, { disableChecks: true }) })
                 .then(() => {
                   setDeleting(undefined)
                   if (!final) return

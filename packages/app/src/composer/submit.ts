@@ -1,3 +1,4 @@
+import { SessionID } from "@opencode/schema/session-id"
 import { SessionMessage } from "@opencode/schema/session-message"
 import type { SessionMessageUser } from "@opencode/client/promise"
 import type { Accessor } from "solid-js"
@@ -459,8 +460,7 @@ async function applySelection(
   track?: ModelSelection["trackSessionCommit"],
   beforeModel?: () => Promise<void>,
 ) {
-  const cancel = track?.(session.id, selection)
-
+  const cancel = track?.(SessionID.make(session.id, { disableChecks: true }), selection)
   try {
     const current = session.current()
 
@@ -554,7 +554,7 @@ function failSubmission(
   // oxlint-disable-next-line anti-slop/no-unknown-parameters -- a rejected send is opaque; the notifier formats it
   error: unknown,
   restore: () => boolean,
-  messageID?: string,
+  messageID?: SessionMessage.ID,
   rollback?: () => void,
 ) {
   if (messageID && session.admitted(messageID)) return

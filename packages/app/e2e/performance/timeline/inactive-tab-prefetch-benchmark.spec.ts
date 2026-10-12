@@ -1,3 +1,5 @@
+import { Session } from "@opencode/schema/session"
+import { SessionMessage } from "@opencode/schema/session-message"
 import { benchmark, expect } from "../benchmark"
 import { mockOpenCodeServer } from "../../utils/mock-server"
 import { expectSessionTitle } from "../../utils/waits"
@@ -8,7 +10,7 @@ import { measureSessionSwitch, waitForStableTimeline } from "./session-tab-switc
 
 const sessions = Array.from({ length: 8 }, (_, index) => ({
   ...fixture.sessions[0],
-  id: `ses_prefetch_${index}`,
+  id: Session.ID.make(`ses_prefetch_${index}`, { disableChecks: true }),
   title: `Renderer review ${index}`,
 }))
 
@@ -16,7 +18,10 @@ const sessions = Array.from({ length: 8 }, (_, index) => ({
 const pages = Object.fromEntries(
   sessions.map((session) => [
     session.id,
-    messages[fixture.targetID].slice(-20).map((message) => ({ ...message, id: `${message.id}_${session.id}` })),
+    messages[fixture.targetID].slice(-20).map((message) => ({
+      ...message,
+      id: SessionMessage.ID.make(`${message.id}_${session.id}`, { disableChecks: true }),
+    })),
   ]),
 )
 

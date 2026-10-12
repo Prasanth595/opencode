@@ -248,7 +248,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
 
     if (!sessionID) return
 
-    await data.session.compact({ sessionID, model: actions.model() }).catch((cause: unknown) => {
+    await data.session.compact({ sessionID, model: actions.model() as any }).catch((cause: unknown) => {
       showToast({ title: formatServerError(cause, language.t, language.t("common.requestFailed")) })
     })
   }

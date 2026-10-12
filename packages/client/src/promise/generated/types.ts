@@ -1,3 +1,41 @@
+import type { Skill } from "@opencode/schema/skill"
+
+import type { Agent } from "@opencode/schema/agent"
+
+import type { Session } from "@opencode/schema/session"
+
+import type { Project } from "@opencode/schema/project"
+
+import type { Model } from "@opencode/schema/model"
+
+import type { Provider } from "@opencode/schema/provider"
+
+import type { SessionMessage } from "@opencode/schema/session-message"
+
+import type { Snapshot } from "@opencode/schema/snapshot"
+
+import type { Shell } from "@opencode/schema/shell"
+
+import type { Form } from "@opencode/schema/form"
+
+import type { Integration } from "@opencode/schema/integration"
+
+import type { Credential } from "@opencode/schema/credential"
+
+import type { PermissionSaved } from "@opencode/schema/permission-saved"
+
+import type { Permission } from "@opencode/schema/permission"
+
+import type { Pty } from "@opencode/schema/pty"
+
+import type { WebSearch } from "@opencode/schema/websearch"
+
+import type { Plugin } from "@opencode/schema/plugin"
+
+import type { Event } from "@opencode/schema/event"
+
+import type { Workspace } from "@opencode/schema/workspace"
+
 export type JsonValue = null | boolean | number | string | Array<JsonValue> | { [key: string]: JsonValue }
 
 export type ServerInfo = {
@@ -13,12 +51,6 @@ export type PairingCode = { code: string; expires_in: number }
 export type PairingSession = { token: string }
 
 export type AbsolutePath = string
-
-export type ProjectID = string
-
-export type AgentID = string
-
-export type ProviderID = string
 
 export type ProviderCompaction = { type: "summary" } | { type: "native" }
 
@@ -38,10 +70,6 @@ export type PluginFeatures = { server?: true; tui?: true; rpc?: true }
 
 export type PluginState = { status: "active" } | { status: "failed"; error: string; ref?: string }
 
-export type SessionID = string
-
-export type SessionMessageID = string
-
 export type MoneyUSD = number
 
 export type TokenUsageInfo = {
@@ -54,8 +82,6 @@ export type TokenUsageInfo = {
 export type RelativePath = string
 
 export type SessionMetadata = { [x: string]: JsonValue }
-
-export type SnapshotID = string
 
 export type FileDiffInfo = {
   file: string
@@ -86,11 +112,7 @@ export type PromptFileSource = { type: "inline" } | { type: "uri"; uri: string }
 
 export type PromptMention = { start: number; end: number; text: string }
 
-export type SkillID = string
-
 export type SkillName = string
-
-export type ShellID = string
 
 export type SessionMessageProviderState = { [x: string]: JsonValue }
 
@@ -120,11 +142,7 @@ export type InstructionEntryKey = string
 
 export type SessionGenerateResponse = { data: { text: string } }
 
-export type EventID = string
-
 export type EventSeq = number
-
-export type WorkspaceID = string
 
 export type InstructionKey = string
 
@@ -143,8 +161,6 @@ export type SessionMessageToolStateRunning1 = {
 }
 
 export type SessionInterruptResponse = { interrupted: boolean }
-
-export type FormID = string
 
 export type FormMetadata = { [x: string]: JsonValue }
 
@@ -170,17 +186,9 @@ export type MoneyUSDPerMillionTokens = number
 
 export type GenerateTextResponse = { data: { text: string } }
 
-export type IntegrationID = string
-
-export type IntegrationMethodID = string
-
 export type IntegrationEnvMethod = { type: "env"; names: Array<string> }
 
-export type CredentialID = string
-
 export type ConnectionStatus = { status: "needs_auth"; message: string; url?: string }
-
-export type IntegrationAttemptID = string
 
 export type IntegrationAttemptStatus =
   | { status: "pending"; time: { created: number; expires: number } }
@@ -236,19 +244,13 @@ export type ProjectCommands = { start?: string }
 
 export type ProjectTime = { created: number; updated: number; active: number; archived?: number }
 
-export type PermissionID = string
-
 export type PermissionSource = { type: "tool"; messageID: string; id: string }
-
-export type PermissionSavedID = string
 
 export type CommandInfo = { name: string; description?: string }
 
 export type RpcOutput = { output?: any }
 
 export type PermissionReply = "once" | "always" | "reject"
-
-export type PtyID = string
 
 export type FormMetadata1 = { [x: string]: any }
 
@@ -286,8 +288,6 @@ export type VcsFileStatus = {
 
 export type VcsBranchList = Array<string>
 
-export type WebSearchID = string
-
 export type WebSearchResult = { url: string; title?: string; content?: string; time: { published?: number } }
 
 export type McpProtocol = "legacy" | "auto" | "2026-07-28"
@@ -310,19 +310,19 @@ export type WorktreeInfo = { directory: AbsolutePath }
 
 export type LocationPublicInfo = {
   directory: AbsolutePath
-  project: { id: ProjectID; directory: AbsolutePath; canonical: AbsolutePath }
+  project: { id: Project.ID; directory: AbsolutePath; canonical: AbsolutePath }
 }
 
-export type ModelRef = { id: string; providerID: ProviderID; variant?: string }
-
 export type SessionProviderContextProvenance = {
-  providerID: ProviderID
+  providerID: Provider.ID
   provider: string
   modelID: string
   route: string
   protocol: string
   endpoint: string
 }
+
+export type ModelRef = { id: Model.ID; providerID: Provider.ID; variant?: Model.VariantID }
 
 export type ModelSettings = { compaction?: ProviderCompaction } & { [x: string]: any }
 
@@ -346,23 +346,23 @@ export type ConfigProviderSettings = {
 
 export type PermissionRule = { action: string; resource: string; effect: PermissionEffect }
 
-export type PluginInfo = { id?: string; source: PluginSource; features: PluginFeatures; state: PluginState }
+export type PluginInfo = { id?: Plugin.ID; source: PluginSource; features: PluginFeatures; state: PluginState }
 
 export type SessionForkBoundary =
-  | { type: "before"; messageID: SessionMessageID }
-  | { type: "through"; messageID: SessionMessageID }
+  | { type: "before"; messageID: SessionMessage.ID }
+  | { type: "through"; messageID: SessionMessage.ID }
 
 export type SessionMessageAgentSelected = {
-  id: SessionMessageID
+  id: SessionMessage.ID
   metadata?: { [x: string]: JsonValue }
   time: { created: number }
   type: "agent-switched"
-  agent: AgentID
-  previous?: AgentID
+  agent: Agent.ID
+  previous?: Agent.ID
 }
 
 export type SessionMessageSynthetic = {
-  id: SessionMessageID
+  id: SessionMessage.ID
   metadata?: { [x: string]: JsonValue }
   time: { created: number }
   text: string
@@ -371,7 +371,7 @@ export type SessionMessageSynthetic = {
 }
 
 export type SessionMessageSystem = {
-  id: SessionMessageID
+  id: SessionMessage.ID
   metadata?: { [x: string]: JsonValue }
   time: { created: number }
   type: "system"
@@ -381,7 +381,7 @@ export type SessionMessageSystem = {
 
 export type SessionMessageCompactionRunning = {
   type: "compaction"
-  id: SessionMessageID
+  id: SessionMessage.ID
   metadata?: { [x: string]: JsonValue }
   time: { created: number }
   status: "running"
@@ -393,9 +393,9 @@ export type SessionMessageCompactionRunning = {
 export type FileSystemEntry = { path: RelativePath; type: "file" | "directory" }
 
 export type SessionRevert = {
-  messageID: SessionMessageID
+  messageID: SessionMessage.ID
   partID?: string
-  snapshot?: SnapshotID
+  snapshot?: Snapshot.ID
   files?: Array<FileDiffInfo>
 }
 
@@ -415,20 +415,20 @@ export type PromptFileAttachment = {
 
 export type PromptAgentAttachment = { name: string; mention?: PromptMention }
 
-export type PromptSkillAttachment = { id: SkillID; name: SkillName; text?: string; mention?: PromptMention }
+export type PromptSkillAttachment = { id: Skill.ID; name: SkillName; text?: string; mention?: PromptMention }
 
 export type SessionMessageSkill = {
-  id: SessionMessageID
+  id: SessionMessage.ID
   metadata?: { [x: string]: JsonValue }
   time: { created: number }
   type: "skill"
-  skill: SkillID
+  skill: Skill.ID
   name: SkillName
   text: string
 }
 
 export type SkillInfo = {
-  id: SkillID
+  id: Skill.ID
   name: SkillName
   description?: string
   autoinvoke?: boolean
@@ -437,11 +437,11 @@ export type SkillInfo = {
 }
 
 export type SessionMessageShell = {
-  id: SessionMessageID
+  id: SessionMessage.ID
   metadata?: { [x: string]: JsonValue }
   time: { created: number; completed?: number }
   type: "shell"
-  shellID: ShellID
+  shellID: Shell.ID
   command: string
   status: "running" | "exited" | "timeout" | "killed"
   exit?: number | "Infinity" | "-Infinity" | "NaN"
@@ -449,7 +449,7 @@ export type SessionMessageShell = {
 }
 
 export type ShellInfo = {
-  id: ShellID
+  id: Shell.ID
   status: "running" | "exited" | "timeout" | "killed"
   command: string
   cwd: string
@@ -463,7 +463,7 @@ export type ShellInfo = {
 }
 
 export type ShellInfo1 = {
-  id: ShellID
+  id: Shell.ID
   status: "running" | "exited" | "timeout" | "killed"
   command: string
   cwd: string
@@ -491,7 +491,7 @@ export type SessionMessageAssistantRetry = { attempt: number; at: number; error:
 
 export type SessionMessageCompactionFailed = {
   type: "compaction"
-  id: SessionMessageID
+  id: SessionMessage.ID
   metadata?: { [x: string]: JsonValue }
   time: { created: number }
   status: "failed"
@@ -502,7 +502,7 @@ export type SessionMessageCompactionFailed = {
 }
 
 export type SessionMessageIdle = {
-  id: SessionMessageID
+  id: SessionMessage.ID
   metadata?: { [x: string]: JsonValue }
   time: { created: number }
   type: "idle"
@@ -511,8 +511,8 @@ export type SessionMessageIdle = {
 }
 
 export type SessionInboxSynthetic = {
-  id: SessionMessageID
-  sessionID: SessionID
+  id: SessionMessage.ID
+  sessionID: Session.ID
   time: { created: number }
   type: "synthetic"
   payload: SessionInboxSyntheticPayload
@@ -520,8 +520,8 @@ export type SessionInboxSynthetic = {
 }
 
 export type SessionInboxCompaction = {
-  id: SessionMessageID
-  sessionID: SessionID
+  id: SessionMessage.ID
+  sessionID: Session.ID
   time: { created: number }
   type: "compaction"
   payload: SessionInboxCompactionPayload
@@ -534,7 +534,7 @@ export type InstructionEntrySnapshot = Array<{ key: InstructionEntryKey; value: 
 
 export type EventLogSynced = { type: "log.synced"; aggregateID: string; seq?: EventSeq }
 
-export type LocationRef = { directory: AbsolutePath; workspaceID?: WorkspaceID }
+export type LocationRef = { directory: AbsolutePath; workspaceID?: Workspace.ID }
 
 export type SessionMessageAssistantText1 = { type: "text"; text: string; state?: SessionMessageProviderState1 }
 
@@ -638,7 +638,7 @@ export type ModelCost = {
 }
 
 export type IntegrationCommandMethod = {
-  id: IntegrationMethodID
+  id: Integration.MethodID
   type: "command"
   label: string
   command: Array<string>
@@ -646,7 +646,7 @@ export type IntegrationCommandMethod = {
 
 export type CredentialOAuth = {
   type: "oauth"
-  methodID: IntegrationMethodID
+  methodID: Integration.MethodID
   refresh: string
   access: string
   expires: number
@@ -655,13 +655,13 @@ export type CredentialOAuth = {
 
 export type CredentialExternal = {
   type: "external"
-  methodID: IntegrationMethodID
+  methodID: Integration.MethodID
   metadata?: { [x: string]: JsonValue }
 }
 
 export type ConnectionCredentialInfo = {
   type: "credential"
-  id: CredentialID
+  id: Credential.ID
   label: string
   method: "key" | "oauth" | "external"
   status?: ConnectionStatus
@@ -670,25 +670,25 @@ export type ConnectionCredentialInfo = {
 export type ConnectionEnvInfo = { type: "env"; name: string; status?: ConnectionStatus }
 
 export type IntegrationAttempt = {
-  attemptID: IntegrationAttemptID
+  attemptID: Integration.AttemptID
   url: string
   instructions: string
   mode: "auto" | "code"
   time: { created: number; expires: number }
 }
 
-export type IntegrationCommandAttempt = { attemptID: IntegrationAttemptID; time: { created: number; expires: number } }
+export type IntegrationCommandAttempt = { attemptID: Integration.AttemptID; time: { created: number; expires: number } }
 
 export type McpServer = {
   name: string
   status: McpStatusConnected | McpStatusPending | McpStatusDisabled | McpStatusFailed | McpStatusNeedsAuth
-  integrationID?: IntegrationID
+  integrationID?: Integration.ID
 }
 
 export type McpResourceCatalog = { resources: Array<McpResource>; templates: Array<McpResourceTemplate> }
 
-export type Project = {
-  id: ProjectID
+export type Project2 = {
+  id: Project.ID
   canonical: AbsolutePath
   vcs?: ProjectVcs
   name?: string
@@ -699,8 +699,8 @@ export type Project = {
 }
 
 export type PermissionRequest = {
-  id: PermissionID
-  sessionID: SessionID
+  id: Permission.ID
+  sessionID: Session.ID
   action: string
   resources: Array<string>
   save?: Array<string>
@@ -710,15 +710,15 @@ export type PermissionRequest = {
 }
 
 export type PermissionSavedInfo = {
-  id: PermissionSavedID
-  projectID: ProjectID
+  id: PermissionSaved.ID
+  projectID: Project.ID
   action: string
   resource: string
   time: { created: number; updated: number }
 }
 
-export type Pty = {
-  id: PtyID
+export type Pty2 = {
+  id: Pty.ID
   title: string
   command: string
   args: Array<string>
@@ -729,7 +729,7 @@ export type Pty = {
 }
 
 export type PersistentPtyInfo = {
-  id: PtyID
+  id: Pty.ID
   title: string
   command: string
   args: Array<string>
@@ -737,14 +737,14 @@ export type PersistentPtyInfo = {
   status: "running" | "exited"
   pid: number
   exitCode?: number
-  sessionID: SessionID
+  sessionID: Session.ID
   foregroundProcess: string | null
   size: { cols: number; rows: number }
   output: { head: number; tail: number }
 }
 
 export type PersistentPtyReadResult = {
-  ptyID: PtyID
+  ptyID: Pty.ID
   title: string
   cwd: string
   foregroundProcess: string | null
@@ -825,23 +825,23 @@ export type FormAnswer2 = { [x: string]: FormValue1 }
 
 export type VcsInfo = { provider?: string; branch: VcsBranch }
 
-export type WebSearchProvider = { id: WebSearchID; name: string }
+export type WebSearchProvider = { id: WebSearch.ID; name: string }
 
 export type SessionMessageLocationSwitched = {
-  id: SessionMessageID
+  id: SessionMessage.ID
   metadata?: { [x: string]: JsonValue }
   time: { created: number }
   type: "location-switched"
-  projectID?: ProjectID
+  projectID?: Project.ID
   subpath?: RelativePath
   location: LocationPublicRef
-  previous?: { location: LocationPublicRef; projectID?: ProjectID; subpath?: RelativePath } | null
+  previous?: { location: LocationPublicRef; projectID?: Project.ID; subpath?: RelativePath } | null
 }
 
-export type SessionInboxMovePayload = { projectID: ProjectID; subpath?: RelativePath; location: LocationPublicRef }
+export type SessionInboxMovePayload = { projectID: Project.ID; subpath?: RelativePath; location: LocationPublicRef }
 
 export type V2EventRpc = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any } | undefined
   type: `${"rpc."}${string}`
@@ -850,7 +850,7 @@ export type V2EventRpc = {
 }
 
 export type V2EventServerConnected = {
-  id: EventID
+  id: Event.ID
   metadata?: { [x: string]: any } | undefined
   location?: LocationPublicRef | undefined
   type: "server.connected"
@@ -861,10 +861,12 @@ export type ReferenceSource = ReferenceLocalSource | ReferenceGitSource
 
 export type WorktreeList = Array<WorktreeDirectory>
 
+export type SessionProviderContext = { version: 1; provenance: SessionProviderContextProvenance; messages: JsonValue }
+
 export type SessionStatsModelUsage = { model: ModelRef; steps: number; tokens: TokenUsageInfo; cost: MoneyUSD }
 
 export type SessionMessageModelSelected = {
-  id: SessionMessageID
+  id: SessionMessage.ID
   metadata?: { [x: string]: JsonValue }
   time: { created: number }
   type: "model-switched"
@@ -872,10 +874,8 @@ export type SessionMessageModelSelected = {
   previous?: ModelRef
 }
 
-export type SessionProviderContext = { version: 1; provenance: SessionProviderContextProvenance; messages: JsonValue }
-
 export type ModelVariant = {
-  id: string
+  id: Model.VariantID
   settings?: ModelSettings
   headers?: { [x: string]: string }
   body?: { [x: string]: any }
@@ -888,9 +888,9 @@ export type ProviderRequest = {
 }
 
 export type ProviderInfo = {
-  id: ProviderID
-  canonical?: ProviderID
-  integrationID?: IntegrationID
+  id: Provider.ID
+  canonical?: Provider.ID
+  integrationID?: Integration.ID
   name: string
   activation: "auto" | "enabled" | "disabled"
   package: string
@@ -902,7 +902,7 @@ export type ProviderInfo = {
 export type PermissionRuleset = Array<PermissionRule>
 
 export type SessionMessageUser = {
-  id: SessionMessageID
+  id: SessionMessage.ID
   metadata?: { [x: string]: JsonValue }
   time: { created: number }
   text: string
@@ -944,85 +944,85 @@ export type SessionMessageToolStateError = {
 }
 
 export type SessionAgentSelected = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.agent.selected"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; agent: AgentID; previous?: AgentID }
+  data: { sessionID: Session.ID; agent: Agent.ID; previous?: Agent.ID }
 }
 
 export type SessionModelSelected = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.model.selected"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; model: ModelRef; previous?: ModelRef }
+  data: { sessionID: Session.ID; model: ModelRef; previous?: ModelRef }
 }
 
 export type SessionMoved = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.moved"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; location: LocationRef; projectID: ProjectID; subpath?: RelativePath }
+  data: { sessionID: Session.ID; location: LocationRef; projectID: Project.ID; subpath?: RelativePath }
 }
 
 export type SessionRenamed = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.renamed"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; title: string }
+  data: { sessionID: Session.ID; title: string }
 }
 
 export type SessionMetadataUpdated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.metadata.updated"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; metadata: SessionMetadata }
+  data: { sessionID: Session.ID; metadata: SessionMetadata }
 }
 
 export type SessionViewed = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.viewed"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; idle: number }
+  data: { sessionID: Session.ID; idle: number }
 }
 
 export type SessionDeleted = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.deleted"
   durable: { aggregateID: string; seq: EventSeq; version: 2 }
   location?: LocationRef
-  data: { sessionID: SessionID }
+  data: { sessionID: Session.ID }
 }
 
 export type SessionForked = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.forked"
   durable: { aggregateID: string; seq: EventSeq; version: 2 }
   location?: LocationRef
   data: {
-    sessionID: SessionID
-    parentID: SessionID
+    sessionID: Session.ID
+    parentID: Session.ID
     boundary: SessionForkBoundary
     instructions?: { [x: InstructionKey]: InstructionHash }
     instructionEntries?: InstructionEntrySnapshot
@@ -1030,219 +1030,219 @@ export type SessionForked = {
 }
 
 export type SessionInboxDelivered = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.inbox.delivered"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; inboxID: SessionMessageID }
+  data: { sessionID: Session.ID; inboxID: SessionMessage.ID }
 }
 
-export type SessionInboxMovePayload1 = { location: LocationRef; projectID: ProjectID; subpath?: RelativePath }
+export type SessionInboxMovePayload1 = { location: LocationRef; projectID: Project.ID; subpath?: RelativePath }
 
 export type SessionInboxCancelled = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.inbox.cancelled"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; inboxID: SessionMessageID }
+  data: { sessionID: Session.ID; inboxID: SessionMessage.ID }
 }
 
 export type SessionInboxDeliveryChanged = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.inbox.delivery.changed"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; inboxID: SessionMessageID; delivery: SessionInboxDelivery }
+  data: { sessionID: Session.ID; inboxID: SessionMessage.ID; delivery: SessionInboxDelivery }
 }
 
 export type SessionExecutionStarted = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.execution.started"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID }
+  data: { sessionID: Session.ID }
 }
 
 export type SessionExecutionSucceeded = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.execution.succeeded"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID }
+  data: { sessionID: Session.ID }
 }
 
 export type SessionExecutionFailed = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.execution.failed"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; error: SessionStructuredError }
+  data: { sessionID: Session.ID; error: SessionStructuredError }
 }
 
 export type SessionExecutionInterrupted = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.execution.interrupted"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; reason: "user" | "shutdown" | "superseded" | "inactivity" }
+  data: { sessionID: Session.ID; reason: "user" | "shutdown" | "superseded" | "inactivity" }
 }
 
 export type SessionInstructionsUpdated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.instructions.updated"
   durable: { aggregateID: string; seq: EventSeq; version: 2 }
   location?: LocationRef
-  data: { sessionID: SessionID; delta: { [x: string]: InstructionHash | "removed" }; text?: string }
+  data: { sessionID: Session.ID; delta: { [x: string]: InstructionHash | "removed" }; text?: string }
 }
 
 export type SessionSynthetic = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.synthetic"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; text: string; description?: string; metadata?: { [x: string]: any } }
+  data: { sessionID: Session.ID; text: string; description?: string; metadata?: { [x: string]: any } }
 }
 
 export type SessionSkillActivated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.skill.activated"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; id: SkillID; name: SkillName; text: string }
+  data: { sessionID: Session.ID; id: Skill.ID; name: SkillName; text: string }
 }
 
 export type SessionShellStarted = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.shell.started"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; shell: ShellInfo }
+  data: { sessionID: Session.ID; shell: ShellInfo }
 }
 
 export type SessionShellEnded = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.shell.ended"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
   data: {
-    sessionID: SessionID
+    sessionID: Session.ID
     shell: ShellInfo
     output: { output: string; cursor: number; size: number; truncated: boolean }
   }
 }
 
 export type SessionStepStarted = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.step.started"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
   data: {
-    sessionID: SessionID
-    assistantMessageID: SessionMessageID
-    agent: AgentID
+    sessionID: Session.ID
+    assistantMessageID: SessionMessage.ID
+    agent: Agent.ID
     model: ModelRef
-    snapshot?: SnapshotID
+    snapshot?: Snapshot.ID
     started: number
   }
 }
 
 export type SessionStepStreamed = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.step.streamed"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; assistantMessageID: SessionMessageID }
+  data: { sessionID: Session.ID; assistantMessageID: SessionMessage.ID }
 }
 
 export type SessionStepEnded = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.step.ended"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
   data: {
-    sessionID: SessionID
-    assistantMessageID: SessionMessageID
+    sessionID: Session.ID
+    assistantMessageID: SessionMessage.ID
     finish: "stop" | "length" | "tool-calls" | "content-filter" | "error" | "unknown"
     rawFinish?: string
     providerState?: SessionMessageProviderState1
     cost: MoneyUSD
     tokens: TokenUsageInfo
-    snapshot?: SnapshotID
+    snapshot?: Snapshot.ID
     files?: Array<RelativePath>
   }
 }
 
 export type SessionStepFailed = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.step.failed"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
   data: {
-    sessionID: SessionID
-    assistantMessageID: SessionMessageID
+    sessionID: Session.ID
+    assistantMessageID: SessionMessage.ID
     error: SessionStructuredError
     finish?: "content-filter"
     rawFinish?: string
     providerState?: SessionMessageProviderState1
     cost?: MoneyUSD
     tokens?: TokenUsageInfo
-    snapshot?: SnapshotID
+    snapshot?: Snapshot.ID
     files?: Array<RelativePath>
   }
 }
 
 export type SessionTextStarted = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.text.started"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; assistantMessageID: SessionMessageID; ordinal: number }
+  data: { sessionID: Session.ID; assistantMessageID: SessionMessage.ID; ordinal: number }
 }
 
 export type SessionTextEnded = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.text.ended"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
   data: {
-    sessionID: SessionID
-    assistantMessageID: SessionMessageID
+    sessionID: Session.ID
+    assistantMessageID: SessionMessage.ID
     ordinal: number
     text: string
     state?: SessionMessageProviderState1
@@ -1250,30 +1250,30 @@ export type SessionTextEnded = {
 }
 
 export type SessionReasoningStarted = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.reasoning.started"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
   data: {
-    sessionID: SessionID
-    assistantMessageID: SessionMessageID
+    sessionID: Session.ID
+    assistantMessageID: SessionMessage.ID
     ordinal: number
     state?: SessionMessageProviderState1
   }
 }
 
 export type SessionReasoningEnded = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.reasoning.ended"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
   data: {
-    sessionID: SessionID
-    assistantMessageID: SessionMessageID
+    sessionID: Session.ID
+    assistantMessageID: SessionMessage.ID
     ordinal: number
     text: string
     state?: SessionMessageProviderState1
@@ -1281,35 +1281,35 @@ export type SessionReasoningEnded = {
 }
 
 export type SessionToolInputStarted = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.tool.input.started"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; assistantMessageID: SessionMessageID; id: string; name: string }
+  data: { sessionID: Session.ID; assistantMessageID: SessionMessage.ID; id: string; name: string }
 }
 
 export type SessionToolInputEnded = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.tool.input.ended"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; assistantMessageID: SessionMessageID; id: string; text: string }
+  data: { sessionID: Session.ID; assistantMessageID: SessionMessage.ID; id: string; text: string }
 }
 
 export type SessionToolCalled = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.tool.called"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
   data: {
-    sessionID: SessionID
-    assistantMessageID: SessionMessageID
+    sessionID: Session.ID
+    assistantMessageID: SessionMessage.ID
     id: string
     input: { [x: string]: any }
     executed: boolean
@@ -1318,15 +1318,15 @@ export type SessionToolCalled = {
 }
 
 export type SessionRetryScheduled = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.retry.scheduled"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
   data: {
-    sessionID: SessionID
-    assistantMessageID: SessionMessageID
+    sessionID: Session.ID
+    assistantMessageID: SessionMessage.ID
     attempt: number
     at: number
     error: SessionStructuredError
@@ -1334,74 +1334,74 @@ export type SessionRetryScheduled = {
 }
 
 export type SessionCompactionStarted = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.compaction.started"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; reason: "auto" | "manual"; recent: string; inputID?: SessionMessageID }
+  data: { sessionID: Session.ID; reason: "auto" | "manual"; recent: string; inputID?: SessionMessage.ID }
 }
 
 export type SessionCompactionFailed = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.compaction.failed"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
   data: {
-    sessionID: SessionID
+    sessionID: Session.ID
     reason: "auto" | "manual"
     error: SessionStructuredError
-    inputID?: SessionMessageID
+    inputID?: SessionMessage.ID
     cost?: MoneyUSD
     tokens?: TokenUsageInfo
   }
 }
 
 export type SessionRevertStaged = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.revert.staged"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; revert: SessionRevert }
+  data: { sessionID: Session.ID; revert: SessionRevert }
 }
 
 export type SessionRevertCleared = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.revert.cleared"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID }
+  data: { sessionID: Session.ID }
 }
 
 export type SessionRevertCommitted = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.revert.committed"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; to: SessionMessageID }
+  data: { sessionID: Session.ID; to: SessionMessage.ID }
 }
 
 export type SessionUsageRecorded = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.usage.recorded"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; source: "title" | "compaction"; cost: MoneyUSD; tokens: TokenUsageInfo }
+  data: { sessionID: Session.ID; source: "title" | "compaction"; cost: MoneyUSD; tokens: TokenUsageInfo }
 }
 
 export type LocationShutdown = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "location.shutdown"
@@ -1410,7 +1410,7 @@ export type LocationShutdown = {
 }
 
 export type ModelsDevRefreshed = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "models-dev.refreshed"
@@ -1419,7 +1419,7 @@ export type ModelsDevRefreshed = {
 }
 
 export type CredentialUpdated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "credential.updated"
@@ -1428,16 +1428,16 @@ export type CredentialUpdated = {
 }
 
 export type CredentialSwitched = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "credential.switched"
   location?: LocationRef
-  data: { integrationID: IntegrationID; credentialID: CredentialID | null }
+  data: { integrationID: Integration.ID; credentialID: Credential.ID | null }
 }
 
 export type IntegrationUpdated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "integration.updated"
@@ -1446,7 +1446,7 @@ export type IntegrationUpdated = {
 }
 
 export type ProviderUpdated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "provider.updated"
@@ -1455,7 +1455,7 @@ export type ProviderUpdated = {
 }
 
 export type ModelUpdated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "model.updated"
@@ -1464,7 +1464,7 @@ export type ModelUpdated = {
 }
 
 export type AgentUpdated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "agent.updated"
@@ -1473,61 +1473,66 @@ export type AgentUpdated = {
 }
 
 export type SessionUsageUpdated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.usage.updated"
   location?: LocationRef
-  data: { sessionID: SessionID; cost: MoneyUSD; tokens: TokenUsageInfo }
+  data: { sessionID: Session.ID; cost: MoneyUSD; tokens: TokenUsageInfo }
 }
 
 export type SessionTextDelta = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.text.delta"
   location?: LocationRef
-  data: { sessionID: SessionID; assistantMessageID: SessionMessageID; ordinal: number; delta: string }
+  data: { sessionID: Session.ID; assistantMessageID: SessionMessage.ID; ordinal: number; delta: string }
 }
 
 export type SessionReasoningDelta = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.reasoning.delta"
   location?: LocationRef
-  data: { sessionID: SessionID; assistantMessageID: SessionMessageID; ordinal: number; delta: string }
+  data: { sessionID: Session.ID; assistantMessageID: SessionMessage.ID; ordinal: number; delta: string }
 }
 
 export type SessionToolInputDelta = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.tool.input.delta"
   location?: LocationRef
-  data: { sessionID: SessionID; assistantMessageID: SessionMessageID; id: string; delta: string }
+  data: { sessionID: Session.ID; assistantMessageID: SessionMessage.ID; id: string; delta: string }
 }
 
 export type SessionToolProgress = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.tool.progress"
   location?: LocationRef
-  data: { sessionID: SessionID; assistantMessageID: SessionMessageID; id: string; metadata: { [x: string]: JsonValue } }
+  data: {
+    sessionID: Session.ID
+    assistantMessageID: SessionMessage.ID
+    id: string
+    metadata: { [x: string]: JsonValue }
+  }
 }
 
 export type SessionCompactionDelta = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.compaction.delta"
   location?: LocationRef
-  data: { sessionID: SessionID; text: string }
+  data: { sessionID: Session.ID; text: string }
 }
 
 export type FilesystemChanged = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "filesystem.changed"
@@ -1536,7 +1541,7 @@ export type FilesystemChanged = {
 }
 
 export type ReferenceUpdated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "reference.updated"
@@ -1545,14 +1550,14 @@ export type ReferenceUpdated = {
 }
 
 export type PermissionAsked = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "permission.asked"
   location?: LocationRef
   data: {
-    id: PermissionID
-    sessionID: SessionID
+    id: Permission.ID
+    sessionID: Session.ID
     action: string
     resources: Array<string>
     save?: Array<string>
@@ -1563,16 +1568,16 @@ export type PermissionAsked = {
 }
 
 export type PermissionReplied = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "permission.replied"
   location?: LocationRef
-  data: { sessionID: SessionID; requestID: PermissionID; reply: PermissionReply }
+  data: { sessionID: Session.ID; requestID: Permission.ID; reply: PermissionReply }
 }
 
 export type PluginUpdated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "plugin.updated"
@@ -1581,13 +1586,13 @@ export type PluginUpdated = {
 }
 
 export type ProjectUpdated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "project.updated"
   location?: LocationRef
   data: {
-    id: ProjectID
+    id: Project.ID
     canonical: AbsolutePath
     vcs?: ProjectVcs
     name?: string
@@ -1599,26 +1604,26 @@ export type ProjectUpdated = {
 }
 
 export type WorktreeUpdated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "worktree.updated"
   location?: LocationRef
-  data: { projectID: ProjectID }
+  data: { projectID: Project.ID }
 }
 
 export type WorktreeResolved = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "worktree.resolved"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { projectID: ProjectID; directory: AbsolutePath; previous: ProjectID; adopted?: Array<ProjectID> }
+  data: { projectID: Project.ID; directory: AbsolutePath; previous: Project.ID; adopted?: Array<Project.ID> }
 }
 
 export type CommandUpdated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "command.updated"
@@ -1627,7 +1632,7 @@ export type CommandUpdated = {
 }
 
 export type ConfigUpdated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "config.updated"
@@ -1636,7 +1641,7 @@ export type ConfigUpdated = {
 }
 
 export type SkillUpdated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "skill.updated"
@@ -1645,34 +1650,34 @@ export type SkillUpdated = {
 }
 
 export type PtyExited = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "pty.exited"
   location?: LocationRef
-  data: { id: PtyID; exitCode: number }
+  data: { id: Pty.ID; exitCode: number }
 }
 
 export type PtyDeleted = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "pty.deleted"
   location?: LocationRef
-  data: { id: PtyID }
+  data: { id: Pty.ID }
 }
 
 export type PersistentPtyRemoved = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "persistent-pty.removed"
   location?: LocationRef
-  data: { sessionID: SessionID; ptyID: PtyID }
+  data: { sessionID: Session.ID; ptyID: Pty.ID }
 }
 
 export type ShellCreated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "shell.created"
@@ -1681,34 +1686,34 @@ export type ShellCreated = {
 }
 
 export type ShellExited = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "shell.exited"
   location?: LocationRef
-  data: { id: ShellID; exit?: number; status: "running" | "exited" | "timeout" | "killed" }
+  data: { id: Shell.ID; exit?: number; status: "running" | "exited" | "timeout" | "killed" }
 }
 
 export type ShellDeleted = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "shell.deleted"
   location?: LocationRef
-  data: { id: ShellID }
+  data: { id: Shell.ID }
 }
 
 export type FormCancelled = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "form.cancelled"
   location?: LocationRef
-  data: { id: FormID; sessionID: string }
+  data: { id: Form.ID; sessionID: string }
 }
 
 export type WebsearchUpdated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "websearch.updated"
@@ -1717,25 +1722,25 @@ export type WebsearchUpdated = {
 }
 
 export type SessionStatusUpdated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.status"
   location?: LocationRef
-  data: { sessionID: SessionID; status: SessionStatus }
+  data: { sessionID: Session.ID; status: SessionStatus }
 }
 
 export type SessionIdle = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.idle"
   location?: LocationRef
-  data: { sessionID: SessionID }
+  data: { sessionID: Session.ID }
 }
 
 export type TuiPromptAppend = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "tui.prompt.append"
@@ -1744,7 +1749,7 @@ export type TuiPromptAppend = {
 }
 
 export type TuiCommandExecute = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "tui.command.execute"
@@ -1773,7 +1778,7 @@ export type TuiCommandExecute = {
 }
 
 export type TuiToastShow = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "tui.toast.show"
@@ -1787,16 +1792,16 @@ export type TuiToastShow = {
 }
 
 export type TuiSessionSelect = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "tui.session.select"
   location?: LocationRef
-  data: { sessionID: SessionID }
+  data: { sessionID: Session.ID }
 }
 
 export type InstallationUpdated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "installation.updated"
@@ -1805,7 +1810,7 @@ export type InstallationUpdated = {
 }
 
 export type InstallationUpdateAvailable = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "installation.update-available"
@@ -1814,7 +1819,7 @@ export type InstallationUpdateAvailable = {
 }
 
 export type VcsBranchUpdated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "vcs.branch.updated"
@@ -1823,7 +1828,7 @@ export type VcsBranchUpdated = {
 }
 
 export type McpStatusChanged = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "mcp.status.changed"
@@ -1832,7 +1837,7 @@ export type McpStatusChanged = {
 }
 
 export type McpResourcesChanged = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "mcp.resources.changed"
@@ -1841,15 +1846,15 @@ export type McpResourcesChanged = {
 }
 
 export type SessionToolSuccess = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.tool.success"
   durable: { aggregateID: string; seq: EventSeq; version: 2 }
   location?: LocationRef
   data: {
-    sessionID: SessionID
-    assistantMessageID: SessionMessageID
+    sessionID: Session.ID
+    assistantMessageID: SessionMessage.ID
     id: string
     content: [ToolContent1, ...Array<ToolContent1>]
     metadata?: { [x: string]: JsonValue }
@@ -1859,15 +1864,15 @@ export type SessionToolSuccess = {
 }
 
 export type SessionToolFailed = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.tool.failed"
   durable: { aggregateID: string; seq: EventSeq; version: 2 }
   location?: LocationRef
   data: {
-    sessionID: SessionID
-    assistantMessageID: SessionMessageID
+    sessionID: Session.ID
+    assistantMessageID: SessionMessage.ID
     id: string
     error: SessionStructuredError
     content?: [ToolContent1, ...Array<ToolContent1>]
@@ -1915,30 +1920,30 @@ export type CredentialKey = {
 export type ConnectionInfo = ConnectionCredentialInfo | ConnectionEnvInfo
 
 export type PtyCreated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "pty.created"
   location?: LocationRef
-  data: { info: Pty }
+  data: { info: Pty2 }
 }
 
 export type PtyUpdated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "pty.updated"
   location?: LocationRef
-  data: { info: Pty }
+  data: { info: Pty2 }
 }
 
 export type PersistentPtyAdded = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "persistent-pty.added"
   location?: LocationRef
-  data: { sessionID: SessionID; terminal: PersistentPtyInfo }
+  data: { sessionID: Session.ID; terminal: PersistentPtyInfo }
 }
 
 export type PersistentPtySnapshot = {
@@ -1957,17 +1962,17 @@ export type FormField1 =
   | FormExternalField
 
 export type FormReplied = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "form.replied"
   location?: LocationRef
-  data: { id: FormID; sessionID: string; answer: FormAnswer2 }
+  data: { id: Form.ID; sessionID: string; answer: FormAnswer2 }
 }
 
 export type SessionInboxMove = {
-  id: SessionMessageID
-  sessionID: SessionID
+  id: SessionMessage.ID
+  sessionID: Session.ID
   time: { created: number }
   type: "move"
   delivery: SessionInboxDelivery
@@ -1980,6 +1985,42 @@ export type ReferenceInfo = {
   description?: string
   hidden?: boolean
   source: ReferenceSource
+}
+
+export type SessionMessageCompactionCompleted = {
+  type: "compaction"
+  id: SessionMessage.ID
+  metadata?: { [x: string]: JsonValue }
+  time: { created: number }
+  status: "completed"
+  reason: "auto" | "manual"
+  model?: ModelRef
+  providerState?: SessionMessageProviderState
+  summary: string
+  recent: string
+  providerContext?: SessionProviderContext
+  cost?: MoneyUSD
+  tokens?: TokenUsageInfo
+}
+
+export type SessionCompactionEnded = {
+  id: Event.ID
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.compaction.ended"
+  durable: { aggregateID: string; seq: EventSeq; version: 1 }
+  location?: LocationRef
+  data: {
+    sessionID: Session.ID
+    reason: "auto" | "manual"
+    model?: ModelRef
+    providerState?: SessionMessageProviderState1
+    providerContext?: SessionProviderContext
+    text: string
+    recent: string
+    cost?: MoneyUSD
+    tokens?: TokenUsageInfo
+  }
 }
 
 export type SessionStatsInfo = {
@@ -1997,47 +2038,11 @@ export type SessionStatsInfo = {
   models: Array<SessionStatsModelUsage>
 }
 
-export type SessionMessageCompactionCompleted = {
-  type: "compaction"
-  id: SessionMessageID
-  metadata?: { [x: string]: JsonValue }
-  time: { created: number }
-  status: "completed"
-  reason: "auto" | "manual"
-  model?: ModelRef
-  providerState?: SessionMessageProviderState
-  summary: string
-  recent: string
-  providerContext?: SessionProviderContext
-  cost?: MoneyUSD
-  tokens?: TokenUsageInfo
-}
-
-export type SessionCompactionEnded = {
-  id: EventID
-  created: number
-  metadata?: { [x: string]: any }
-  type: "session.compaction.ended"
-  durable: { aggregateID: string; seq: EventSeq; version: 1 }
-  location?: LocationRef
-  data: {
-    sessionID: SessionID
-    reason: "auto" | "manual"
-    model?: ModelRef
-    providerState?: SessionMessageProviderState1
-    providerContext?: SessionProviderContext
-    text: string
-    recent: string
-    cost?: MoneyUSD
-    tokens?: TokenUsageInfo
-  }
-}
-
 export type ModelInfo = {
-  id: string
-  modelID: string
-  providerID: ProviderID
-  canonical?: ProviderID
+  id: Model.ID
+  modelID: Model.ID
+  providerID: Provider.ID
+  canonical?: Provider.ID
   family?: string
   name: string
   compatibility?: ModelCompatibility
@@ -2055,7 +2060,7 @@ export type ModelInfo = {
 }
 
 export type AgentInfo = {
-  id: AgentID
+  id: Agent.ID
   name: string
   model?: ModelRef
   request: ProviderRequest
@@ -2069,11 +2074,11 @@ export type AgentInfo = {
 }
 
 export type SessionInfo = {
-  id: SessionID
-  parentID?: SessionID
-  fork?: { sessionID: SessionID; boundary: SessionForkBoundary }
-  projectID: ProjectID
-  agent?: AgentID
+  id: Session.ID
+  parentID?: Session.ID
+  fork?: { sessionID: Session.ID; boundary: SessionForkBoundary }
+  projectID: Project.ID
+  agent?: Agent.ID
   model?: ModelRef
   cost: MoneyUSD
   tokens: TokenUsageInfo
@@ -2088,21 +2093,21 @@ export type SessionInfo = {
 }
 
 export type SessionCreated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.created"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
   data: {
-    sessionID: SessionID
-    projectID: ProjectID
+    sessionID: Session.ID
+    projectID: Project.ID
     location: LocationRef
     subpath?: RelativePath
-    parentID?: SessionID
+    parentID?: Session.ID
     slug: string
     title?: string
-    agent?: AgentID
+    agent?: Agent.ID
     model?: ModelRef
     metadata?: SessionMetadata
     permissions?: PermissionRuleset
@@ -2111,13 +2116,13 @@ export type SessionCreated = {
 }
 
 export type SessionPermissions = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.permissions"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; permissions: PermissionRuleset }
+  data: { sessionID: Session.ID; permissions: PermissionRuleset }
 }
 
 export type ConfigEntry =
@@ -2231,13 +2236,13 @@ export type ConfigEntry =
             | { repository: string; branch?: string; description?: string; hidden?: boolean }
             | { path: string; description?: string; hidden?: boolean }
         }
-        websearch?: false | { provider: "random" | WebSearchID }
+        websearch?: false | { provider: "random" | WebSearch.ID }
         plugins?: Array<string | { package: string; options?: { [x: string]: JsonValue } }>
         worktree?: ConfigWorktree
         warming?: boolean | { prompt?: string; interval?: string; duration?: string }
         providers?: {
           [x: string]: {
-            canonical?: ProviderID
+            canonical?: Provider.ID
             name?: string
             env?: Array<string>
             package?: string
@@ -2246,7 +2251,7 @@ export type ConfigEntry =
             body?: { [x: string]: JsonValue }
             models?: {
               [x: string]: {
-                modelID?: string
+                modelID?: Model.ID
                 family?: string
                 name?: string
                 compatibility?: ModelCompatibility
@@ -2256,7 +2261,7 @@ export type ConfigEntry =
                 body?: { [x: string]: JsonValue }
                 capabilities?: ConfigModelCapabilities
                 variants?: Array<{
-                  id: string
+                  id: Model.VariantID
                   settings?: ConfigModelSettings
                   headers?: { [x: string]: string }
                   body?: { [x: string]: JsonValue }
@@ -2294,8 +2299,8 @@ export type ConfigEntry =
   | { type: "directory"; path: AbsolutePath }
 
 export type SessionInboxUser = {
-  id: SessionMessageID
-  sessionID: SessionID
+  id: SessionMessage.ID
+  sessionID: Session.ID
   time: { created: number }
   type: "user"
   payload: SessionInboxUserPayload
@@ -2357,14 +2362,14 @@ export type SessionsResponse = {
 export type SessionInboxInfo = SessionInboxUser | SessionInboxSynthetic | SessionInboxCompaction | SessionInboxMove
 
 export type SessionMessageAssistant = {
-  id: SessionMessageID
+  id: SessionMessage.ID
   metadata?: { [x: string]: JsonValue }
   time: { created: number; streamed?: number; completed?: number }
   type: "assistant"
-  agent: AgentID
+  agent: Agent.ID
   model: ModelRef
   content: Array<SessionMessageAssistantText | SessionMessageAssistantReasoning | SessionMessageAssistantTool>
-  snapshot?: { start?: SnapshotID; end?: SnapshotID; files?: Array<RelativePath> }
+  snapshot?: { start?: Snapshot.ID; end?: Snapshot.ID; files?: Array<RelativePath> }
   finish?: "stop" | "length" | "tool-calls" | "content-filter" | "error" | "unknown"
   rawFinish?: string
   providerState?: SessionMessageProviderState
@@ -2375,13 +2380,13 @@ export type SessionMessageAssistant = {
 }
 
 export type SessionInboxEnqueued = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.inbox.enqueued"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; inboxID: SessionMessageID; item: SessionInboxItem }
+  data: { sessionID: Session.ID; inboxID: SessionMessage.ID; item: SessionInboxItem }
 }
 
 export type SessionMessageAssistantContentEncoded =
@@ -2389,10 +2394,10 @@ export type SessionMessageAssistantContentEncoded =
   | SessionMessageAssistantReasoning1
   | SessionMessageAssistantTool1
 
-export type FormInfo = { id: FormID; sessionID: string; title: string; metadata?: FormMetadata; fields: FormFields }
+export type FormInfo = { id: Form.ID; sessionID: string; title: string; metadata?: FormMetadata; fields: FormFields }
 
 export type FormDetail = {
-  id: FormID
+  id: Form.ID
   sessionID: string
   title: string
   metadata?: FormMetadata
@@ -2400,21 +2405,21 @@ export type FormDetail = {
   state: FormState
 }
 
-export type IntegrationOAuthMethod = { id: IntegrationMethodID; type: "oauth"; label: string; form?: FormFields }
+export type IntegrationOAuthMethod = { id: Integration.MethodID; type: "oauth"; label: string; form?: FormFields }
 
 export type IntegrationKeyMethod = { type: "key"; label?: string; form?: FormFields }
 
-export type IntegrationExternalMethod = { id: IntegrationMethodID; type: "external"; label: string; form?: FormFields }
+export type IntegrationExternalMethod = { id: Integration.MethodID; type: "external"; label: string; form?: FormFields }
 
 export type CredentialEntry = {
-  id: CredentialID
-  integrationID: IntegrationID
+  id: Credential.ID
+  integrationID: Integration.ID
   label: string
   active: boolean
   value: CredentialValue
 }
 
-export type FormInfo1 = { id: FormID; sessionID: string; title: string; metadata?: FormMetadata1; fields: FormFields2 }
+export type FormInfo1 = { id: Form.ID; sessionID: string; title: string; metadata?: FormMetadata1; fields: FormFields2 }
 
 export type SessionMessageInfo =
   | SessionMessageAgentSelected
@@ -2430,13 +2435,13 @@ export type SessionMessageInfo =
   | SessionMessageIdle
 
 export type SessionMessageContentUpdated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "session.message.content.updated"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; messageID: SessionMessageID; content: Array<SessionMessageAssistantContentEncoded> }
+  data: { sessionID: Session.ID; messageID: SessionMessage.ID; content: Array<SessionMessageAssistantContentEncoded> }
 }
 
 export type IntegrationMethod =
@@ -2447,7 +2452,7 @@ export type IntegrationMethod =
   | IntegrationEnvMethod
 
 export type FormCreated = {
-  id: EventID
+  id: Event.ID
   created: number
   metadata?: { [x: string]: any }
   type: "form.created"
@@ -2510,7 +2515,7 @@ export type SessionEventDurable =
   | SessionMessageContentUpdated
 
 export type IntegrationInfo = {
-  id: IntegrationID
+  id: Integration.ID
   name: string
   metadata?: { [x: string]: any }
   methods: Array<IntegrationMethod>
@@ -2707,7 +2712,7 @@ export const isCommandExecutionError = (value: unknown): value is CommandExecuti
 
 export type SkillNotFoundError = {
   readonly _tag: "SkillNotFoundError"
-  readonly skill: string
+  readonly skill: Skill.ID
   readonly message: string
 }
 export const isSkillNotFoundError = (value: unknown): value is SkillNotFoundError =>
@@ -2884,7 +2889,7 @@ export type AgentListInput = {
 export type AgentListOutput = { location: LocationPublicRef; data: Array<AgentInfo> }
 
 export type AgentGetInput = {
-  readonly agentID: { readonly agentID: string }["agentID"]
+  readonly agentID: { readonly agentID: Agent.ID }["agentID"]
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
 }
 
@@ -2915,9 +2920,9 @@ export type SessionListInput = {
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
-    readonly parentID?: string | null | undefined
+    readonly parentID?: Session.ID | null | undefined
     readonly directory?: string | undefined
-    readonly project?: string | undefined
+    readonly project?: Project.ID | undefined
     readonly subpath?: string | undefined
     readonly cursor?: string | undefined
   }["limit"]
@@ -2925,9 +2930,9 @@ export type SessionListInput = {
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
-    readonly parentID?: string | null | undefined
+    readonly parentID?: Session.ID | null | undefined
     readonly directory?: string | undefined
-    readonly project?: string | undefined
+    readonly project?: Project.ID | undefined
     readonly subpath?: string | undefined
     readonly cursor?: string | undefined
   }["order"]
@@ -2935,9 +2940,9 @@ export type SessionListInput = {
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
-    readonly parentID?: string | null | undefined
+    readonly parentID?: Session.ID | null | undefined
     readonly directory?: string | undefined
-    readonly project?: string | undefined
+    readonly project?: Project.ID | undefined
     readonly subpath?: string | undefined
     readonly cursor?: string | undefined
   }["search"]
@@ -2945,9 +2950,9 @@ export type SessionListInput = {
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
-    readonly parentID?: string | null | undefined
+    readonly parentID?: Session.ID | null | undefined
     readonly directory?: string | undefined
-    readonly project?: string | undefined
+    readonly project?: Project.ID | undefined
     readonly subpath?: string | undefined
     readonly cursor?: string | undefined
   }["parentID"]
@@ -2955,9 +2960,9 @@ export type SessionListInput = {
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
-    readonly parentID?: string | null | undefined
+    readonly parentID?: Session.ID | null | undefined
     readonly directory?: string | undefined
-    readonly project?: string | undefined
+    readonly project?: Project.ID | undefined
     readonly subpath?: string | undefined
     readonly cursor?: string | undefined
   }["directory"]
@@ -2965,9 +2970,9 @@ export type SessionListInput = {
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
-    readonly parentID?: string | null | undefined
+    readonly parentID?: Session.ID | null | undefined
     readonly directory?: string | undefined
-    readonly project?: string | undefined
+    readonly project?: Project.ID | undefined
     readonly subpath?: string | undefined
     readonly cursor?: string | undefined
   }["project"]
@@ -2975,9 +2980,9 @@ export type SessionListInput = {
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
-    readonly parentID?: string | null | undefined
+    readonly parentID?: Session.ID | null | undefined
     readonly directory?: string | undefined
-    readonly project?: string | undefined
+    readonly project?: Project.ID | undefined
     readonly subpath?: string | undefined
     readonly cursor?: string | undefined
   }["subpath"]
@@ -2985,9 +2990,9 @@ export type SessionListInput = {
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
-    readonly parentID?: string | null | undefined
+    readonly parentID?: Session.ID | null | undefined
     readonly directory?: string | undefined
-    readonly project?: string | undefined
+    readonly project?: Project.ID | undefined
     readonly subpath?: string | undefined
     readonly cursor?: string | undefined
   }["cursor"]
@@ -2999,35 +3004,35 @@ export type SessionStatsInput = {
   readonly from?: {
     readonly from?: number | undefined
     readonly to?: number | undefined
-    readonly project?: string | undefined
+    readonly project?: Project.ID | undefined
     readonly timezone?: string | undefined
     readonly tools?: "none" | "summary" | "detail" | undefined
   }["from"]
   readonly to?: {
     readonly from?: number | undefined
     readonly to?: number | undefined
-    readonly project?: string | undefined
+    readonly project?: Project.ID | undefined
     readonly timezone?: string | undefined
     readonly tools?: "none" | "summary" | "detail" | undefined
   }["to"]
   readonly project?: {
     readonly from?: number | undefined
     readonly to?: number | undefined
-    readonly project?: string | undefined
+    readonly project?: Project.ID | undefined
     readonly timezone?: string | undefined
     readonly tools?: "none" | "summary" | "detail" | undefined
   }["project"]
   readonly timezone?: {
     readonly from?: number | undefined
     readonly to?: number | undefined
-    readonly project?: string | undefined
+    readonly project?: Project.ID | undefined
     readonly timezone?: string | undefined
     readonly tools?: "none" | "summary" | "detail" | undefined
   }["timezone"]
   readonly tools?: {
     readonly from?: number | undefined
     readonly to?: number | undefined
-    readonly project?: string | undefined
+    readonly project?: Project.ID | undefined
     readonly timezone?: string | undefined
     readonly tools?: "none" | "summary" | "detail" | undefined
   }["tools"]
@@ -3037,11 +3042,15 @@ export type SessionStatsOutput = { data: SessionStatsInfo }["data"]
 
 export type SessionCreateInput = {
   readonly id?: {
-    readonly id?: string | null
-    readonly parentID?: string | null
+    readonly id?: Session.ID | null
+    readonly parentID?: Session.ID | null
     readonly title?: string | null
-    readonly agent?: string | null
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly agent?: Agent.ID | null
+    readonly model?: {
+      readonly id: Model.ID
+      readonly providerID: Provider.ID
+      readonly variant?: Model.VariantID
+    } | null
     readonly location?: { readonly directory: string } | null
     readonly metadata?: { readonly [x: string]: JsonValue } | null
     readonly permissions?: ReadonlyArray<{
@@ -3051,11 +3060,15 @@ export type SessionCreateInput = {
     }> | null
   }["id"]
   readonly parentID?: {
-    readonly id?: string | null
-    readonly parentID?: string | null
+    readonly id?: Session.ID | null
+    readonly parentID?: Session.ID | null
     readonly title?: string | null
-    readonly agent?: string | null
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly agent?: Agent.ID | null
+    readonly model?: {
+      readonly id: Model.ID
+      readonly providerID: Provider.ID
+      readonly variant?: Model.VariantID
+    } | null
     readonly location?: { readonly directory: string } | null
     readonly metadata?: { readonly [x: string]: JsonValue } | null
     readonly permissions?: ReadonlyArray<{
@@ -3065,11 +3078,15 @@ export type SessionCreateInput = {
     }> | null
   }["parentID"]
   readonly title?: {
-    readonly id?: string | null
-    readonly parentID?: string | null
+    readonly id?: Session.ID | null
+    readonly parentID?: Session.ID | null
     readonly title?: string | null
-    readonly agent?: string | null
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly agent?: Agent.ID | null
+    readonly model?: {
+      readonly id: Model.ID
+      readonly providerID: Provider.ID
+      readonly variant?: Model.VariantID
+    } | null
     readonly location?: { readonly directory: string } | null
     readonly metadata?: { readonly [x: string]: JsonValue } | null
     readonly permissions?: ReadonlyArray<{
@@ -3079,11 +3096,15 @@ export type SessionCreateInput = {
     }> | null
   }["title"]
   readonly agent?: {
-    readonly id?: string | null
-    readonly parentID?: string | null
+    readonly id?: Session.ID | null
+    readonly parentID?: Session.ID | null
     readonly title?: string | null
-    readonly agent?: string | null
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly agent?: Agent.ID | null
+    readonly model?: {
+      readonly id: Model.ID
+      readonly providerID: Provider.ID
+      readonly variant?: Model.VariantID
+    } | null
     readonly location?: { readonly directory: string } | null
     readonly metadata?: { readonly [x: string]: JsonValue } | null
     readonly permissions?: ReadonlyArray<{
@@ -3093,11 +3114,15 @@ export type SessionCreateInput = {
     }> | null
   }["agent"]
   readonly model?: {
-    readonly id?: string | null
-    readonly parentID?: string | null
+    readonly id?: Session.ID | null
+    readonly parentID?: Session.ID | null
     readonly title?: string | null
-    readonly agent?: string | null
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly agent?: Agent.ID | null
+    readonly model?: {
+      readonly id: Model.ID
+      readonly providerID: Provider.ID
+      readonly variant?: Model.VariantID
+    } | null
     readonly location?: { readonly directory: string } | null
     readonly metadata?: { readonly [x: string]: JsonValue } | null
     readonly permissions?: ReadonlyArray<{
@@ -3107,11 +3132,15 @@ export type SessionCreateInput = {
     }> | null
   }["model"]
   readonly location?: {
-    readonly id?: string | null
-    readonly parentID?: string | null
+    readonly id?: Session.ID | null
+    readonly parentID?: Session.ID | null
     readonly title?: string | null
-    readonly agent?: string | null
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly agent?: Agent.ID | null
+    readonly model?: {
+      readonly id: Model.ID
+      readonly providerID: Provider.ID
+      readonly variant?: Model.VariantID
+    } | null
     readonly location?: { readonly directory: string } | null
     readonly metadata?: { readonly [x: string]: JsonValue } | null
     readonly permissions?: ReadonlyArray<{
@@ -3121,11 +3150,15 @@ export type SessionCreateInput = {
     }> | null
   }["location"]
   readonly metadata?: {
-    readonly id?: string | null
-    readonly parentID?: string | null
+    readonly id?: Session.ID | null
+    readonly parentID?: Session.ID | null
     readonly title?: string | null
-    readonly agent?: string | null
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly agent?: Agent.ID | null
+    readonly model?: {
+      readonly id: Model.ID
+      readonly providerID: Provider.ID
+      readonly variant?: Model.VariantID
+    } | null
     readonly location?: { readonly directory: string } | null
     readonly metadata?: { readonly [x: string]: JsonValue } | null
     readonly permissions?: ReadonlyArray<{
@@ -3135,11 +3168,15 @@ export type SessionCreateInput = {
     }> | null
   }["metadata"]
   readonly permissions?: {
-    readonly id?: string | null
-    readonly parentID?: string | null
+    readonly id?: Session.ID | null
+    readonly parentID?: Session.ID | null
     readonly title?: string | null
-    readonly agent?: string | null
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly agent?: Agent.ID | null
+    readonly model?: {
+      readonly id: Model.ID
+      readonly providerID: Provider.ID
+      readonly variant?: Model.VariantID
+    } | null
     readonly location?: { readonly directory: string } | null
     readonly metadata?: { readonly [x: string]: JsonValue } | null
     readonly permissions?: ReadonlyArray<{
@@ -3155,17 +3192,17 @@ export type SessionCreateOutput = { data: SessionInfo }["data"]
 export type SessionImportInput = {
   readonly info: {
     readonly info: {
-      readonly id: string
-      readonly parentID?: string
+      readonly id: Session.ID
+      readonly parentID?: Session.ID
       readonly fork?: {
-        readonly sessionID: string
+        readonly sessionID: Session.ID
         readonly boundary:
-          | { readonly type: "before"; readonly messageID: string }
-          | { readonly type: "through"; readonly messageID: string }
+          | { readonly type: "before"; readonly messageID: SessionMessage.ID }
+          | { readonly type: "through"; readonly messageID: SessionMessage.ID }
       }
-      readonly projectID: string
-      readonly agent?: string
-      readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly projectID: Project.ID
+      readonly agent?: Agent.ID
+      readonly model?: { readonly id: Model.ID; readonly providerID: Provider.ID; readonly variant?: Model.VariantID }
       readonly cost: number
       readonly tokens: {
         readonly input: number
@@ -3190,9 +3227,9 @@ export type SessionImportInput = {
         readonly effect: "allow" | "deny" | "ask"
       }>
       readonly revert?: {
-        readonly messageID: string
+        readonly messageID: SessionMessage.ID
         readonly partID?: string
-        readonly snapshot?: string
+        readonly snapshot?: Snapshot.ID
         readonly files?: ReadonlyArray<{
           readonly file: string
           readonly patch: string
@@ -3205,37 +3242,45 @@ export type SessionImportInput = {
     }
     readonly messages: ReadonlyArray<
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly type: "agent-switched"
-          readonly agent: string
-          readonly previous?: string
+          readonly agent: Agent.ID
+          readonly previous?: Agent.ID
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly type: "model-switched"
-          readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
-          readonly previous?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly model: {
+            readonly id: Model.ID
+            readonly providerID: Provider.ID
+            readonly variant?: Model.VariantID
+          }
+          readonly previous?: {
+            readonly id: Model.ID
+            readonly providerID: Provider.ID
+            readonly variant?: Model.VariantID
+          }
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly type: "location-switched"
-          readonly projectID?: string
+          readonly projectID?: Project.ID
           readonly subpath?: string
           readonly location: { readonly directory: string }
           readonly previous?: {
             readonly location: { readonly directory: string }
-            readonly projectID?: string
+            readonly projectID?: Project.ID
             readonly subpath?: string
           } | null
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly text: string
@@ -3252,7 +3297,7 @@ export type SessionImportInput = {
             readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
           }>
           readonly skills?: ReadonlyArray<{
-            readonly id: string
+            readonly id: Skill.ID
             readonly name: string
             readonly text?: string
             readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
@@ -3260,7 +3305,7 @@ export type SessionImportInput = {
           readonly type: "user"
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly text: string
@@ -3268,7 +3313,7 @@ export type SessionImportInput = {
           readonly type: "synthetic"
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly type: "system"
@@ -3276,20 +3321,20 @@ export type SessionImportInput = {
           readonly description?: string
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly type: "skill"
-          readonly skill: string
+          readonly skill: Skill.ID
           readonly name: string
           readonly text: string
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number; readonly completed?: number }
           readonly type: "shell"
-          readonly shellID: string
+          readonly shellID: Shell.ID
           readonly command: string
           readonly status: "running" | "exited" | "timeout" | "killed"
           readonly exit?: number | "Infinity" | "-Infinity" | "NaN"
@@ -3301,12 +3346,16 @@ export type SessionImportInput = {
           }
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number; readonly streamed?: number; readonly completed?: number }
           readonly type: "assistant"
-          readonly agent: string
-          readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly agent: Agent.ID
+          readonly model: {
+            readonly id: Model.ID
+            readonly providerID: Provider.ID
+            readonly variant?: Model.VariantID
+          }
           readonly content: ReadonlyArray<
             | { readonly type: "text"; readonly text: string; readonly state?: { readonly [x: string]: JsonValue } }
             | {
@@ -3388,7 +3437,11 @@ export type SessionImportInput = {
                 readonly time: { readonly created: number; readonly ran?: number; readonly completed?: number }
               }
           >
-          readonly snapshot?: { readonly start?: string; readonly end?: string; readonly files?: ReadonlyArray<string> }
+          readonly snapshot?: {
+            readonly start?: Snapshot.ID
+            readonly end?: Snapshot.ID
+            readonly files?: ReadonlyArray<string>
+          }
           readonly finish?: "stop" | "length" | "tool-calls" | "content-filter" | "error" | "unknown"
           readonly rawFinish?: string
           readonly providerState?: { readonly [x: string]: JsonValue }
@@ -3419,7 +3472,7 @@ export type SessionImportInput = {
       | (
           | {
               readonly type: "compaction"
-              readonly id: string
+              readonly id: SessionMessage.ID
               readonly metadata?: { readonly [x: string]: JsonValue }
               readonly time: { readonly created: number }
               readonly status: "running"
@@ -3429,19 +3482,23 @@ export type SessionImportInput = {
             }
           | {
               readonly type: "compaction"
-              readonly id: string
+              readonly id: SessionMessage.ID
               readonly metadata?: { readonly [x: string]: JsonValue }
               readonly time: { readonly created: number }
               readonly status: "completed"
               readonly reason: "auto" | "manual"
-              readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+              readonly model?: {
+                readonly id: Model.ID
+                readonly providerID: Provider.ID
+                readonly variant?: Model.VariantID
+              }
               readonly providerState?: { readonly [x: string]: JsonValue }
               readonly summary: string
               readonly recent: string
               readonly providerContext?: {
                 readonly version: 1
                 readonly provenance: {
-                  readonly providerID: string
+                  readonly providerID: Provider.ID
                   readonly provider: string
                   readonly modelID: string
                   readonly route: string
@@ -3460,7 +3517,7 @@ export type SessionImportInput = {
             }
           | {
               readonly type: "compaction"
-              readonly id: string
+              readonly id: SessionMessage.ID
               readonly metadata?: { readonly [x: string]: JsonValue }
               readonly time: { readonly created: number }
               readonly status: "failed"
@@ -3481,7 +3538,7 @@ export type SessionImportInput = {
             }
         )
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly type: "idle"
@@ -3498,17 +3555,17 @@ export type SessionImportInput = {
   }["info"]
   readonly messages: {
     readonly info: {
-      readonly id: string
-      readonly parentID?: string
+      readonly id: Session.ID
+      readonly parentID?: Session.ID
       readonly fork?: {
-        readonly sessionID: string
+        readonly sessionID: Session.ID
         readonly boundary:
-          | { readonly type: "before"; readonly messageID: string }
-          | { readonly type: "through"; readonly messageID: string }
+          | { readonly type: "before"; readonly messageID: SessionMessage.ID }
+          | { readonly type: "through"; readonly messageID: SessionMessage.ID }
       }
-      readonly projectID: string
-      readonly agent?: string
-      readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly projectID: Project.ID
+      readonly agent?: Agent.ID
+      readonly model?: { readonly id: Model.ID; readonly providerID: Provider.ID; readonly variant?: Model.VariantID }
       readonly cost: number
       readonly tokens: {
         readonly input: number
@@ -3533,9 +3590,9 @@ export type SessionImportInput = {
         readonly effect: "allow" | "deny" | "ask"
       }>
       readonly revert?: {
-        readonly messageID: string
+        readonly messageID: SessionMessage.ID
         readonly partID?: string
-        readonly snapshot?: string
+        readonly snapshot?: Snapshot.ID
         readonly files?: ReadonlyArray<{
           readonly file: string
           readonly patch: string
@@ -3548,37 +3605,45 @@ export type SessionImportInput = {
     }
     readonly messages: ReadonlyArray<
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly type: "agent-switched"
-          readonly agent: string
-          readonly previous?: string
+          readonly agent: Agent.ID
+          readonly previous?: Agent.ID
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly type: "model-switched"
-          readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
-          readonly previous?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly model: {
+            readonly id: Model.ID
+            readonly providerID: Provider.ID
+            readonly variant?: Model.VariantID
+          }
+          readonly previous?: {
+            readonly id: Model.ID
+            readonly providerID: Provider.ID
+            readonly variant?: Model.VariantID
+          }
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly type: "location-switched"
-          readonly projectID?: string
+          readonly projectID?: Project.ID
           readonly subpath?: string
           readonly location: { readonly directory: string }
           readonly previous?: {
             readonly location: { readonly directory: string }
-            readonly projectID?: string
+            readonly projectID?: Project.ID
             readonly subpath?: string
           } | null
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly text: string
@@ -3595,7 +3660,7 @@ export type SessionImportInput = {
             readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
           }>
           readonly skills?: ReadonlyArray<{
-            readonly id: string
+            readonly id: Skill.ID
             readonly name: string
             readonly text?: string
             readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
@@ -3603,7 +3668,7 @@ export type SessionImportInput = {
           readonly type: "user"
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly text: string
@@ -3611,7 +3676,7 @@ export type SessionImportInput = {
           readonly type: "synthetic"
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly type: "system"
@@ -3619,20 +3684,20 @@ export type SessionImportInput = {
           readonly description?: string
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly type: "skill"
-          readonly skill: string
+          readonly skill: Skill.ID
           readonly name: string
           readonly text: string
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number; readonly completed?: number }
           readonly type: "shell"
-          readonly shellID: string
+          readonly shellID: Shell.ID
           readonly command: string
           readonly status: "running" | "exited" | "timeout" | "killed"
           readonly exit?: number | "Infinity" | "-Infinity" | "NaN"
@@ -3644,12 +3709,16 @@ export type SessionImportInput = {
           }
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number; readonly streamed?: number; readonly completed?: number }
           readonly type: "assistant"
-          readonly agent: string
-          readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly agent: Agent.ID
+          readonly model: {
+            readonly id: Model.ID
+            readonly providerID: Provider.ID
+            readonly variant?: Model.VariantID
+          }
           readonly content: ReadonlyArray<
             | { readonly type: "text"; readonly text: string; readonly state?: { readonly [x: string]: JsonValue } }
             | {
@@ -3731,7 +3800,11 @@ export type SessionImportInput = {
                 readonly time: { readonly created: number; readonly ran?: number; readonly completed?: number }
               }
           >
-          readonly snapshot?: { readonly start?: string; readonly end?: string; readonly files?: ReadonlyArray<string> }
+          readonly snapshot?: {
+            readonly start?: Snapshot.ID
+            readonly end?: Snapshot.ID
+            readonly files?: ReadonlyArray<string>
+          }
           readonly finish?: "stop" | "length" | "tool-calls" | "content-filter" | "error" | "unknown"
           readonly rawFinish?: string
           readonly providerState?: { readonly [x: string]: JsonValue }
@@ -3762,7 +3835,7 @@ export type SessionImportInput = {
       | (
           | {
               readonly type: "compaction"
-              readonly id: string
+              readonly id: SessionMessage.ID
               readonly metadata?: { readonly [x: string]: JsonValue }
               readonly time: { readonly created: number }
               readonly status: "running"
@@ -3772,19 +3845,23 @@ export type SessionImportInput = {
             }
           | {
               readonly type: "compaction"
-              readonly id: string
+              readonly id: SessionMessage.ID
               readonly metadata?: { readonly [x: string]: JsonValue }
               readonly time: { readonly created: number }
               readonly status: "completed"
               readonly reason: "auto" | "manual"
-              readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+              readonly model?: {
+                readonly id: Model.ID
+                readonly providerID: Provider.ID
+                readonly variant?: Model.VariantID
+              }
               readonly providerState?: { readonly [x: string]: JsonValue }
               readonly summary: string
               readonly recent: string
               readonly providerContext?: {
                 readonly version: 1
                 readonly provenance: {
-                  readonly providerID: string
+                  readonly providerID: Provider.ID
                   readonly provider: string
                   readonly modelID: string
                   readonly route: string
@@ -3803,7 +3880,7 @@ export type SessionImportInput = {
             }
           | {
               readonly type: "compaction"
-              readonly id: string
+              readonly id: SessionMessage.ID
               readonly metadata?: { readonly [x: string]: JsonValue }
               readonly time: { readonly created: number }
               readonly status: "failed"
@@ -3824,7 +3901,7 @@ export type SessionImportInput = {
             }
         )
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly type: "idle"
@@ -3841,17 +3918,17 @@ export type SessionImportInput = {
   }["messages"]
   readonly location?: {
     readonly info: {
-      readonly id: string
-      readonly parentID?: string
+      readonly id: Session.ID
+      readonly parentID?: Session.ID
       readonly fork?: {
-        readonly sessionID: string
+        readonly sessionID: Session.ID
         readonly boundary:
-          | { readonly type: "before"; readonly messageID: string }
-          | { readonly type: "through"; readonly messageID: string }
+          | { readonly type: "before"; readonly messageID: SessionMessage.ID }
+          | { readonly type: "through"; readonly messageID: SessionMessage.ID }
       }
-      readonly projectID: string
-      readonly agent?: string
-      readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly projectID: Project.ID
+      readonly agent?: Agent.ID
+      readonly model?: { readonly id: Model.ID; readonly providerID: Provider.ID; readonly variant?: Model.VariantID }
       readonly cost: number
       readonly tokens: {
         readonly input: number
@@ -3876,9 +3953,9 @@ export type SessionImportInput = {
         readonly effect: "allow" | "deny" | "ask"
       }>
       readonly revert?: {
-        readonly messageID: string
+        readonly messageID: SessionMessage.ID
         readonly partID?: string
-        readonly snapshot?: string
+        readonly snapshot?: Snapshot.ID
         readonly files?: ReadonlyArray<{
           readonly file: string
           readonly patch: string
@@ -3891,37 +3968,45 @@ export type SessionImportInput = {
     }
     readonly messages: ReadonlyArray<
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly type: "agent-switched"
-          readonly agent: string
-          readonly previous?: string
+          readonly agent: Agent.ID
+          readonly previous?: Agent.ID
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly type: "model-switched"
-          readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
-          readonly previous?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly model: {
+            readonly id: Model.ID
+            readonly providerID: Provider.ID
+            readonly variant?: Model.VariantID
+          }
+          readonly previous?: {
+            readonly id: Model.ID
+            readonly providerID: Provider.ID
+            readonly variant?: Model.VariantID
+          }
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly type: "location-switched"
-          readonly projectID?: string
+          readonly projectID?: Project.ID
           readonly subpath?: string
           readonly location: { readonly directory: string }
           readonly previous?: {
             readonly location: { readonly directory: string }
-            readonly projectID?: string
+            readonly projectID?: Project.ID
             readonly subpath?: string
           } | null
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly text: string
@@ -3938,7 +4023,7 @@ export type SessionImportInput = {
             readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
           }>
           readonly skills?: ReadonlyArray<{
-            readonly id: string
+            readonly id: Skill.ID
             readonly name: string
             readonly text?: string
             readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
@@ -3946,7 +4031,7 @@ export type SessionImportInput = {
           readonly type: "user"
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly text: string
@@ -3954,7 +4039,7 @@ export type SessionImportInput = {
           readonly type: "synthetic"
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly type: "system"
@@ -3962,20 +4047,20 @@ export type SessionImportInput = {
           readonly description?: string
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly type: "skill"
-          readonly skill: string
+          readonly skill: Skill.ID
           readonly name: string
           readonly text: string
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number; readonly completed?: number }
           readonly type: "shell"
-          readonly shellID: string
+          readonly shellID: Shell.ID
           readonly command: string
           readonly status: "running" | "exited" | "timeout" | "killed"
           readonly exit?: number | "Infinity" | "-Infinity" | "NaN"
@@ -3987,12 +4072,16 @@ export type SessionImportInput = {
           }
         }
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number; readonly streamed?: number; readonly completed?: number }
           readonly type: "assistant"
-          readonly agent: string
-          readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly agent: Agent.ID
+          readonly model: {
+            readonly id: Model.ID
+            readonly providerID: Provider.ID
+            readonly variant?: Model.VariantID
+          }
           readonly content: ReadonlyArray<
             | { readonly type: "text"; readonly text: string; readonly state?: { readonly [x: string]: JsonValue } }
             | {
@@ -4074,7 +4163,11 @@ export type SessionImportInput = {
                 readonly time: { readonly created: number; readonly ran?: number; readonly completed?: number }
               }
           >
-          readonly snapshot?: { readonly start?: string; readonly end?: string; readonly files?: ReadonlyArray<string> }
+          readonly snapshot?: {
+            readonly start?: Snapshot.ID
+            readonly end?: Snapshot.ID
+            readonly files?: ReadonlyArray<string>
+          }
           readonly finish?: "stop" | "length" | "tool-calls" | "content-filter" | "error" | "unknown"
           readonly rawFinish?: string
           readonly providerState?: { readonly [x: string]: JsonValue }
@@ -4105,7 +4198,7 @@ export type SessionImportInput = {
       | (
           | {
               readonly type: "compaction"
-              readonly id: string
+              readonly id: SessionMessage.ID
               readonly metadata?: { readonly [x: string]: JsonValue }
               readonly time: { readonly created: number }
               readonly status: "running"
@@ -4115,19 +4208,23 @@ export type SessionImportInput = {
             }
           | {
               readonly type: "compaction"
-              readonly id: string
+              readonly id: SessionMessage.ID
               readonly metadata?: { readonly [x: string]: JsonValue }
               readonly time: { readonly created: number }
               readonly status: "completed"
               readonly reason: "auto" | "manual"
-              readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+              readonly model?: {
+                readonly id: Model.ID
+                readonly providerID: Provider.ID
+                readonly variant?: Model.VariantID
+              }
               readonly providerState?: { readonly [x: string]: JsonValue }
               readonly summary: string
               readonly recent: string
               readonly providerContext?: {
                 readonly version: 1
                 readonly provenance: {
-                  readonly providerID: string
+                  readonly providerID: Provider.ID
                   readonly provider: string
                   readonly modelID: string
                   readonly route: string
@@ -4146,7 +4243,7 @@ export type SessionImportInput = {
             }
           | {
               readonly type: "compaction"
-              readonly id: string
+              readonly id: SessionMessage.ID
               readonly metadata?: { readonly [x: string]: JsonValue }
               readonly time: { readonly created: number }
               readonly status: "failed"
@@ -4167,7 +4264,7 @@ export type SessionImportInput = {
             }
         )
       | {
-          readonly id: string
+          readonly id: SessionMessage.ID
           readonly metadata?: { readonly [x: string]: JsonValue }
           readonly time: { readonly created: number }
           readonly type: "idle"
@@ -4187,47 +4284,47 @@ export type SessionImportInput = {
 export type SessionImportOutput = { data: SessionInfo }["data"]
 
 export type SessionExportInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
   readonly sanitize?: { readonly sanitize?: boolean | undefined }["sanitize"]
 }
 
 export type SessionExportOutput = { data: SessionTransferData }["data"]
 
-export type SessionActiveOutput = { data: { [x: SessionID]: SessionActive } }["data"]
+export type SessionActiveOutput = { data: { [x: Session.ID]: SessionActive } }["data"]
 
-export type SessionGetInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type SessionGetInput = { readonly sessionID: { readonly sessionID: Session.ID }["sessionID"] }
 
 export type SessionGetOutput = { data: SessionInfo }["data"]
 
-export type SessionRemoveInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type SessionRemoveInput = { readonly sessionID: { readonly sessionID: Session.ID }["sessionID"] }
 
 export type SessionRemoveOutput = void
 
 export type SessionForkInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
-  readonly before?: { readonly before?: string | undefined }["before"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
+  readonly before?: { readonly before?: SessionMessage.ID | undefined }["before"]
 }
 
 export type SessionForkOutput = { data: SessionInfo }["data"]
 
 export type SessionSwitchAgentInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
-  readonly agent: { readonly agent: string }["agent"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
+  readonly agent: { readonly agent: Agent.ID }["agent"]
 }
 
 export type SessionSwitchAgentOutput = void
 
 export type SessionSwitchModelInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
   readonly model: {
-    readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly model: { readonly id: Model.ID; readonly providerID: Provider.ID; readonly variant?: Model.VariantID }
   }["model"]
 }
 
 export type SessionSwitchModelOutput = void
 
 export type SessionUpdateInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
   readonly title?: {
     readonly title?: string | undefined
     readonly metadata?: { readonly [x: string]: JsonValue } | undefined
@@ -4254,7 +4351,7 @@ export type SessionUpdateInput = {
 export type SessionUpdateOutput = void
 
 export type SessionMoveInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
   readonly directory: { readonly directory: string; readonly delivery?: ("steer" | "queue") | undefined }["directory"]
   readonly delivery?: { readonly directory: string; readonly delivery?: ("steer" | "queue") | undefined }["delivery"]
 }
@@ -4262,9 +4359,9 @@ export type SessionMoveInput = {
 export type SessionMoveOutput = void
 
 export type SessionPromptInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
   readonly id?: {
-    readonly id?: string | null
+    readonly id?: SessionMessage.ID | null
     readonly text: string
     readonly files?: ReadonlyArray<{
       readonly uri: string
@@ -4277,7 +4374,7 @@ export type SessionPromptInput = {
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly skills?: ReadonlyArray<{
-      readonly id: string
+      readonly id: Skill.ID
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly metadata?: { readonly [x: string]: JsonValue }
@@ -4285,7 +4382,7 @@ export type SessionPromptInput = {
     readonly resume?: boolean | null
   }["id"]
   readonly text: {
-    readonly id?: string | null
+    readonly id?: SessionMessage.ID | null
     readonly text: string
     readonly files?: ReadonlyArray<{
       readonly uri: string
@@ -4298,7 +4395,7 @@ export type SessionPromptInput = {
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly skills?: ReadonlyArray<{
-      readonly id: string
+      readonly id: Skill.ID
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly metadata?: { readonly [x: string]: JsonValue }
@@ -4306,7 +4403,7 @@ export type SessionPromptInput = {
     readonly resume?: boolean | null
   }["text"]
   readonly files?: {
-    readonly id?: string | null
+    readonly id?: SessionMessage.ID | null
     readonly text: string
     readonly files?: ReadonlyArray<{
       readonly uri: string
@@ -4319,7 +4416,7 @@ export type SessionPromptInput = {
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly skills?: ReadonlyArray<{
-      readonly id: string
+      readonly id: Skill.ID
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly metadata?: { readonly [x: string]: JsonValue }
@@ -4327,7 +4424,7 @@ export type SessionPromptInput = {
     readonly resume?: boolean | null
   }["files"]
   readonly agents?: {
-    readonly id?: string | null
+    readonly id?: SessionMessage.ID | null
     readonly text: string
     readonly files?: ReadonlyArray<{
       readonly uri: string
@@ -4340,7 +4437,7 @@ export type SessionPromptInput = {
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly skills?: ReadonlyArray<{
-      readonly id: string
+      readonly id: Skill.ID
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly metadata?: { readonly [x: string]: JsonValue }
@@ -4348,7 +4445,7 @@ export type SessionPromptInput = {
     readonly resume?: boolean | null
   }["agents"]
   readonly skills?: {
-    readonly id?: string | null
+    readonly id?: SessionMessage.ID | null
     readonly text: string
     readonly files?: ReadonlyArray<{
       readonly uri: string
@@ -4361,7 +4458,7 @@ export type SessionPromptInput = {
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly skills?: ReadonlyArray<{
-      readonly id: string
+      readonly id: Skill.ID
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly metadata?: { readonly [x: string]: JsonValue }
@@ -4369,7 +4466,7 @@ export type SessionPromptInput = {
     readonly resume?: boolean | null
   }["skills"]
   readonly metadata?: {
-    readonly id?: string | null
+    readonly id?: SessionMessage.ID | null
     readonly text: string
     readonly files?: ReadonlyArray<{
       readonly uri: string
@@ -4382,7 +4479,7 @@ export type SessionPromptInput = {
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly skills?: ReadonlyArray<{
-      readonly id: string
+      readonly id: Skill.ID
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly metadata?: { readonly [x: string]: JsonValue }
@@ -4390,7 +4487,7 @@ export type SessionPromptInput = {
     readonly resume?: boolean | null
   }["metadata"]
   readonly delivery?: {
-    readonly id?: string | null
+    readonly id?: SessionMessage.ID | null
     readonly text: string
     readonly files?: ReadonlyArray<{
       readonly uri: string
@@ -4403,7 +4500,7 @@ export type SessionPromptInput = {
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly skills?: ReadonlyArray<{
-      readonly id: string
+      readonly id: Skill.ID
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly metadata?: { readonly [x: string]: JsonValue }
@@ -4411,7 +4508,7 @@ export type SessionPromptInput = {
     readonly resume?: boolean | null
   }["delivery"]
   readonly resume?: {
-    readonly id?: string | null
+    readonly id?: SessionMessage.ID | null
     readonly text: string
     readonly files?: ReadonlyArray<{
       readonly uri: string
@@ -4424,7 +4521,7 @@ export type SessionPromptInput = {
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly skills?: ReadonlyArray<{
-      readonly id: string
+      readonly id: Skill.ID
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly metadata?: { readonly [x: string]: JsonValue }
@@ -4436,7 +4533,7 @@ export type SessionPromptInput = {
 export type SessionPromptOutput = { data: SessionInboxUser }["data"]
 
 export type SessionCommandInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
   readonly name: {
     readonly name: string
     readonly text: string
@@ -4451,7 +4548,7 @@ export type SessionCommandInput = {
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly skills?: ReadonlyArray<{
-      readonly id: string
+      readonly id: Skill.ID
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly delivery?: ("steer" | "queue") | null
@@ -4470,7 +4567,7 @@ export type SessionCommandInput = {
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly skills?: ReadonlyArray<{
-      readonly id: string
+      readonly id: Skill.ID
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly delivery?: ("steer" | "queue") | null
@@ -4489,7 +4586,7 @@ export type SessionCommandInput = {
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly skills?: ReadonlyArray<{
-      readonly id: string
+      readonly id: Skill.ID
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly delivery?: ("steer" | "queue") | null
@@ -4508,7 +4605,7 @@ export type SessionCommandInput = {
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly skills?: ReadonlyArray<{
-      readonly id: string
+      readonly id: Skill.ID
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly delivery?: ("steer" | "queue") | null
@@ -4527,7 +4624,7 @@ export type SessionCommandInput = {
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly skills?: ReadonlyArray<{
-      readonly id: string
+      readonly id: Skill.ID
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly delivery?: ("steer" | "queue") | null
@@ -4546,7 +4643,7 @@ export type SessionCommandInput = {
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly skills?: ReadonlyArray<{
-      readonly id: string
+      readonly id: Skill.ID
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
     readonly delivery?: ("steer" | "queue") | null
@@ -4556,17 +4653,17 @@ export type SessionCommandInput = {
 export type SessionCommandOutput = void
 
 export type SessionSkillInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
-  readonly id: { readonly id: string; readonly resume?: boolean | undefined }["id"]
-  readonly resume?: { readonly id: string; readonly resume?: boolean | undefined }["resume"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
+  readonly id: { readonly id: Skill.ID; readonly resume?: boolean | undefined }["id"]
+  readonly resume?: { readonly id: Skill.ID; readonly resume?: boolean | undefined }["resume"]
 }
 
 export type SessionSkillOutput = void
 
 export type SessionSyntheticInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
   readonly id?: {
-    readonly id?: string | null
+    readonly id?: SessionMessage.ID | null
     readonly text: string
     readonly description?: string | null
     readonly metadata?: { readonly [x: string]: JsonValue }
@@ -4574,7 +4671,7 @@ export type SessionSyntheticInput = {
     readonly resume?: boolean | null
   }["id"]
   readonly text: {
-    readonly id?: string | null
+    readonly id?: SessionMessage.ID | null
     readonly text: string
     readonly description?: string | null
     readonly metadata?: { readonly [x: string]: JsonValue }
@@ -4582,7 +4679,7 @@ export type SessionSyntheticInput = {
     readonly resume?: boolean | null
   }["text"]
   readonly description?: {
-    readonly id?: string | null
+    readonly id?: SessionMessage.ID | null
     readonly text: string
     readonly description?: string | null
     readonly metadata?: { readonly [x: string]: JsonValue }
@@ -4590,7 +4687,7 @@ export type SessionSyntheticInput = {
     readonly resume?: boolean | null
   }["description"]
   readonly metadata?: {
-    readonly id?: string | null
+    readonly id?: SessionMessage.ID | null
     readonly text: string
     readonly description?: string | null
     readonly metadata?: { readonly [x: string]: JsonValue }
@@ -4598,7 +4695,7 @@ export type SessionSyntheticInput = {
     readonly resume?: boolean | null
   }["metadata"]
   readonly delivery?: {
-    readonly id?: string | null
+    readonly id?: SessionMessage.ID | null
     readonly text: string
     readonly description?: string | null
     readonly metadata?: { readonly [x: string]: JsonValue }
@@ -4606,7 +4703,7 @@ export type SessionSyntheticInput = {
     readonly resume?: boolean | null
   }["delivery"]
   readonly resume?: {
-    readonly id?: string | null
+    readonly id?: SessionMessage.ID | null
     readonly text: string
     readonly description?: string | null
     readonly metadata?: { readonly [x: string]: JsonValue }
@@ -4618,116 +4715,119 @@ export type SessionSyntheticInput = {
 export type SessionSyntheticOutput = { data: SessionInboxSynthetic }["data"]
 
 export type SessionShellInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
-  readonly id?: { readonly id?: string | undefined; readonly command: string }["id"]
-  readonly command: { readonly id?: string | undefined; readonly command: string }["command"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
+  readonly id?: { readonly id?: SessionMessage.ID | undefined; readonly command: string }["id"]
+  readonly command: { readonly id?: SessionMessage.ID | undefined; readonly command: string }["command"]
 }
 
 export type SessionShellOutput = void
 
 export type SessionCompactInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
-  readonly id?: { readonly id?: string | undefined; readonly delivery?: ("steer" | "queue") | undefined }["id"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
+  readonly id?: {
+    readonly id?: SessionMessage.ID | undefined
+    readonly delivery?: ("steer" | "queue") | undefined
+  }["id"]
   readonly delivery?: {
-    readonly id?: string | undefined
+    readonly id?: SessionMessage.ID | undefined
     readonly delivery?: ("steer" | "queue") | undefined
   }["delivery"]
 }
 
 export type SessionCompactOutput = { data: SessionInboxCompaction }["data"]
 
-export type SessionWaitInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type SessionWaitInput = { readonly sessionID: { readonly sessionID: Session.ID }["sessionID"] }
 
 export type SessionWaitOutput = void
 
 export type SessionRevertStageInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
-  readonly messageID: { readonly messageID: string; readonly files?: boolean | undefined }["messageID"]
-  readonly files?: { readonly messageID: string; readonly files?: boolean | undefined }["files"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
+  readonly messageID: { readonly messageID: SessionMessage.ID; readonly files?: boolean | undefined }["messageID"]
+  readonly files?: { readonly messageID: SessionMessage.ID; readonly files?: boolean | undefined }["files"]
 }
 
 export type SessionRevertStageOutput = { data: SessionRevert }["data"]
 
-export type SessionRevertClearInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type SessionRevertClearInput = { readonly sessionID: { readonly sessionID: Session.ID }["sessionID"] }
 
 export type SessionRevertClearOutput = void
 
-export type SessionRevertCommitInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type SessionRevertCommitInput = { readonly sessionID: { readonly sessionID: Session.ID }["sessionID"] }
 
 export type SessionRevertCommitOutput = void
 
-export type SessionContextInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type SessionContextInput = { readonly sessionID: { readonly sessionID: Session.ID }["sessionID"] }
 
 export type SessionContextOutput = { data: Array<SessionMessageInfo> }["data"]
 
 export type SessionDiffInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
   readonly from?: {
-    readonly from?: string | undefined
-    readonly to?: string | undefined
+    readonly from?: SessionMessage.ID | undefined
+    readonly to?: SessionMessage.ID | undefined
     readonly context?: number | undefined
   }["from"]
   readonly to?: {
-    readonly from?: string | undefined
-    readonly to?: string | undefined
+    readonly from?: SessionMessage.ID | undefined
+    readonly to?: SessionMessage.ID | undefined
     readonly context?: number | undefined
   }["to"]
   readonly context?: {
-    readonly from?: string | undefined
-    readonly to?: string | undefined
+    readonly from?: SessionMessage.ID | undefined
+    readonly to?: SessionMessage.ID | undefined
     readonly context?: number | undefined
   }["context"]
 }
 
 export type SessionDiffOutput = { data: Array<FileDiffInfo> }["data"]
 
-export type SessionInboxListInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type SessionInboxListInput = { readonly sessionID: { readonly sessionID: Session.ID }["sessionID"] }
 
 export type SessionInboxListOutput = { data: Array<SessionInboxInfo> }["data"]
 
 export type SessionInboxCancelInput = {
-  readonly sessionID: { readonly sessionID: string; readonly inboxID: string }["sessionID"]
-  readonly inboxID: { readonly sessionID: string; readonly inboxID: string }["inboxID"]
+  readonly sessionID: { readonly sessionID: Session.ID; readonly inboxID: SessionMessage.ID }["sessionID"]
+  readonly inboxID: { readonly sessionID: Session.ID; readonly inboxID: SessionMessage.ID }["inboxID"]
 }
 
 export type SessionInboxCancelOutput = void
 
 export type SessionInboxUpdateInput = {
-  readonly sessionID: { readonly sessionID: string; readonly inboxID: string }["sessionID"]
-  readonly inboxID: { readonly sessionID: string; readonly inboxID: string }["inboxID"]
+  readonly sessionID: { readonly sessionID: Session.ID; readonly inboxID: SessionMessage.ID }["sessionID"]
+  readonly inboxID: { readonly sessionID: Session.ID; readonly inboxID: SessionMessage.ID }["inboxID"]
   readonly delivery: { readonly delivery: "steer" | "queue" }["delivery"]
 }
 
 export type SessionInboxUpdateOutput = void
 
-export type SessionInstructionsEntryListInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type SessionInstructionsEntryListInput = { readonly sessionID: { readonly sessionID: Session.ID }["sessionID"] }
 
 export type SessionInstructionsEntryListOutput = { data: Array<InstructionEntryInfo> }["data"]
 
 export type SessionInstructionsEntryPutInput = {
-  readonly sessionID: { readonly sessionID: string; readonly key: string }["sessionID"]
-  readonly key: { readonly sessionID: string; readonly key: string }["key"]
+  readonly sessionID: { readonly sessionID: Session.ID; readonly key: string }["sessionID"]
+  readonly key: { readonly sessionID: Session.ID; readonly key: string }["key"]
   readonly value: { readonly value: JsonValue }["value"]
 }
 
 export type SessionInstructionsEntryPutOutput = void
 
 export type SessionInstructionsEntryRemoveInput = {
-  readonly sessionID: { readonly sessionID: string; readonly key: string }["sessionID"]
-  readonly key: { readonly sessionID: string; readonly key: string }["key"]
+  readonly sessionID: { readonly sessionID: Session.ID; readonly key: string }["sessionID"]
+  readonly key: { readonly sessionID: Session.ID; readonly key: string }["key"]
 }
 
 export type SessionInstructionsEntryRemoveOutput = void
 
 export type SessionGenerateInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
   readonly prompt: { readonly prompt: string }["prompt"]
 }
 
 export type SessionGenerateOutput = SessionGenerateResponse["data"]
 
 export type SessionLogInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
   readonly after?: { readonly after?: number | undefined; readonly follow?: boolean | undefined }["after"]
   readonly follow?: { readonly after?: number | undefined; readonly follow?: boolean | undefined }["follow"]
 }
@@ -4735,19 +4835,19 @@ export type SessionLogInput = {
 export type SessionLogOutput = SessionLogItem
 
 export type SessionInterruptInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
   readonly resume?: { readonly resume?: boolean | undefined }["resume"]
 }
 
 export type SessionInterruptOutput = SessionInterruptResponse
 
-export type SessionBackgroundInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type SessionBackgroundInput = { readonly sessionID: { readonly sessionID: Session.ID }["sessionID"] }
 
 export type SessionBackgroundOutput = void
 
 export type SessionMessageGetInput = {
-  readonly sessionID: { readonly sessionID: string; readonly messageID: string }["sessionID"]
-  readonly messageID: { readonly sessionID: string; readonly messageID: string }["messageID"]
+  readonly sessionID: { readonly sessionID: Session.ID; readonly messageID: SessionMessage.ID }["sessionID"]
+  readonly messageID: { readonly sessionID: Session.ID; readonly messageID: SessionMessage.ID }["messageID"]
 }
 
 export type SessionMessageGetOutput = { data: SessionMessageInfo }["data"]
@@ -4759,7 +4859,7 @@ export type SessionFormListOutput = { data: Array<FormInfo> }["data"]
 export type SessionFormCreateInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
   readonly id?: {
-    readonly id?: string | null
+    readonly id?: Form.ID | null
     readonly title: string
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly fields: readonly [
@@ -4970,7 +5070,7 @@ export type SessionFormCreateInput = {
     ]
   }["id"]
   readonly title: {
-    readonly id?: string | null
+    readonly id?: Form.ID | null
     readonly title: string
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly fields: readonly [
@@ -5181,7 +5281,7 @@ export type SessionFormCreateInput = {
     ]
   }["title"]
   readonly metadata?: {
-    readonly id?: string | null
+    readonly id?: Form.ID | null
     readonly title: string
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly fields: readonly [
@@ -5392,7 +5492,7 @@ export type SessionFormCreateInput = {
     ]
   }["metadata"]
   readonly fields: {
-    readonly id?: string | null
+    readonly id?: Form.ID | null
     readonly title: string
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly fields: readonly [
@@ -5607,15 +5707,15 @@ export type SessionFormCreateInput = {
 export type SessionFormCreateOutput = { data: FormInfo }["data"]
 
 export type SessionFormGetInput = {
-  readonly sessionID: { readonly sessionID: string; readonly formID: string }["sessionID"]
-  readonly formID: { readonly sessionID: string; readonly formID: string }["formID"]
+  readonly sessionID: { readonly sessionID: string; readonly formID: Form.ID }["sessionID"]
+  readonly formID: { readonly sessionID: string; readonly formID: Form.ID }["formID"]
 }
 
 export type SessionFormGetOutput = { data: FormDetail }["data"]
 
 export type SessionFormReplyInput = {
-  readonly sessionID: { readonly sessionID: string; readonly formID: string }["sessionID"]
-  readonly formID: { readonly sessionID: string; readonly formID: string }["formID"]
+  readonly sessionID: { readonly sessionID: string; readonly formID: Form.ID }["sessionID"]
+  readonly formID: { readonly sessionID: string; readonly formID: Form.ID }["formID"]
   readonly answer: {
     readonly answer: { readonly [x: string]: string | number | boolean | ReadonlyArray<string> }
   }["answer"]
@@ -5624,29 +5724,29 @@ export type SessionFormReplyInput = {
 export type SessionFormReplyOutput = void
 
 export type SessionFormCancelInput = {
-  readonly sessionID: { readonly sessionID: string; readonly formID: string }["sessionID"]
-  readonly formID: { readonly sessionID: string; readonly formID: string }["formID"]
+  readonly sessionID: { readonly sessionID: string; readonly formID: Form.ID }["sessionID"]
+  readonly formID: { readonly sessionID: string; readonly formID: Form.ID }["formID"]
   readonly message?: { readonly message?: string | undefined }["message"]
 }
 
 export type SessionFormCancelOutput = void
 
 export type SessionEnvironmentInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
   readonly variables: { readonly variables: { readonly [x: string]: string } }["variables"]
 }
 
 export type SessionEnvironmentOutput = void
 
 export type SessionViewInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
   readonly idle: { readonly idle: number }["idle"]
 }
 
 export type SessionViewOutput = void
 
 export type MessageListInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
   readonly limit?: {
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
@@ -5734,11 +5834,19 @@ export type ModelDefaultOutput = { location: LocationPublicRef; data: ModelInfo 
 export type GenerateTextInput = {
   readonly prompt: {
     readonly prompt: string
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly model?: {
+      readonly id: Model.ID
+      readonly providerID: Provider.ID
+      readonly variant?: Model.VariantID
+    } | null
   }["prompt"]
   readonly model?: {
     readonly prompt: string
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly model?: {
+      readonly id: Model.ID
+      readonly providerID: Provider.ID
+      readonly variant?: Model.VariantID
+    } | null
   }["model"]
 }
 
@@ -5751,7 +5859,7 @@ export type ProviderListInput = {
 export type ProviderListOutput = { location: LocationPublicRef; data: Array<ProviderInfo> }
 
 export type ProviderGetInput = {
-  readonly providerID: { readonly providerID: string }["providerID"]
+  readonly providerID: { readonly providerID: Provider.ID }["providerID"]
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
 }
 
@@ -5764,7 +5872,7 @@ export type IntegrationListInput = {
 export type IntegrationListOutput = { location: LocationPublicRef; data: Array<IntegrationInfo> }
 
 export type IntegrationGetInput = {
-  readonly integrationID: { readonly integrationID: string }["integrationID"]
+  readonly integrationID: { readonly integrationID: Integration.ID }["integrationID"]
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
 }
 
@@ -5778,7 +5886,7 @@ export type IntegrationWellknownAddInput = {
 export type IntegrationWellknownAddOutput = void
 
 export type IntegrationConnectKeyInput = {
-  readonly integrationID: { readonly integrationID: string }["integrationID"]
+  readonly integrationID: { readonly integrationID: Integration.ID }["integrationID"]
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
   readonly key: {
     readonly key: string
@@ -5800,20 +5908,20 @@ export type IntegrationConnectKeyInput = {
 export type IntegrationConnectKeyOutput = void
 
 export type IntegrationConnectExternalInput = {
-  readonly integrationID: { readonly integrationID: string }["integrationID"]
+  readonly integrationID: { readonly integrationID: Integration.ID }["integrationID"]
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
   readonly methodID: {
-    readonly methodID: string
+    readonly methodID: Integration.MethodID
     readonly answer?: { readonly [x: string]: string | number | boolean | ReadonlyArray<string> } | undefined
     readonly label?: string | undefined
   }["methodID"]
   readonly answer?: {
-    readonly methodID: string
+    readonly methodID: Integration.MethodID
     readonly answer?: { readonly [x: string]: string | number | boolean | ReadonlyArray<string> } | undefined
     readonly label?: string | undefined
   }["answer"]
   readonly label?: {
-    readonly methodID: string
+    readonly methodID: Integration.MethodID
     readonly answer?: { readonly [x: string]: string | number | boolean | ReadonlyArray<string> } | undefined
     readonly label?: string | undefined
   }["label"]
@@ -5822,20 +5930,20 @@ export type IntegrationConnectExternalInput = {
 export type IntegrationConnectExternalOutput = void
 
 export type IntegrationOauthConnectInput = {
-  readonly integrationID: { readonly integrationID: string }["integrationID"]
+  readonly integrationID: { readonly integrationID: Integration.ID }["integrationID"]
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
   readonly methodID: {
-    readonly methodID: string
+    readonly methodID: Integration.MethodID
     readonly answer?: { readonly [x: string]: string | number | boolean | ReadonlyArray<string> } | undefined
     readonly label?: string | undefined
   }["methodID"]
   readonly answer?: {
-    readonly methodID: string
+    readonly methodID: Integration.MethodID
     readonly answer?: { readonly [x: string]: string | number | boolean | ReadonlyArray<string> } | undefined
     readonly label?: string | undefined
   }["answer"]
   readonly label?: {
-    readonly methodID: string
+    readonly methodID: Integration.MethodID
     readonly answer?: { readonly [x: string]: string | number | boolean | ReadonlyArray<string> } | undefined
     readonly label?: string | undefined
   }["label"]
@@ -5844,16 +5952,22 @@ export type IntegrationOauthConnectInput = {
 export type IntegrationOauthConnectOutput = { location: LocationPublicRef; data: IntegrationAttempt }
 
 export type IntegrationOauthStatusInput = {
-  readonly integrationID: { readonly integrationID: string; readonly attemptID: string }["integrationID"]
-  readonly attemptID: { readonly integrationID: string; readonly attemptID: string }["attemptID"]
+  readonly integrationID: {
+    readonly integrationID: Integration.ID
+    readonly attemptID: Integration.AttemptID
+  }["integrationID"]
+  readonly attemptID: { readonly integrationID: Integration.ID; readonly attemptID: Integration.AttemptID }["attemptID"]
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
 }
 
 export type IntegrationOauthStatusOutput = { location: LocationPublicRef; data: IntegrationAttemptStatus }
 
 export type IntegrationOauthCompleteInput = {
-  readonly integrationID: { readonly integrationID: string; readonly attemptID: string }["integrationID"]
-  readonly attemptID: { readonly integrationID: string; readonly attemptID: string }["attemptID"]
+  readonly integrationID: {
+    readonly integrationID: Integration.ID
+    readonly attemptID: Integration.AttemptID
+  }["integrationID"]
+  readonly attemptID: { readonly integrationID: Integration.ID; readonly attemptID: Integration.AttemptID }["attemptID"]
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
   readonly code?: { readonly code?: string | undefined }["code"]
 }
@@ -5861,33 +5975,42 @@ export type IntegrationOauthCompleteInput = {
 export type IntegrationOauthCompleteOutput = void
 
 export type IntegrationOauthCancelInput = {
-  readonly integrationID: { readonly integrationID: string; readonly attemptID: string }["integrationID"]
-  readonly attemptID: { readonly integrationID: string; readonly attemptID: string }["attemptID"]
+  readonly integrationID: {
+    readonly integrationID: Integration.ID
+    readonly attemptID: Integration.AttemptID
+  }["integrationID"]
+  readonly attemptID: { readonly integrationID: Integration.ID; readonly attemptID: Integration.AttemptID }["attemptID"]
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
 }
 
 export type IntegrationOauthCancelOutput = void
 
 export type IntegrationCommandConnectInput = {
-  readonly integrationID: { readonly integrationID: string }["integrationID"]
+  readonly integrationID: { readonly integrationID: Integration.ID }["integrationID"]
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
-  readonly methodID: { readonly methodID: string; readonly label?: string | undefined }["methodID"]
-  readonly label?: { readonly methodID: string; readonly label?: string | undefined }["label"]
+  readonly methodID: { readonly methodID: Integration.MethodID; readonly label?: string | undefined }["methodID"]
+  readonly label?: { readonly methodID: Integration.MethodID; readonly label?: string | undefined }["label"]
 }
 
 export type IntegrationCommandConnectOutput = { location: LocationPublicRef; data: IntegrationCommandAttempt }
 
 export type IntegrationCommandStatusInput = {
-  readonly integrationID: { readonly integrationID: string; readonly attemptID: string }["integrationID"]
-  readonly attemptID: { readonly integrationID: string; readonly attemptID: string }["attemptID"]
+  readonly integrationID: {
+    readonly integrationID: Integration.ID
+    readonly attemptID: Integration.AttemptID
+  }["integrationID"]
+  readonly attemptID: { readonly integrationID: Integration.ID; readonly attemptID: Integration.AttemptID }["attemptID"]
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
 }
 
 export type IntegrationCommandStatusOutput = { location: LocationPublicRef; data: IntegrationCommandAttemptStatus }
 
 export type IntegrationCommandCancelInput = {
-  readonly integrationID: { readonly integrationID: string; readonly attemptID: string }["integrationID"]
-  readonly attemptID: { readonly integrationID: string; readonly attemptID: string }["attemptID"]
+  readonly integrationID: {
+    readonly integrationID: Integration.ID
+    readonly attemptID: Integration.AttemptID
+  }["integrationID"]
+  readonly attemptID: { readonly integrationID: Integration.ID; readonly attemptID: Integration.AttemptID }["attemptID"]
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
 }
 
@@ -5969,13 +6092,13 @@ export type CredentialListOutput = { data: Array<CredentialEntry> }["data"]
 
 export type CredentialCreateInput = {
   readonly id?: {
-    readonly id?: string
-    readonly integrationID: string
+    readonly id?: Credential.ID
+    readonly integrationID: Integration.ID
     readonly label?: string
     readonly value:
       | {
           readonly type: "oauth"
-          readonly methodID: string
+          readonly methodID: Integration.MethodID
           readonly refresh: string
           readonly access: string
           readonly expires: number
@@ -5991,19 +6114,19 @@ export type CredentialCreateInput = {
         }
       | {
           readonly type: "external"
-          readonly methodID: string
+          readonly methodID: Integration.MethodID
           readonly metadata?: { readonly [x: string]: JsonValue }
         }
     readonly activate?: boolean
   }["id"]
   readonly integrationID: {
-    readonly id?: string
-    readonly integrationID: string
+    readonly id?: Credential.ID
+    readonly integrationID: Integration.ID
     readonly label?: string
     readonly value:
       | {
           readonly type: "oauth"
-          readonly methodID: string
+          readonly methodID: Integration.MethodID
           readonly refresh: string
           readonly access: string
           readonly expires: number
@@ -6019,19 +6142,19 @@ export type CredentialCreateInput = {
         }
       | {
           readonly type: "external"
-          readonly methodID: string
+          readonly methodID: Integration.MethodID
           readonly metadata?: { readonly [x: string]: JsonValue }
         }
     readonly activate?: boolean
   }["integrationID"]
   readonly label?: {
-    readonly id?: string
-    readonly integrationID: string
+    readonly id?: Credential.ID
+    readonly integrationID: Integration.ID
     readonly label?: string
     readonly value:
       | {
           readonly type: "oauth"
-          readonly methodID: string
+          readonly methodID: Integration.MethodID
           readonly refresh: string
           readonly access: string
           readonly expires: number
@@ -6047,19 +6170,19 @@ export type CredentialCreateInput = {
         }
       | {
           readonly type: "external"
-          readonly methodID: string
+          readonly methodID: Integration.MethodID
           readonly metadata?: { readonly [x: string]: JsonValue }
         }
     readonly activate?: boolean
   }["label"]
   readonly value: {
-    readonly id?: string
-    readonly integrationID: string
+    readonly id?: Credential.ID
+    readonly integrationID: Integration.ID
     readonly label?: string
     readonly value:
       | {
           readonly type: "oauth"
-          readonly methodID: string
+          readonly methodID: Integration.MethodID
           readonly refresh: string
           readonly access: string
           readonly expires: number
@@ -6075,19 +6198,19 @@ export type CredentialCreateInput = {
         }
       | {
           readonly type: "external"
-          readonly methodID: string
+          readonly methodID: Integration.MethodID
           readonly metadata?: { readonly [x: string]: JsonValue }
         }
     readonly activate?: boolean
   }["value"]
   readonly activate?: {
-    readonly id?: string
-    readonly integrationID: string
+    readonly id?: Credential.ID
+    readonly integrationID: Integration.ID
     readonly label?: string
     readonly value:
       | {
           readonly type: "oauth"
-          readonly methodID: string
+          readonly methodID: Integration.MethodID
           readonly refresh: string
           readonly access: string
           readonly expires: number
@@ -6103,7 +6226,7 @@ export type CredentialCreateInput = {
         }
       | {
           readonly type: "external"
-          readonly methodID: string
+          readonly methodID: Integration.MethodID
           readonly metadata?: { readonly [x: string]: JsonValue }
         }
     readonly activate?: boolean
@@ -6113,26 +6236,28 @@ export type CredentialCreateInput = {
 export type CredentialCreateOutput = { data: CredentialEntry }["data"]
 
 export type CredentialUpdateInput = {
-  readonly credentialID: { readonly credentialID: string }["credentialID"]
+  readonly credentialID: { readonly credentialID: Credential.ID }["credentialID"]
   readonly label: { readonly label: string }["label"]
 }
 
 export type CredentialUpdateOutput = void
 
-export type CredentialActivateInput = { readonly credentialID: { readonly credentialID: string }["credentialID"] }
+export type CredentialActivateInput = {
+  readonly credentialID: { readonly credentialID: Credential.ID }["credentialID"]
+}
 
 export type CredentialActivateOutput = void
 
-export type CredentialRemoveInput = { readonly credentialID: { readonly credentialID: string }["credentialID"] }
+export type CredentialRemoveInput = { readonly credentialID: { readonly credentialID: Credential.ID }["credentialID"] }
 
 export type CredentialRemoveOutput = void
 
 export type ProjectListInput = { readonly archived?: { readonly archived?: boolean | undefined }["archived"] }
 
-export type ProjectListOutput = Array<Project>
+export type ProjectListOutput = Array<Project2>
 
 export type ProjectUpdateInput = {
-  readonly projectID: { readonly projectID: string }["projectID"]
+  readonly projectID: { readonly projectID: Project.ID }["projectID"]
   readonly canonical?: {
     readonly canonical?: string
     readonly name?: string
@@ -6159,7 +6284,7 @@ export type ProjectUpdateInput = {
   }["commands"]
 }
 
-export type ProjectUpdateOutput = Project
+export type ProjectUpdateOutput = Project2
 
 export type FormListInput = {
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
@@ -6173,97 +6298,99 @@ export type PermissionRequestListInput = {
 
 export type PermissionRequestListOutput = { location: LocationPublicRef; data: Array<PermissionRequest> }
 
-export type PermissionSavedListInput = { readonly projectID?: { readonly projectID?: string | undefined }["projectID"] }
+export type PermissionSavedListInput = {
+  readonly projectID?: { readonly projectID?: Project.ID | undefined }["projectID"]
+}
 
 export type PermissionSavedListOutput = { data: Array<PermissionSavedInfo> }["data"]
 
-export type PermissionSavedRemoveInput = { readonly id: { readonly id: string }["id"] }
+export type PermissionSavedRemoveInput = { readonly id: { readonly id: PermissionSaved.ID }["id"] }
 
 export type PermissionSavedRemoveOutput = void
 
 export type PermissionCreateInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
   readonly id?: {
-    readonly id?: string | null
+    readonly id?: Permission.ID | null
     readonly action: string
     readonly resources: ReadonlyArray<string>
     readonly save?: ReadonlyArray<string>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly source?: { readonly type: "tool"; readonly messageID: string; readonly id: string }
-    readonly agent?: string | null
+    readonly agent?: Agent.ID | null
   }["id"]
   readonly action: {
-    readonly id?: string | null
+    readonly id?: Permission.ID | null
     readonly action: string
     readonly resources: ReadonlyArray<string>
     readonly save?: ReadonlyArray<string>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly source?: { readonly type: "tool"; readonly messageID: string; readonly id: string }
-    readonly agent?: string | null
+    readonly agent?: Agent.ID | null
   }["action"]
   readonly resources: {
-    readonly id?: string | null
+    readonly id?: Permission.ID | null
     readonly action: string
     readonly resources: ReadonlyArray<string>
     readonly save?: ReadonlyArray<string>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly source?: { readonly type: "tool"; readonly messageID: string; readonly id: string }
-    readonly agent?: string | null
+    readonly agent?: Agent.ID | null
   }["resources"]
   readonly save?: {
-    readonly id?: string | null
+    readonly id?: Permission.ID | null
     readonly action: string
     readonly resources: ReadonlyArray<string>
     readonly save?: ReadonlyArray<string>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly source?: { readonly type: "tool"; readonly messageID: string; readonly id: string }
-    readonly agent?: string | null
+    readonly agent?: Agent.ID | null
   }["save"]
   readonly metadata?: {
-    readonly id?: string | null
+    readonly id?: Permission.ID | null
     readonly action: string
     readonly resources: ReadonlyArray<string>
     readonly save?: ReadonlyArray<string>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly source?: { readonly type: "tool"; readonly messageID: string; readonly id: string }
-    readonly agent?: string | null
+    readonly agent?: Agent.ID | null
   }["metadata"]
   readonly source?: {
-    readonly id?: string | null
+    readonly id?: Permission.ID | null
     readonly action: string
     readonly resources: ReadonlyArray<string>
     readonly save?: ReadonlyArray<string>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly source?: { readonly type: "tool"; readonly messageID: string; readonly id: string }
-    readonly agent?: string | null
+    readonly agent?: Agent.ID | null
   }["source"]
   readonly agent?: {
-    readonly id?: string | null
+    readonly id?: Permission.ID | null
     readonly action: string
     readonly resources: ReadonlyArray<string>
     readonly save?: ReadonlyArray<string>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly source?: { readonly type: "tool"; readonly messageID: string; readonly id: string }
-    readonly agent?: string | null
+    readonly agent?: Agent.ID | null
   }["agent"]
 }
 
-export type PermissionCreateOutput = { data: { id: PermissionID; effect: PermissionEffect } }["data"]
+export type PermissionCreateOutput = { data: { id: Permission.ID; effect: PermissionEffect } }["data"]
 
-export type PermissionListInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type PermissionListInput = { readonly sessionID: { readonly sessionID: Session.ID }["sessionID"] }
 
 export type PermissionListOutput = { data: Array<PermissionRequest> }["data"]
 
 export type PermissionGetInput = {
-  readonly sessionID: { readonly sessionID: string; readonly requestID: string }["sessionID"]
-  readonly requestID: { readonly sessionID: string; readonly requestID: string }["requestID"]
+  readonly sessionID: { readonly sessionID: Session.ID; readonly requestID: Permission.ID }["sessionID"]
+  readonly requestID: { readonly sessionID: Session.ID; readonly requestID: Permission.ID }["requestID"]
 }
 
 export type PermissionGetOutput = { data: PermissionRequest }["data"]
 
 export type PermissionReplyInput = {
-  readonly sessionID: { readonly sessionID: string; readonly requestID: string }["sessionID"]
-  readonly requestID: { readonly sessionID: string; readonly requestID: string }["requestID"]
+  readonly sessionID: { readonly sessionID: Session.ID; readonly requestID: Permission.ID }["sessionID"]
+  readonly requestID: { readonly sessionID: Session.ID; readonly requestID: Permission.ID }["requestID"]
   readonly decision: {
     readonly decision: "once" | "always" | "reject"
     readonly message?: string | undefined
@@ -6366,7 +6493,7 @@ export type PtyListInput = {
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
 }
 
-export type PtyListOutput = { location: LocationPublicRef; data: Array<Pty> }
+export type PtyListOutput = { location: LocationPublicRef; data: Array<Pty2> }
 
 export type PtyCreateInput = {
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
@@ -6407,17 +6534,17 @@ export type PtyCreateInput = {
   }["env"]
 }
 
-export type PtyCreateOutput = { location: LocationPublicRef; data: Pty }
+export type PtyCreateOutput = { location: LocationPublicRef; data: Pty2 }
 
 export type PtyGetInput = {
-  readonly ptyID: { readonly ptyID: string }["ptyID"]
+  readonly ptyID: { readonly ptyID: Pty.ID }["ptyID"]
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
 }
 
-export type PtyGetOutput = { location: LocationPublicRef; data: Pty }
+export type PtyGetOutput = { location: LocationPublicRef; data: Pty2 }
 
 export type PtyUpdateInput = {
-  readonly ptyID: { readonly ptyID: string }["ptyID"]
+  readonly ptyID: { readonly ptyID: Pty.ID }["ptyID"]
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
   readonly title?: {
     readonly title?: string
@@ -6426,17 +6553,17 @@ export type PtyUpdateInput = {
   readonly size?: { readonly title?: string; readonly size?: { readonly rows: number; readonly cols: number } }["size"]
 }
 
-export type PtyUpdateOutput = { location: LocationPublicRef; data: Pty }
+export type PtyUpdateOutput = { location: LocationPublicRef; data: Pty2 }
 
 export type PtyRemoveInput = {
-  readonly ptyID: { readonly ptyID: string }["ptyID"]
+  readonly ptyID: { readonly ptyID: Pty.ID }["ptyID"]
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
 }
 
 export type PtyRemoveOutput = void
 
 export type PtyConnectTokenInput = {
-  readonly ptyID: { readonly ptyID: string }["ptyID"]
+  readonly ptyID: { readonly ptyID: Pty.ID }["ptyID"]
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
   readonly "x-opencode-ticket"?: { readonly "x-opencode-ticket"?: string | undefined }["x-opencode-ticket"]
 }
@@ -6444,18 +6571,18 @@ export type PtyConnectTokenInput = {
 export type PtyConnectTokenOutput = { location: LocationPublicRef; data: PtyTicketConnectToken }
 
 export type ExperimentalPersistentPtyReadInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
   readonly lines?: { readonly lines?: number | undefined }["lines"]
 }
 
 export type ExperimentalPersistentPtyReadOutput = { data: PersistentPtyReadResult | null }["data"]
 
-export type ExperimentalPersistentPtyListInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type ExperimentalPersistentPtyListInput = { readonly sessionID: { readonly sessionID: Session.ID }["sessionID"] }
 
 export type ExperimentalPersistentPtyListOutput = { data: Array<PersistentPtyInfo> }["data"]
 
 export type ExperimentalPersistentPtyCreateInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly sessionID: { readonly sessionID: Session.ID }["sessionID"]
   readonly command?: {
     readonly command?: string
     readonly args: ReadonlyArray<string>
@@ -6512,12 +6639,12 @@ export type ExperimentalPersistentPtyShutdownOutput = void
 
 export type ExperimentalPersistentPtyHandoffOutput = { handoff: PersistentPtyHandoff | null }
 
-export type ExperimentalPersistentPtyGetInput = { readonly ptyID: { readonly ptyID: string }["ptyID"] }
+export type ExperimentalPersistentPtyGetInput = { readonly ptyID: { readonly ptyID: Pty.ID }["ptyID"] }
 
 export type ExperimentalPersistentPtyGetOutput = { data: PersistentPtyInfo }["data"]
 
 export type ExperimentalPersistentPtyUpdateInput = {
-  readonly ptyID: { readonly ptyID: string }["ptyID"]
+  readonly ptyID: { readonly ptyID: Pty.ID }["ptyID"]
   readonly attachmentID?: {
     readonly attachmentID?: string
     readonly size: { readonly cols: number; readonly rows: number }
@@ -6530,16 +6657,16 @@ export type ExperimentalPersistentPtyUpdateInput = {
 
 export type ExperimentalPersistentPtyUpdateOutput = { data: PersistentPtyInfo }["data"]
 
-export type ExperimentalPersistentPtySnapshotInput = { readonly ptyID: { readonly ptyID: string }["ptyID"] }
+export type ExperimentalPersistentPtySnapshotInput = { readonly ptyID: { readonly ptyID: Pty.ID }["ptyID"] }
 
 export type ExperimentalPersistentPtySnapshotOutput = { data: PersistentPtySnapshot }["data"]
 
-export type ExperimentalPersistentPtyRemoveInput = { readonly ptyID: { readonly ptyID: string }["ptyID"] }
+export type ExperimentalPersistentPtyRemoveInput = { readonly ptyID: { readonly ptyID: Pty.ID }["ptyID"] }
 
 export type ExperimentalPersistentPtyRemoveOutput = void
 
 export type ExperimentalPersistentPtyConnectTokenInput = {
-  readonly ptyID: { readonly ptyID: string }["ptyID"]
+  readonly ptyID: { readonly ptyID: Pty.ID }["ptyID"]
   readonly "x-opencode-ticket"?: { readonly "x-opencode-ticket"?: string | undefined }["x-opencode-ticket"]
 }
 
@@ -6582,14 +6709,14 @@ export type ShellCreateInput = {
 export type ShellCreateOutput = { location: LocationPublicRef; data: ShellInfo1 }
 
 export type ShellGetInput = {
-  readonly id: { readonly id: string }["id"]
+  readonly id: { readonly id: Shell.ID }["id"]
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
 }
 
 export type ShellGetOutput = { location: LocationPublicRef; data: ShellInfo1 }
 
 export type ShellOutputInput = {
-  readonly id: { readonly id: string }["id"]
+  readonly id: { readonly id: Shell.ID }["id"]
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined } | undefined
     readonly cursor?: number | undefined
@@ -6613,7 +6740,7 @@ export type ShellOutputOutput = {
 }
 
 export type ShellRemoveInput = {
-  readonly id: { readonly id: string }["id"]
+  readonly id: { readonly id: Shell.ID }["id"]
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
 }
 
@@ -6625,41 +6752,41 @@ export type ReferenceListInput = {
 
 export type ReferenceListOutput = { location: LocationPublicRef; data: Array<ReferenceInfo> }
 
-export type WorktreeListInput = { readonly projectID: { readonly projectID: string }["projectID"] }
+export type WorktreeListInput = { readonly projectID: { readonly projectID: Project.ID }["projectID"] }
 
 export type WorktreeListOutput = WorktreeList
 
 export type WorktreeCreateInput = {
   readonly projectID: {
-    readonly projectID: string
+    readonly projectID: Project.ID
     readonly from?: string
     readonly branch?: string
     readonly directory?: string
     readonly name?: string
   }["projectID"]
   readonly from?: {
-    readonly projectID: string
+    readonly projectID: Project.ID
     readonly from?: string
     readonly branch?: string
     readonly directory?: string
     readonly name?: string
   }["from"]
   readonly branch?: {
-    readonly projectID: string
+    readonly projectID: Project.ID
     readonly from?: string
     readonly branch?: string
     readonly directory?: string
     readonly name?: string
   }["branch"]
   readonly directory?: {
-    readonly projectID: string
+    readonly projectID: Project.ID
     readonly from?: string
     readonly branch?: string
     readonly directory?: string
     readonly name?: string
   }["directory"]
   readonly name?: {
-    readonly projectID: string
+    readonly projectID: Project.ID
     readonly from?: string
     readonly branch?: string
     readonly directory?: string
@@ -6670,14 +6797,22 @@ export type WorktreeCreateInput = {
 export type WorktreeCreateOutput = WorktreeInfo
 
 export type WorktreeRemoveInput = {
-  readonly projectID: { readonly projectID: string; readonly directory: string; readonly force: boolean }["projectID"]
-  readonly directory: { readonly projectID: string; readonly directory: string; readonly force: boolean }["directory"]
-  readonly force: { readonly projectID: string; readonly directory: string; readonly force: boolean }["force"]
+  readonly projectID: {
+    readonly projectID: Project.ID
+    readonly directory: string
+    readonly force: boolean
+  }["projectID"]
+  readonly directory: {
+    readonly projectID: Project.ID
+    readonly directory: string
+    readonly force: boolean
+  }["directory"]
+  readonly force: { readonly projectID: Project.ID; readonly directory: string; readonly force: boolean }["force"]
 }
 
 export type WorktreeRemoveOutput = void
 
-export type WorktreeRefreshInput = { readonly projectID: { readonly projectID: string }["projectID"] }
+export type WorktreeRefreshInput = { readonly projectID: { readonly projectID: Project.ID }["projectID"] }
 
 export type WorktreeRefreshOutput = void
 
@@ -6782,13 +6917,13 @@ export type WebsearchProvidersOutput = { location: LocationPublicRef; data: Arra
 
 export type WebsearchQueryInput = {
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
-  readonly query: { readonly query: string; readonly providerID?: string }["query"]
-  readonly providerID?: { readonly query: string; readonly providerID?: string }["providerID"]
+  readonly query: { readonly query: string; readonly providerID?: WebSearch.ID }["query"]
+  readonly providerID?: { readonly query: string; readonly providerID?: WebSearch.ID }["providerID"]
 }
 
 export type WebsearchQueryOutput = {
   location: LocationPublicRef
-  data: { providerID: WebSearchID; results: Array<WebSearchResult> }
+  data: { providerID: WebSearch.ID; results: Array<WebSearchResult> }
 }
 
 export type ConfigGetInput = {

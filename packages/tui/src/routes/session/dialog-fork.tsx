@@ -9,8 +9,14 @@ import { useToast } from "../../ui/toast"
 import { errorMessage } from "../../util/error"
 import { Locale } from "../../util/locale"
 import { projectedPromptInput } from "../../prompt/codec"
+import { Session } from "@opencode/schema/session"
+import { SessionMessage } from "@opencode/schema/session-message"
 
-export function DialogFork(props: { sessionID: string; messageID?: string; onMove?: (messageID?: string) => void }) {
+export function DialogFork(props: {
+  sessionID: Session.ID
+  messageID?: SessionMessage.ID
+  onMove?: (messageID?: SessionMessage.ID) => void
+}) {
   const data = useData()
   const dialog = useDialog()
   const client = useClient()
@@ -18,7 +24,7 @@ export function DialogFork(props: { sessionID: string; messageID?: string; onMov
   const toast = useToast()
   const [pending, setPending] = createSignal(!!props.messageID)
 
-  const fork = async (messageID?: string) => {
+  const fork = async (messageID?: SessionMessage.ID) => {
     setPending(true)
     const result = await client.api.session
       .fork({
@@ -52,7 +58,7 @@ export function DialogFork(props: { sessionID: string; messageID?: string; onMov
     if (props.messageID) void fork(props.messageID)
   })
 
-  const options = createMemo((): DialogSelectOption<string | undefined>[] => [
+  const options = createMemo((): DialogSelectOption<SessionMessage.ID | undefined>[] => [
     {
       title: "Full session",
       value: undefined,

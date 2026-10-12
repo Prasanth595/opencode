@@ -5,12 +5,13 @@ import { useConfig } from "../../config"
 import { Slot } from "../../plugin/render"
 import { withTimestampedFallback } from "@opencode/util/session-title-fallback"
 import { TextAttributes } from "@opentui/core"
+import { Session } from "@opencode/schema/session"
 import "../../component/title-shimmer"
 
 import { getScrollAcceleration } from "../../util/scroll"
 import { SESSION_SIDEBAR_WIDTH } from "../../ui/layout"
 
-export function Sidebar(props: { sessionID: string }) {
+export function Sidebar(props: { sessionID: Session.ID }) {
   const data = useData()
   const theme = useTheme()
   const config = useConfig().data

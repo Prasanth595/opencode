@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
+import { SessionMessage } from "@opencode/schema/session-message"
 import { timelinePresets } from "@opencode/session-ui/timeline/detail"
 import { createTwoFilesPatch } from "diff"
 import {
@@ -310,7 +311,7 @@ for (const outline of [
 ] as const) {
   test(`keeps the ${outline.name} inside a fractionally short virtual row`, async ({ page }) => {
     const partID = outline.kind === "shell" ? "prt_shell_outline" : "prt_patch_outline"
-    const secondUserID = "msg_outline_second_user"
+    const secondUserID = SessionMessage.ID.make("msg_outline_second_user", { disableChecks: true })
 
     const tool =
       outline.kind === "shell"
@@ -354,7 +355,7 @@ for (const outline of [
         }),
         assistantMessage([tool]),
         userMessage(undefined, { id: secondUserID, created: 1700000010000 }),
-        assistantMessage([], { id: "msg_outline_second_assistant", parentID: secondUserID, created: 1700000011000 }),
+        assistantMessage([], { id: SessionMessage.ID.make("msg_outline_second_assistant", { disableChecks: true }), parentID: secondUserID, created: 1700000011000 }),
       ],
       settings:
         outline.kind === "shell"

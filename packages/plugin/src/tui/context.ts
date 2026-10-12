@@ -13,7 +13,7 @@ import type {
   OpenCodeEvent,
   PermissionSavedInfo,
   PermissionRequest,
-  Project,
+  Project2 as Project,
   ProviderInfo,
   ReferenceInfo,
   SessionInfo,

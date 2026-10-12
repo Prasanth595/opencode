@@ -53,7 +53,8 @@ Terminal.prototype.open = function (element) {
 
   if (new URL(location.href).searchParams.has("terminalDrawProbe")) {
     const context = element.querySelector("canvas")!.getContext("2d")!
-    const draw = context.drawImage
+    // SAFETY: The drawImage wrapper forwards the original overload's arguments and receiver unchanged.
+    const draw = context.drawImage as (...args: unknown[]) => void
     context.drawImage = function (...args: unknown[]) {
       probe.draws++
 

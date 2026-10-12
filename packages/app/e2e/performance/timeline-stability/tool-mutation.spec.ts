@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { Session } from "@opencode/schema/session"
 import {
   defineVisualRegions,
   reportVisualStability,
@@ -19,7 +20,7 @@ import {
 
 test("adds a subagent child-session link without replacing the row", async ({ page }, testInfo) => {
   const taskID = "prt_subagent_link"
-  const childID = "ses_subagent_child"
+  const childID = Session.ID.make("ses_subagent_child", { disableChecks: true })
   const input = { description: "Inspect child", agent: "explore", prompt: "Inspect the child Session." }
 
   const timeline = await setupTimeline(page, {

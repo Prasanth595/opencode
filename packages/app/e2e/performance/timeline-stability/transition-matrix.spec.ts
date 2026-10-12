@@ -14,6 +14,7 @@ import {
   partDelta,
   partUpdated,
   renderedPartID,
+  sessionID,
   setupTimeline,
   status,
   textPart,
@@ -166,7 +167,7 @@ test("updates retry attempts and long provider messages without remounting the r
   await startVisualProbe(page, regions)
   await timeline.send(
     event("session.status", {
-      sessionID: "ses_timeline_stability",
+      sessionID,
       status: {
         type: "retry",
         attempt: 2,

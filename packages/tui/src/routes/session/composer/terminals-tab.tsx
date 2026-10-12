@@ -5,8 +5,10 @@ import { useSessionTerminals } from "../../../context/session-terminals"
 import { useTheme } from "../../../context/theme"
 import { useToast } from "../../../ui/toast"
 import { useComposerTab } from "./context"
+import { Session } from "@opencode/schema/session"
+import { Pty } from "@opencode/schema/pty"
 
-export function TerminalsTab(props: { sessionID: string; visibleTerminalID?: string }) {
+export function TerminalsTab(props: { sessionID: Session.ID; visibleTerminalID?: Pty.ID }) {
   const composer = useComposerTab()
   const terminals = useSessionTerminals()
   const theme = useTheme()

@@ -1,5 +1,12 @@
 import { expect, test, type Page } from "@playwright/test"
 import type { OpenCodeEvent, SessionMessageInfo } from "@opencode/client/promise"
+import { Agent } from "@opencode/schema/agent"
+import { Event } from "@opencode/schema/event"
+import { Model } from "@opencode/schema/model"
+import { Project } from "@opencode/schema/project"
+import { Provider } from "@opencode/schema/provider"
+import { Session } from "@opencode/schema/session"
+import { SessionMessage } from "@opencode/schema/session-message"
 import {
   NO_PROVIDER,
   REMOTE_SERVER,
@@ -16,11 +23,11 @@ import { fixture, mockStressTimeline } from "../utils/session-fixture"
 import { fileNode, mockWorkspace, openSession } from "../utils/workspace"
 import { expectSessionTitle } from "../utils/waits"
 
-const a = { id: "ses_tab_a", title: "Tab A session" }
+const a = { id: Session.ID.make("ses_tab_a", { disableChecks: true }), title: "Tab A session" }
 
-const b = { id: "ses_tab_b", title: "Tab B session" }
+const b = { id: Session.ID.make("ses_tab_b", { disableChecks: true }), title: "Tab B session" }
 
-const c = { id: "ses_tab_c", title: "Tab C session" }
+const c = { id: Session.ID.make("ses_tab_c", { disableChecks: true }), title: "Tab C session" }
 
 test.use({ serviceWorkers: "block" })
 
@@ -54,6 +61,30 @@ test("tab strip keeps draft tabs as wide as session tabs and navigates on mouse 
   await expectPath(page, sessionHref(b.id))
   await page.mouse.up()
   await expectPath(page, sessionHref(b.id))
+})
+
+test("reselecting the current tab cancels a pending cold navigation", async ({ page }) => {
+  const workspace = await openSession(page, { name: "Tabs", sessions: [a, b] })
+  const held = await holdRoute(page, (url) => url.pathname === `/api/session/${b.id}/message`)
+  const response = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === `/api/session/${b.id}/message`,
+  )
+  try {
+    await page.locator(`a[data-titlebar-tab-link][href="${sessionHref(b.id)}"]`).click()
+    await held.arrived
+    await page.locator(`a[data-titlebar-tab-link][href="${sessionHref(a.id)}"]`).click()
+    held.release()
+    await (await response).finished()
+    // Exercise the retained view after the abandoned request finishes.
+    await expectSessionTitle(page, a.title)
+    await workspace.editor.click()
+    await expect(workspace.editor).toBeFocused()
+    await workspace.editor.fill("Stay in the original session")
+    await expectPath(page, sessionHref(a.id))
+    await expect(workspace.editor).toHaveText("Stay in the original session")
+  } finally {
+    held.release()
+  }
 })
 
 test("a tab does not reopen its title editor while a rename is saving", async ({ page }) => {
@@ -287,13 +318,13 @@ test("inactive tabs stay busy while work waits in their inbox, and pulse on a ne
 
   await workspace.push([
     {
-      id: "evt_tab_c_prompt",
+      id: Event.ID.make("evt_tab_c_prompt", { disableChecks: true }),
       created: 2,
       type: "session.inbox.enqueued",
-      durable: { aggregateID: c.id, seq: 1, version: 1 },
+      durable: { aggregateID: c.id, seq: Event.Seq.make(1, { disableChecks: true }), version: 1 },
       data: {
         sessionID: c.id,
-        inboxID: "inb_tab_c_prompt",
+        inboxID: SessionMessage.ID.make("inb_tab_c_prompt", { disableChecks: true }),
         item: { type: "user", payload: { text: "Another client's prompt" }, delivery: "queue" },
       },
     } satisfies Extract<OpenCodeEvent, { type: "session.inbox.enqueued" }>,
@@ -313,11 +344,11 @@ test("selecting a tab with waiting work waits for its transcript instead of show
     sessions: [a, b],
     pageMessages: (id) => ({
       items:
-        id === b.id ? [{ id: "msg_tab_b_history", type: "user", text: "Earlier prompt", time: { created: 1 } }] : [],
+        id === b.id ? [{ id: SessionMessage.ID.make("msg_tab_b_history", { disableChecks: true }), type: "user", text: "Earlier prompt", time: { created: 1 } }] : [],
     }),
     inbox: [
       {
-        id: "inb_tab_b_steer",
+        id: SessionMessage.ID.make("inb_tab_b_steer", { disableChecks: true }),
         sessionID: b.id,
         time: { created: 2 },
         type: "user",
@@ -332,10 +363,14 @@ test("selecting a tab with waiting work waits for its transcript instead of show
 
   const transcript = await holdRoute(page, (url) => url.pathname === `/api/session/${b.id}/message`)
   await page.locator(`[data-titlebar-tab-link][href="${sessionHref(b.id)}"]`).click()
-  await transcript.arrived
-  await expect(page.locator("[data-timeline-virtual-content]")).toHaveCount(0)
-
-  transcript.release()
+  try {
+    await transcript.arrived
+    await expectPath(page, sessionHref(a.id))
+    await expectSessionTitle(page, a.title)
+    await expect(page.locator('[data-message-id="inb_tab_b_steer"]')).toHaveCount(0)
+  } finally {
+    transcript.release()
+  }
   await expect(page.locator('[data-timeline-row="UserMessage"][data-message-id="msg_tab_b_history"]')).toContainText(
     "Earlier prompt",
   )
@@ -366,12 +401,12 @@ test("inactive tabs load attention and inbox, but read the transcript only on se
   await mockStressTimeline(page, {
     pageMessages: (id) => ({
       items: [
-        { id: `msg_${id}_user`, type: "user", text: "Review the renderer change", time: { created: 1 } },
+        { id: SessionMessage.ID.make(`msg_${id}_user`, { disableChecks: true }), type: "user", text: "Review the renderer change", time: { created: 1 } },
         {
-          id: `msg_${id}_assistant`,
+          id: SessionMessage.ID.make(`msg_${id}_assistant`, { disableChecks: true }),
           type: "assistant",
-          agent: "build",
-          model: { id: "claude-opus-4-6", providerID: "opencode" },
+          agent: Agent.ID.make("build", { disableChecks: true }),
+          model: { id: Model.ID.make("claude-opus-4-6", { disableChecks: true }), providerID: Provider.ID.make("opencode", { disableChecks: true }) },
           content: [{ type: "text", text: state.text }],
           time: { created: 2, completed: 3 },
         },
@@ -428,7 +463,7 @@ test("five loaded workspace tabs stay rendered and reactive through repeated swi
 
   const sessions = Array.from({ length: 5 }, (_, index) => ({
     ...fixture.sessions[0]!,
-    id: `ses_workspace_cycle_${index}`,
+    id: Session.ID.make(`ses_workspace_cycle_${index}`, { disableChecks: true }),
     directory: `${fixture.directory}/worktree-${index}`,
     title: `Workspace session ${index}`,
   }))
@@ -437,12 +472,12 @@ test("five loaded workspace tabs stay rendered and reactive through repeated swi
     sessions,
     pageMessages: (id) => ({
       items: [
-        { id: `msg_user_${id}`, type: "user", text: `Prompt for ${id}`, time: { created: 1 } },
+        { id: SessionMessage.ID.make(`msg_user_${id}`, { disableChecks: true }), type: "user", text: `Prompt for ${id}`, time: { created: 1 } },
         {
-          id: `msg_assistant_${id}`,
+          id: SessionMessage.ID.make(`msg_assistant_${id}`, { disableChecks: true }),
           type: "assistant",
-          agent: "build",
-          model: { id: "claude-opus-4-6", providerID: "opencode" },
+          agent: Agent.ID.make("build", { disableChecks: true }),
+          model: { id: Model.ID.make("claude-opus-4-6", { disableChecks: true }), providerID: Provider.ID.make("opencode", { disableChecks: true }) },
           time: { created: 2, completed: 3 },
           content: [{ type: "text", text: `Answer for ${id}` }],
         },
@@ -467,14 +502,14 @@ test("five loaded workspace tabs stay rendered and reactive through repeated swi
   const active = sessions[0]!
   await mock.push([
     {
-      id: "evt_workspace_cycle_update",
+      id: Event.ID.make("evt_workspace_cycle_update", { disableChecks: true }),
       created: 4,
       type: "session.text.ended",
       location: { directory: active.directory },
-      durable: { aggregateID: active.id, seq: 0, version: 1 },
+      durable: { aggregateID: active.id, seq: Event.Seq.make(0, { disableChecks: true }), version: 1 },
       data: {
         sessionID: active.id,
-        assistantMessageID: `msg_assistant_${active.id}`,
+        assistantMessageID: SessionMessage.ID.make(`msg_assistant_${active.id}`, { disableChecks: true }),
         ordinal: 0,
         text: "Still receiving updates",
       },
@@ -486,9 +521,9 @@ test("five loaded workspace tabs stay rendered and reactive through repeated swi
 test("each session tab shows its own file tab after a switch to a session in another folder", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const directory = "C:/OpenCode/FolderSwitch"
-  const alpha = { id: "ses_folderswitch_alpha", title: "Folder switch alpha" }
-  const beta = { id: "ses_folderswitch_beta", title: "Folder switch beta" }
-  const other = { id: "ses_folderswitch_other", title: "Folder switch other", directory: "C:/OpenCode/FolderOther" }
+  const alpha = { id: Session.ID.make("ses_folderswitch_alpha", { disableChecks: true }), title: "Folder switch alpha" }
+  const beta = { id: Session.ID.make("ses_folderswitch_beta", { disableChecks: true }), title: "Folder switch beta" }
+  const other = { id: Session.ID.make("ses_folderswitch_other", { disableChecks: true }), title: "Folder switch other", directory: "C:/OpenCode/FolderOther" }
   await openSession(page, {
     name: "FolderSwitch",
     sessions: [alpha, beta, other],
@@ -503,7 +538,7 @@ test("each session tab shows its own file tab after a switch to a session in ano
     await expect(panel.getByText(`contents:${file}`, { exact: true })).toBeVisible()
   }
 
-  const visit = async (target: { id: string; title: string }) => {
+  const visit = async (target: { id: Session.ID; title: string }) => {
     await page.locator(`[data-titlebar-tab-link][href="${sessionHref(target.id)}"]`).click()
     await expectSessionTitle(page, target.title)
   }
@@ -559,7 +594,7 @@ async function twoServers(
 
     return {
       directory,
-      project: project({ id, directory }),
+      project: project({ id: Project.ID.make(id, { disableChecks: true }), directory }),
       provider: NO_PROVIDER,
       sessions,
       pageMessages: () => ({ items: [] }),

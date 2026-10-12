@@ -1,4 +1,8 @@
 import type { SessionMessageInfo } from "@opencode/client/promise"
+import { Agent } from "@opencode/schema/agent"
+import { Model } from "@opencode/schema/model"
+import { Provider } from "@opencode/schema/provider"
+import { SessionMessage } from "@opencode/schema/session-message"
 import { benchmark, expect } from "../benchmark"
 import { mockOpenCodeServer } from "../../utils/mock-server"
 import { fixture, installStressSessionTabs, installTimelineSettings } from "../../utils/session-fixture"
@@ -17,17 +21,20 @@ for (const size of ["typical", "large"]) {
         id,
         [
           {
-            id: `msg_1_${id}_user`,
+            id: SessionMessage.ID.make(`msg_1_${id}_user`, { disableChecks: true }),
             type: "user",
             time: { created: 1700000000000 },
             text: "Review the recovery boundary.",
           },
           {
-            id: `msg_2_${id}_assistant`,
+            id: SessionMessage.ID.make(`msg_2_${id}_assistant`, { disableChecks: true }),
             type: "assistant",
             time: { created: 1700000001000, completed: 1700000008000 },
-            model: { id: "claude-opus-4-6", providerID: "opencode" },
-            agent: "build",
+            model: {
+              id: Model.ID.make("claude-opus-4-6", { disableChecks: true }),
+              providerID: Provider.ID.make("opencode", { disableChecks: true }),
+            },
+            agent: Agent.ID.make("build", { disableChecks: true }),
             cost: 0.01,
             tokens: { input: 100, output: 200, reasoning: 0, cache: { read: 0, write: 0 } },
             finish: "stop",

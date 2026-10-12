@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
+import { Event } from "@opencode/schema/event"
 import { SERVER, holdRoute, seed, sessionHref } from "../utils/app"
 import { openWithDirection } from "../utils/direction"
 import { mockOpenCodeServer } from "../utils/mock-server"
@@ -17,6 +18,10 @@ for (const custom of [false, true]) {
     const trigger = page.getByRole("button", { name: "Session details", exact: true })
     const summary = page.getByRole("dialog", { name: "Session details", exact: true })
     await expect(page.locator('[data-component="composer-editor"]')).toBeEditable()
+    // Finish cold tail anchoring before hovering; an ancestor scroll dismisses the tooltip.
+    await expect(
+      page.locator(`[data-timeline-row="UserMessage"][data-message-id="${fixture.expected.sourceMessageIDs.at(-1)}"]`),
+    ).toBeVisible()
     await expect(trigger).toBeEnabled()
     await trigger.hover()
     const tooltip = page.getByRole("tooltip")
@@ -186,7 +191,7 @@ test("the details follow the routed session when it moves to another worktree", 
   if (moved) moved.directory = `${root}/other`
   await mock.push([
     {
-      id: "evt_details_session_moved",
+      id: Event.ID.make("evt_details_session_moved", { disableChecks: true }),
       type: "session.moved",
       created: 2,
       durable: { aggregateID: fixture.targetID, seq: 1, version: 1 },
@@ -305,6 +310,11 @@ for (const direction of ["ltr", "rtl"] as const) {
     await expect(summary).toBeHidden()
 
     await page.getByRole("button", { name: "Toggle review", exact: true }).click()
+    await expect(page.locator("#review-panel")).toBeInViewport({ ratio: 1 })
+    // Read native animations after style resolution; the transitionrun event can arrive later.
+    await page.locator('[data-slot="session-chat-panel"]').evaluate(async (element) => {
+      await Promise.all(element.getAnimations().map((animation) => animation.finished))
+    })
     await trigger.click()
     await expectAlignedWithHeader(page, direction)
     expect(warnings).toEqual([])

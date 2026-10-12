@@ -1,5 +1,7 @@
 import { batch, createEffect, createMemo, createResource, createSignal, onCleanup, Show } from "solid-js"
 import type { OpenCodeEvent, SessionInfo } from "@opencode/client"
+import { Session } from "@opencode/schema/session"
+import { Project } from "@opencode/schema/project"
 import path from "path"
 import { useTerminalDimensions } from "@opentui/solid"
 import { dialogWidth, useDialog } from "../ui/dialog"
@@ -28,10 +30,10 @@ const RECENT_LIMIT = 8
 export const DialogOpenKey = Symbol("DialogOpen")
 
 type OpenTarget =
-  | { type: "session"; sessionID: string }
-  | { type: "project"; directory: string; projectID?: string }
+  | { type: "session"; sessionID: Session.ID }
+  | { type: "project"; directory: string; projectID?: Project.ID }
 
-type OpenView = { type: "projects" } | { type: "worktrees"; projectID: string }
+type OpenView = { type: "projects" } | { type: "worktrees"; projectID: Project.ID }
 
 type OpenSelection = { view: OpenView; filter: string; selected?: OpenTarget }
 
@@ -141,7 +143,7 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
   const [matched] = createResource(
     () => {
       const value = filter().trim()
-      return /^ses_[0-9A-Za-z]{26}$/.test(value) ? value : undefined
+      return /^ses_[0-9A-Za-z]{26}$/.test(value) ? Session.ID.make(value, { disableChecks: true }) : undefined
     },
     (sessionID) =>
       client.api.session
@@ -156,7 +158,7 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
   const currentSessionID = createMemo(() =>
     route.data.type === "session" ? data.session.root(route.data.sessionID) : undefined,
   )
-  const attention = (sessionID: string) => sessionTabs.status(sessionID).attention
+  const attention = (sessionID: Session.ID) => sessionTabs.status(sessionID).attention
   const sessions = createMemo(() => {
     const seen = new Set<string>()
     const match = matched()
@@ -186,7 +188,7 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
         ...data.session.permission.sessions(),
         ...data.session.form.sessions(),
         ...(recent() === true ? active : []),
-      ].map((id) => data.session.root(id)),
+      ].map((id) => Session.ID.make(data.session.root(id), { disableChecks: true })),
     ).forEach((rootID) => {
       if (!knownRoots.has(rootID) && !data.session.get(rootID)) {
         void data.session.sync(rootID).catch(() => undefined)

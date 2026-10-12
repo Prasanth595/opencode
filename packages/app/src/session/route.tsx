@@ -1,5 +1,5 @@
+import type { SessionID } from "@opencode/schema/session-id"
 import { ErrorBoundary, createEffect, createMemo, Show, type ParentProps } from "solid-js"
-import { useParams } from "@solidjs/router"
 import { DataProvider } from "@opencode/session-ui/context"
 import { SessionUserMessage } from "@opencode/session-ui/message"
 import { TextShimmer } from "@opencode/ui/text-shimmer"
@@ -17,7 +17,7 @@ import { ServerConnection } from "@/runtime/server/registry"
 import { useSettingsCommand } from "@/settings/command"
 import { SessionUIProvider } from "@/shell/routes/session-ui-provider"
 import { useTabs, type PendingSession } from "@/shell/tabs/tabs"
-import { requireServerKey } from "@/shell/routes/session"
+import { useSessionParams, requireServerKey } from "@/shell/routes/session"
 import { useSessionModel } from "./model"
 import { SessionPanelFrame } from "./session-frame"
 import { SessionIdentityHeader } from "./session-identity-header"
@@ -27,21 +27,46 @@ import { createSessionResolution } from "./session-resolution"
 import { SessionScreenView } from "./screen"
 import { PreparingComposer } from "./preparing-composer"
 
+import { preloadMarkdown } from "@opencode/session-ui/markdown-cache"
+import { Timeline } from "@opencode/session-ui/timeline/projection"
+
+export async function preloadSession(data: ReturnType<typeof useData>, id: SessionID) {
+  await Promise.all([data.session.sync(id, { children: true }), data.session.message.sync(id)])
+  const messages = data.session.message.list(id)
+  const tail = messages.slice(
+    Math.max(
+      0,
+      messages.findLastIndex((message) => message.type === "user"),
+    ),
+  )
+  await Promise.all(
+    tail.flatMap((message) =>
+      message.type === "assistant" && message.time.completed !== undefined
+        ? Timeline.contentEntries(message).flatMap((part) =>
+            part.content.type === "text" && part.content.text.trim()
+              ? [preloadMarkdown(part.content.text, part.id)]
+              : [],
+          )
+        : [],
+    ),
+  )
+}
+
 export function TargetSessionRouteContent() {
-  const params = useParams<{ serverKey: string; id: string }>()
+  const params = useSessionParams()
   const data = useData()
   const server = useServer()
   const tabs = useTabs()
-  const directory = createMemo(() => data.session.get(params.id)?.location.directory)
+  const directory = createMemo(() => data.session.get(params.id!)?.location.directory)
 
   return (
     <>
-      <MarkSessionNotificationsViewed sessionID={() => params.id} />
+      <MarkSessionNotificationsViewed sessionID={() => params.id!} />
       <ModelsProvider directory={directory}>
         <TargetSessionSettingsCommand />
-        <SessionRouteErrorBoundary sessionID={params.id} serverKey={requireServerKey(params.serverKey)}>
-          <Show when={tabs.pendingSession(server.key, params.id)} fallback={<ResolvedTargetSessionRoute />}>
-            {(pending) => <PreparingSession sessionID={params.id} pending={pending()} />}
+        <SessionRouteErrorBoundary sessionID={params.id!} serverKey={requireServerKey(params.serverKey)}>
+          <Show when={tabs.pendingSession(server.key, params.id!)} fallback={<ResolvedTargetSessionRoute />}>
+            {(pending) => <PreparingSession sessionID={params.id!} pending={pending()} />}
           </Show>
         </SessionRouteErrorBoundary>
       </ModelsProvider>
@@ -49,7 +74,7 @@ export function TargetSessionRouteContent() {
   )
 }
 
-function PreparingSession(props: { sessionID: string; pending: PendingSession }) {
+function PreparingSession(props: { sessionID: SessionID; pending: PendingSession }) {
   const language = useLanguage()
   const providers = useProviders(() => props.pending.draft.directory)
 
@@ -98,7 +123,7 @@ function TargetSessionSettingsCommand() {
   return null
 }
 
-function SessionRouteErrorBoundary(props: ParentProps<{ sessionID?: string; serverKey?: ServerConnection.Key }>) {
+function SessionRouteErrorBoundary(props: ParentProps<{ sessionID?: SessionID; serverKey?: ServerConnection.Key }>) {
   return (
     <ErrorBoundary
       fallback={(error) => (
@@ -113,13 +138,13 @@ function SessionRouteErrorBoundary(props: ParentProps<{ sessionID?: string; serv
 }
 
 function ResolvedTargetSessionRoute() {
-  const params = useParams<{ id: string }>()
+  const params = useSessionParams()
   const server = useServer()
   const tabs = useTabs()
   const data = useData()
 
   const current = createSessionResolution(
-    () => params.id,
+    () => params.id!,
     () => data.session,
     { children: true, connected: () => server.ctx.sdk.connection.status() === "connected" },
   )
@@ -132,12 +157,12 @@ function ResolvedTargetSessionRoute() {
       fallback={
         <SessionStatePanel>
           <IncompatibleServerPanel
-            onClose={() => tabs.removeSessionTab({ server: server.key, sessionId: params.id })}
+            onClose={() => tabs.removeSessionTab({ server: server.key, sessionId: params.id! })}
           />
         </SessionStatePanel>
       }
     >
-      <Show when={directory()} fallback={<PendingSessionState sessionID={params.id} />}>
+      <Show when={directory()} fallback={<PendingSessionState sessionID={params.id!} />}>
         {(value) => (
           <LocationProvider directory={value()}>
             <SessionUIProvider directory={value()} server={server.key}>
@@ -150,7 +175,7 @@ function ResolvedTargetSessionRoute() {
   )
 }
 
-function PendingSessionState(props: { sessionID: string }) {
+function PendingSessionState(props: { sessionID: SessionID }) {
   return (
     <SessionStatePanel>
       <SessionIdentityHeader sessionID={props.sessionID} />
@@ -186,7 +211,7 @@ function SessionPage() {
   return <SessionScreenView session={session} />
 }
 
-function MarkSessionNotificationsViewed(props: { sessionID: () => string | undefined }) {
+function MarkSessionNotificationsViewed(props: { sessionID: () => SessionID | undefined }) {
   const notification = useNotification()
   createEffect(() => {
     const sessionID = props.sessionID()

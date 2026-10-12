@@ -1,5 +1,12 @@
 import { base64Encode } from "@opencode/util/encode"
 import type { JsonValue, OpenCodeEvent, SessionMessageAssistant, SessionMessageInfo } from "@opencode/client/promise"
+import { Agent } from "@opencode/schema/agent"
+import { Event } from "@opencode/schema/event"
+import { Model } from "@opencode/schema/model"
+import { Project } from "@opencode/schema/project"
+import { Provider } from "@opencode/schema/provider"
+import { Session } from "@opencode/schema/session"
+import { SessionMessage } from "@opencode/schema/session-message"
 import type { Page } from "@playwright/test"
 import { mockOpenCodeServer } from "../../utils/mock-server"
 import { expectAppVisible, expectSessionTitle } from "../../utils/waits"
@@ -8,16 +15,16 @@ import { createTwoFilesPatch } from "diff"
 
 const directory = "C:/OpenCode/TimelineStateRegression"
 
-const projectID = "proj_timeline_state_regression"
+const projectID = Project.ID.make("proj_timeline_state_regression", { disableChecks: true })
 
 /** The workspace a benchmark response names, in the shape the server's location-scoped routes return. */
 export const benchmarkLocation = { directory, project: { id: projectID, directory, canonical: directory } }
 
-const sessionID = "ses_timeline_state_regression"
+const sessionID = Session.ID.make("ses_timeline_state_regression", { disableChecks: true })
 
-const userMessageID = "msg_user_regression"
+const userMessageID = SessionMessage.ID.make("msg_user_regression", { disableChecks: true })
 
-const assistantMessageID = "msg_assistant_regression"
+const assistantMessageID = SessionMessage.ID.make("msg_assistant_regression", { disableChecks: true })
 
 const editPartID = "prt_0001_edit"
 
@@ -25,7 +32,11 @@ export const textPartID = `${assistantMessageID}:text:0`
 
 const title = "Timeline collapse state regression"
 
-const model = { providerID: "opencode", modelID: "claude-opus-4-6", variant: "max" }
+const model = {
+  providerID: Provider.ID.make("opencode", { disableChecks: true }),
+  modelID: Model.ID.make("claude-opus-4-6", { disableChecks: true }),
+  variant: Model.VariantID.make("max", { disableChecks: true }),
+}
 
 type EventPayload = OpenCodeEvent
 
@@ -62,7 +73,7 @@ const assistantMessage = {
   type: "assistant",
   time: { created: 1700000001000 },
   model: { id: model.modelID, providerID: model.providerID, variant: model.variant },
-  agent: "build",
+  agent: Agent.ID.make("build", { disableChecks: true }),
   cost: 0.01,
   tokens: { input: 100, output: 200, reasoning: 0, cache: { read: 0, write: 0 } },
   content: [toolContent(editPart)],
@@ -225,8 +236,8 @@ export function buildStreamDeltaEvents(deltaCount: number): EventPayload[] {
 
 function performanceTurn(index: number) {
   const suffix = String(index).padStart(4, "0")
-  const userID = `msg_0000_${suffix}_a_user`
-  const assistantID = `msg_0000_${suffix}_b_assistant`
+  const userID = SessionMessage.ID.make(`msg_0000_${suffix}_a_user`, { disableChecks: true })
+  const assistantID = SessionMessage.ID.make(`msg_0000_${suffix}_b_assistant`, { disableChecks: true })
   const before = historicalSource(index, false)
   const after = historicalSource(index, true)
 
@@ -332,7 +343,7 @@ function performanceTurn(index: number) {
       type: "assistant",
       time: { created: 1690000001000 + index * 2_000, completed: 1690000001500 + index * 2_000 },
       model: { id: model.modelID, providerID: model.providerID, variant: model.variant },
-      agent: "build",
+      agent: Agent.ID.make("build", { disableChecks: true }),
       cost: 0.01,
       tokens: { input: 100, output: 200, reasoning: 0, cache: { read: 0, write: 0 } },
       finish: "stop",
@@ -397,12 +408,14 @@ function timelineEvent<Type extends "session.text.started" | "session.text.delta
   eventSequence++
 
   return {
-    id: `evt_timeline_benchmark_${eventSequence}`,
+    id: Event.ID.make(`evt_timeline_benchmark_${eventSequence}`, { disableChecks: true }),
     created: 1700000002000 + eventSequence,
     type,
     data,
     location: { directory },
-    ...(durable ? { durable: { aggregateID: sessionID, seq: eventSequence, version: 1 } } : {}),
+    ...(durable
+      ? { durable: { aggregateID: sessionID, seq: Event.Seq.make(eventSequence, { disableChecks: true }), version: 1 } }
+      : {}),
   } as unknown as Extract<OpenCodeEvent, { type: Type }>
 }
 
@@ -547,15 +560,17 @@ function session() {
 }
 
 function provider() {
+  const providerID = Provider.ID.make("opencode", { disableChecks: true })
+  const modelID = Model.ID.make("claude-opus-4-6", { disableChecks: true })
   return {
     all: [
       {
-        id: "opencode",
+        id: providerID,
         name: "OpenCode",
-        models: { "claude-opus-4-6": { id: "claude-opus-4-6", name: "Claude Opus 4.6", limit: { context: 200_000 } } },
+        models: { [modelID]: { id: modelID, name: "Claude Opus 4.6", limit: { context: 200_000 } } },
       },
     ],
-    connected: ["opencode"],
-    default: { providerID: "opencode", modelID: "claude-opus-4-6" },
+    connected: [providerID],
+    default: { providerID, modelID },
   }
 }

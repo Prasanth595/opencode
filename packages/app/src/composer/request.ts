@@ -1,3 +1,4 @@
+import type { Skill } from "@opencode/schema/skill"
 import { encodeFilePath, getFilename } from "@opencode/util/path"
 import type { FileSelection } from "@/workspaces/files/model"
 import type {
@@ -31,7 +32,7 @@ type PromptRequest = {
     mention?: { start: number; end: number; text: string }
   }[]
   agents: { name: string; mention?: { start: number; end: number; text: string } }[]
-  skills: { id: string; name: string; mention?: { start: number; end: number; text: string } }[]
+  skills: { id: Skill.ID; name: string; mention?: { start: number; end: number; text: string } }[]
   comments: PromptComment[]
   attachments: PromptAttachmentReference[]
 }

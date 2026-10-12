@@ -25,33 +25,37 @@ import {
 } from "../../../ui/layout"
 import { createPaneResize } from "../../../ui/pane-resize"
 import { PaneResizeHandle } from "../../../ui/pane-resize-handle"
+import { Session } from "@opencode/schema/session"
 import type { Story } from "./index"
 
 type FixtureStatus = ReturnType<SessionTabsController["status"]>
 
 const FIXTURE_TABS = [
-  { sessionID: "fixture-1", title: "Implement session tabs", project: "opencode" },
-  { sessionID: "fixture-2", title: "Investigate rendering", project: "opencode" },
-  { sessionID: "fixture-3", title: "A deliberately long session title for truncation", project: "opencode-slack" },
-  { sessionID: "fixture-4", title: "Fix provider state", project: "opencode" },
-  { sessionID: "fixture-5", title: "Review animation", project: "opencode-slack" },
-  { sessionID: "fixture-6", title: "Untitled behavior", project: "opencode-drive" },
-  { sessionID: "fixture-7", title: "Queue follow-up work", project: "opencode" },
-  { sessionID: "fixture-8", title: "Check narrow layout", project: "opencode-drive" },
-  { sessionID: "fixture-9", title: "Profile terminal output", project: "opencode" },
-  { sessionID: "fixture-10", title: "Handle permission", project: "opencode-slack" },
-  { sessionID: "fixture-11", title: "Run focused tests", project: "opencode" },
-  { sessionID: "fixture-12", title: "Prepare review", project: "opencode-drive" },
+  { sessionID: Session.ID.make("fixture-1", { disableChecks: true }), title: "Implement session tabs", project: "opencode" },
+  { sessionID: Session.ID.make("fixture-2", { disableChecks: true }), title: "Investigate rendering", project: "opencode" },
+  { sessionID: Session.ID.make("fixture-3", { disableChecks: true }), title: "A deliberately long session title for truncation", project: "opencode-slack" },
+  { sessionID: Session.ID.make("fixture-4", { disableChecks: true }), title: "Fix provider state", project: "opencode" },
+  { sessionID: Session.ID.make("fixture-5", { disableChecks: true }), title: "Review animation", project: "opencode-slack" },
+  { sessionID: Session.ID.make("fixture-6", { disableChecks: true }), title: "Untitled behavior", project: "opencode-drive" },
+  { sessionID: Session.ID.make("fixture-7", { disableChecks: true }), title: "Queue follow-up work", project: "opencode" },
+  { sessionID: Session.ID.make("fixture-8", { disableChecks: true }), title: "Check narrow layout", project: "opencode-drive" },
+  { sessionID: Session.ID.make("fixture-9", { disableChecks: true }), title: "Profile terminal output", project: "opencode" },
+  { sessionID: Session.ID.make("fixture-10", { disableChecks: true }), title: "Handle permission", project: "opencode-slack" },
+  { sessionID: Session.ID.make("fixture-11", { disableChecks: true }), title: "Run focused tests", project: "opencode" },
+  { sessionID: Session.ID.make("fixture-12", { disableChecks: true }), title: "Prepare review", project: "opencode-drive" },
 ]
 
 const FIXTURE_STATUSES: Record<string, FixtureStatus> = {
-  "fixture-2": { ...EMPTY_SESSION_TAB_STATUS, busy: true },
-  "fixture-3": { ...EMPTY_SESSION_TAB_STATUS, busy: true, attention: "question" },
-  "fixture-4": { ...EMPTY_SESSION_TAB_STATUS, busy: true, attention: "permission" },
-  "fixture-5": { ...EMPTY_SESSION_TAB_STATUS, unread: "activity" },
-  "fixture-6": { ...EMPTY_SESSION_TAB_STATUS, unread: "error" },
+  [FIXTURE_TABS[1].sessionID]: { ...EMPTY_SESSION_TAB_STATUS, busy: true },
+  [FIXTURE_TABS[2].sessionID]: { ...EMPTY_SESSION_TAB_STATUS, busy: true, attention: "question" },
+  [FIXTURE_TABS[3].sessionID]: { ...EMPTY_SESSION_TAB_STATUS, busy: true, attention: "permission" },
+  [FIXTURE_TABS[4].sessionID]: { ...EMPTY_SESSION_TAB_STATUS, unread: "activity" },
+  [FIXTURE_TABS[5].sessionID]: { ...EMPTY_SESSION_TAB_STATUS, unread: "error" },
 }
-const FIXTURE_OUTCOMES = { "fixture-5": "completed", "fixture-6": "failed" } as const
+const FIXTURE_OUTCOMES: Record<string, "completed" | "failed"> = {
+  [FIXTURE_TABS[4].sessionID]: "completed",
+  [FIXTURE_TABS[5].sessionID]: "failed",
+}
 
 // Plausible targets for the fake transcript's tool calls, picked per fixture index.
 const TRANSCRIPT_FILES = [
@@ -68,13 +72,13 @@ function SessionTabsStory(props: { context: Plugin.Context }) {
   const theme = props.context.theme
   const dialog = useDialog()
   // A keyed store mirrors production: retitles mutate rows in place instead of remounting them.
-  const [tabStore, setTabStore] = createStore<{ items: { sessionID: string; title?: string }[] }>({
+  const [tabStore, setTabStore] = createStore<{ items: { sessionID: Session.ID; title?: string }[] }>({
     items: FIXTURE_TABS.slice(0, 6).map((tab) => ({ ...tab })),
   })
   const tabs = () => tabStore.items
-  const setItems = (next: { sessionID: string; title?: string }[]) =>
+  const setItems = (next: { sessionID: Session.ID; title?: string }[]) =>
     setTabStore("items", reconcile(next, { key: "sessionID" }))
-  const [active, setActive] = createSignal<string | undefined>("fixture-1")
+  const [active, setActive] = createSignal<Session.ID | undefined>(FIXTURE_TABS[0].sessionID)
   const [lastEvent, setLastEvent] = createSignal("idle / working / question / permission / complete / error")
   const [statuses, setStatuses] = createSignal<Record<string, FixtureStatus>>(FIXTURE_STATUSES)
   const [orientation, setOrientation] = createSignal<"horizontal" | "vertical">("vertical")
@@ -97,9 +101,9 @@ function SessionTabsStory(props: { context: Plugin.Context }) {
   const [animations, setAnimations] = createSignal(true)
   // Unread clears on select, so the transcript remembers how each session's last run ended.
   const [outcomes, setOutcomes] = createSignal<Record<string, "completed" | "failed">>(FIXTURE_OUTCOMES)
-  const number = (sessionID: string) => tabs().findIndex((tab) => tab.sessionID === sessionID) + 1
+  const number = (sessionID: Session.ID) => tabs().findIndex((tab) => tab.sessionID === sessionID) + 1
 
-  function finishRun(sessionID: string, failed = Math.random() >= 0.75) {
+  function finishRun(sessionID: Session.ID, failed = Math.random() >= 0.75) {
     if (!tabs().some((item) => item.sessionID === sessionID)) return
     const unread = active() === sessionID ? undefined : failed ? ("error" as const) : ("activity" as const)
     batch(() => {
@@ -118,7 +122,7 @@ function SessionTabsStory(props: { context: Plugin.Context }) {
     )
   }
 
-  const select = (sessionID: string) => {
+  const select = (sessionID: Session.ID) => {
     const status = statuses()[sessionID]
     batch(() => {
       setActive(sessionID)
@@ -157,14 +161,14 @@ function SessionTabsStory(props: { context: Plugin.Context }) {
         />
       ))
     },
-    detail(sessionID) {
+    detail(sessionID: Session.ID) {
       return FIXTURE_TABS.find((tab) => tab.sessionID === sessionID)?.project
     },
-    status(sessionID) {
+    status(sessionID: Session.ID) {
       return statuses()[sessionID] ?? EMPTY_SESSION_TAB_STATUS
     },
     select,
-    rename(sessionID: string) {
+    rename(sessionID: Session.ID) {
       dialog.replace(() => (
         <DialogPrompt
           title="Rename fixture tab"
@@ -177,12 +181,12 @@ function SessionTabsStory(props: { context: Plugin.Context }) {
         />
       ))
     },
-    move(sessionID: string, index: number) {
+    move(sessionID: Session.ID, index: number) {
       const next = moveSessionTab(tabs(), sessionID, index)
       if (next === tabs()) return
       setItems(next.map((tab) => ({ ...tab })))
     },
-    close(sessionID?: string) {
+    close(sessionID?: Session.ID) {
       const target = sessionID ?? active()
       if (!target) return
       const result = closeSessionTab(tabs(), target)
@@ -204,7 +208,7 @@ function SessionTabsStory(props: { context: Plugin.Context }) {
     const tab = cycleSessionTab(tabs(), active(), direction)
     if (tab) select(tab.sessionID)
   }
-  const startRun = (sessionID: string) => {
+  const startRun = (sessionID: Session.ID) => {
     setStatuses((current) => ({
       ...current,
       [sessionID]: {
@@ -221,7 +225,7 @@ function SessionTabsStory(props: { context: Plugin.Context }) {
     })
     setLastEvent(`tab ${number(sessionID)} running`)
   }
-  const prompt = (sessionID: string) => {
+  const prompt = (sessionID: Session.ID) => {
     const wasBusy = controller.status(sessionID).busy
     setStatuses((current) => {
       const status = current[sessionID] ?? EMPTY_SESSION_TAB_STATUS
@@ -306,7 +310,8 @@ function SessionTabsStory(props: { context: Plugin.Context }) {
     const running = values.filter((status) => status.busy && !status.attention).length
     const waiting = values.filter((status) => status.attention).length
     const unread = values.filter((status) => status.unread !== undefined).length
-    return [`selected ${number(active() ?? "")}`, `${running} running`, `${waiting} waiting`, `${unread} unread`].join(
+    const current = active()
+    return [`selected ${current ? number(current) : 0}`, `${running} running`, `${waiting} waiting`, `${unread} unread`].join(
       "  ·  ",
     )
   }
@@ -316,7 +321,7 @@ function SessionTabsStory(props: { context: Plugin.Context }) {
       setItems(FIXTURE_TABS.slice(0, 6).map((tab) => ({ ...tab })))
       setStatuses(showcase ? FIXTURE_STATUSES : {})
       setOutcomes(showcase ? FIXTURE_OUTCOMES : {})
-      setActive("fixture-1")
+      setActive(FIXTURE_TABS[0].sessionID)
       setSpinner("dots")
       setMarker("small-dot")
       setAnimations(true)
@@ -472,7 +477,7 @@ function SessionTabsStory(props: { context: Plugin.Context }) {
         run() {
           const count = tabs().length < 6 ? 6 : tabs().length < 12 ? 12 : 3
           setItems(FIXTURE_TABS.slice(0, count).map((tab) => ({ ...tab })))
-          if (!tabs().some((tab) => tab.sessionID === active())) setActive("fixture-1")
+          if (!tabs().some((tab) => tab.sessionID === active())) setActive(FIXTURE_TABS[0].sessionID)
         },
       },
       {

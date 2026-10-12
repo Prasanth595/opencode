@@ -1,5 +1,7 @@
 import type { MiniFrontendInput } from "@opencode/tui/mini"
 import { createModelPreferenceRepository } from "@opencode/tui/model-preference"
+import { Provider } from "@opencode/schema/provider"
+import { Model } from "@opencode/schema/model"
 import fs from "node:fs"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
@@ -20,11 +22,20 @@ function preferences(statePath: string): MiniHost["preferences"] {
   return {
     async resolveVariant(model) {
       if (!model) return
-      return repository.resolveVariant(model)
+      return repository.resolveVariant({
+        providerID: Provider.ID.make(model.providerID, { disableChecks: true }),
+        modelID: Model.ID.make(model.modelID, { disableChecks: true }),
+      })
     },
     async saveVariant(model, variant) {
       if (!model) return
-      await repository.saveVariant(model, variant).catch(() => undefined)
+      await repository.saveVariant(
+        {
+          providerID: Provider.ID.make(model.providerID, { disableChecks: true }),
+          modelID: Model.ID.make(model.modelID, { disableChecks: true }),
+        },
+        variant,
+      ).catch(() => undefined)
     },
   }
 }

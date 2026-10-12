@@ -4,6 +4,7 @@ import { Portal, useRenderer, useTerminalDimensions, type JSX } from "@opentui/s
 import type { TextareaRenderable } from "@opentui/core"
 import { useTheme, useThemes } from "../../context/theme"
 import type { PermissionReply, PermissionRequest } from "@opencode/client"
+import { SessionMessage } from "@opencode/schema/session-message"
 import { SplitBorder } from "../../ui/border"
 import { useData } from "../../context/data"
 import { filetype } from "../../util/filetype"
@@ -122,7 +123,10 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
   const source = createMemo(() => {
     const tool = props.request.source
     if (!tool) return { input: undefined, metadata: undefined }
-    const message = data.session.message.get(props.request.sessionID, tool.messageID)
+    const message = data.session.message.get(
+      props.request.sessionID,
+      SessionMessage.ID.make(tool.messageID, { disableChecks: true }),
+    )
     if (message?.type !== "assistant") return { input: undefined, metadata: undefined }
     const part = message.content.find((part) => part.type === "tool" && part.id === tool.id)
     if (part?.type === "tool" && part.state.status !== "streaming") {

@@ -1,3 +1,5 @@
+import { Shell } from "@opencode/schema/shell"
+import { SessionID } from "@opencode/schema/session-id"
 // Current Session tool presentation grouped by visual family.
 import {
   Component,
@@ -168,11 +170,11 @@ function relativizeProjectPath(path: string, directory?: string) {
 
   if (directory === "/") return path
 
-  if (directory === "\\") return path
+  if (directory === "\\\\") return path
 
   if (path === directory) return ""
 
-  const separator = directory.includes("\\") ? "\\" : "/"
+  const separator = directory.includes("\\\\") ? "\\\\" : "/"
   const prefix = directory.endsWith(separator) ? directory : directory + separator
 
   if (!path.startsWith(prefix)) return path
@@ -454,7 +456,7 @@ function urls(text: string | undefined) {
     })
 }
 
-function sessionLink(id: string | undefined, href?: (id: string) => string | undefined) {
+function sessionLink(id: SessionID | undefined, href?: (id: SessionID) => string | undefined) {
   if (!id) return undefined
 
   return href?.(id)
@@ -462,7 +464,7 @@ function sessionLink(id: string | undefined, href?: (id: string) => string | und
 
 function taskSession(
   input: Record<string, unknown>,
-  parentID: string | undefined,
+  parentID: SessionID | undefined,
   sessions: SessionSummary[] | undefined,
 ) {
   if (!parentID) return undefined
@@ -1208,7 +1210,7 @@ export interface ToolProps {
   input: Record<string, unknown>
   metadata: Record<string, unknown>
   tool: string
-  sessionID?: string
+  sessionID?: SessionID
   output?: string
   status?: string
   hideDetails?: boolean
@@ -1440,9 +1442,7 @@ export function ToolDisplay(
   const taskId = createMemo(() => {
     if (props.tool !== "subagent") return undefined
     const value = props.metadata.sessionID
-
-    if (typeof value === "string" && value) return value
-
+    if (typeof value === "string" && value) return SessionID.make(value, { disableChecks: true })
     return undefined
   })
 
@@ -1852,9 +1852,7 @@ ToolRegistry.register({
 
     const childSessionId = createMemo(() => {
       const value = props.metadata.sessionID
-
-      if (typeof value === "string" && value) return value
-
+      if (typeof value === "string" && value) return SessionID.make(value, { disableChecks: true })
       return taskSession(props.input, data.sessionID, data.store.session)
     })
 
@@ -2074,8 +2072,7 @@ ToolRegistry.register({
     const pending = () =>
       streaming() ||
       props.status === "running" ||
-      (typeof props.metadata.shellID === "string" && data.shellRunning?.(props.metadata.shellID) === true)
-
+      (typeof props.metadata.shellID === "string" && data.shellRunning?.(Shell.ID.make(props.metadata.shellID, { disableChecks: true })) === true)
     const sawStreaming = streaming()
 
     const command = () => {
@@ -2102,7 +2099,15 @@ ToolRegistry.register({
         const load = data.shellOutput
 
         if (typeof id !== "string" || !load) return
-        onCleanup(followShellOutput({ id, directory: data.directory, running: pending(), load, onOutput: setStreamed }))
+        onCleanup(
+          followShellOutput({
+            id: Shell.ID.make(id, { disableChecks: true }),
+            directory: data.directory,
+            running: pending(),
+            load,
+            onOutput: setStreamed,
+          }),
+        )
       })
 
       const output = createMemo(() =>

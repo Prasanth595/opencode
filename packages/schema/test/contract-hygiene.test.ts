@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { DateTime, Schema } from "effect"
+import { DateTime, Schema, SchemaAST } from "effect"
 import { Agent } from "../src/agent.js"
 import { ConfigAgent } from "../src/config/agent.js"
 import { ConfigProvider } from "../src/config/provider.js"
@@ -7,6 +7,7 @@ import { FileSystem } from "../src/filesystem.js"
 import { Form } from "../src/form.js"
 import { Mcp } from "../src/mcp.js"
 import { Model } from "../src/model.js"
+import { Plugin } from "../src/plugin.js"
 import { Project } from "../src/project.js"
 import { SkillAttachment } from "../src/prompt.js"
 import { Provider } from "../src/provider.js"
@@ -181,6 +182,10 @@ describe("contract hygiene", () => {
       Mcp.ResourceCatalog,
       Mcp.ResourceContentPart,
       Mcp.ResourceContent,
+      Model.ID,
+      Model.VariantID,
+      Plugin.ID,
+      Worktree.StrategyID,
       Model.Ref,
       Model.Capabilities,
       Model.Cost,
@@ -209,10 +214,13 @@ describe("contract hygiene", () => {
       SessionInbox.Info,
       Vcs.Branch,
       Vcs.Info,
-    ].map((schema) => schema.ast.annotations?.identifier)
+    ].map((schema) => SchemaAST.resolveIdentifier(schema.ast))
 
     expect(identifiers.every((identifier) => typeof identifier === "string")).toBe(true)
     expect(new Set(identifiers).size).toBe(identifiers.length)
+    expect(
+      [Model.ID, Model.VariantID, Plugin.ID, Worktree.StrategyID].map((schema) => SchemaAST.resolveIdentifier(schema.ast)),
+    ).toEqual(["Model.ID", "Model.VariantID", "Plugin.ID", "Worktree.StrategyID"])
   })
 
   test("all session inbox item types accept both delivery modes", () => {

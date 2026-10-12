@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { SessionMessage } from "@opencode/schema/session-message"
 import { createTwoFilesPatch } from "diff"
 import {
   defineVisualRegions,
@@ -469,14 +470,14 @@ test("handles a single row taller than the viewport", async ({ page }, testInfo)
 function history(count: number): TimelineMessage[] {
   return Array.from({ length: count }, (_, index) => {
     const prefix = `msg_${String(index).padStart(4, "0")}_scroll`
-    const userID = `${prefix}_a_user`
+    const userID = SessionMessage.ID.make(`${prefix}_a_user`, { disableChecks: true })
 
     return [
       userMessage(undefined, { id: userID, created: 1690000000000 + index * 10_000 }),
       assistantMessage(
         [textPart(`prt_${String(index).padStart(4, "0")}_scroll`, `History ${index}. ${"content ".repeat(30)}`)],
         {
-          id: `${prefix}_b_assistant`,
+          id: SessionMessage.ID.make(`${prefix}_b_assistant`, { disableChecks: true }),
           parentID: userID,
           created: 1690000001000 + index * 10_000,
         },

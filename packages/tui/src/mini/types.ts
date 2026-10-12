@@ -22,6 +22,7 @@ import type {
   SessionMessageAssistantTool,
 } from "@opencode/client/promise"
 import type { Config } from "../config"
+import { Form } from "@opencode/schema/form"
 import type { CliRenderer } from "@opentui/core"
 import type { SessionInbox } from "@opencode/schema/session-inbox"
 
@@ -382,14 +383,14 @@ export type PermissionReply = Parameters<OpenCodeClient["permission"]["reply"]>[
 
 export type FormReply = {
   sessionID: string
-  formID: string
+  formID: Form.ID
   answer: FormAnswer
   location?: LocationRef
 }
 
 export type FormCancel = {
   sessionID: string
-  formID: string
+  formID: Form.ID
   location?: LocationRef
 }
 

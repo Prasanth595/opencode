@@ -1,3 +1,5 @@
+import type { Shell } from "@opencode/schema/shell"
+import type { SessionID } from "@opencode/schema/session-id"
 import type {
   FileDiffInfo,
   SessionInfo,
@@ -26,27 +28,27 @@ type Data = {
   provider?: ProviderCatalog
   session: SessionSummary[]
   session_status: {
-    [sessionID: string]: SessionStatus
+    [sessionID: SessionID]: SessionStatus
   }
   session_diff: {
-    [sessionID: string]: FileDiffInfo[]
+    [sessionID: SessionID]: FileDiffInfo[]
   }
   session_diff_preload?: {
-    [sessionID: string]: PreloadMultiFileDiffResult<unknown, undefined>[]
+    [sessionID: SessionID]: PreloadMultiFileDiffResult<unknown, undefined>[]
   }
 }
 
-export type NavigateToSessionFn = (sessionID: string) => void
+export type NavigateToSessionFn = (sessionID: SessionID) => void
 
-export type SessionHrefFn = (sessionID: string) => string
+export type SessionHrefFn = (sessionID: SessionID) => string
 
 export const { use: useData, provider: DataProvider } = createSimpleContext({
   name: "Data",
   init: (props: {
     data: Data
     directory: string
-    sessionID?: string
-    shellRunning?: (id: string) => boolean
+    sessionID?: SessionID
+    shellRunning?: (id: Shell.ID) => boolean
     shellOutput?: (input: ShellOutputInput) => Promise<ShellOutputOutput>
     onNavigateToSession?: NavigateToSessionFn
     onSessionHref?: SessionHrefFn

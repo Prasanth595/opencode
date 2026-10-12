@@ -1,6 +1,7 @@
 import { Plugin } from "@opencode/plugin/tui"
 import { createMemo, Show } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
+import { Session } from "@opencode/schema/session"
 import { FilePath } from "../../ui/file-path"
 import { useWorkingDirectoryActions } from "../../ui/working-directory-actions"
 import { usePromptMove } from "../../component/prompt/move"
@@ -78,7 +79,7 @@ function SidebarFooter(props: { context: Plugin.Context; sessionID: string }) {
   const session = createMemo(() => props.context.data.session.get(props.sessionID))
   const move = usePromptMove({
     projectID: () => session()?.projectID,
-    sessionID: () => props.sessionID,
+    sessionID: () => Session.ID.make(props.sessionID, { disableChecks: true }),
   })
   const actions = useWorkingDirectoryActions({
     directory: () => props.context.location?.directory,

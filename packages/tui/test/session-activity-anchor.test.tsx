@@ -2,6 +2,10 @@ import { expect, test } from "bun:test"
 import { createTestRenderer, TestRecorder } from "@opentui/core/testing"
 import { Effect, FileSystem } from "effect"
 import { Global } from "@opencode/util/global"
+import { Agent } from "@opencode/schema/agent"
+import { Model } from "@opencode/schema/model"
+import { Provider } from "@opencode/schema/provider"
+import { SessionMessage } from "@opencode/schema/session-message"
 import type { SessionMessageInfo } from "@opencode/client"
 import { createEventStream, createFetch, directory, json } from "./fixture/tui-client"
 import { tmpdir } from "./fixture/fixture"
@@ -17,14 +21,22 @@ const session = {
   tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
   time: { created: 0, updated: 0 },
 }
-const model = { providerID: "fixture", id: "fixture" }
+const model = {
+  providerID: Provider.ID.make("fixture", { disableChecks: true }),
+  id: Model.ID.make("fixture", { disableChecks: true }),
+}
 // Turn N runs N + 2 commands, so every Low summary label is unique.
 const messages: SessionMessageInfo[] = Array.from({ length: 6 }, (_, turn) => [
-  { type: "user" as const, id: `user-${turn}`, text: `Turn ${turn} prompt`, time: { created: turn * 10 } },
+  {
+    type: "user" as const,
+    id: SessionMessage.ID.make(`user-${turn}`, { disableChecks: true }),
+    text: `Turn ${turn} prompt`,
+    time: { created: turn * 10 },
+  },
   {
     type: "assistant" as const,
-    id: `assistant-${turn}`,
-    agent: "build",
+    id: SessionMessage.ID.make(`assistant-${turn}`, { disableChecks: true }),
+    agent: Agent.ID.make("build", { disableChecks: true }),
     model,
     finish: "stop" as const,
     time: { created: turn * 10 + 1, completed: turn * 10 + 3 },
@@ -49,11 +61,16 @@ const messages: SessionMessageInfo[] = Array.from({ length: 6 }, (_, turn) => [
 ]).flat()
 // A turn still running its commands, so its summary ends the transcript.
 const running: SessionMessageInfo[] = [
-  { type: "user", id: "user-running", text: "Running prompt", time: { created: 100 } },
+  {
+    type: "user",
+    id: SessionMessage.ID.make("user-running", { disableChecks: true }),
+    text: "Running prompt",
+    time: { created: 100 },
+  },
   {
     type: "assistant",
-    id: "assistant-running",
-    agent: "build",
+    id: SessionMessage.ID.make("assistant-running", { disableChecks: true }),
+    agent: Agent.ID.make("build", { disableChecks: true }),
     model,
     time: { created: 101 },
     content: Array.from({ length: 1 }, (_, index) => ({

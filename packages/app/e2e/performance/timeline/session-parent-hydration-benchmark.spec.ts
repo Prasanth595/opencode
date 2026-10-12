@@ -1,4 +1,5 @@
 import type { SessionMessageAssistant, SessionMessageInfo, SessionMessageUser } from "@opencode/client/promise"
+import { SessionMessage } from "@opencode/schema/session-message"
 import type { Page } from "@playwright/test"
 import { expectSessionTitle } from "../../utils/waits"
 import { mockOpenCodeServer } from "../../utils/mock-server"
@@ -13,7 +14,7 @@ const mode = process.env.SESSION_PARENT_HYDRATION_BENCHMARK_MODE ?? "natural"
 
 if (mode !== "natural" && mode !== "candidate") throw new Error(`Unknown parent hydration benchmark mode: ${mode}`)
 
-const userID = "msg_parent_hydration_user"
+const userID = SessionMessage.ID.make("msg_parent_hydration_user", { disableChecks: true })
 
 const userSeed = fixture.messages[fixture.targetID][0] as SessionMessageUser
 
@@ -26,7 +27,9 @@ const user = {
 const assistantSeed = fixture.messages[fixture.targetID][3] as SessionMessageAssistant
 
 const assistants = Array.from({ length: 14 }, (_, index) => {
-  const messageID = `msg_parent_hydration_${String(index).padStart(2, "0")}`
+  const messageID = SessionMessage.ID.make(`msg_parent_hydration_${String(index).padStart(2, "0")}`, {
+    disableChecks: true,
+  })
 
   return {
     ...assistantSeed,

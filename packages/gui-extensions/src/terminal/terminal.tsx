@@ -268,7 +268,7 @@ export const Terminal = (props: TerminalProps) => {
   const pushSize = async (cols: number, rows: number) => {
     return server.client.pty
       .update({
-        ptyID: id,
+        ptyID: id as any,
         location: { directory },
         size: { cols, rows },
       })
@@ -602,7 +602,7 @@ export const Terminal = (props: TerminalProps) => {
 
       const gone = async () => {
         return server.client.pty
-          .get({ ptyID: id, location: { directory } })
+          .get({ ptyID: id as any, location: { directory } })
           .then((result) => result.data.status === "exited")
           .catch((err) => {
             if (Predicate.isTagged(err, "PtyNotFoundError")) return true
@@ -643,7 +643,7 @@ export const Terminal = (props: TerminalProps) => {
 
         const socket = await createPtyClient(server.client, { url: server.url })
           .connect({
-            ptyID: id,
+            ptyID: id as any,
             location: { directory },
             cursor: seek,
           })

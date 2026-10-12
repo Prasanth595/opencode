@@ -98,6 +98,11 @@ await Effect.runPromise(
       write(
         emitPromise(promiseContract, {
           mutableOutputs: true,
+          brandReferences: [
+            ...effectTypeReferences.filter((reference) => reference.name.endsWith("ID")),
+            ...effectTypeReferences.filter((reference) => reference.name.endsWith("URI")),
+          ],
+
         }),
         fileURLToPath(new URL("../src/promise/generated", import.meta.url)),
       ),

@@ -32,6 +32,7 @@ import { useSessionTabs } from "../context/session-tabs"
 import { useOptionalPanel } from "../context/panel"
 import { useLocal } from "../context/local"
 import { abbreviateHome } from "../util/path-format"
+import { Session } from "@opencode/schema/session"
 
 export type Dispose = () => Promise<void>
 
@@ -119,14 +120,22 @@ export function createPluginContext(input: {
         return
       }
       const route = host.route.data
-      if (route.type === "session" && host.data.session.root(route.sessionID) === host.data.session.root(sessionID)) {
+      if (
+        route.type === "session" &&
+        host.data.session.root(route.sessionID) ===
+          host.data.session.root(Session.ID.make(sessionID, { disableChecks: true }))
+      ) {
         host.toast.show(toast)
         return
       }
       host.toast.show({
         ...toast,
-        title: toast.title ?? host.data.session.get(sessionID)?.title,
-        action: { label: "Open", run: () => host.route.navigate({ type: "session", sessionID }) },
+        title: toast.title ?? host.data.session.get(Session.ID.make(sessionID, { disableChecks: true }))?.title,
+        action: {
+          label: "Open",
+          run: () =>
+            host.route.navigate({ type: "session", sessionID: Session.ID.make(sessionID, { disableChecks: true }) }),
+        },
       })
     },
   }
@@ -221,6 +230,13 @@ export function createPluginContext(input: {
             host.route.navigate({ ...destination, id: "id" in destination ? destination.id : input.id })
             return
           }
+          if (destination.type === "session") {
+            host.route.navigate({
+              ...destination,
+              sessionID: Session.ID.make(destination.sessionID, { disableChecks: true }),
+            })
+            return
+          }
           host.route.navigate(destination)
         },
         current() {
@@ -266,7 +282,7 @@ export function createPluginContext(input: {
         },
         move(sessionID, index) {
           if (!host.sessionTabs.enabled()) return false
-          const target = host.data.session.root(sessionID)
+          const target = host.data.session.root(Session.ID.make(sessionID, { disableChecks: true }))
           if (!host.sessionTabs.tabs().some((tab) => tab.sessionID === target)) return false
           host.sessionTabs.move(target, index)
           return true
@@ -289,7 +305,7 @@ export function createPluginContext(input: {
           list: () => host.local.model.variant.list(),
           set(variant) {
             if (!host.local.model.selection()) return false
-            if (variant !== undefined && !host.local.model.variant.list().includes(variant)) return false
+            if (variant !== undefined && !host.local.model.variant.list().some((item) => item === variant)) return false
             host.local.model.variant.set(variant)
             return true
           },

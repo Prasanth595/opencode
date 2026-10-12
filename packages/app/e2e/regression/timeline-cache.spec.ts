@@ -1,5 +1,11 @@
 import { expect, test, type Page } from "@playwright/test"
 import type { SessionMessageInfo } from "@opencode/client/promise"
+import { Agent } from "@opencode/schema/agent"
+import { Event } from "@opencode/schema/event"
+import { Model } from "@opencode/schema/model"
+import { Provider } from "@opencode/schema/provider"
+import { Session } from "@opencode/schema/session"
+import { SessionMessage } from "@opencode/schema/session-message"
 import { timelinePresets } from "@opencode/session-ui/timeline/detail"
 import { expected, messages } from "../utils/markdown-sessions"
 import { expectPath, seed, sessionHref, type SeedInput } from "../utils/app"
@@ -69,14 +75,30 @@ for (const width of [1440, 390]) {
 }
 
 test("paints cold and warm session tabs at the latest message", async ({ page }) => {
-  await openTabs(page, { pageMessages: (id) => ({ items: fixture.messages[id] ?? [] }) })
+  const requested = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  await openTabs(page, {
+    pageMessages: (id) => ({ items: fixture.messages[id] ?? [] }),
+    beforeMessagesResponse: async ({ sessionID }) => {
+      if (sessionID !== fixture.targetID) return
+      requested.resolve()
+      await release.promise
+    },
+  })
   await installTimelineSettings(page)
   await page.goto(sessionHref(fixture.sourceID))
   await expectAtTail(page, fixture.expected.sourceMessageIDs.at(-1)!)
 
   // Cold: the first painted frame of the destination is already at its tail.
   const cold = await sampleTabPaint(page, fixture.targetID)
-  await tab(page, fixture.targetID).click()
+  try {
+    await tab(page, fixture.targetID).click()
+    await requested.promise
+    await expectAtTail(page, fixture.expected.sourceMessageIDs.at(-1)!)
+    await expectPath(page, sessionHref(fixture.sourceID))
+  } finally {
+    release.resolve()
+  }
   const coldPaint = await cold.firstPaint()
   expect(coldPaint.last).toBe(true)
   expect(Math.abs(coldPaint.bottomError ?? Infinity)).toBeLessThanOrEqual(1)
@@ -161,6 +183,7 @@ test("recovers from a failed cold history load when another session is selected"
 })
 
 test("focuses Find in the selected cached timeline", async ({ page }) => {
+  const modifier = await page.evaluate(() => (/Mac|iPod|iPhone|iPad/.test(navigator.platform) ? "Meta" : "Control"))
   await openTabs(page, { pageMessages: placeholderHistory })
   await page.goto(sessionHref(fixture.sourceID))
   await expect(page.getByText(`History for ${fixture.sourceID}`, { exact: true })).toBeVisible()
@@ -168,20 +191,20 @@ test("focuses Find in the selected cached timeline", async ({ page }) => {
   await expect(page.getByText(`History for ${fixture.targetID}`, { exact: true })).toBeVisible()
   await tab(page, fixture.sourceID).click()
   await expect(page.getByText(`History for ${fixture.sourceID}`, { exact: true })).toBeVisible()
-  await page.keyboard.press("ControlOrMeta+f")
+  await page.keyboard.press(`${modifier}+f`)
   const search = page.locator('[data-component="timeline-search-bar"] input')
   await expect(search).toBeFocused()
   await page.keyboard.type("History")
   await expect(search).toHaveValue("History")
   await tab(page, fixture.targetID).click()
   await expect(page.getByText(`History for ${fixture.targetID}`, { exact: true })).toBeVisible()
-  await page.keyboard.press("ControlOrMeta+f")
+  await page.keyboard.press(`${modifier}+f`)
   await expect(search).toBeFocused()
   await search.press("Escape")
   await expect(search).toHaveCount(0)
 })
 
-test("disposes the old workspace's shell while destination history is loading", async ({ page }) => {
+test("disposes the old workspace's shell when the prepared destination is selected", async ({ page }) => {
   const destination = "C:/OpenCode/OtherProject"
   const requested = Promise.withResolvers<void>()
   const release = Promise.withResolvers<void>()
@@ -197,12 +220,12 @@ test("disposes the old workspace's shell while destination history is loading", 
         items:
           id === fixture.sourceID
             ? ([
-                { id: "msg_workspace_source", type: "user", text: "Follow the shell", time: { created: 1 } },
+                { id: SessionMessage.ID.make("msg_workspace_source", { disableChecks: true }), type: "user", text: "Follow the shell", time: { created: 1 } },
                 {
-                  id: "msg_workspace_shell",
+                  id: SessionMessage.ID.make("msg_workspace_shell", { disableChecks: true }),
                   type: "assistant",
-                  agent: "build",
-                  model: { id: "claude-opus-4-6", providerID: "opencode" },
+                  agent: Agent.ID.make("build", { disableChecks: true }),
+                  model: { id: Model.ID.make("claude-opus-4-6", { disableChecks: true }), providerID: Provider.ID.make("opencode", { disableChecks: true }) },
                   time: { created: 2 },
                   content: [
                     {
@@ -252,6 +275,8 @@ test("disposes the old workspace's shell while destination history is loading", 
   try {
     await tab(page, fixture.targetID).click()
     await requested.promise
+    await expect(shell.locator('[data-slot="bash-result"]')).toContainText("Initial shell output")
+    release.resolve()
     await expect(page.locator("[data-session-title]")).toHaveText(fixture.expected.targetTitle)
     output.text += "Output after returning\n"
     await tab(page, fixture.sourceID).click()
@@ -268,7 +293,7 @@ test("loads the transcript code font before opening rich history", async ({ page
   const font = page.waitForResponse((response) => /IBMPlexMono-Text[^/]*\.woff2/.test(response.url()))
   await openTabs(page, {
     pageMessages: () => ({
-      items: [{ id: "msg_font_source", type: "user", text: "A transcript with no code", time: { created: 1 } }],
+      items: [{ id: SessionMessage.ID.make("msg_font_source", { disableChecks: true }), type: "user", text: "A transcript with no code", time: { created: 1 } }],
     }),
   })
   await page.goto(sessionHref(fixture.sourceID))
@@ -294,7 +319,8 @@ test("waits for the requested session's history before constructing its cold tim
   try {
     await tab(page, fixture.targetID).click()
     await requested.promise
-    await expect(page.locator("[data-timeline-virtual-content]")).toHaveCount(0)
+    await expectAtTail(page, fixture.expected.sourceMessageIDs.at(-1)!)
+    await expect(page.locator(`[data-message-id="${fixture.expected.targetMessageIDs.at(-1)!}"]`)).toHaveCount(0)
     release.resolve()
     await expectAtTail(page, fixture.expected.targetMessageIDs.at(-1)!)
     await expect(page.locator("[data-timeline-virtual-content]")).toHaveCount(1)
@@ -311,12 +337,12 @@ for (const grouped of [true, false]) {
       [fixture.sourceID, fixture.targetID].map((id) => [
         id,
         [
-          { id: `msg_user_${id}`, type: "user", text: `Prompt for ${id}`, time: { created: 1 } },
+          { id: SessionMessage.ID.make(`msg_user_${id}`, { disableChecks: true }), type: "user", text: `Prompt for ${id}`, time: { created: 1 } },
           {
-            id: `msg_assistant_${id}`,
+            id: SessionMessage.ID.make(`msg_assistant_${id}`, { disableChecks: true }),
             type: "assistant",
-            agent: "build",
-            model: { id: "claude-opus-4-6", providerID: "opencode" },
+            agent: Agent.ID.make("build", { disableChecks: true }),
+            model: { id: Model.ID.make("claude-opus-4-6", { disableChecks: true }), providerID: Provider.ID.make("opencode", { disableChecks: true }) },
             time: { created: 2, completed: 3 },
             content: [
               {
@@ -375,14 +401,14 @@ for (const grouped of [true, false]) {
     await expect(page.locator("[data-timeline-virtual-content]")).toHaveCount(1)
     await mock.push([
       {
-        id: "evt_cached_text",
+        id: Event.ID.make("evt_cached_text", { disableChecks: true }),
         created: 4,
         type: "session.text.ended",
         location: { directory: fixture.directory },
-        durable: { aggregateID: fixture.sourceID, seq: 0, version: 1 },
+        durable: { aggregateID: fixture.sourceID, seq: Event.Seq.make(0, { disableChecks: true }), version: 1 },
         data: {
           sessionID: fixture.sourceID,
-          assistantMessageID: `msg_assistant_${fixture.sourceID}`,
+          assistantMessageID: SessionMessage.ID.make(`msg_assistant_${fixture.sourceID}`, { disableChecks: true }),
           ordinal: 0,
           text: "Updated while inactive",
         },
@@ -419,13 +445,13 @@ for (const grouped of [true, false]) {
   })
 }
 
-function placeholderHistory(id: string) {
-  return { items: [{ id: `msg_${id}`, type: "user", text: `History for ${id}`, time: { created: 1 } }] } satisfies {
+function placeholderHistory(id: Session.ID | string) {
+  return { items: [{ id: SessionMessage.ID.make(`msg_${id}`, { disableChecks: true }), type: "user" as const, text: `History for ${id}`, time: { created: 1 } }] } satisfies {
     items: SessionMessageInfo[]
   }
 }
 
-function tab(page: Page, sessionID: string) {
+function tab(page: Page, sessionID: Session.ID) {
   return page.locator(`[data-titlebar-tab-link][href="${sessionHref(sessionID)}"]`)
 }
 
@@ -449,7 +475,7 @@ async function openTimeline(page: Page, history: SessionMessageInfo[]) {
   await expect(page.locator("[data-timeline-virtual-content]")).toHaveCSS("visibility", "visible")
 }
 
-async function expectAtTail(page: Page, lastUserID: string) {
+async function expectAtTail(page: Page, lastUserID: SessionMessage.ID) {
   const content = page.locator("[data-timeline-virtual-content]")
   await expect(content).toHaveCSS("visibility", "visible")
   await expect(content.locator(`[data-timeline-row="UserMessage"][data-message-id="${lastUserID}"]`)).toBeInViewport()
@@ -466,11 +492,11 @@ type TabPaint = { first?: { last: boolean; bottomError?: number }; settled: bool
 
 // Samples painted frames of the timeline showing `sessionID`: the first frame that shows any of its messages, and
 // every node of the first settled frame (at the tail, Markdown rendered) that is later removed.
-async function sampleTabPaint(page: Page, sessionID: string) {
+async function sampleTabPaint(page: Page, sessionID: Session.ID) {
   const history = fixture.messages[sessionID]!
   await page.evaluate(
     ({ ids, last }) => {
-      const destination = new Set(ids)
+      const destination = new Set<string>(ids)
       const painted = new WeakSet<Node>()
       let running = true
 
