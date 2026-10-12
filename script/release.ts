@@ -149,9 +149,10 @@ async function generateReview(base: string, head: string) {
   }
 }
 
-// V1 history was merged into dev when V2 was promoted, so it must be excluded from the release range.
+// V1 history was merged into dev when V2 was promoted, so it must be excluded from the release range. Merges are skipped
+// because dev only takes squash merges, and the promotion merge would otherwise show the whole V1 tree.
 function commitRange(base: string, head: string) {
-  return `${base}..${head} --not origin/v1`
+  return `--no-merges ${base}..${head} --not origin/v1`
 }
 
 function reviewPrompt(base: string, head: string) {
