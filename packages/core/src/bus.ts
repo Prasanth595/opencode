@@ -324,7 +324,19 @@ export function configured(options?: Options) {
                           .where(eq(EventSequenceTable.aggregate_id, aggregateID))
                           .get()
                           .pipe(Effect.orDie)
-                        const latest = row?.seq ?? -1
+                        // Assign from the high-water mark of the counter and the
+                        // persisted log, not the counter alone: the counter can
+                        // fall behind stored rows (concurrent writers, manual
+                        // repairs), and assigning from it would collide with
+                        // the unique (aggregate_id, seq) index.
+                        const eventHigh = yield* db
+                          .select({ max: sql`max(${EventTable.seq})` })
+                          .from(EventTable)
+                          .where(eq(EventTable.aggregate_id, aggregateID))
+                          .get()
+                          .pipe(Effect.orDie)
+                        const eventMax = typeof eventHigh?.max === "number" ? eventHigh.max : -1
+                        const latest = Math.max(row?.seq ?? -1, eventMax)
                         const encoded = Schema.encodeUnknownSync(definition.data)(event.data) as Record<string, unknown>
                         if (input?.strictOwner && row?.ownerID && row.ownerID !== input.ownerID) {
                           yield* Effect.die(
@@ -585,7 +597,14 @@ export function configured(options?: Options) {
                             .where(eq(EventSequenceTable.aggregate_id, aggregateID))
                             .get()
                             .pipe(Effect.orDie)
-                          const firstSeq = (row?.seq ?? -1) + 1
+                          const batchHigh = yield* db
+                            .select({ max: sql`max(${EventTable.seq})` })
+                            .from(EventTable)
+                            .where(eq(EventTable.aggregate_id, aggregateID))
+                            .get()
+                            .pipe(Effect.orDie)
+                          const batchEventMax = typeof batchHigh?.max === "number" ? batchHigh.max : -1
+                          const firstSeq = Math.max(row?.seq ?? -1, batchEventMax) + 1
                           const finalSeq = firstSeq + payloads.length - 1
                           const queued = payloads.map((item, index) => ({
                             ...item.event,
@@ -643,7 +662,13 @@ export function configured(options?: Options) {
                           yield* db
                             .insert(EventSequenceTable)
                             .values([{ aggregate_id: aggregateID, seq: finalSeq }])
-                            .onConflictDoUpdate({ target: EventSequenceTable.aggregate_id, set: { seq: finalSeq } })
+                            .onConflictDoUpdate({
+                              target: EventSequenceTable.aggregate_id,
+                              // Never regress the counter: a batch computed
+                              // from a stale read must not overwrite a higher
+                              // value advanced concurrently.
+                              set: { seq: sql`max(${EventSequenceTable.seq}, ${finalSeq})` },
+                            })
                             .run()
                             .pipe(Effect.orDie)
                           if (persist) yield* db.insert(EventTable).values(rows).run().pipe(Effect.orDie)

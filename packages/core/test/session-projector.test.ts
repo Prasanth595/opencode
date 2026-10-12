@@ -8,7 +8,7 @@ import { LayerNode } from "@opencode/util/effect/layer-node"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { Bus } from "@opencode/core/bus"
 import { Event } from "@opencode/schema/event"
-import { EventTable } from "@opencode/core/event/sql"
+import { EventSequenceTable, EventTable } from "@opencode/core/event/sql"
 import { Model } from "@opencode/core/model"
 import { Project } from "@opencode/core/project"
 import { ProjectTable } from "@opencode/core/project/sql"
@@ -384,6 +384,58 @@ describe("SessionProjector", () => {
       expect(
         yield* db.select().from(SessionMessageTable).where(eq(SessionMessageTable.id, next)).get().pipe(Effect.orDie),
       ).toMatchObject({ session_id: sessionID, type: "user", seq: 4 })
+    }),
+  )
+
+  it.effect("assigns event seq past stored event rows when the counter is stale", () =>
+    Effect.gen(function* () {
+      const db = yield* seedSession()
+      const bus = yield* Bus.Service
+      const inbox = yield* SessionInbox.Service
+      // Persisted event rows ahead of the durable counter, as left by a
+      // concurrent writer or a counter regression. (inbox.admit consumes seq
+      // 12 via InboxEnqueued, so InboxDelivered takes seq 13.)
+      yield* db.insert(EventSequenceTable).values({ aggregate_id: sessionID, seq: 2 }).run().pipe(Effect.orDie)
+      for (const seq of [10, 11]) {
+        yield* db
+          .insert(EventTable)
+          .values({
+            id: Event.ID.make(`evt_seed_${seq}`),
+            aggregate_id: sessionID,
+            seq,
+            created: 0,
+            type: "test.seeded",
+            data: {},
+          })
+          .run()
+          .pipe(Effect.orDie)
+      }
+
+      const id = SessionMessage.ID.make("msg_after_stale_counter")
+      const admitted = yield* inbox.admit({
+        id,
+        sessionID,
+        item: { type: "user", payload: { text: "past stale counter" }, delivery: "steer" },
+      })
+      if (!admitted) return yield* Effect.die("Prompt admission failed")
+      yield* bus.publish(SessionEvent.InboxDelivered, {
+        sessionID,
+        inboxID: id,
+      })
+
+      // The event was assigned past the seeded rows instead of colliding with
+      // the unique (aggregate_id, seq) index, and the message followed it.
+      expect(
+        yield* db.select().from(SessionMessageTable).where(eq(SessionMessageTable.id, id)).get().pipe(Effect.orDie),
+      ).toMatchObject({ session_id: sessionID, type: "user", seq: 13 })
+      expect(
+        (yield* db
+          .select({ max: sql`max(${EventTable.seq})` })
+          .from(EventTable)
+          .where(eq(EventTable.aggregate_id, sessionID))
+          .get()
+          .pipe(Effect.orDie))?.max,
+      ).toBe(13)
     }),
   )
 
