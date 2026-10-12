@@ -184,6 +184,9 @@ export function createTuiAttention(input: {
       disposed = true
       input.renderer.off("focus", onFocus)
       input.renderer.off("blur", onBlur)
+      // Release the shared engine; otherwise its device stays open for the
+      // lifetime of the process even after the TUI is gone.
+      if (audio === TuiAudio) TuiAudio.dispose()
     },
   }
 }
