@@ -24,12 +24,7 @@ import { fromRow } from "@opencode/core/session/info"
 import { SessionInbox } from "@opencode/core/session/inbox"
 import { SessionStore } from "@opencode/core/session/store"
 import { Shell } from "@opencode/schema/shell"
-import {
-  InstructionStateTable,
-  SessionInboxTable,
-  SessionMessageTable,
-  SessionTable,
-} from "@opencode/core/session/sql"
+import { InstructionStateTable, SessionInboxTable, SessionMessageTable, SessionTable } from "@opencode/core/session/sql"
 import { testEffect } from "./lib/effect"
 import { Snapshot } from "@opencode/core/snapshot"
 
@@ -331,6 +326,64 @@ describe("SessionProjector", () => {
       expect(
         yield* db.select().from(SessionMessageTable).where(eq(SessionMessageTable.id, id)).get().pipe(Effect.orDie),
       ).toMatchObject({ session_id: sessionID, type: "user", seq: event.durable?.seq })
+    }),
+  )
+
+  it.effect("repairs a desynced aggregate counter instead of dropping the message", () =>
+    Effect.gen(function* () {
+      const db = yield* seedSession()
+      const bus = yield* Bus.Service
+      const inbox = yield* SessionInbox.Service
+      // A legacy row already occupies the seq the next delivered event receives
+      // (inbox.admit consumes seq 0 via InboxEnqueued, so InboxDelivered takes
+      // seq 1): the situation when the durable aggregate counter falls behind
+      // stored rows via forks, transfers, concurrent writers, or manual repairs.
+      yield* db
+        .insert(SessionMessageTable)
+        .values({
+          id: SessionMessage.ID.make("msg_legacy_squatter"),
+          session_id: sessionID,
+          type: "user",
+          seq: 1,
+          time_created: 0,
+          time_updated: 0,
+          data: { text: "legacy", time: { created: 0 } },
+        })
+        .run()
+        .pipe(Effect.orDie)
+
+      const id = SessionMessage.ID.make("msg_repaired")
+      const admitted = yield* inbox.admit({
+        id,
+        sessionID,
+        item: { type: "user", payload: { text: "repair me" }, delivery: "steer" },
+      })
+      if (!admitted) return yield* Effect.die("Prompt admission failed")
+      yield* bus.publish(SessionEvent.InboxDelivered, {
+        sessionID,
+        inboxID: id,
+      })
+
+      // Stored past the squatter instead of dying on UNIQUE(session_id, seq).
+      expect(
+        yield* db.select().from(SessionMessageTable).where(eq(SessionMessageTable.id, id)).get().pipe(Effect.orDie),
+      ).toMatchObject({ session_id: sessionID, type: "user", seq: 2 })
+
+      // The counter healed, so the following message continues cleanly.
+      const next = SessionMessage.ID.make("msg_next")
+      const admittedNext = yield* inbox.admit({
+        id: next,
+        sessionID,
+        item: { type: "user", payload: { text: "next" }, delivery: "steer" },
+      })
+      if (!admittedNext) return yield* Effect.die("Prompt admission failed")
+      yield* bus.publish(SessionEvent.InboxDelivered, {
+        sessionID,
+        inboxID: next,
+      })
+      expect(
+        yield* db.select().from(SessionMessageTable).where(eq(SessionMessageTable.id, next)).get().pipe(Effect.orDie),
+      ).toMatchObject({ session_id: sessionID, type: "user", seq: 4 })
     }),
   )
 

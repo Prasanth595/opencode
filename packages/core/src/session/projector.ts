@@ -7,6 +7,7 @@ import { Database } from "../database/database.js"
 import { Bus } from "../bus.js"
 import { makeGlobalNode } from "@opencode/util/effect/app-node"
 import { Agent } from "@opencode/schema/agent"
+import { Event } from "@opencode/schema/event"
 import { Model } from "@opencode/schema/model"
 import { SessionEvent } from "./event.js"
 import { SessionMessage } from "./message.js"
@@ -395,18 +396,41 @@ function run(db: DatabaseService, event: MessageEvent) {
 function insertMessage(db: DatabaseService, event: SessionEvent.DurableEvent, message: SessionMessage.Info) {
   const encoded = encodeMessage(message)
   const { id, type, ...data } = encoded
-  return db
-    .insert(SessionMessageTable)
-    .values({
-      id: SessionMessage.ID.make(id),
-      session_id: event.data.sessionID,
-      type,
-      seq: event.durable.seq,
-      time_created: DateTime.toEpochMillis(message.time.created),
-      data,
-    })
-    .run()
-    .pipe(Effect.orDie)
+  return Effect.gen(function* () {
+    let seq = event.durable.seq
+    // The durable aggregate counter can fall behind rows already stored (forks,
+    // transfers, concurrent writers, manual repairs). Inserting with a taken
+    // seq dies on UNIQUE(session_id, seq), drops the user's message while
+    // tokens burn, and wedges the session forever because the counter upsert
+    // runs after projection. Reassign past the stored max instead so the
+    // message lands and the counter heals via reserveSequence below.
+    const max = yield* db
+      .select({ max: sql`max(${SessionMessageTable.seq})` })
+      .from(SessionMessageTable)
+      .where(eq(SessionMessageTable.session_id, event.data.sessionID))
+      .get()
+      .pipe(Effect.orDie)
+    const stored = typeof max?.max === "number" ? max.max : -1
+    if (stored >= seq) {
+      seq = Event.Seq.make(stored + 1)
+      yield* Effect.logWarning(
+        `SessionMessage seq collision in session ${event.data.sessionID}: event requested seq ${event.durable.seq}, reassigned to ${seq}.`,
+      )
+      yield* Bus.reserveSequence(db, event.data.sessionID, seq)
+    }
+    yield* db
+      .insert(SessionMessageTable)
+      .values({
+        id: SessionMessage.ID.make(id),
+        session_id: event.data.sessionID,
+        type,
+        seq,
+        time_created: DateTime.toEpochMillis(message.time.created),
+        data,
+      })
+      .run()
+      .pipe(Effect.orDie)
+  })
 }
 
 function projectIdle(
