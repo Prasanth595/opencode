@@ -168,3 +168,9 @@ test("layer object bindings carry release events", async () => {
     app.renderer.destroy()
   }
 })
+
+test("object bindings without an ID fail validation", () => {
+  expect(() => Keymap.validateCommands([{ bind: { key: "f9", event: "release" }, run() {} }])).toThrow(
+    "Object keymap bindings require an ID",
+  )
+})

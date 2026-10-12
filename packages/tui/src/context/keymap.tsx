@@ -272,6 +272,7 @@ function groupCommands(commands: readonly KeymapCommand[] = []) {
       }
       if (command.palette) throw new Error("Palette commands require an ID")
       if (command.slash) throw new Error("Slash commands require an ID")
+      if (typeof command.bind === "object") throw new Error("Object keymap bindings require an ID")
       if (typeof command.bind !== "string") throw new Error("Inline keymap commands require bind")
       if (!command.bind) throw new Error("Keymap command bindings cannot be empty")
       result.inline.push({ ...command, id: undefined, bind: command.bind })
