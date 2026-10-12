@@ -935,7 +935,7 @@ const oversizeFrame = (id: number, bytes: number) =>
   ])
 
 test("delivers a frame above the SDK's 10 MiB default buffer", async () => {
-  const reader = await Effect.runPromise(
+  await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
         const reader = yield* stdioReader()
@@ -947,20 +947,21 @@ test("delivers a frame above the SDK's 10 MiB default buffer", async () => {
         yield* Effect.promise(() => reader.transport.start())
         yield* Queue.offer(reader.stdout, oversizeFrame(3, 11 * 1024 * 1024))
         yield* Deferred.await(done).pipe(Effect.timeout("5 seconds"))
-        return reader
+
+        // Assert before the scope tears down: teardown interrupts the stdout reader, which the
+        // unexpected-exit reporting in startOutput treats as a server exit, not a surviving transport.
+        expect(reader.received).toHaveLength(1)
+        expect(reader.received[0]).toMatchObject({ jsonrpc: "2.0", id: 3, result: { content: [{ type: "text" }] } })
+        expect(reader.closed).toEqual([])
+        expect(reader.errors).toEqual([])
       }),
     ),
   )
-
-  expect(reader.received).toHaveLength(1)
-  expect(reader.received[0]).toMatchObject({ jsonrpc: "2.0", id: 3, result: { content: [{ type: "text" }] } })
-  expect(reader.closed).toEqual([])
-  expect(reader.errors).toEqual([])
 })
 
 test("fails an oversized stdio frame without closing the transport", async () => {
   const limit = 16 * 1024 * 1024
-  const { received, closed, errors } = await Effect.runPromise(
+  await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
         const { stdout, transport, received, closed, errors } = yield* stdioReader()
@@ -973,21 +974,22 @@ test("fails an oversized stdio frame without closing the transport", async () =>
         yield* Queue.offer(stdout, oversizeFrame(7, limit + 1024))
         yield* Queue.offer(stdout, Buffer.from('{"jsonrpc":"2.0","id":8,"result":{}}\n'))
         yield* Deferred.await(done).pipe(Effect.timeout("5 seconds"))
-        return { received, closed, errors }
+
+        // Assert before the scope tears down: teardown interrupts the stdout reader, which the
+        // unexpected-exit reporting in startOutput treats as a server exit, not a surviving transport.
+        expect(received).toHaveLength(2)
+        const failure = received[0]
+        expect(failure).toMatchObject({ jsonrpc: "2.0", id: 7 })
+        if (failure === undefined || !("error" in failure)) throw new Error("Expected an error response for the oversized frame")
+        expect(failure.error.code).toBe(-32000)
+        expect(failure.error.message).toContain(`exceeded the ${limit} byte limit`)
+        expect(received[1]).toMatchObject({ jsonrpc: "2.0", id: 8, result: {} })
+        // The connection survives so the server's other tools keep working.
+        expect(closed).toEqual([])
+        expect(errors).toEqual([])
       }),
     ),
   )
-
-  expect(received).toHaveLength(2)
-  const failure = received[0]
-  expect(failure).toMatchObject({ jsonrpc: "2.0", id: 7 })
-  if (failure === undefined || !("error" in failure)) throw new Error("Expected an error response for the oversized frame")
-  expect(failure.error.code).toBe(-32000)
-  expect(failure.error.message).toContain(`exceeded the ${limit} byte limit`)
-  expect(received[1]).toMatchObject({ jsonrpc: "2.0", id: 8, result: {} })
-  // The connection survives so the server's other tools keep working.
-  expect(closed).toEqual([])
-  expect(errors).toEqual([])
 })
 
 test("applies the configured MCP catalog timeout", async () => {
