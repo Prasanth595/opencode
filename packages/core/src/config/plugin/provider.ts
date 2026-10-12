@@ -68,6 +68,8 @@ export const Plugin = define({
           if (item.canonical !== undefined) provider.canonical = item.canonical
           if (item.name !== undefined) provider.name = item.name
           if (item.package !== undefined) provider.package = item.package
+          if (item.compatibility !== undefined)
+            provider.compatibility = { ...provider.compatibility, ...item.compatibility }
           if (item.settings !== undefined) provider.settings = Provider.mergeOverlay(provider.settings, item.settings)
           if (item.headers !== undefined) provider.headers = Provider.mergeHeaders(provider.headers, item.headers)
           if (item.body !== undefined) provider.body = Provider.mergeOverlay(provider.body, item.body)
@@ -99,11 +101,6 @@ export const Plugin = define({
       if (configuredDefault !== undefined) models.default.set(configuredDefault.providerID, configuredDefault.model)
       for (const [item, definition] of sources.models) {
         const providerID = definition.providerID
-        if (item.compatibility !== undefined)
-          for (const model of models.list(providerID))
-            models.update(providerID, model.id, (draft) => {
-              draft.compatibility = { ...draft.compatibility, ...item.compatibility }
-            })
         for (const [id, config] of Object.entries(item.models ?? {})) {
           const source = definition.models.get(id)
           const inherit = source?.inherit || !models.get(providerID, id)
@@ -116,9 +113,8 @@ export const Plugin = define({
             if (config.family !== undefined) model.family = config.family
             if (config.name !== undefined) model.name = config.name
             if (config.modelID !== undefined) model.modelID = config.modelID
-            // Configured models may be created or rebased above, so apply provider defaults before model overrides.
-            if (item.compatibility !== undefined || config.compatibility !== undefined)
-              model.compatibility = { ...model.compatibility, ...item.compatibility, ...config.compatibility }
+            if (config.compatibility !== undefined)
+              model.compatibility = { ...model.compatibility, ...config.compatibility }
             if (config.package !== undefined) model.package = config.package
             if (config.settings !== undefined) model.settings = Provider.mergeOverlay(model.settings, config.settings)
             if (config.headers !== undefined) model.headers = Provider.mergeHeaders(model.headers, config.headers)

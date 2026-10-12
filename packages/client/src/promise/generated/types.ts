@@ -887,18 +887,6 @@ export type ProviderRequest = {
   body: { [x: string]: any }
 }
 
-export type ProviderInfo = {
-  id: ProviderID
-  canonical?: ProviderID
-  integrationID?: IntegrationID
-  name: string
-  activation: "auto" | "enabled" | "disabled"
-  package: string
-  settings?: ProviderSettings
-  headers?: { [x: string]: string }
-  body?: { [x: string]: any }
-}
-
 export type PermissionRuleset = Array<PermissionRule>
 
 export type SessionMessageUser = {
@@ -1910,6 +1898,19 @@ export type CredentialKey = {
   key: string
   metadata?: { [x: string]: JsonValue }
   configuration?: FormAnswer
+}
+
+export type ProviderInfo = {
+  id: ProviderID
+  canonical?: ProviderID
+  integrationID?: IntegrationID
+  name: string
+  activation: "auto" | "enabled" | "disabled"
+  package: string
+  compatibility?: ModelCompatibility
+  settings?: ProviderSettings
+  headers?: { [x: string]: string }
+  body?: { [x: string]: any }
 }
 
 export type ConnectionInfo = ConnectionCredentialInfo | ConnectionEnvInfo
