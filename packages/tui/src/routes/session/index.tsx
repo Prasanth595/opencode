@@ -75,6 +75,7 @@ import { useClipboard } from "../../context/clipboard"
 import { nextThinkingMode, reasoningSummary, useThinkingMode, type ThinkingMode } from "../../context/thinking"
 import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput } from "../../util/collapse-tool-output"
+import { subagentDuration } from "../../util/subagent-duration"
 import { usePluginRuntime } from "../../plugin/runtime"
 import { DialogRetryAction } from "../../component/dialog-retry-action"
 import { getRevertDiffFiles } from "../../util/revert-diff"
@@ -2252,12 +2253,7 @@ function Task(props: ToolProps) {
     return value
   })
 
-  const duration = createMemo(() => {
-    const first = messages().find((x) => x.role === "user")?.time.created
-    const assistant = messages().findLast((x) => x.role === "assistant")?.time.completed
-    if (!first || !assistant) return 0
-    return assistant - first
-  })
+  const duration = createMemo(() => subagentDuration(props.part.state, messages()))
 
   const content = createMemo(() => {
     const description = stringValue(props.input.description)
