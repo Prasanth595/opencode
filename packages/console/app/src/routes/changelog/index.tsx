@@ -15,7 +15,7 @@ import { LocaleLinks } from "~/component/locale-links"
 function formatDate(date: string, locale: string) {
   return new Date(`${date}T00:00:00Z`).toLocaleDateString(locale, {
     year: "numeric",
-    month: "short",
+    month: "long",
     day: "numeric",
     timeZone: "UTC",
   })
@@ -28,9 +28,9 @@ function Release(props: { entry: ChangelogEntry; open: boolean }) {
   return (
     <article data-component="release" id={props.entry.anchor}>
       <header>
-        <div data-slot="version">
+        <h2>
           <a href={`#${props.entry.anchor}`}>{props.entry.tag}</a>
-        </div>
+        </h2>
         <Show when={props.entry.date}>
           {(date) => <time dateTime={date()}>{formatDate(date(), language.tag(language.locale()))}</time>}
         </Show>
@@ -41,7 +41,7 @@ function Release(props: { entry: ChangelogEntry; open: boolean }) {
         </Show>
         <Show when={props.entry.highlights.length > 0}>
           <section data-component="highlights">
-            <h3>{i18n.t("changelog.highlights")}</h3>
+            <h3 data-slot="label">{i18n.t("changelog.highlights")}</h3>
             <ul>
               <For each={props.entry.highlights}>
                 {(item) => (
@@ -61,7 +61,9 @@ function Release(props: { entry: ChangelogEntry; open: boolean }) {
             <For each={props.entry.sections}>
               {(section) => (
                 <details data-component="section" open={props.open}>
-                  <summary>{section.title}</summary>
+                  <summary>
+                    <span data-slot="label">{section.title}</span>
+                  </summary>
                   <div data-slot="markdown" innerHTML={section.body} />
                 </details>
               )}
