@@ -416,7 +416,7 @@ export interface KeymapCommand {
   /** Enables or disables the command. */
   readonly enabled?: boolean | (() => boolean)
   /** Configures automatic binding, or disables it for a named command. */
-  readonly bind?: false | string
+  readonly bind?: false | string | { key: string; event?: "press" | "release" }
   /** Adds a named command to the command palette. */
   readonly palette?: true
   /** Adds a named command to prompt slash completion. */
