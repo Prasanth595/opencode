@@ -3,9 +3,9 @@ export * as Config from "./config.js"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
 import path from "path"
 import { isDeepStrictEqual } from "node:util"
-import { applyEdits, modify, type ParseError, parse } from "jsonc-parser"
+import { applyEdits, modify, type ParseError, parse, printParseErrorCode } from "jsonc-parser"
 import { Context, Effect, FiberMap, Layer, Option, PubSub, Ref, Schema, Semaphore, Stream } from "effect"
-import { Directory, Document, Info, type Patch, type Entry, Event } from "@opencode/schema/config"
+import { Directory, Document, Info, Rejected, type Patch, type Entry, Event } from "@opencode/schema/config"
 import { Credential } from "./credential.js"
 import { Bus } from "./bus.js"
 import { Watcher } from "./filesystem/watcher.js"
@@ -111,7 +111,7 @@ export const layer = (options?: Options) =>
             kind: "invalid",
             action: "rejected malformed JSON or JSONC document",
           })
-          return
+          return { rejected: parseErrorMessage(text, errors) }
         }
         const result = ConfigNormalize.normalize(input)
         yield* Effect.forEach(result.diagnostics, (diagnostic) =>
@@ -122,7 +122,12 @@ export const layer = (options?: Options) =>
             action: diagnostic.message,
           }),
         )
-        if (result.type === "rejected") return
+        if (result.type === "rejected")
+          return {
+            rejected:
+              result.diagnostics.map((diagnostic) => diagnostic.message).join("; ") ||
+              "configuration is not valid",
+          }
         const info = Option.getOrUndefined(decodeInfo(result.encoded))
         if (info) return info
         yield* Effect.logWarning("configuration normalization diagnostic", {
@@ -131,15 +136,19 @@ export const layer = (options?: Options) =>
           kind: "invalid",
           action: "rejected canonical configuration after final validation",
         })
+        return { rejected: "configuration is not valid" }
       })
 
       const loadFile = Effect.fnUntraced(function* (filepath: string) {
         const text = yield* fs.readFileStringSafe(filepath)
         if (text === undefined) return
         const substituted = yield* ConfigVariable.substitute({ type: "path", path: filepath, text })
-        const info = yield* parseInfo(substituted, filepath)
-        if (!info) return
-        return new Document({ type: "document", path: AbsolutePath.make(filepath), info })
+        const parsed = yield* parseInfo(substituted, filepath)
+        // A user-authored config file that cannot be parsed or validated stays a
+        // first-class entry so clients can report it instead of silently ignoring it.
+        if ("rejected" in parsed)
+          return new Rejected({ type: "rejected", path: AbsolutePath.make(filepath), reason: parsed.rejected })
+        return new Document({ type: "document", path: AbsolutePath.make(filepath), info: parsed })
       })
 
       const loadWellknownEntry = Effect.fnUntraced(function* (entry: WellKnown.Entry) {
@@ -166,7 +175,7 @@ export const layer = (options?: Options) =>
             env: variables,
           }).pipe(
             Effect.flatMap((text) => parseInfo(text, entry.origin)),
-            Effect.map((info) => (info ? new Document({ type: "document", info }) : undefined)),
+            Effect.map((parsed) => ("rejected" in parsed ? undefined : new Document({ type: "document", info: parsed }))),
           ),
         ).pipe(Effect.map((documents) => documents.filter((document) => document !== undefined)))
       })
@@ -185,7 +194,7 @@ export const layer = (options?: Options) =>
       const loadDirectory = Effect.fnUntraced(function* (directory: AbsolutePath) {
         return [
           ...(yield* Effect.forEach(ConfigDiscovery.names, (file) => loadFile(path.join(directory, file))).pipe(
-            Effect.map((configs) => configs.filter((config): config is Document => config !== undefined)),
+            Effect.map((configs) => configs.filter((config): config is Document | Rejected => config !== undefined)),
           )),
           new Directory({ type: "directory", path: directory }),
         ]
@@ -194,7 +203,7 @@ export const layer = (options?: Options) =>
       const load = Effect.fn("Config.load")(function* (sources: ConfigDiscovery.Sources) {
         const direct = yield* Effect.forEach(sources.direct, (filepath) => loadFile(filepath)).pipe(
           Effect.orDie,
-          Effect.map((entries) => entries.filter((entry): entry is Document => entry !== undefined)),
+          Effect.map((entries) => entries.filter((entry): entry is Document | Rejected => entry !== undefined)),
         )
 
         const explicit = sources.explicit
@@ -212,7 +221,7 @@ export const layer = (options?: Options) =>
                 text: options.content,
               }).pipe(
                 Effect.flatMap((text) => parseInfo(text, "OPENCODE_CONFIG_CONTENT")),
-                Effect.map((info) => (info ? [new Document({ type: "document", info })] : [])),
+                Effect.map((parsed) => ("rejected" in parsed ? [] : [new Document({ type: "document", info: parsed })])),
                 Effect.orDie,
               )
             : []
@@ -363,6 +372,17 @@ export const layer = (options?: Options) =>
       })
     }),
   )
+
+// Malformed JSONC becomes a rejected config entry, so each reason mirrors what
+// editors show: the parse error code plus where it occurred.
+function parseErrorMessage(text: string, errors: readonly ParseError[]) {
+  return errors
+    .map((error) => {
+      const before = text.substring(0, error.offset).split("\n")
+      return `${printParseErrorCode(error.error)} at line ${before.length}, column ${before[before.length - 1].length + 1}`
+    })
+    .join("; ")
+}
 
 export function configured(options?: Options) {
   return makeLocationNode({
