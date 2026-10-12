@@ -36,6 +36,7 @@ const RemoteModel = Schema.Struct({
       Schema.Boolean,
       Schema.Struct({
         field: Schema.Literals(["reasoning", "reasoning_content", "reasoning_details"]),
+        extract: Schema.optional(Schema.Literal("think-tags")),
       }),
     ]),
   ),

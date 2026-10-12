@@ -289,10 +289,36 @@ export function supportsText(model: Pick<Info, "capabilities">) {
   )
 }
 
-export function compatibility(input: unknown): Compatibility | undefined {
+/**
+ * Models that leak their chain-of-thought inline in `content` instead of a
+ * reasoning field, keyed by `provider/model`. Mirrors the per-model handling v1
+ * used for DeepSeek R1.
+ */
+const INLINE_REASONING_MODELS = new Set(["opencode/big-pickle"])
+
+export function compatibility(
+  input: unknown,
+  model?: { readonly providerID: Provider.ID; readonly modelID: ID },
+): Compatibility | undefined {
+  const parsed = parseCompatibility(input)
+  const extracted =
+    model && INLINE_REASONING_MODELS.has(`${model.providerID}/${model.modelID}`)
+      ? { extractReasoning: "think-tags" as const }
+      : undefined
+  if (parsed === undefined) return extracted
+  if (extracted === undefined) return parsed
+  return { ...parsed, ...extracted }
+}
+
+function parseCompatibility(input: unknown): Compatibility | undefined {
   if (typeof input === "string") return { reasoningField: input }
-  if (typeof input !== "object" || input === null || Array.isArray(input) || !("field" in input)) return undefined
-  return typeof input.field === "string" ? { reasoningField: input.field } : undefined
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return undefined
+  const reasoningField =
+    "field" in input && typeof input.field === "string" ? { reasoningField: input.field } : undefined
+  const extractReasoning =
+    "extract" in input && input.extract === "think-tags" ? { extractReasoning: "think-tags" as const } : undefined
+  if (reasoningField === undefined && extractReasoning === undefined) return undefined
+  return { ...reasoningField, ...extractReasoning }
 }
 
 export function parse(input: string): { providerID: Provider.ID; modelID: ID } {

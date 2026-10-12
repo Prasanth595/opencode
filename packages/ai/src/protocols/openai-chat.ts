@@ -312,6 +312,9 @@ export interface ParserState {
   readonly reasoningDetails: Array<ReasoningDetail>
   readonly reasoningDetailsObserved: boolean
   readonly reasoningEmitted: boolean
+  /** Opted-in inline chain-of-thought extraction is enabled for this model. */
+  readonly extractReasoning: boolean
+  readonly inlineReasoning: InlineReasoningState
   readonly latestToolIndex?: number
   readonly nextToolIndex: number
   readonly requireFinishReason: boolean
@@ -1040,6 +1043,89 @@ const reasoningMetadata = (
   },
 })
 
+// =============================================================================
+// Inline Reasoning Extraction
+// =============================================================================
+// Some models leak their chain-of-thought into `content` instead of a reasoning
+// field, terminating it with a literal closing tag (and sometimes opening with
+// an opening tag). The tags can be split across streaming deltas, so text is
+// held until a tag resolves whether it is reasoning or answer, and a trailing
+// partial tag is withheld. Only enabled for models opted in through
+// `compatibility.extractReasoning`.
+const THINK_OPEN = "<" + "think" + ">"
+const THINK_CLOSE = "</" + "think" + ">"
+
+type InlineReasoningMode = "unknown" | "reasoning" | "text"
+
+interface InlineReasoningState {
+  readonly mode: InlineReasoningMode
+  /** Content not yet classified, plus any withheld partial tag. */
+  readonly pending: string
+}
+
+interface InlineReasoningPart {
+  readonly kind: "reasoning" | "text"
+  readonly text: string
+}
+
+const inlineReasoningInitial: InlineReasoningState = { mode: "unknown", pending: "" }
+
+const splitInlineReasoning = (
+  state: InlineReasoningState,
+  chunk: string,
+): { readonly state: InlineReasoningState; readonly parts: ReadonlyArray<InlineReasoningPart> } => {
+  let buffer = state.pending + chunk
+  let mode = state.mode
+  const parts: InlineReasoningPart[] = []
+  while (buffer.length > 0 && mode !== "text") {
+    const tags = mode === "reasoning" ? [THINK_CLOSE] : [THINK_OPEN, THINK_CLOSE]
+    const found = tags
+      .map((tag) => ({ tag, at: buffer.indexOf(tag) }))
+      .filter((entry) => entry.at !== -1)
+      .sort((a, b) => a.at - b.at)[0]
+    if (found === undefined) {
+      if (mode === "reasoning") {
+        const hold = partialTagLength(buffer, [THINK_CLOSE])
+        if (buffer.length > hold) parts.push({ kind: "reasoning", text: buffer.slice(0, buffer.length - hold) })
+        buffer = buffer.slice(buffer.length - hold)
+      }
+      break
+    }
+    if (found.tag === THINK_OPEN) {
+      if (found.at > 0) parts.push({ kind: "text", text: buffer.slice(0, found.at) })
+      buffer = buffer.slice(found.at + THINK_OPEN.length)
+      mode = "reasoning"
+      continue
+    }
+    if (found.at > 0) parts.push({ kind: "reasoning", text: buffer.slice(0, found.at) })
+    buffer = buffer.slice(found.at + THINK_CLOSE.length)
+    mode = "text"
+  }
+  if (mode === "text" && buffer.length > 0) {
+    parts.push({ kind: "text", text: buffer })
+    buffer = ""
+  }
+  return { state: { mode, pending: buffer }, parts }
+}
+
+const flushInlineReasoning = (state: InlineReasoningState): ReadonlyArray<InlineReasoningPart> =>
+  state.pending.length === 0
+    ? []
+    : [{ kind: state.mode === "reasoning" ? "reasoning" : "text", text: state.pending }]
+
+const partialTagLength = (buffer: string, tags: ReadonlyArray<string>) => {
+  let longest = 0
+  for (const tag of tags) {
+    for (let length = Math.min(tag.length - 1, buffer.length); length > longest; length--) {
+      if (buffer.endsWith(tag.slice(0, length))) {
+        longest = length
+        break
+      }
+    }
+  }
+  return longest
+}
+
 const step = (state: ParserState, event: OpenAIChatEvent) =>
   Effect.gen(function* () {
     if (event.error) {
@@ -1076,6 +1162,7 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
     let nextToolIndex = state.nextToolIndex
 
     let lifecycle = state.lifecycle
+    let inlineReasoning = state.inlineReasoning
 
     const reasoning = reasoningDelta(delta, state.reasoningField)
     const hasLateContent =
@@ -1117,7 +1204,17 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
     // Reasoning is one response-wide channel: it stays open alongside text and
     // refusal output so late reasoning deltas and details join the same block,
     // and `finishEvents` closes it once with the complete metadata.
-    if (delta?.content) lifecycle = Lifecycle.textDelta(lifecycle, events, "text-0", delta.content)
+    if (delta?.content) {
+      if (state.extractReasoning) {
+        const split = splitInlineReasoning(inlineReasoning, delta.content)
+        inlineReasoning = split.state
+        for (const part of split.parts)
+          lifecycle =
+            part.kind === "reasoning"
+              ? Lifecycle.reasoningDelta(lifecycle, events, "reasoning-0", part.text)
+              : Lifecycle.textDelta(lifecycle, events, "text-0", part.text)
+      } else lifecycle = Lifecycle.textDelta(lifecycle, events, "text-0", delta.content)
+    }
 
     if (delta?.refusal) lifecycle = Lifecycle.textDelta(lifecycle, events, "text-0", delta.refusal)
 
@@ -1210,6 +1307,8 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
         reasoningDetails: state.reasoningDetails,
         reasoningDetailsObserved,
         reasoningEmitted,
+        extractReasoning: state.extractReasoning,
+        inlineReasoning,
         latestToolIndex,
         nextToolIndex,
         requireFinishReason: state.requireFinishReason,
@@ -1256,7 +1355,16 @@ export const finishEvents = Effect.fnUntraced(function* (state: ParserState) {
           reasoningMetadata(state.providerMetadataKey, state.reasoningField),
         )
       : state.lifecycle
-  const ended = Lifecycle.reasoningEnd(started, events, "reasoning-0", metadata)
+  // Inline extraction buffers content until a tag says whether it is reasoning
+  // or answer, so a stream that never carries a tag is flushed here as text.
+  let flushed = started
+  if (state.extractReasoning)
+    for (const part of flushInlineReasoning(state.inlineReasoning))
+      flushed =
+        part.kind === "reasoning"
+          ? Lifecycle.reasoningDelta(flushed, events, "reasoning-0", part.text)
+          : Lifecycle.textDelta(flushed, events, "text-0", part.text)
+  const ended = Lifecycle.reasoningEnd(flushed, events, "reasoning-0", metadata)
   const lifecycle = toolCallEvents.length ? Lifecycle.stepStart(ended, events) : ended
   events.push(...toolCallEvents)
   Lifecycle.finish(lifecycle, events, { reason, usage: state.usage })
@@ -1291,6 +1399,8 @@ export const protocol = Protocol.make({
       reasoningDetails: [],
       reasoningDetailsObserved: false,
       reasoningEmitted: false,
+      extractReasoning: request.model.compatibility?.extractReasoning === "think-tags",
+      inlineReasoning: inlineReasoningInitial,
       nextToolIndex: 0,
       requireFinishReason: request.model.compatibility?.requireFinishReason ?? true,
     }),

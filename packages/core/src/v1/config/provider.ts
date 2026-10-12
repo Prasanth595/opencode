@@ -20,6 +20,7 @@ export const Model = Schema.Struct({
       Schema.String,
       Schema.Struct({
         field: Schema.String,
+        extract: Schema.optional(Schema.String),
       }),
     ]),
   ),

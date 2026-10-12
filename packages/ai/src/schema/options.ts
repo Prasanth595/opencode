@@ -191,6 +191,13 @@ export class LanguageModelCompatibility extends Schema.Class<LanguageModelCompat
 )({
   sanitizer: Schema.optional(LanguageModelSanitizerCompatibility),
   reasoningField: Schema.optional(Schema.String),
+  /**
+   * Split inline chain-of-thought that a model leaks into `content`
+   * (`reasoning</think>answer`, optionally wrapped in ` thinking`) into the reasoning
+   * channel. Opt-in per model, because a legitimate answer can contain the same
+   * markers (for example code or docs about think tags).
+   */
+  extractReasoning: Schema.optional(Schema.Literals(["think-tags"])),
   /** Require every assistant message to include its reasoning field, even when empty. */
   requireReasoning: Schema.optional(Schema.Boolean),
   maxTokensField: Schema.optional(LanguageModelMaxTokensFieldCompatibility),

@@ -74,6 +74,13 @@ export const Overlays = {
 export interface Compatibility extends Schema.Schema.Type<typeof Compatibility> {}
 export const Compatibility = Schema.Struct({
   reasoningField: ReasoningField.pipe(optional),
+  /**
+   * Split inline chain-of-thought that a model leaks into `content`
+   * (`reasoning</think>answer`, optionally wrapped in ` thinking`) into the reasoning
+   * channel. Opt-in per model, because a legitimate answer can contain the same
+   * markers (for example code or docs about think tags).
+   */
+  extractReasoning: Schema.Literals(["think-tags"]).pipe(optional),
   /** Require every assistant message to include its reasoning field, even when empty. */
   requireReasoning: Schema.Boolean.pipe(optional),
   maxTokensField: MaxTokensField.pipe(optional),

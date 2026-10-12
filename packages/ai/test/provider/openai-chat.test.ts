@@ -234,6 +234,82 @@ describe("OpenAI Chat route", () => {
     }),
   )
 
+  describe("inline reasoning extraction", () => {
+    const OPEN_TAG = "<" + "think" + ">"
+    const CLOSE_TAG = "</" + "think" + ">"
+    const extracting = LanguageModel.update(model, { compatibility: { extractReasoning: "think-tags" } })
+
+    const stream = (chunks: ReadonlyArray<object>, target = extracting) =>
+      LLMClient.generate(
+        LLM.request({ id: "req_extract", model: target, system: "You are concise.", prompt: "Say hello." }),
+      ).pipe(
+        Effect.provide(
+          fixedResponse(
+            sseEvents(
+              deltaChunk({ role: "assistant" }),
+              ...chunks,
+              // An opted-in stream with no finish reason fails `requireFinishReason`.
+              deltaChunk({}, "stop"),
+              usageChunk({ prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 }),
+            ),
+          ),
+        ),
+      )
+
+    it.effect("moves chain-of-thought before the closing marker into reasoning", () =>
+      Effect.gen(function* () {
+        const response = yield* stream([deltaChunk({ content: "reasoning" + CLOSE_TAG + "answer" })])
+
+        expect(response.reasoning).toBe("reasoning")
+        expect(response.text).toBe("answer")
+        expect(response.events.some(LLMEvent.is.reasoningEnd)).toBe(true)
+      }),
+    )
+
+    it.effect("extracts a block wrapped in an opening marker", () =>
+      Effect.gen(function* () {
+        const response = yield* stream([
+          deltaChunk({ content: OPEN_TAG + "reasoning" }),
+          deltaChunk({ content: CLOSE_TAG + "answer" }),
+        ])
+
+        expect(response.reasoning).toBe("reasoning")
+        expect(response.text).toBe("answer")
+      }),
+    )
+
+    it.effect("detects a marker split across deltas", () =>
+      Effect.gen(function* () {
+        const response = yield* stream([
+          deltaChunk({ content: "reason" }),
+          deltaChunk({ content: "ing" + CLOSE_TAG.slice(0, 4) }),
+          deltaChunk({ content: CLOSE_TAG.slice(4) + "answer" }),
+        ])
+
+        expect(response.reasoning).toBe("reasoning")
+        expect(response.text).toBe("answer")
+      }),
+    )
+
+    it.effect("leaves content without a marker untouched", () =>
+      Effect.gen(function* () {
+        const response = yield* stream([deltaChunk({ content: "just an answer" })])
+
+        expect(response.text).toBe("just an answer")
+        expect(response.reasoning).toBe("")
+      }),
+    )
+
+    it.effect("does not split when the model did not opt in", () =>
+      Effect.gen(function* () {
+        const response = yield* stream([deltaChunk({ content: "reasoning" + CLOSE_TAG + "answer" })], model)
+
+        expect(response.reasoning).toBe("")
+        expect(response.text).toBe("reasoning" + CLOSE_TAG + "answer")
+      }),
+    )
+  })
+
   it.effect("maps OpenAI provider options to Chat options", () =>
     Effect.gen(function* () {
       const prepared = yield* compileRequest(
