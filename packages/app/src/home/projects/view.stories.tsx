@@ -11,7 +11,9 @@ const Nav = () => {
 
 export const HelpMenu = {
   render: () => (
-    <div class="w-[320px] rounded-[10px] bg-v2-background-bg-base p-4">
+    // The nav sits in a footer strip at the bottom of the home sidebar, so the story pins it there
+    // and the menu opens upward as it does in the app.
+    <div class="flex h-[520px] w-[320px] flex-col justify-end rounded-[10px] bg-v2-background-bg-base p-3">
       <Nav />
     </div>
   ),

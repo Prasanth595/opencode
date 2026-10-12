@@ -1,22 +1,14 @@
+import { DESKTOP_MENU } from "./commands/desktop-menu"
+
 /**
- * The support destinations the in-app Help menu offers, in the order it lists them.
+ * The support destinations the in-app Help menu offers, in the order the desktop menu bar lists them.
  *
- * The labels are the ones the desktop menu bar's Help group already ships in every locale
- * (`runtime/i18n/desktop-native.ts`), and the hrefs are the ones that group uses
- * (`shell/commands/desktop-menu.ts`) — so the two menus stay on the same destinations instead of
- * drifting apart. `desktop.menu.exportLogs` is deliberately left out: it runs a command rather than
- * opening a destination, so it does not belong in this menu. `help.test.ts` asserts the two lists
- * agree.
+ * Built from the Help group of `DESKTOP_MENU` so both menus stay on the same destinations and labels
+ * instead of drifting apart: the labels are the native keys every locale already ships
+ * (`runtime/i18n/desktop-native.ts`) and the hrefs are the ones that group opens. Its
+ * `desktop.menu.exportLogs` entry is filtered out with the rest of the commands, because it runs a
+ * command rather than opening a destination.
  */
-export const HELP_LINKS = [
-  { labelKey: "desktop.menu.documentation", href: "https://opencode.ai/docs" },
-  {
-    labelKey: "desktop.menu.shareFeedback",
-    href: "https://github.com/anomalyco/opencode/issues/new?template=feature_request.yml",
-  },
-  {
-    labelKey: "desktop.menu.reportBug",
-    href: "https://github.com/anomalyco/opencode/issues/new?template=bug_report.yml",
-  },
-  { labelKey: "desktop.menu.supportForum", href: "https://discord.com/invite/opencode" },
-] as const
+export const HELP_LINKS = (DESKTOP_MENU.find((menu) => menu.id === "help")?.items ?? []).flatMap((item) =>
+  item.type === "item" && item.href && item.labelKey ? [{ labelKey: item.labelKey, href: item.href }] : [],
+)
