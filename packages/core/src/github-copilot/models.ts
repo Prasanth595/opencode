@@ -5,6 +5,16 @@ import { Option, Schema } from "effect"
 import { Model } from "../model.js"
 import { Provider } from "../provider.js"
 
+const TokenPrice = Schema.Struct({
+  context_max: Schema.optional(Schema.Number),
+  max_prompt_tokens: Schema.optional(Schema.Number),
+  cache_price: Schema.optional(Schema.Number),
+  cache_read_price: Schema.optional(Schema.Number),
+  cache_write_price: Schema.optional(Schema.Number),
+  input_price: Schema.Number,
+  output_price: Schema.Number,
+})
+
 const RemoteModel = Schema.Struct({
   model_picker_enabled: Schema.Boolean,
   id: Schema.String,
@@ -17,13 +27,8 @@ const RemoteModel = Schema.Struct({
       token_prices: Schema.optional(
         Schema.Struct({
           batch_size: Schema.Number,
-          default: Schema.Struct({
-            // API version 2026-08-01 renamed cache_price to cache_read_price.
-            cache_price: Schema.optional(Schema.Number),
-            cache_read_price: Schema.optional(Schema.Number),
-            input_price: Schema.Number,
-            output_price: Schema.Number,
-          }),
+          default: TokenPrice,
+          long_context: Schema.optional(TokenPrice),
         }),
       ),
     }),
@@ -145,6 +150,11 @@ function build(id: Model.ID, remote: UsableModel, baseURL: string, previous?: Mo
   if (image) input.push("image")
   if (pdf) input.push("pdf")
   const prices = remote.billing?.token_prices
+  const boundary = prices?.default.context_max ?? prices?.default.max_prompt_tokens
+  const context =
+    prices?.long_context && boundary && boundary > 0 && remote.capabilities.limits.max_prompt_tokens > boundary
+      ? { default: boundary, long: remote.capabilities.limits.max_prompt_tokens }
+      : undefined
   // Copilot reports AIC per billing batch; OpenCode stores USD per million tokens.
   const usdPerMillion = prices && prices.batch_size > 0 ? 10_000 / prices.batch_size : 0
   const version = remote.version.startsWith(`${remote.id}-`)
@@ -181,12 +191,28 @@ function build(id: Model.ID, remote: UsableModel, baseURL: string, previous?: Mo
           read: Money.USDPerMillionTokens.make(
             (prices?.default.cache_read_price ?? prices?.default.cache_price ?? 0) * usdPerMillion,
           ),
-          write: Money.USDPerMillionTokens.zero,
+          write: Money.USDPerMillionTokens.make((prices?.default.cache_write_price ?? 0) * usdPerMillion),
         },
       },
+      ...(context && prices?.long_context
+        ? [
+            {
+              tier: { type: "context" as const, size: context.default },
+              input: Money.USDPerMillionTokens.make(prices.long_context.input_price * usdPerMillion),
+              output: Money.USDPerMillionTokens.make(prices.long_context.output_price * usdPerMillion),
+              cache: {
+                read: Money.USDPerMillionTokens.make(
+                  (prices.long_context.cache_read_price ?? prices.long_context.cache_price ?? 0) * usdPerMillion,
+                ),
+                write: Money.USDPerMillionTokens.make((prices.long_context.cache_write_price ?? 0) * usdPerMillion),
+              },
+            },
+          ]
+        : []),
     ],
     status: "active",
     enabled: remote.model_picker_enabled,
+    context,
     limit: {
       context: remote.capabilities.limits.max_context_window_tokens ?? remote.capabilities.limits.max_prompt_tokens,
       input: remote.capabilities.limits.max_prompt_tokens,

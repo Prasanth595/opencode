@@ -2061,6 +2061,7 @@ export type ModelInfo = {
   cost: Array<ModelCost>
   status: "alpha" | "beta" | "deprecated" | "active"
   enabled: boolean
+  context?: { default: number; long: number }
   limit: { context: number; input?: number; output: number }
 }
 

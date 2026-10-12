@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test"
 import { agent, model, renderLocal, session } from "../fixture/local"
 import { json } from "../fixture/tui-client"
+import { Model } from "@opencode/schema/model"
+import { ModelResolver } from "@opencode/core/model-resolver"
+import { Effect, Schema } from "effect"
 
 test("cycles all recent models in a stable order in both directions", async () => {
   await using setup = await renderLocal({
@@ -202,3 +205,75 @@ function selectionMessage(url: URL) {
     },
   })
 }
+test("context selection stays independent of reasoning and survives session navigation", async () => {
+  await using setup = await renderLocal({
+    models: [
+      {
+        ...model("first", ["medium", "high", "custom@v2", "explicit@long"]),
+        context: { default: 272_000, long: 922_000 },
+      },
+    ],
+    preferences: { variant: { "provider/first": "custom@v2@long" } },
+    sessions: [session("ses_first", { providerID: "provider", id: "first", variant: "medium@default" })],
+  })
+  expect(setup.local.model.selection()?.variant).toBe("custom@v2@long")
+  setup.route.navigate({ type: "session", sessionID: "ses_first" })
+  await setup.data.session.sync("ses_first")
+  expect(setup.local.model.variant.list()).toEqual(["medium", "high", "custom@v2", "explicit@long"])
+  expect(setup.local.model.variant.current()).toBe("medium")
+  setup.local.model.context.set("long")
+  expect(setup.local.model.selection()?.variant).toBe("medium@long")
+  setup.local.model.variant.set("high")
+  expect(setup.local.model.selection()?.variant).toBe("high@long")
+  setup.route.navigate({ type: "home" })
+  expect(setup.local.model.selection()?.variant).toBe("high@long")
+  setup.route.navigate({ type: "session", sessionID: "ses_first" })
+  expect(setup.local.model.context.current()).toBe("long")
+  expect(setup.local.model.variant.current()).toBe("high")
+  setup.local.model.context.set("default")
+  expect(setup.local.model.selection()?.variant).toBe("high@default")
+  setup.local.model.variant.set("explicit@long")
+  expect(setup.local.model.variant.current()).toBe("explicit@long")
+  expect(setup.local.model.variant.raw()).toBe("explicit@long@default")
+  setup.local.model.context.set("long")
+  expect(setup.local.model.variant.raw()).toBe("explicit@long@long")
+  setup.local.model.context.set("default")
+  expect(setup.local.model.variant.raw()).toBe("explicit@long@default")
+})
+
+test("context switching preserves a saved explicit suffix-named variant and its request overlays", async () => {
+  const catalog = {
+    ...model("first", ["high", "explicit@long"]),
+    variants: [
+      { id: "high", settings: { reasoningEffort: "high" } },
+      { id: "explicit@long", settings: { reasoningEffort: "low" }, headers: { custom: "yes" }, body: { custom: true } },
+    ],
+    context: { default: 272_000, long: 922_000 },
+    limit: { context: 1_050_000, input: 922_000, output: 128_000 },
+  }
+  await using setup = await renderLocal({
+    models: [catalog],
+    sessions: [session("ses_explicit", { providerID: "provider", id: "first", variant: "explicit@long" })],
+  })
+  setup.route.navigate({ type: "session", sessionID: "ses_explicit" })
+  await setup.data.session.sync("ses_explicit")
+  for (const tier of ["default", "long", "default"] as const) {
+    setup.local.model.context.set(tier)
+    expect(setup.local.model.variant.raw()).toBe(`explicit@long@${tier}`)
+    expect(setup.local.model.variant.current()).toBe("explicit@long")
+    const resolved = await Effect.runPromise(
+      ModelResolver.withVariant(
+        Schema.decodeUnknownSync(Model.Info)(catalog),
+        Model.VariantID.make(setup.local.model.variant.raw()!),
+      ),
+    )
+    expect(resolved.limit.input).toBe(catalog.context[tier])
+    expect(resolved.settings?.reasoningEffort).toBe("low")
+    expect(resolved.headers?.custom).toBe("yes")
+    expect(resolved.body?.custom).toBe(true)
+  }
+  setup.local.model.variant.set("high")
+  expect(setup.local.model.variant.raw()).toBe("high@default")
+  setup.local.model.variant.cycle()
+  expect(setup.local.model.variant.raw()).toBe("explicit@long@default")
+})

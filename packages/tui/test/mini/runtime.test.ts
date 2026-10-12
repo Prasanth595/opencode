@@ -57,15 +57,23 @@ describe("run interactive runtime", () => {
     const api = ui.api
     const selected = defer<Awaited<ReturnType<typeof sdk.model.default>>>()
     const catalogLoaded = defer<void>()
-    const defaultModelReloaded = defer<void>()
     const modelShown = defer<void>()
     const turnStarted = defer<void>()
-    const model = catalogModel({
-      id: "resolved",
-      providerID: "test",
-      name: "Resolved Model",
-      variants: ["low", "high"],
-    })
+    const model = {
+      ...catalogModel({
+        id: "resolved",
+        providerID: "test",
+        name: "Resolved Model",
+        variants: ["low", "high", "explicit@long"],
+      }),
+      context: { default: 32_000, long: 128_000 },
+    }
+    const preferences = host()
+    preferences.preferences.resolveVariant = async () => "high@long"
+    const saved: Array<string | undefined> = []
+    preferences.preferences.saveVariant = async (_, variant) => {
+      saved.push(variant)
+    }
     let lifecycle!: LifecycleInput
     let turnAgent: string | undefined
     let turnModel: { providerID: string; modelID: string } | undefined
@@ -74,12 +82,7 @@ describe("run interactive runtime", () => {
       providers: [catalogProvider("test", "Test Provider")],
       models: [model],
     })
-    let defaultModelCalls = 0
-    const defaultModel = spyOn(sdk.model, "default").mockImplementation(() => {
-      defaultModelCalls++
-      if (defaultModelCalls === 2) defaultModelReloaded.resolve()
-      return selected.promise
-    })
+    const defaultModel = spyOn(sdk.model, "default").mockImplementation(() => selected.promise)
     const emit = api.event.bind(api)
     api.event = (event) => {
       emit(event)
@@ -88,7 +91,7 @@ describe("run interactive runtime", () => {
 
     const task = runInteractiveDeferredMode(
       {
-        host: host(),
+        host: preferences,
         sdk,
         directory: "/tmp",
         target: async () => ({
@@ -149,14 +152,38 @@ describe("run interactive runtime", () => {
       location: { directory: "/tmp" },
       data: model,
     })
-    await defaultModelReloaded.promise
     await modelShown.promise
     expect(events).toContainEqual({
       type: "model",
-      model: "Resolved Model · Test Provider",
+      model: "Resolved Model · Test Provider · high · long context",
       selection: { providerID: "test", modelID: "resolved" },
     })
-    expect(lifecycle.onCycleVariant?.()).toMatchObject({ status: "variant low", variant: "low" })
+    expect(lifecycle.onCycleVariant?.()).toMatchObject({ variant: "explicit@long@long" })
+    expect(lifecycle.onCycleVariant?.()).toMatchObject({ variant: "default@long" })
+    expect(await lifecycle.onVariantSelect?.("explicit@long@default")).toMatchObject({
+      variant: "explicit@long@default",
+    })
+    expect(await lifecycle.onVariantSelect?.("low@default")).toMatchObject({ variant: "low@default" })
+    expect(await lifecycle.onVariantSelect?.("low@long")).toMatchObject({ variant: "low@long" })
+    await refreshCatalog?.()
+    expect(events).toContainEqual({
+      type: "variants",
+      variants: [
+        "low",
+        "high",
+        "explicit@long",
+        "default@default",
+        "low@default",
+        "high@default",
+        "explicit@long@default",
+        "default@long",
+        "low@long",
+        "high@long",
+        "explicit@long@long",
+      ],
+      current: "low@long",
+    })
+    expect(saved).toEqual(["explicit@long@long", "default@long", "explicit@long@default", "low@default", "low@long"])
     lifecycle.onAgentSelect?.("review")
     await ui.promptReady
     expect(ui.submit("hello")).toBe(true)

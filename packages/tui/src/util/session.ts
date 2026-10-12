@@ -66,10 +66,27 @@ export function contextUsage(
     last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
   if (tokens <= 0) return
   const model = models?.find((model) => model.providerID === last.model.providerID && model.id === last.model.id)
+  const budget = model?.context?.[last.model.variant?.endsWith("@long") ? "long" : "default"]
+  const input = budget === undefined ? undefined : Math.min(budget, model?.limit.input ?? budget)
+  const limit =
+    model && input !== undefined ? Math.min(model.limit.context, input + model.limit.output) : model?.limit.context
   return {
     tokens,
-    percent: model?.limit.context ? Math.round((tokens / model.limit.context) * 100) : undefined,
+    percent: limit ? Math.round((tokens / limit) * 100) : undefined,
   }
+}
+
+export function formatSessionCost(cost: number, messages: readonly SessionMessageInfo[]) {
+  const usage = messages.filter((message) => message.type === "assistant" || ("cost" in message && !!message.cost))
+  const total = messages.reduce((sum, message) => sum + ("cost" in message ? (message.cost ?? 0) : 0), 0)
+  const complete = Math.abs(total - cost) <= 1e-8 * Math.max(total, cost, Number.EPSILON)
+  if (
+    complete &&
+    usage.length > 0 &&
+    usage.every((message) => "model" in message && message.model?.providerID === "github-copilot")
+  )
+    return `${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(cost * 100)} AI credits`
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cost)
 }
 
 export function formatContextUsage(tokens: number, percent?: number) {

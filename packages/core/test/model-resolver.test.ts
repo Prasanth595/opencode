@@ -82,6 +82,69 @@ function withConfigEnv<A, E, R>(env: Record<string, string>, effect: () => Effec
 }
 
 describe("ModelResolver", () => {
+  it.effect("resolves context combinations without catalog entries and preserves explicit overlays", () =>
+    Effect.gen(function* () {
+      const catalog = Info.make({
+        ...model(undefined, {
+          settings: { reasoningSummary: "auto" },
+          variants: [
+            {
+              id: VariantID.make("custom@v2"),
+              settings: { reasoningEffort: "high" },
+              headers: { "x-effort": "high" },
+              body: { custom_extension: { effort: true } },
+            },
+            {
+              id: VariantID.make("custom@v2@long"),
+              settings: { reasoningSummary: "detailed" },
+              headers: { "x-effort": "override" },
+              body: { custom_extension: { tier: true } },
+            },
+            { id: VariantID.make("explicit@long"), body: { explicit: true } },
+          ],
+          limit: { context: 1_050_000, input: 922_000, output: 128_000 },
+        }),
+        context: { default: 272_000, long: 922_000 },
+      })
+      const synthetic = yield* ModelResolver.withVariant(catalog, VariantID.make("custom@v2@default"))
+      expect(synthetic.limit).toEqual({ context: 400_000, input: 272_000, output: 128_000 })
+      expect(synthetic.settings).toMatchObject({ reasoningEffort: "high", reasoningSummary: "auto" })
+      expect(synthetic.headers).toMatchObject({ "x-effort": "high" })
+      const explicit = yield* ModelResolver.withVariant(catalog, VariantID.make("custom@v2@long"))
+      expect(explicit.limit).toEqual(catalog.limit)
+      expect(explicit.settings).toMatchObject({ reasoningEffort: "high", reasoningSummary: "detailed" })
+      expect(explicit.headers).toMatchObject({ "x-effort": "override" })
+      expect(explicit.body).toEqual({ custom_extension: { enabled: true, effort: true, tier: true } })
+      expect((yield* ModelResolver.withVariant(catalog, VariantID.make("explicit@long"))).body?.explicit).toBe(true)
+      const nested = yield* ModelResolver.withVariant(catalog, VariantID.make("explicit@long@default"))
+      expect(nested.body?.explicit).toBe(true)
+      expect(nested.limit.input).toBe(272_000)
+      const configured = yield* ModelResolver.withVariant(catalog, VariantID.make("custom@v2@long@default"))
+      expect(configured.settings).toEqual(explicit.settings)
+      expect(configured.headers).toEqual(explicit.headers)
+      expect(configured.body).toEqual(explicit.body)
+      expect(configured.limit.input).toBe(272_000)
+      for (const variant of ["unknown@long", "custom@v2@unknown", "@long"]) {
+        expect(yield* ModelResolver.withVariant(catalog, VariantID.make(variant)).pipe(Effect.flip)).toMatchObject({
+          _tag: "SessionRunnerModel.VariantUnavailableError",
+          variant,
+        })
+      }
+      expect(
+        yield* ModelResolver.withVariant({ ...catalog, context: undefined }, VariantID.make("custom@v2@default")).pipe(
+          Effect.flip,
+        ),
+      ).toMatchObject({
+        _tag: "SessionRunnerModel.VariantUnavailableError",
+      })
+      expect(catalog.variants.map((variant) => String(variant.id))).toEqual([
+        "custom@v2",
+        "custom@v2@long",
+        "explicit@long",
+      ])
+    }),
+  )
+
   it.effect("constructs native Azure requests with deployment IDs and projected resource URLs", () =>
     Effect.gen(function* () {
       const responses = yield* ModelResolver.fromCatalogModel(

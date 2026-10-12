@@ -2,6 +2,9 @@ import { expect, test } from "bun:test"
 import { CopilotModels } from "@opencode/core/github-copilot/models"
 import { Model } from "@opencode/core/model"
 import { Provider } from "@opencode/core/provider"
+import { ModelResolver } from "@opencode/core/model-resolver"
+import { Effect } from "effect"
+import { SessionUsage } from "@opencode/core/session/usage"
 
 test("defensively syncs advertised Copilot models", async () => {
   const server = Bun.serve({
@@ -148,9 +151,94 @@ test("prices cache reads from either token price spelling", async () => {
 
   try {
     const models = await CopilotModels.get(server.url.origin, {}, [])
-    expect(models.get(Model.ID.make("renamed"))?.cost[0]).toMatchObject({ input: 2.5, output: 15, cache: { read: 0.25 } })
-    expect(models.get(Model.ID.make("legacy"))?.cost[0]).toMatchObject({ input: 2.5, output: 15, cache: { read: 0.25 } })
+    expect(models.get(Model.ID.make("renamed"))?.cost[0]).toMatchObject({
+      input: 2.5,
+      output: 15,
+      cache: { read: 0.25 },
+    })
+    expect(models.get(Model.ID.make("legacy"))?.cost[0]).toMatchObject({
+      input: 2.5,
+      output: 15,
+      cache: { read: 0.25 },
+    })
     expect(models.get(Model.ID.make("unpriced"))?.cost[0]).toMatchObject({ cache: { read: 0 } })
+  } finally {
+    await server.stop(true)
+  }
+})
+
+test("discovers context tiers, resolves independent reasoning, and prices actual input usage", async () => {
+  let visible = true
+  const server = Bun.serve({
+    port: 0,
+    fetch: () =>
+      Response.json({
+        data: [
+          {
+            model_picker_enabled: visible,
+            id: "gpt-test",
+            name: "GPT test",
+            version: "gpt-test-2026-08-01",
+            supported_endpoints: ["/responses"],
+            billing: {
+              token_prices: {
+                batch_size: 1_000_000,
+                default: {
+                  context_max: 272_000,
+                  input_price: 200,
+                  output_price: 1000,
+                  cache_read_price: 20,
+                  cache_write_price: 40,
+                },
+                long_context: { input_price: 400, output_price: 1500, cache_read_price: 40, cache_write_price: 80 },
+              },
+            },
+            capabilities: {
+              family: "gpt",
+              limits: { max_context_window_tokens: 1_050_000, max_prompt_tokens: 922_000, max_output_tokens: 128_000 },
+              supports: { tool_calls: true, reasoning_effort: ["medium", "high"] },
+            },
+          },
+        ],
+      }),
+  })
+  try {
+    const catalog = await CopilotModels.get(server.url.origin, {}, [])
+    const model = catalog.get(Model.ID.make("gpt-test"))
+    if (!model) throw new Error("Model missing")
+    expect(catalog.size).toBe(1)
+    expect(model.context).toEqual({ default: 272_000, long: 922_000 })
+    expect(model.variants.map((variant) => String(variant.id))).toEqual(["medium", "high"])
+    const resolve = (variant?: string) =>
+      Effect.runPromise(
+        ModelResolver.withVariant(model, variant === undefined ? undefined : Model.VariantID.make(variant)),
+      )
+    expect((await resolve()).limit).toEqual({ context: 400_000, input: 272_000, output: 128_000 })
+    expect((await resolve("high")).limit).toEqual({ context: 400_000, input: 272_000, output: 128_000 })
+    expect((await resolve("default@default")).limit).toEqual({ context: 400_000, input: 272_000, output: 128_000 })
+    for (const variant of ["unknown", "unknown@long", "@long", "high@unknown"]) {
+      await expect(resolve(variant)).rejects.toMatchObject({ _tag: "SessionRunnerModel.VariantUnavailableError" })
+    }
+    expect((await resolve("medium@default")).settings?.reasoningEffort).toBe("medium")
+    expect((await resolve("high@long")).limit.context).toBe(1_050_000)
+    expect((await resolve("high@long")).settings?.reasoningEffort).toBe("high")
+    expect((await resolve("medium@long")).settings?.reasoningEffort).toBe("medium")
+    expect((await resolve("default@long")).settings?.reasoningEffort).toBeUndefined()
+    expect(model.limit.context).toBe(1_050_000)
+    expect(model.cost[1]).toMatchObject({
+      tier: { type: "context", size: 272_000 },
+      input: 4,
+      output: 15,
+      cache: { read: 0.4, write: 0.8 },
+    })
+    const usage = { input: 272_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+    expect(SessionUsage.calculateCost(model.cost, usage)).toBeCloseTo(0.544)
+    expect(SessionUsage.calculateCost(model.cost, { ...usage, input: 272_001 })).toBeCloseTo(1.088004)
+    visible = false
+    const hidden = (await CopilotModels.get(server.url.origin, {}, [])).get(Model.ID.make("gpt-test"))
+    expect(hidden?.enabled).toBe(false)
+    expect(hidden?.context).toEqual(model.context)
+    expect(hidden?.cost).toEqual(model.cost)
   } finally {
     await server.stop(true)
   }

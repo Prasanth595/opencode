@@ -72,5 +72,17 @@ describe("run catalog shared", () => {
         },
       },
     ])
+    const context = { default: 32_000, long: 128_000 }
+    const tiered = runProviders(
+      [catalogProvider("copilot", "Copilot")],
+      [
+        {
+          ...catalogModel({ id: "tiered", providerID: "copilot", variants: ["high"] }),
+          context,
+        },
+      ],
+    )[0]!.models.tiered!
+    expect(tiered.context).toEqual(context)
+    expect(Object.keys(tiered.variants ?? {})).toEqual(["high"])
   })
 })

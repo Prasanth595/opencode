@@ -977,7 +977,7 @@ export function Session(props: {
               ? {
                   providerID: selection.providerID,
                   id: selection.modelID,
-                  variant: local.model.variant.current(),
+                  variant: local.model.variant.raw(),
                 }
               : undefined,
           })

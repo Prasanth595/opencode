@@ -63,7 +63,10 @@ type RunProviderModel = {
   }
   limit?: {
     context: number
+    input?: number
+    output?: number
   }
+  context?: { default: number; long: number }
   status?: string
   variants?: Record<string, unknown>
 }
@@ -177,7 +180,7 @@ export type FooterState = {
   status: string
   notice: string
   model: string
-  usage: { tokens: number; percent?: number; cost?: number } | undefined
+  usage: { tokens: number; percent?: number; cost?: number; providerID?: string } | undefined
   first: boolean
   interrupt: number
   exit: number

@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import type { SessionMessageInfo } from "@opencode/client"
-import { lastAssistantWithUsage, sessionFamily } from "../../src/util/session"
+import type { ModelInfo, SessionMessageAssistant, SessionMessageInfo } from "@opencode/client"
+import { contextUsage, formatSessionCost, lastAssistantWithUsage, sessionFamily } from "../../src/util/session"
+import { contextSelection } from "../../src/util/context"
 
-const assistant = (id: string, input: number): SessionMessageInfo => ({
+const assistant = (id: string, input: number): SessionMessageAssistant => ({
   id,
   type: "assistant",
   agent: "build",
@@ -13,6 +14,53 @@ const assistant = (id: string, input: number): SessionMessageInfo => ({
 })
 
 describe("util.session", () => {
+  test("uses the response context tier and formats complete Copilot costs in credits", () => {
+    const model: ModelInfo = {
+      id: "model",
+      modelID: "model",
+      providerID: "github-copilot",
+      name: "Test",
+      capabilities: { tools: true, input: ["text"], output: ["text"] },
+      variants: [],
+      time: { released: 0 },
+      cost: [],
+      status: "active",
+      enabled: true,
+      limit: { context: 1_050_000, input: 922_000, output: 128_000 },
+      context: { default: 272_000, long: 922_000 },
+    }
+    const message = {
+      ...assistant("msg", 31_595),
+      model: { id: "model", providerID: "github-copilot", variant: "medium@default" },
+      cost: 0.083,
+    }
+    expect(contextUsage([message], [model])?.percent).toBe(8)
+    expect(contextUsage([{ ...message, model: { ...message.model, variant: "high@long" } }], [model])?.percent).toBe(3)
+    expect(formatSessionCost(0.083, [message])).toBe("8.30 AI credits")
+    expect(formatSessionCost(0.1, [message])).toBe("$0.10")
+    expect(formatSessionCost(0.083, [{ ...message, model: { ...message.model, providerID: "openai" } }])).toBe("$0.08")
+    expect(contextSelection("high@long")).toEqual({ effort: "high", tier: "long" })
+    expect(contextSelection("medium")).toEqual({ effort: "medium", tier: "default" })
+    expect(contextUsage([message], [{ ...model, limit: { ...model.limit, input: 100_000 } }])?.percent).toBe(14)
+  })
+  test("includes compaction providers when choosing the session cost unit", () => {
+    const message = { ...assistant("msg", 10), model: { id: "model", providerID: "github-copilot" }, cost: 0.08 }
+    const compaction: SessionMessageInfo = {
+      id: "msg_compaction",
+      type: "compaction",
+      status: "completed",
+      reason: "auto",
+      model: { id: "model", providerID: "openai" },
+      summary: "Summary",
+      recent: "",
+      cost: 0.02,
+      time: { created: 0 },
+    }
+    expect(formatSessionCost(0.1, [message, compaction])).toBe("$0.10")
+    expect(formatSessionCost(0.1, [message, { ...compaction, model: undefined }])).toBe("$0.10")
+    expect(formatSessionCost(0.1, [message, { ...compaction, model: message.model }])).toBe("10.00 AI credits")
+    expect(formatSessionCost(0.02, [compaction])).toBe("$0.02")
+  })
   test("flattens nested subagents from any session in the family", () => {
     const sessions = [
       { id: "root" },

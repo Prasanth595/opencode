@@ -10,6 +10,7 @@ import { Integration } from "./integration.js"
 import { Capabilities, ID, Info, Model, Ref, VariantID } from "./model.js"
 import type { RuntimeInfo } from "./model.js"
 import { Npm } from "@opencode/util/npm"
+import { contextSelection, isModelVariantAvailable } from "@opencode/util/model-variant"
 import { Provider } from "./provider.js"
 
 export class VariantUnavailableError extends Schema.TaggedError<VariantUnavailableError>()(
@@ -140,7 +141,14 @@ export const withVariant = (
 ): Effect.Effect<Info, VariantUnavailableError> => {
   const id = variantID === "default" ? undefined : variantID
   const variant = model.variants?.find((item) => item.id === id)
-  if (!variant && id !== undefined)
+  if (
+    id !== undefined &&
+    !isModelVariantAvailable(
+      id,
+      model.variants.map((item) => item.id),
+      !!model.context,
+    )
+  )
     return Effect.fail(
       new VariantUnavailableError({
         providerID: model.providerID,
@@ -148,15 +156,46 @@ export const withVariant = (
         variant: id,
       }),
     )
+  const selection = contextSelection(id)
+  const effort = model.context && id && /@(default|long)$/.test(id) ? selection.effort : undefined
+  const base = effort ? model.variants.find((item) => item.id === effort) : undefined
+  const budget = model.context?.[selection.tier]
+  const input = budget === undefined ? undefined : Math.min(budget, model.limit.input ?? budget)
+  if (base && /@(default|long)$/.test(base.id))
+    return withVariant(model, base.id).pipe(
+      Effect.map((resolved) => ({
+        ...resolved,
+        limit:
+          input === undefined
+            ? model.limit
+            : { ...model.limit, input, context: Math.min(model.limit.context, input + model.limit.output) },
+        settings: Provider.mergeOverlay(resolved.settings, Provider.modelSettings(variant?.settings)),
+        headers: Provider.mergeHeaders(resolved.headers, variant?.headers),
+        body: Provider.mergeOverlay(resolved.body, variant?.body),
+      })),
+    )
   return Effect.succeed(
-    variant
+    variant || base
       ? {
           ...model,
-          settings: Provider.mergeOverlay(model.settings, Provider.modelSettings(variant.settings)),
-          headers: Provider.mergeHeaders(model.headers, variant.headers),
-          body: Provider.mergeOverlay(model.body, variant.body),
+          ...(input === undefined
+            ? {}
+            : {
+                limit: { ...model.limit, input, context: Math.min(model.limit.context, input + model.limit.output) },
+              }),
+          settings: Provider.mergeOverlay(
+            Provider.mergeOverlay(model.settings, Provider.modelSettings(base?.settings)),
+            Provider.modelSettings(variant?.settings),
+          ),
+          headers: Provider.mergeHeaders(Provider.mergeHeaders(model.headers, base?.headers), variant?.headers),
+          body: Provider.mergeOverlay(Provider.mergeOverlay(model.body, base?.body), variant?.body),
         }
-      : model,
+      : input === undefined
+        ? model
+        : {
+            ...model,
+            limit: { ...model.limit, input, context: Math.min(model.limit.context, input + model.limit.output) },
+          },
   )
 }
 
@@ -399,7 +438,7 @@ export const layer = Layer.effect(
         }),
         capabilities: selected.capabilities,
         cost: selected.cost,
-        limit: selected.limit,
+        limit: selectedVariant.limit,
         compaction: runtimeInfo.settings?.compaction,
         transport: provider?.settings?.transport,
         chunkTimeout: Provider.timeout(provider?.settings?.chunkTimeout),

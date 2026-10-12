@@ -4,6 +4,25 @@ import { cycleModelVariant, getConfiguredAgentVariant, resolveModelVariant } fro
 const variants = ["low", "high", "xhigh"]
 
 describe("model variant", () => {
+  test("preserves combined saved selections and context while cycling a reasoning-only catalog", () => {
+    const input = { variants: ["low", "high", "custom@v2"], selected: undefined, configured: undefined, context: true }
+    expect(resolveModelVariant({ ...input, preferred: "custom@v2@long" })).toBe("custom@v2@long")
+    expect(resolveModelVariant({ ...input, selected: "default@long" })).toBe("default@long")
+    expect(resolveModelVariant({ ...input, preferred: "unknown@long" })).toBeUndefined()
+    expect(resolveModelVariant({ ...input, preferred: "high@long", context: false })).toBeUndefined()
+    expect(cycleModelVariant({ ...input, selected: "high@long" })).toBe("custom@v2@long")
+    expect(cycleModelVariant({ ...input, selected: "custom@v2@long" })).toBe("default@long")
+    expect(cycleModelVariant({ ...input, selected: "default@long" })).toBe("low@long")
+    expect(cycleModelVariant({ ...input, variants: ["high", "explicit@long"], selected: "high@default" })).toBe(
+      "explicit@long@default",
+    )
+    expect(
+      resolveModelVariant({ ...input, variants: ["high", "explicit@long"], selected: "explicit@long@default" }),
+    ).toBe("explicit@long@default")
+    expect(
+      cycleModelVariant({ ...input, variants: ["high", "explicit@long"], selected: "explicit@long@default" }),
+    ).toBe("default@default")
+  })
   test.each([
     { name: "applies when the model matches", providerID: "openai", modelID: "gpt-5.2", expected: "xhigh" },
     { name: "is ignored for another model", providerID: "anthropic", modelID: "claude-sonnet-4", expected: undefined },

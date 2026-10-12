@@ -1,5 +1,6 @@
 import { createSimpleContext } from "@opencode/ui/context"
 import { base64Encode } from "@opencode/util/encode"
+import { selectModelVariant } from "@opencode/util/model-variant"
 import { useParams } from "@solidjs/router"
 import { batch, createEffect, createMemo, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -448,6 +449,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
           return resolveModelVariant({
             variants: this.list(),
+            context: hasContext(),
             selected: this.selected(),
             configured: this.configured(),
             preferred: model ? models.variant.get({ providerID: model.provider.id, modelID: model.id }) : undefined,
@@ -465,8 +467,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             const model = current()
 
             if (!model) return
-            write({ model: { providerID: model.provider.id, modelID: model.id }, variant: value ?? null })
-            models.variant.set({ providerID: model.provider.id, modelID: model.id }, value)
+
+            const variant = selectModelVariant(this.current(), value, this.list(), hasContext())
+
+            write({ model: { providerID: model.provider.id, modelID: model.id }, variant: variant ?? null })
+            models.variant.set({ providerID: model.provider.id, modelID: model.id }, variant)
           })
         },
         cycle() {
@@ -476,12 +481,21 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           this.set(
             cycleModelVariant({
               variants: items,
+              context: hasContext(),
               selected: this.current() ?? null,
               configured: undefined,
             }),
           )
         },
       },
+    }
+
+    function hasContext() {
+      const model = current()
+
+      return !!data.location.model
+        .list({ directory: sdk().directory })
+        ?.find((item) => item.providerID === model?.provider.id && item.id === model?.id)?.context
     }
 
     const result = {

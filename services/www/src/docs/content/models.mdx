@@ -105,6 +105,28 @@ Define new variants, or replace catalog variants with the same ID, in the model'
 
 Each variant can contain `settings`, `headers`, and `body`. Its values are applied after provider and model values.
 
+### Copilot context windows
+
+For Copilot models that advertise Default and Long input budgets, use `/context-window` or "Switch context window" in the
+command palette. Reasoning effort stays independent of the context window. OpenCode uses Default unless you select Long.
+Existing sessions with no context tier or a plain reasoning variant such as `high` also use the smaller Default budget
+and compact earlier than before. Long is opt-in.
+
+For CLI requests, combine reasoning and context in the variant:
+
+```sh
+opencode run --model github-copilot/gpt-6.1-sol#medium@long "Explain this repository"
+```
+
+- `medium@default` selects medium reasoning with the Default input budget.
+- `medium@long` selects medium reasoning with the Long input budget.
+- `default@long` selects Long without a reasoning override.
+- Context usage reflects the window used by the latest response. Changing the next request does not change that percentage.
+
+Copilot-only sessions display estimated AI credits. OpenCode reads token prices from Copilot and chooses the price tier
+using actual input usage, including cached tokens. These estimates are not GitHub's reported billed amounts. Sessions that
+mix providers display USD instead.
+
 ## Options
 
 Provider and model entries can customize requests with `settings`, `headers`, and `body`:
