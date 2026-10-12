@@ -8,7 +8,7 @@ import { WebSearchParallel } from "@opencode/core/plugin/websearch/parallel"
 import { WebSearchTavily } from "@opencode/core/plugin/websearch/tavily"
 import { WebSearchTinyFish } from "@opencode/core/plugin/websearch/tinyfish"
 import { host, integrationHost, webSearchHost } from "./host"
-import { requests, signals, resetWebSearchFixture, webSearchIntegrationTest } from "./websearch-fixture"
+import { requests, signals, resetWebSearchFixture, setInitializeResponse, webSearchIntegrationTest } from "./websearch-fixture"
 
 beforeEach(() => {
   resetWebSearchFixture(
@@ -353,11 +353,73 @@ describe("built-in web search providers", () => {
         integrationID: Integration.ID.make("tinyfish"),
         key: "tinyfish-secret",
       })
-      yield* websearch.query({ query: "effect typescript", providerID: WebSearch.ID.make("tinyfish") })
+      setInitializeResponse(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          result: {
+            protocolVersion: "2025-06-18",
+            capabilities: {},
+            serverInfo: { name: "tinyfish", version: "1.0" },
+          },
+        }),
+        200,
+        { "mcp-session-id": "ses_tinyfish" },
+      )
+      expect(yield* websearch.query({ query: "effect typescript", providerID: WebSearch.ID.make("tinyfish") })).toEqual(
+        new WebSearch.Response({
+          providerID: WebSearch.ID.make("tinyfish"),
+          results: [
+            {
+              url: "https://effect.website",
+              title: "Effect",
+              content: "Effect documentation",
+              time: {},
+            },
+          ],
+        }),
+      )
+      // Authenticated mode mints a session on initialize, then carries it on the search call.
       expect(requests[1]).toMatchObject({
+        url: WebSearchTinyFish.endpoint,
         headers: { "x-api-key": "tinyfish-secret" },
+        body: { jsonrpc: "2.0", id: 1, method: "initialize" },
       })
-      expect(requests[1]?.headers["x-tinyfish-access-mode"]).toBeUndefined()
+      expect(requests[2]).toMatchObject({
+        url: WebSearchTinyFish.endpoint,
+        headers: { "x-api-key": "tinyfish-secret", "mcp-session-id": "ses_tinyfish" },
+        body: {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: {
+            name: "search",
+            arguments: { query: "effect typescript" },
+          },
+        },
+      })
+      expect(requests[2]?.headers["x-tinyfish-access-mode"]).toBeUndefined()
+    }),
+  )
+
+  it.effect("reports a clear error when TinyFish initialize mints no session id", () =>
+    Effect.gen(function* () {
+      const integrations = yield* Integration.Service
+      const websearch = yield* WebSearch.Service
+      yield* WebSearchTinyFish.Plugin.effect(
+        host({ integration: integrationHost(integrations), websearch: webSearchHost(websearch) }),
+      )
+      yield* integrations.connection.key({
+        integrationID: Integration.ID.make("tinyfish"),
+        key: "tinyfish-secret",
+      })
+      setInitializeResponse("{}", 200, {})
+      const error = yield* websearch
+        .query({ query: "effect typescript", providerID: WebSearch.ID.make("tinyfish") })
+        .pipe(Effect.flip)
+      expect(error).toBeInstanceOf(WebSearch.RequestError)
+      if (!(error instanceof WebSearch.RequestError)) throw new Error("expected a RequestError")
+      expect(String(error.cause)).toContain("Mcp-Session-Id")
     }),
   )
 })

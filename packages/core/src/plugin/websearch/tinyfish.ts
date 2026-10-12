@@ -52,18 +52,28 @@ export const Plugin = define<HttpClient.HttpClient | Scope.Scope>({
           Effect.gen(function* () {
             const connection = yield* ctx.integration.connection.active("tinyfish")
             const credential = connection ? yield* ctx.integration.connection.resolve(connection) : undefined
+            const headers = {
+              "User-Agent": App.useragent(ctx.app),
+              ...(credential?.type === "key"
+                ? { "X-API-Key": credential.key }
+                : { "X-TinyFish-Access-Mode": "keyless" }),
+            }
+            // Authenticated MCP mode mints an `Mcp-Session-Id` on `initialize` and rejects every
+            // post-initialize request without it (HTTP 400 "Missing required Mcp-Session-Id header").
+            // Keyless mode is stateless and answers a bare `tools/call`.
+            const session =
+              credential?.type === "key" ? yield* WebSearchMcp.initialize(http, endpoint, headers) : undefined
+            if (credential?.type === "key" && session === undefined)
+              return yield* Effect.fail(
+                new Error("TinyFish MCP initialize did not return an Mcp-Session-Id header"),
+              )
             const result = yield* WebSearchMcp.call(
               http,
               endpoint,
               "search",
               { input: McpInput, output: McpOutput },
               { query: input.query },
-              {
-                "User-Agent": App.useragent(ctx.app),
-                ...(credential?.type === "key"
-                  ? { "X-API-Key": credential.key }
-                  : { "X-TinyFish-Access-Mode": "keyless" }),
-              },
+              { ...headers, ...(session === undefined ? {} : { "Mcp-Session-Id": session }) },
             )
             const content = result?.content.find((item) => item.text)
             const response = content ? Option.getOrUndefined(decodeSearchResponse(content.text)) : undefined
