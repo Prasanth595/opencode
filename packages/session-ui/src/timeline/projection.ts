@@ -1,4 +1,5 @@
 import type {
+  ModelRef,
   SessionMessageAssistant,
   SessionMessageIdle,
   SessionMessageInfo,
@@ -47,6 +48,19 @@ const decodeString = Schema.decodeUnknownOption(Schema.String)
 function lenient<S extends Schema.Top>(schema: S) {
   return Schema.optionalKey(schema.pipe(Schema.catchDecoding(() => Effect.succeedNone)))
 }
+
+const decodeLocalAgent = Schema.decodeUnknownOption(Schema.Struct({ agent: Schema.String }))
+
+const decodeLocalModel = Schema.decodeUnknownOption(
+  Schema.Struct({
+    model: Schema.Struct({
+      id: lenient(Schema.String),
+      modelID: lenient(Schema.String),
+      providerID: Schema.String,
+      variant: lenient(Schema.String),
+    }),
+  }),
+)
 
 const decodeErrorEnvelope = Schema.decodeUnknownOption(
   Schema.Struct({ error: Schema.optionalKey(Schema.Unknown), message: lenient(Schema.String) }),
@@ -106,6 +120,7 @@ export function createTimelineProjection(input: TimelineProjectionInput) {
     rowByKey,
     rows,
     sessionMessageByID,
+    userContextByID: indexUserContext(input.sessionMessages),
   }
 }
 
@@ -123,6 +138,7 @@ export function createReactiveTimelineProjection(input: {
     () => new Map(input.sessionMessages().map((message) => [message.id, message] as const)),
   )
 
+  const userContextByID = createMemo(() => indexUserContext(input.sessionMessages()))
   const assistantMessagesByParent = createMemo(() => indexAssistantMessages(input.sessionMessages()))
 
   // Row structure depends on the empty/non-empty boundary, not each text delta.
@@ -201,6 +217,7 @@ export function createReactiveTimelineProjection(input: {
     rowByKey,
     rows,
     sessionMessageByID,
+    userContextByID,
   }
 }
 
@@ -656,6 +673,46 @@ export function reuseTimelineRows(previous: TimelineRow.TimelineRow[] | undefine
   if (previous.length === next.length && previous.every((row, index) => row === next[index])) return previous
 
   return next
+}
+
+function indexUserContext(messages: SessionMessageInfo[]) {
+  const result = new Map<string, { agent: string; model: ModelRef }>()
+  let agent = ""
+  let model: ModelRef = { id: "", providerID: "" }
+  let userID: string | undefined
+
+  messages.forEach((message) => {
+    if (message.type === "agent-switched") agent = message.agent
+
+    if (message.type === "model-switched") model = message.model
+
+    if (message.type === "user") {
+      userID = message.id
+      const localModel = Option.getOrUndefined(decodeLocalModel(message.metadata))?.model
+      const localModelID = localModel?.id ?? localModel?.modelID
+
+      result.set(message.id, {
+        agent: Option.match(decodeLocalAgent(message.metadata), {
+          onNone: () => agent,
+          onSome: (local) => local.agent,
+        }),
+        model:
+          localModel && localModelID
+            ? { id: localModelID, providerID: localModel.providerID, variant: localModel.variant }
+            : model,
+      })
+    }
+
+    if (message.type === "shell") userID = undefined
+
+    if (message.type !== "assistant") return
+    agent = message.agent
+    model = message.model
+
+    if (userID) result.set(userID, { agent, model })
+  })
+
+  return result
 }
 
 function indexAssistantMessages(messages: SessionMessageInfo[]) {

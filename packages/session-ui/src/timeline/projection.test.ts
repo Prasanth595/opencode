@@ -219,7 +219,7 @@ describe("reuseTimelineRows", () => {
 })
 
 describe("createTimelineProjection", () => {
-  test("builds current message, parent, and row indexes", () => {
+  test("builds current message, parent, context, and row indexes", () => {
     const selectedModel = { id: "selected", providerID: "provider" } satisfies ModelRef
     const assistantModel = { id: "assistant", providerID: "provider", variant: "fast" } satisfies ModelRef
 
@@ -239,6 +239,10 @@ describe("createTimelineProjection", () => {
         id: "user-2",
         type: "user",
         text: "second",
+        metadata: {
+          agent: "review",
+          model: { modelID: "override", providerID: "custom", variant: "precise" },
+        },
         time: { created: 6 },
       },
     ] satisfies SessionMessageInfo[]
@@ -254,6 +258,11 @@ describe("createTimelineProjection", () => {
     expect(result.sessionMessageByID.get("assistant-1")).toBe(messages[3])
     expect(result.assistantMessagesByParent.get("user-1")?.map((message) => message.id)).toEqual(["assistant-1"])
     expect(result.assistantMessagesByParent.has("user-2")).toBe(false)
+    expect(result.userContextByID.get("user-1")).toEqual({ agent: "build", model: assistantModel })
+    expect(result.userContextByID.get("user-2")).toEqual({
+      agent: "review",
+      model: { id: "override", providerID: "custom", variant: "precise" },
+    })
     expect(result.messageRowIndex.get("user-1")).toBe(0)
     expect(result.messageLastRowIndex.get("user-1")).toBe(3)
     expect(result.lastAssistantGroupKey.get("user-1")).toBe("part:assistant-1:assistant-1:text:0")
