@@ -12,3 +12,8 @@ import { Effect, Semaphore } from "effect"
 // Keep the Clock injectable: virtual-clock tests must not wait for wall time.
 const turn = Semaphore.makeUnsafe(1)
 export const checkpoint = turn.withPermit(Effect.sleep(0)).pipe(Effect.withSpan("Plugin.init.eventLoopCheckpoint"))
+// The same admission, registered as each plugin scope's first finalizer. Its own
+// span name attributes close-path yields in traces and marks the release build.
+export const scopeCheckpoint = turn
+  .withPermit(Effect.sleep(0))
+  .pipe(Effect.withSpan("Plugin.scopeClose.eventLoopCheckpoint"))

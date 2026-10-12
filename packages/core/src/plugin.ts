@@ -48,6 +48,10 @@ const layer = Layer.effect(
     const load = Effect.fnUntraced(function* (plugin: Generation) {
       yield* PluginScheduling.checkpoint
       const activation: Activation = { plugin, scope: yield* Scope.fork(scope) }
+      // First registered means last executed: yield after this plugin's cleanup
+      // on every close path, including full location eviction and failed setup.
+      // The parent scope still owns LIFO ordering and finalizer error collection.
+      yield* Scope.addFinalizer(activation.scope, PluginScheduling.scopeCheckpoint)
       const inherit = yield* State.inherit()
       const grouped = State.group((failure, refresh) => {
         activation.failure = {
@@ -132,7 +136,6 @@ const layer = Layer.effect(
                     Array.from(previous.entries()).toReversed(),
                     ([id, slot]) =>
                       Effect.gen(function* () {
-                        yield* PluginScheduling.checkpoint
                         active.delete(id)
                         if (slot.activation && !slot.activation.failure)
                           yield* Scope.close(slot.activation.scope, Exit.void)
