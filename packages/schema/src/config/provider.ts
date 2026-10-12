@@ -68,6 +68,10 @@ class Limit extends Schema.Class<Limit>("Config.Model.Limit")({
 
 class Model extends Schema.Class<Model>("Config.Model")({
   modelID: ID.pipe(optional),
+  base: ID.pipe(optional).annotate({
+    description:
+      "Catalog model this model inherits capabilities, limits, cost, and variants from, while requests keep using this model's own ID. Use it for aliases such as Vercel AI Gateway virtual models.",
+  }),
   family: Family.pipe(optional),
   name: Schema.String.pipe(optional),
   compatibility: Compatibility.pipe(optional),

@@ -48,7 +48,10 @@ describe("ConfigProviderPlugin.Plugin", () => {
                 settings: { compaction: { type: "native" } },
                 models: {
                   native: {},
-                  local: { settings: { compaction: { type: "summary" } }, package: "@opencode/ai/providers/openai/chat" },
+                  local: {
+                    settings: { compaction: { type: "summary" } },
+                    package: "@opencode/ai/providers/openai/chat",
+                  },
                   unsupported: { package: "@opencode/ai/providers/openai/chat" },
                 },
               },
@@ -452,6 +455,101 @@ describe("ConfigProviderPlugin.Plugin", () => {
       }),
     )
   }
+
+  it.effect("inherits metadata from a base model but keeps its own request ID", () =>
+    Effect.gen(function* () {
+      const providers = yield* Provider.Service
+      const models = yield* Model.Service
+      const providerID = Provider.ID.make("gateway")
+      const baseID = Model.ID.make("anthropic/claude-example")
+      yield* providers.transform((editor) => {
+        editor.update(providerID, (provider) => {
+          provider.activation = "enabled"
+        })
+        editor.models.update(providerID, baseID, (model) => {
+          model.name = "Claude Example"
+          model.limit = { context: 100000, output: 16000 }
+          model.variants = [
+            { id: Model.VariantID.make("low"), settings: { effort: "low" } },
+            { id: Model.VariantID.make("xhigh"), settings: { effort: "xhigh" } },
+          ]
+        })
+      })
+      yield* addPlugin([
+        new Document({
+          type: "document",
+          info: decode({
+            providers: {
+              gateway: {
+                models: {
+                  "vmc/alias": { base: "anthropic/claude-example", name: "Alias" },
+                  "vmc/unknown": { base: "anthropic/missing" },
+                },
+              },
+            },
+          }),
+        }),
+      ])
+
+      const alias = required(yield* models.get(providerID, Model.ID.make("vmc/alias")))
+      expect(alias.id).toBe(Model.ID.make("vmc/alias"))
+      expect(alias.modelID).toBe(Model.ID.make("vmc/alias"))
+      expect(alias.name).toBe("Alias")
+      expect(alias.limit).toEqual({ context: 100000, output: 16000 })
+      expect(alias.variants.map((variant) => variant.id)).toEqual([
+        Model.VariantID.make("low"),
+        Model.VariantID.make("xhigh"),
+      ])
+
+      const unknown = required(yield* models.get(providerID, Model.ID.make("vmc/unknown")))
+      expect(unknown.modelID).toBe(Model.ID.make("vmc/unknown"))
+      expect(unknown.limit).toEqual({ context: 200000, output: 32000 })
+
+      const original = required(yield* models.get(providerID, baseID))
+      expect(original.id).toBe(baseID)
+      expect(original.name).toBe("Claude Example")
+    }),
+  )
+
+  it.effect("keeps the legacy limit and name on a model with a base", () =>
+    Effect.gen(function* () {
+      const providers = yield* Provider.Service
+      const models = yield* Model.Service
+      const providerID = Provider.ID.make("gateway")
+      const baseID = Model.ID.make("anthropic/claude-example")
+      yield* providers.transform((editor) => {
+        editor.update(providerID, (provider) => {
+          provider.activation = "enabled"
+        })
+        editor.models.update(providerID, baseID, (model) => {
+          model.limit = { context: 100000, output: 16000 }
+          model.variants = [{ id: Model.VariantID.make("xhigh"), settings: { effort: "xhigh" } }]
+        })
+      })
+      const result = ConfigNormalize.normalize({
+        provider: {
+          gateway: {
+            models: {
+              "vmc/alias": {
+                base: "anthropic/claude-example",
+                name: "Alias",
+                limit: { context: 500000, output: 64000 },
+              },
+            },
+          },
+        },
+      })
+      if (result.type !== "normalized") throw new Error("Expected normalized config")
+      expect(result.diagnostics).toEqual([])
+      yield* addPlugin([new Document({ type: "document", info: decode(result.encoded) })])
+
+      const alias = required(yield* models.get(providerID, Model.ID.make("vmc/alias")))
+      expect(alias.modelID).toBe(Model.ID.make("vmc/alias"))
+      expect(alias.name).toBe("Alias")
+      expect(alias.limit).toEqual({ context: 500000, output: 64000 })
+      expect(alias.variants.map((variant) => variant.id)).toEqual([Model.VariantID.make("xhigh")])
+    }),
+  )
 
   it.effect("preserves existing catalog metadata when migrated fields are omitted", () =>
     Effect.gen(function* () {

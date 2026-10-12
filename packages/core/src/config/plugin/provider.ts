@@ -74,14 +74,19 @@ export const Plugin = define({
         })
         const definitions = new Map<string, { readonly inherit: boolean; readonly base?: Model.Info }>()
         for (const [id, config] of Object.entries(item.models ?? {})) {
-          const base = source?.models.get(config.modelID ?? id) ?? source?.models.get(id)
+          const base = source?.models.get(config.base ?? config.modelID ?? id) ?? source?.models.get(id)
           const inherit = changed || !current?.models.has(id)
           // Bind the source at this point in the provider fold. Later source edits/removal
           // and its credential availability must not change an already-defined alias.
           definitions.set(id, { inherit, base: base && structuredClone(base) })
           if (!inherit) continue
           providers.models.update(providerID, id, (model) => {
-            if (base) Object.assign(model, structuredClone(base))
+            if (base)
+              Object.assign(
+                model,
+                structuredClone(base),
+                config.base !== undefined ? aliasOf(providerID, id, config) : {},
+              )
             if (item.package !== undefined) model.package = undefined
             if (item.settings?.baseURL !== undefined && model.settings) delete model.settings.baseURL
           })
@@ -104,7 +109,11 @@ export const Plugin = define({
           const inherit = source?.inherit || !models.get(providerID, id)
           models.update(providerID, id, (model) => {
             if (inherit && source?.base) {
-              Object.assign(model, structuredClone(source.base))
+              Object.assign(
+                model,
+                structuredClone(source.base),
+                config.base !== undefined ? aliasOf(providerID, id, config) : {},
+              )
               if (item.package !== undefined) model.package = undefined
               if (item.settings?.baseURL !== undefined && model.settings) delete model.settings.baseURL
             }
@@ -162,6 +171,15 @@ export const Plugin = define({
     })
   }),
 })
+
+// A model with `base` keeps its own identity: only the metadata comes from the base model.
+function aliasOf(providerID: string, id: string, config: { readonly modelID?: string }) {
+  return {
+    id: Model.ID.make(id),
+    modelID: Model.ID.make(config.modelID ?? id),
+    providerID: Provider.ID.make(providerID),
+  }
+}
 
 function configuredProviders(entries: readonly Entry[]) {
   return entries
