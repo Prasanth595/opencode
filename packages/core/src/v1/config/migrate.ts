@@ -1,7 +1,7 @@
 export * as ConfigMigrateV1 from "./migrate.js"
 
 import { ConfigAgent } from "@opencode/schema/config/agent"
-import { Schema } from "effect"
+import { Schema, Struct } from "effect"
 import { ConfigAgentV1 } from "./agent.js"
 import { ConfigCommandV1 } from "./command.js"
 import { ConfigMCPV1 } from "./mcp.js"
@@ -120,7 +120,7 @@ function migrateStandardProvider(info: ConfigProviderV1.Info) {
     body: info.options && options.body,
     models:
       info.models &&
-      Object.fromEntries(Object.entries(info.models).map(([name, model]) => [name, migrateModel(model)])),
+      Object.fromEntries(Object.entries(info.models).map(([name, model]) => [name, migrateModel(model, info.npm)])),
   }
 }
 
@@ -166,7 +166,7 @@ export function providerID(input: string) {
   return input
 }
 
-function migrateModel(info: typeof ConfigProviderV1.Model.Type) {
+function migrateModel(info: typeof ConfigProviderV1.Model.Type, npm: string | undefined) {
   const disableThinkingBlockBinding =
     info.options?.thinking?.blockBinding === false || info.options?.reasoningConfig?.blockBinding === false
   const options = info.options && { ...info.options }
@@ -185,7 +185,13 @@ function migrateModel(info: typeof ConfigProviderV1.Model.Type) {
     }
   }
 
-  const settings = options && ConfigProviderOptionsV1.model(options)
+  const compatible = (info.provider?.npm ?? npm) === "@ai-sdk/openai-compatible"
+  const split = (input: Record<string, unknown>) =>
+    compatible
+      ? ConfigProviderOptionsV1.compatibleModel(input)
+      : { settings: ConfigProviderOptionsV1.model(input), body: undefined }
+  const migrated = options && split(options)
+  const settings = migrated?.settings
   const compatibility = Model.compatibility(info.interleaved)
   const costs = info.cost && [
     {
@@ -224,12 +230,13 @@ function migrateModel(info: typeof ConfigProviderV1.Model.Type) {
     settings: info.provider?.api ? { ...settings, baseURL: info.provider.api } : settings,
     capabilities,
     headers: info.headers,
+    body: migrated?.body,
     variants:
       info.variants &&
-      Object.entries(info.variants).map(([id, options]) => ({
-        id,
-        settings: ConfigProviderOptionsV1.model(options),
-      })),
+      Object.entries(info.variants)
+        // v1 hid disabled variants; v2 has no flag, so drop them instead of sending `disabled` upstream.
+        .filter(([, options]) => options.disabled !== true)
+        .map(([id, options]) => ({ id, ...split(Struct.omit(options, ["disabled"])) })),
     cost: costs,
     disabled: info.status === "deprecated" ? true : undefined,
     limit: info.limit && {
