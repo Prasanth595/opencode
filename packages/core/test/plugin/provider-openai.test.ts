@@ -1,5 +1,7 @@
 import { Money } from "@opencode/schema/money"
 import { Agent } from "@opencode/schema/agent"
+import { AIError } from "@opencode/ai"
+import { classifyProviderFailure } from "@opencode/ai/provider-error"
 import { Session } from "@opencode/core/session"
 import { OpenAIResponses } from "@opencode/ai/protocols/openai-responses"
 import { describe, expect } from "bun:test"
@@ -18,6 +20,8 @@ import { Provider } from "@opencode/core/provider"
 import { AbsolutePath } from "@opencode/core/schema"
 import { SessionModelRequest } from "@opencode/core/session/model-request"
 import { SessionModelTransport } from "@opencode/core/session/model-transport"
+import { SessionRunnerRetry } from "@opencode/core/session/runner/retry"
+import { toSessionError } from "@opencode/core/session/to-session-error"
 import { SessionRunnerModel } from "@opencode/core/session/runner/model"
 import { testEffect } from "../lib/effect"
 import { PluginTestLayer } from "./fixture"
@@ -392,6 +396,115 @@ describe("OpenAIPlugin", () => {
         request: new Request("https://chatgpt.com/backend-api/codex/responses"),
       })
       expect(get.request.headers.get("content-encoding")).toBeNull()
+    }),
+  )
+
+  it.effect("translates oversized gateway 503s into a non-retryable too-large error", () =>
+    Effect.gen(function* () {
+      yield* addPlugin()
+      const hooks = yield* PluginHooks.Service
+      const context = {
+        sessionID: Session.ID.make("ses_test"),
+        agent: Agent.ID.make("build"),
+        model: Model.Ref.make({ providerID: Provider.ID.openai, id: Model.ID.make("gpt-5.5") }),
+        kind: "primary" as const,
+      }
+      const envoy =
+        "Service Unavailable: upstream connect error or disconnect/reset before headers. reset reason: remote connection failure"
+      const event = yield* hooks.trigger("session", "http.response", {
+        ...context,
+        request: new Request("https://chatgpt.com/backend-api/codex/responses", {
+          method: "POST",
+          headers: { "content-type": "application/json", "content-length": "2097152" },
+        }),
+        response: new Response(envoy, { status: 503, headers: { "content-type": "text/plain" } }),
+      })
+      expect(event.response.status).toBe(413)
+      const payload = (yield* Effect.promise(() => event.response.json())) as {
+        error: { message: string }
+      }
+      expect(payload.error.message).toContain("Compact the session")
+      const reason = classifyProviderFailure({
+        message: payload.error.message,
+        status: 413,
+        rawBody: JSON.stringify(payload),
+      })
+      if (reason._tag !== "InvalidRequest") throw new Error("Expected InvalidRequest")
+      expect(reason.classification).toBe("payload-too-large")
+      const cause = new AIError({ reason })
+      expect(SessionRunnerRetry.isRetryable(cause)).toBe(false)
+      const error = toSessionError(cause)
+      expect(error.type).toBe("provider.invalid-request")
+      expect(error.message).toContain("Compact the session")
+    }),
+  )
+
+  it.effect("leaves other gateway 503s on the retry path", () =>
+    Effect.gen(function* () {
+      yield* addPlugin()
+      const hooks = yield* PluginHooks.Service
+      const context = {
+        sessionID: Session.ID.make("ses_test"),
+        agent: Agent.ID.make("build"),
+        model: Model.Ref.make({ providerID: Provider.ID.openai, id: Model.ID.make("gpt-5.5") }),
+        kind: "primary" as const,
+      }
+      const envoy =
+        "Service Unavailable: upstream connect error or disconnect/reset before headers. reset reason: remote connection failure"
+      const respond = (model: Model.Ref, url: string, size: number, status: number, text: string) =>
+        hooks.trigger("session", "http.response", {
+          ...context,
+          model,
+          request: new Request(url, {
+            method: "POST",
+            headers: { "content-type": "application/json", "content-length": String(size) },
+          }),
+          response: new Response(text, { status, headers: { "content-type": "text/plain" } }),
+        })
+      const openai = Model.Ref.make({ providerID: Provider.ID.openai, id: Model.ID.make("gpt-5.5") })
+
+      const small = yield* respond(openai, "https://chatgpt.com/backend-api/codex/responses", 500_000, 503, envoy)
+      expect(small.response.status).toBe(503)
+      expect(yield* Effect.promise(() => small.response.text())).toBe(envoy)
+
+      const other = yield* respond(
+        openai,
+        "https://api.openai.com/v1/responses",
+        2_097_152,
+        503,
+        "Service Unavailable: try again later",
+      )
+      expect(other.response.status).toBe(503)
+
+      const chat = yield* respond(
+        openai,
+        "https://api.openai.com/v1/chat/completions",
+        2_097_152,
+        503,
+        envoy,
+      )
+      expect(chat.response.status).toBe(503)
+
+      const foreign = yield* respond(
+        Model.Ref.make({ providerID: Provider.ID.azure, id: Model.ID.make("gpt-5-mini") }),
+        "https://chatgpt.com/backend-api/codex/responses",
+        2_097_152,
+        503,
+        envoy,
+      )
+      expect(foreign.response.status).toBe(503)
+
+      // Large body that succeeds: observed for dormancy detection, otherwise untouched.
+      const success = yield* hooks.trigger("session", "http.response", {
+        ...context,
+        request: new Request("https://chatgpt.com/backend-api/codex/responses", {
+          method: "POST",
+          headers: { "content-type": "application/json", "content-length": "2097152" },
+        }),
+        response: new Response("ok", { status: 200, headers: { "content-type": "text/plain" } }),
+      })
+      expect(success.response.status).toBe(200)
+      expect(yield* Effect.promise(() => success.response.text())).toBe("ok")
     }),
   )
 })

@@ -334,6 +334,34 @@ export const OpenAIPlugin = define({
         }),
       { providerID: Provider.ID.openai },
     )
+    // A translated oversize failure must not retry: the gateway's answer is
+    // deterministic for these bytes, so retries only burn ~84s to reach the same error.
+    yield* ctx.session.hook(
+      "http.response",
+      (evt) =>
+        Effect.gen(function* () {
+          if (evt.model.providerID !== Provider.ID.openai) return
+          if (!supportsRequestCompression(evt.request.url)) return
+          const size = Number(evt.request.headers.get("content-length"))
+          if (!Number.isFinite(size) || size <= WIRE_SIZE_LIMIT) return
+          if (evt.response.status >= 200 && evt.response.status < 300) {
+            // Positive signal that the gateway cliff is gone or relaxed: an
+            // over-threshold body succeeded. Record it; nothing else observes this.
+            yield* Effect.logInfo("OpenAI request over the gateway wire limit succeeded", {
+              sessionID: evt.sessionID,
+              model: evt.model,
+              url: evt.request.url,
+              bytes: size,
+            })
+            return
+          }
+          if (evt.response.status !== 503) return
+          const text = yield* Effect.promise(() => evt.response.clone().text())
+          if (!UPSTREAM_RESET_TEXT.test(text)) return
+          evt.response = oversizeResponse(size, text)
+        }),
+      { providerID: Provider.ID.openai },
+    )
     // The ChatGPT backend rejects a requested output limit, and OpenAI counts one against rate limits.
     const omitOutputLimit = (evt: SessionRequest) =>
       Effect.sync(() => {
@@ -477,4 +505,27 @@ function compressRequestBody(text: string) {
   } catch {
     return undefined
   }
+}
+
+// Largest wire size observed to succeed (1,048,575 bytes).
+// Anything larger failing with the gateway signature below is deterministic:
+// resending identical bytes cannot succeed, so it must not retry.
+const WIRE_SIZE_LIMIT = 1_048_576
+
+// The gateway reports an oversized body with this Envoy text; anything else is a
+// different failure and keeps existing handling.
+const UPSTREAM_RESET_TEXT = /upstream connect error or disconnect\/reset before headers/i
+
+function oversizeResponse(size: number, upstream: string) {
+  const mib = (size / 1_048_576).toFixed(1)
+  return new Response(
+    JSON.stringify({
+      error: {
+        message: `Request too large for the provider (${mib} MiB on the wire; the gateway rejects bodies over ~1 MiB even when compressed). Compact the session or remove images, then retry.`,
+        upstream_status: 503,
+        upstream_body: upstream.slice(0, 2000),
+      },
+    }),
+    { status: 413, headers: { "content-type": "application/json" } },
+  )
 }
