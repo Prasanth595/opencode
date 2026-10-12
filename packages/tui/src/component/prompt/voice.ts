@@ -74,16 +74,21 @@ export class VoiceRecorder {
     return this.proc !== undefined
   }
 
-  start(spec: RecorderSpec): void {
+  start(spec: RecorderSpec, onFailure?: () => void): void {
     if (this.proc) return
     const file = join(tmpdir(), `opencode-voice-${process.pid}-${Date.now()}.wav`)
     const proc = spawn(spec.command, spec.buildArgs(file), { stdio: "ignore" })
-    proc.on("error", () => {
+    const failed = () => {
       if (this.proc === proc) {
         this.proc = undefined
         this.file = undefined
+        onFailure?.()
       }
-    })
+    }
+    proc.on("error", failed)
+    // A recorder that exits on its own (missing device, bad flags) failed;
+    // normal stops clear this.proc first, so they never reach here.
+    proc.on("exit", failed)
     this.proc = proc
     this.file = file
   }

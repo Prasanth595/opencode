@@ -186,5 +186,48 @@ describe("component.prompt.voice", () => {
       expect(recorder.recording).toBe(false)
       expect(await recorder.stop()).toBeUndefined()
     })
+
+    test("notifies onFailure when spawn fails", async () => {
+      const recorder = new VoiceRecorder()
+      let failures = 0
+      recorder.start({ command: "opencode-voice-definitely-missing", buildArgs: (file) => [file] }, () => {
+        failures += 1
+      })
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      expect(recorder.recording).toBe(false)
+      expect(failures).toBe(1)
+    })
+
+    test("notifies onFailure when the recorder exits on its own", async () => {
+      const dir = fakeBinDir({ "fake-rec": "#!/bin/sh\nexit 3\n" })
+      const recorder = new VoiceRecorder()
+      let failures = 0
+      recorder.start({ command: join(dir, "fake-rec"), buildArgs: (file) => [file] }, () => {
+        failures += 1
+      })
+      const deadline = Date.now() + 5000
+      while (recorder.recording && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      expect(recorder.recording).toBe(false)
+      expect(failures).toBe(1)
+      expect(await recorder.stop()).toBeUndefined()
+      rmSync(dir, { recursive: true })
+    })
+
+    test("does not notify onFailure on normal stop", async () => {
+      const dir = fakeBinDir({ "fake-rec": fakeRecorder })
+      const recorder = new VoiceRecorder()
+      let failures = 0
+      const before = listVoiceFiles()
+      recorder.start({ command: join(dir, "fake-rec"), buildArgs: (file) => [file] }, () => {
+        failures += 1
+      })
+      const file = await waitForNewVoiceFile(before).then(() => recorder.stop())
+      expect(file).not.toBeUndefined()
+      expect(failures).toBe(0)
+      recorder.dispose()
+      rmSync(dir, { recursive: true })
+    })
   })
 })

@@ -950,13 +950,17 @@ export function Prompt(props: PromptProps) {
   }))
 
   // Push-to-talk voice input: hold the configured key to record, release to transcribe.
+  // Where the terminal never reports releases, pressing the key again stops instead.
   const [voiceRecording, setVoiceRecording] = createSignal(false)
   let voiceRecorder: VoiceRecorder | undefined
   let voiceStartTime = 0
   let voiceStopTimer: ReturnType<typeof setTimeout> | undefined
 
   function startVoiceRecording() {
-    if (voiceRecorder?.recording) return
+    if (voiceRecorder?.recording) {
+      void stopVoiceRecording("")
+      return
+    }
     if (!config.voice?.transcribe_command) {
       toast.show({ variant: "error", message: "Voice input needs voice.transcribe_command to be set" })
       return
@@ -967,7 +971,12 @@ export function Prompt(props: PromptProps) {
       return
     }
     voiceRecorder = new VoiceRecorder()
-    voiceRecorder.start(spec)
+    voiceRecorder.start(spec, () => {
+      voiceRecorder?.dispose()
+      voiceRecorder = undefined
+      setVoiceRecording(false)
+      toast.show({ variant: "error", message: "Voice recorder stopped unexpectedly" })
+    })
     voiceStartTime = Date.now()
     setVoiceRecording(true)
     voiceStopTimer = setTimeout(() => void stopVoiceRecording(""), VOICE_MAX_RECORD_MS)
@@ -1013,7 +1022,7 @@ export function Prompt(props: PromptProps) {
       bindings: [
         ...press.map((binding) => ({
           ...binding,
-          desc: "Start voice recording (release to transcribe)",
+          desc: "Start voice recording (release or press again to transcribe)",
           group: "Prompt",
           cmd: () => startVoiceRecording(),
         })),
@@ -1682,7 +1691,7 @@ export function Prompt(props: PromptProps) {
 
   const placeholderText = createMemo(() => {
     const value = (() => {
-      if (voiceRecording()) return "Recording voice… release to transcribe"
+      if (voiceRecording()) return "Recording voice… release or press again to stop"
       if (store.mode === "shell") {
         if (!shell().length) return undefined
         return `Run a command… "${shell()[store.placeholder % shell().length]}"`
