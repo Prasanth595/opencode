@@ -196,7 +196,12 @@ export const SnowflakeCortexPlugin = define({
     yield* ctx.model.transform((models) => {
       for (const item of models.list(providerID)) {
         models.update(providerID, item.id, (model) => {
-          model.compatibility = { maxTokensField: "max_completion_tokens", ...model.compatibility }
+          model.compatibility = {
+            maxTokensField: "max_completion_tokens",
+            // Cortex Chat Completions caches Claude only through explicit `cache_control` breakpoints.
+            ...((model.modelID ?? model.id).includes("claude") ? { cacheFormat: "anthropic" as const } : {}),
+            ...model.compatibility,
+          }
           if (model.settings?.baseURL !== undefined)
             model.settings.baseURL = endpoint(model.settings.baseURL, account.value)
         })
