@@ -470,14 +470,8 @@ const make = Effect.gen(function* () {
       return undefined
     }
 
-    const detected = yield* method()
-    if (!detected) {
-      yield* Effect.logInfo("update check skipped", { reason: "method-not-found" })
-      return undefined
-    }
-
     const current = yield* Ref.get(installedVersion)
-    const version = yield* latest(detected)
+    const version = yield* latest()
     yield* Effect.logInfo("update check", {
       current,
       latest: version,
@@ -505,7 +499,12 @@ const make = Effect.gen(function* () {
   })
 
   const apply = Effect.fn("cli.updater.apply")(function* (version: string) {
-    if (!(yield* install(version))) return yield* Effect.fail(new Error("Installation method not found"))
+    if (!(yield* install(version)))
+      return yield* Effect.fail(
+        new Error(
+          "Could not detect the installation method. Update with your package manager or download the latest release.",
+        ),
+      )
   })
 
   const check = Effect.fn("cli.updater.check")(function* () {
