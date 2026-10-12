@@ -24,6 +24,7 @@ import {
 } from "../schema/index.js"
 import { classifyProviderFailure } from "../provider-error.js"
 import { isRecord, JsonObject, optionalArray, optionalNull, ProviderShared } from "./shared.js"
+import { cacheControl } from "./utils/cache.js"
 import { OpenAIOptions } from "./utils/openai-options.js"
 import { Lifecycle } from "./utils/lifecycle.js"
 import { ToolStream } from "./utils/tool-stream.js"
@@ -827,15 +828,19 @@ export const fromRequest = Effect.fn("OpenAIChat.fromRequest")(function* (
     request.model.compatibility?.zaiToolStream ?? detectZaiToolStream(provider, baseURL, request.model.id)
   const hasHistory = hasToolHistory(request.messages)
   const hasActiveTools = flattened.tools.length > 0
+  const lowering =
+    options.cacheControl === undefined && request.model.compatibility?.cacheFormat === "anthropic"
+      ? { ...options, cacheControl: cacheControl() }
+      : options
   return {
     model: request.model.id,
-    messages: yield* lowerMessages(flattened.request, options),
+    messages: yield* lowerMessages(flattened.request, lowering),
     tools:
       flattened.tools.length === 0
         ? hasHistory
           ? []
           : undefined
-        : flattened.tools.map((tool) => lowerTool(tool, options, supportsStrictMode)),
+        : flattened.tools.map((tool) => lowerTool(tool, lowering, supportsStrictMode)),
     tool_choice: hasActiveTools && request.toolChoice ? yield* lowerToolChoice(request.toolChoice) : undefined,
     stream: true as const,
     ...(supportsUsageInStreaming ? { stream_options: { include_usage: true } } : {}),

@@ -16600,6 +16600,14 @@
         "required": ["_tag", "sessionID", "messageID", "message"],
         "additionalProperties": false
       },
+      "Model.CacheFormat": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": ["anthropic"]
+          }
+        ]
+      },
       "Model.Capabilities": {
         "type": "object",
         "properties": {
@@ -16642,6 +16650,9 @@
           },
           "supportsPromptCacheKey": {
             "type": "boolean"
+          },
+          "cacheFormat": {
+            "$ref": "#/components/schemas/Model.CacheFormat"
           },
           "supportsThinkingBlockBinding": {
             "type": "boolean"
@@ -17741,6 +17752,9 @@
           },
           "supportsPromptCacheKey": {
             "type": "boolean"
+          },
+          "cacheFormat": {
+            "$ref": "#/components/schemas/Model.CacheFormat"
           }
         },
         "additionalProperties": false

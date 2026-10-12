@@ -186,6 +186,9 @@ export type LanguageModelMaxTokensFieldCompatibility = Schema.Schema.Type<
   typeof LanguageModelMaxTokensFieldCompatibility
 >
 
+export const LanguageModelCacheFormatCompatibility = Schema.Literals(["anthropic"])
+export type LanguageModelCacheFormatCompatibility = Schema.Schema.Type<typeof LanguageModelCacheFormatCompatibility>
+
 export class LanguageModelCompatibility extends Schema.Class<LanguageModelCompatibility>(
   "LLM.LanguageModelCompatibility",
 )({
@@ -203,6 +206,8 @@ export class LanguageModelCompatibility extends Schema.Class<LanguageModelCompat
   // this is true; other protocols omit it only when this is false.
   // Session-affinity headers still flow regardless.
   supportsPromptCacheKey: Schema.optional(Schema.Boolean),
+  /** Prompt-cache marker syntax the endpoint accepts. Overrides the route default; `anthropic` sends `cache_control`. */
+  cacheFormat: Schema.optional(LanguageModelCacheFormatCompatibility),
   zaiToolStream: Schema.optional(Schema.Boolean),
   requireSignature: Schema.optional(Schema.Boolean),
   /** Supports Anthropic's thinking-prefix mismatch controls. Overrides model-ID detection. */

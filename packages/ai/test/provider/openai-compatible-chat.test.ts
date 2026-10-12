@@ -99,6 +99,34 @@ describe("OpenAI-compatible Chat route", () => {
     }),
   )
 
+  it.effect("places Anthropic cache breakpoints only when compatibility declares the format", () =>
+    Effect.gen(function* () {
+      const prepare = (cacheFormat: "anthropic" | undefined) =>
+        compileRequest(
+          LLM.request({
+            model: OpenAICompatibleChat.route
+              .with({ provider: "custom", endpoint: { baseURL: "https://api.custom.test/v1" } })
+              .model({ id: "claude-sonnet-5", compatibility: cacheFormat === undefined ? undefined : { cacheFormat } }),
+            system: "You are concise.",
+            prompt: "Say hello.",
+            tools: [ToolDefinition.make({ name: "lookup", description: "Lookup data", inputSchema: {} })],
+          }),
+        )
+
+      const declared = yield* prepare("anthropic")
+      expect(declared.body).toMatchObject({
+        messages: [
+          { role: "system", content: [{ type: "text", text: "You are concise.", cache_control: { type: "ephemeral" } }] },
+          { role: "user", content: [{ type: "text", text: "Say hello.", cache_control: { type: "ephemeral" } }] },
+        ],
+        tools: [{ function: { name: "lookup" }, cache_control: { type: "ephemeral" } }],
+      })
+      expect(JSON.stringify(declared.body)).not.toContain('"ttl"')
+
+      expect(JSON.stringify((yield* prepare(undefined)).body)).not.toContain("cache_control")
+    }),
+  )
+
   it.effect("configures the max tokens request field", () =>
     Effect.gen(function* () {
       const compatible = OpenAICompatibleChat.route

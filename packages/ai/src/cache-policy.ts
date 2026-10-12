@@ -172,10 +172,13 @@ const countHints = (request: LLMRequest) =>
 
 export const applyCachePolicy = (request: LLMRequest): LLMRequest => {
   const route = request.model.route.id
-  if (!RESPECTS_INLINE_HINTS.has(route)) return request
-  const policy =
-    (route === "openrouter" || route === "vercel-ai-gateway-messages") &&
-    (request.cache === undefined || request.cache === "auto")
+  // A declared cache format overrides the route allowlist and its model-ID heuristics.
+  const declared = request.model.compatibility?.cacheFormat !== undefined
+  if (!declared && !RESPECTS_INLINE_HINTS.has(route)) return request
+  const policy = declared
+    ? resolve(request.cache)
+    : (route === "openrouter" || route === "vercel-ai-gateway-messages") &&
+        (request.cache === undefined || request.cache === "auto")
       ? gatewayPolicy(request.model.id)
       : route === "alibaba-chat" && (request.cache === undefined || request.cache === "auto")
         ? request.model.id.toLowerCase().startsWith("qwen")
