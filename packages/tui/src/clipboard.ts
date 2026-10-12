@@ -27,13 +27,17 @@ const PASTEBOARD_FILES_SCRIPT = `ObjC.import("AppKit"); const urls = $.NSPastebo
 // file icon and the bare file names.
 export async function readPasteboardFiles() {
   if (process.platform !== "darwin") return []
-  const proc = Bun.spawn(["osascript", "-l", "JavaScript", "-e", PASTEBOARD_FILES_SCRIPT], {
-    stdout: "pipe",
-    stderr: "ignore",
-  })
-  const [output, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited])
-  if (code !== 0) return []
-  return output.split("\n").filter(Boolean)
+  const read = async () => {
+    const proc = Bun.spawn(["osascript", "-l", "JavaScript", "-e", PASTEBOARD_FILES_SCRIPT], {
+      stdout: "pipe",
+      stderr: "ignore",
+      timeout: 1000,
+    })
+    const [output, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited])
+    return code === 0 ? output.split("\n").filter(Boolean) : []
+  }
+  // A failed or stuck osascript must not break or block the paste.
+  return read().catch(() => [])
 }
 
 export function createClipboardAdapter(
@@ -42,16 +46,16 @@ export function createClipboardAdapter(
 ): OwnedClipboardService {
   return {
     async read(): Promise<ClipboardContent | undefined> {
-      const [files, result] = await Promise.all([
-        pasteboardFiles(),
-        clipboard.read({
-          preferredTypes: ["image/png", "text/plain"],
-          selection: "clipboard",
-        }),
-      ])
-      // Hand copied files to the paste path resolver instead of their icon bitmap.
-      if (files.length > 0)
-        return { data: files.map((file) => pathToFileURL(file).href).join("\n"), mime: "text/plain" }
+      const result = await clipboard.read({
+        preferredTypes: ["image/png", "text/plain"],
+        selection: "clipboard",
+      })
+      // A Finder copy reads as its file icon bitmap; hand the copied files to the paste path resolver instead.
+      if (result.status === "read" && result.representation.mimeType === "image/png") {
+        const files = await pasteboardFiles()
+        if (files.length > 0)
+          return { data: files.map((file) => pathToFileURL(file).href).join("\n"), mime: "text/plain" }
+      }
       if (result.status !== "read") {
         if (result.status === "failed") throw result.error
         if (result.status === "timed-out") throw new Error("Clipboard read timed out")

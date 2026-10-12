@@ -83,6 +83,25 @@ test("reads files copied in Finder as file URLs instead of their icon bitmap", a
   })
 })
 
+test("reads copied files only when the clipboard holds a bitmap", async () => {
+  let reads = 0
+  const clipboard = createClipboardAdapter(
+    coreClipboard({
+      read: {
+        status: "read",
+        representation: { mimeType: "text/plain", bytes: new TextEncoder().encode("hello") },
+      },
+    }),
+    async () => {
+      reads++
+      return ["/tmp/one.png"]
+    },
+  )
+
+  expect(await clipboard.read()).toEqual({ data: "hello", mime: "text/plain" })
+  expect(reads).toBe(0)
+})
+
 test("uses all available routes but skips the process host remotely", async () => {
   const writes = { host: 0, terminal: 0 }
   const host: HostClipboardService = {
