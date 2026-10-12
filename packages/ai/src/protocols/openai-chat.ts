@@ -828,10 +828,7 @@ export const fromRequest = Effect.fn("OpenAIChat.fromRequest")(function* (
     request.model.compatibility?.zaiToolStream ?? detectZaiToolStream(provider, baseURL, request.model.id)
   const hasHistory = hasToolHistory(request.messages)
   const hasActiveTools = flattened.tools.length > 0
-  const lowering =
-    options.cacheControl === undefined && request.model.compatibility?.cacheFormat === "anthropic"
-      ? { ...options, cacheControl: cacheControl() }
-      : options
+  const lowering = { ...options, cacheControl: options.cacheControl ?? declaredCacheControl(request) }
   return {
     model: request.model.id,
     messages: yield* lowerMessages(flattened.request, lowering),
@@ -857,6 +854,10 @@ export const fromRequest = Effect.fn("OpenAIChat.fromRequest")(function* (
     ...lowerOptions(request, supportsStore),
   }
 })
+
+// Provider wrappers that pass their own marker writer keep it; otherwise a declared cache format adds one.
+const declaredCacheControl = (request: LLMRequest) =>
+  request.model.compatibility?.cacheFormat === undefined ? undefined : cacheControl()
 
 // =============================================================================
 // Stream Parsing

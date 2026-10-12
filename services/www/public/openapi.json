@@ -16601,12 +16601,8 @@
         "additionalProperties": false
       },
       "Model.CacheFormat": {
-        "anyOf": [
-          {
-            "type": "string",
-            "enum": ["anthropic"]
-          }
-        ]
+        "type": "string",
+        "enum": ["anthropic", "alibaba"]
       },
       "Model.Capabilities": {
         "type": "object",

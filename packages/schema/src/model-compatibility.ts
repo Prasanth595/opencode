@@ -13,7 +13,7 @@ export const MaxTokensField = Schema.Literals(["max_completion_tokens", "max_tok
 })
 export type MaxTokensField = typeof MaxTokensField.Type
 
-export const CacheFormat = Schema.Literals(["anthropic"]).annotate({ identifier: "Model.CacheFormat" })
+export const CacheFormat = Schema.Literals(["anthropic", "alibaba"]).annotate({ identifier: "Model.CacheFormat" })
 export type CacheFormat = typeof CacheFormat.Type
 
 export interface Compatibility extends Schema.Schema.Type<typeof Compatibility> {}
@@ -25,7 +25,7 @@ export const Compatibility = Schema.Struct({
   requireFinishReason: Schema.Boolean.pipe(optional),
   requireAssistantAfterTool: Schema.Boolean.pipe(optional),
   supportsPromptCacheKey: Schema.Boolean.pipe(optional),
-  /** Prompt-cache marker syntax the endpoint accepts. Overrides the route default; `anthropic` sends `cache_control`. */
+  /** Prompt-cache marker syntax the endpoint accepts. Overrides the route default; both send `cache_control`, and `alibaba` skips tool definitions. */
   cacheFormat: CacheFormat.pipe(optional),
   /** Supports Anthropic's thinking-prefix mismatch controls. Overrides model-ID detection. */
   supportsThinkingBlockBinding: Schema.Boolean.pipe(optional),
