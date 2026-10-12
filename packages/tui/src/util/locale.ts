@@ -47,30 +47,34 @@ export function duration(input: number) {
   return `${days}d ${hours}h`
 }
 
-export function truncate(str: string, len: number): string {
-  if (str.length <= len) return str
-  return str.slice(0, len - 1) + "…"
-}
-
 const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" })
 
 export function graphemes(str: string) {
   return Array.from(graphemeSegmenter.segment(str), (item) => item.segment)
 }
 
+function keepWithinWidth(segments: string[], width: number) {
+  const kept: string[] = []
+  let used = 0
+  for (const segment of segments) {
+    const next = stringWidth(segment)
+    if (used + next > width) break
+    kept.push(segment)
+    used += next
+  }
+  return kept
+}
+
 export function takeWidth(str: string, width: number) {
   if (width <= 0) return ""
   if (stringWidth(str) <= width) return str
+  return keepWithinWidth(graphemes(str), width).join("")
+}
 
-  const result: string[] = []
-  let used = 0
-  for (const segment of graphemes(str)) {
-    const next = stringWidth(segment)
-    if (used + next > width) break
-    result.push(segment)
-    used += next
-  }
-  return result.join("")
+function takeWidthEnd(str: string, width: number) {
+  if (width <= 0) return ""
+  if (stringWidth(str) <= width) return str
+  return keepWithinWidth(graphemes(str).reverse(), width).reverse().join("")
 }
 
 export function truncateWidth(str: string, width: number): string {
@@ -80,19 +84,24 @@ export function truncateWidth(str: string, width: number): string {
   return takeWidth(str, width - 1) + "…"
 }
 
+// Kept as an alias so callers that pass a column budget get display-width truncation.
+export function truncate(str: string, len: number): string {
+  return truncateWidth(str, len)
+}
+
 export function truncateLeft(str: string, len: number): string {
-  if (str.length <= len) return str
-  return "…" + str.slice(-(len - 1))
+  if (stringWidth(str) <= len) return str
+  if (len <= 0) return ""
+  if (len === 1) return "…"
+  return "…" + takeWidthEnd(str, len - 1)
 }
 
 export function truncateMiddle(str: string, maxLength: number = 35): string {
-  if (str.length <= maxLength) return str
-
-  const ellipsis = "…"
-  const keepStart = Math.ceil((maxLength - ellipsis.length) / 2)
-  const keepEnd = Math.floor((maxLength - ellipsis.length) / 2)
-
-  return str.slice(0, keepStart) + ellipsis + str.slice(-keepEnd)
+  if (stringWidth(str) <= maxLength) return str
+  if (maxLength <= 0) return ""
+  if (maxLength === 1) return "…"
+  const keep = maxLength - 1
+  return takeWidth(str, Math.ceil(keep / 2)) + "…" + takeWidthEnd(str, Math.floor(keep / 2))
 }
 
 export * as Locale from "./locale"
