@@ -16760,6 +16760,19 @@
           "enabled": {
             "type": "boolean"
           },
+          "context": {
+            "type": "object",
+            "properties": {
+              "default": {
+                "type": "integer"
+              },
+              "long": {
+                "type": "integer"
+              }
+            },
+            "required": ["default", "long"],
+            "additionalProperties": false
+          },
           "limit": {
             "type": "object",
             "properties": {
