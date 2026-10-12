@@ -1,19 +1,24 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { makeGlobalNode } from "@opencode-ai/core/effect/app-node"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
-import { Effect, Layer, Stream } from "effect"
+import { Effect, Fiber, Layer, Stream } from "effect"
+import * as TestClock from "effect/testing/TestClock"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { Installation } from "../../src/installation"
-import { InstallationChannel } from "@opencode-ai/core/installation/version"
+import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { testEffect } from "../lib/effect"
 
 const encoder = new TextEncoder()
 
-function mockHttpClient(handler: (request: HttpClientRequest.HttpClientRequest) => Response) {
-  const client = HttpClient.make((request) => Effect.succeed(HttpClientResponse.fromWeb(request, handler(request))))
+// A handler that returns undefined never responds.
+function mockHttpClient(handler: (request: HttpClientRequest.HttpClientRequest) => Response | undefined) {
+  const client = HttpClient.make((request) => {
+    const response = handler(request)
+    return response ? Effect.succeed(HttpClientResponse.fromWeb(request, response)) : Effect.never
+  })
   return Layer.succeed(HttpClient.HttpClient, client)
 }
 
@@ -52,7 +57,7 @@ function jsonResponse(body: unknown) {
 }
 
 function testLayer(
-  httpHandler: (request: HttpClientRequest.HttpClientRequest) => Response,
+  httpHandler: (request: HttpClientRequest.HttpClientRequest) => Response | undefined,
   spawnHandler?: (cmd: string, args: readonly string[]) => string | { code: number; stdout?: string; stderr?: string },
 ) {
   const spawnerNode = makeGlobalNode({
@@ -67,117 +72,193 @@ function testLayer(
 }
 
 describe("installation", () => {
+  describe("isUpdate", () => {
+    test("only counts newer releases in the installed major version", () => {
+      expect(Installation.isUpdate("1.19.0", "1.19.1")).toBe(true)
+      expect(Installation.isUpdate("1.19.0", "1.20.0")).toBe(true)
+      expect(Installation.isUpdate("1.19.0", "1.19.0")).toBe(false)
+      expect(Installation.isUpdate("1.19.0", "1.18.35")).toBe(false)
+      expect(Installation.isUpdate("1.19.0", "2.0.0")).toBe(false)
+      expect(Installation.isUpdate("1.9.0", "1.10.0")).toBe(true)
+    })
+
+    test("compares preview builds within their channel", () => {
+      expect(Installation.isUpdate("0.0.0-dev-202610110139", "0.0.0-dev-202610120000")).toBe(true)
+      expect(Installation.isUpdate("0.0.0-dev-202610120000", "0.0.0-dev-202610110139")).toBe(false)
+    })
+
+    test("source builds only accept OpenCode 1 releases", () => {
+      expect(Installation.isUpdate("local", "1.19.0")).toBe(true)
+      expect(Installation.isUpdate("local", "2.0.0")).toBe(false)
+      expect(Installation.isUpdate("1.19.0", "not-a-version")).toBe(false)
+    })
+  })
+
   describe("latest", () => {
-    testEffect(testLayer(() => jsonResponse({ tag_name: "v1.2.3" }))).effect(
-      "reads release version from GitHub releases",
+    const service = `${Installation.UPDATE_URL}?current=${InstallationVersion}`
+    const npm = "https://registry.npmjs.org/opencode-ai/latest"
+
+    for (const method of ["curl", "yarn", "unknown"] as const) {
+      const calls: string[] = []
+      testEffect(
+        testLayer((request) => {
+          calls.push(request.url)
+          return jsonResponse({ version: "1.19.1" })
+        }),
+      ).effect(`reads ${method} versions from the update service v1 channel`, () =>
+        Effect.gen(function* () {
+          calls.length = 0
+          expect(yield* Installation.use.latest(method)).toBe("1.19.1")
+          expect(calls).toEqual([service])
+        }),
+      )
+    }
+
+    const fallbackCalls: string[] = []
+    testEffect(
+      testLayer((request) => {
+        fallbackCalls.push(request.url)
+        if (request.url.startsWith(Installation.UPDATE_URL)) return new Response("unavailable", { status: 503 })
+        return jsonResponse({ version: "1.19.2" })
+      }),
+    ).effect("falls back to the npm registry when the update service fails", () =>
+      Effect.gen(function* () {
+        fallbackCalls.length = 0
+        expect(yield* Installation.use.latest("curl")).toBe("1.19.2")
+        expect(fallbackCalls.at(-1)).toBe(npm)
+        expect(fallbackCalls.some((url) => url.includes("api.github.com"))).toBe(false)
+      }),
+    )
+
+    testEffect(
+      testLayer((request) =>
+        request.url.startsWith(Installation.UPDATE_URL) ? undefined : jsonResponse({ version: "1.19.4" }),
+      ),
+    ).effect("falls back to the npm registry when the update service times out", () =>
+      Effect.gen(function* () {
+        const fiber = yield* Installation.use.latest("curl").pipe(Effect.forkChild)
+        yield* TestClock.adjust("10 seconds")
+        expect(yield* Fiber.join(fiber)).toBe("1.19.4")
+      }),
+    )
+
+    const invalidCalls: string[] = []
+    testEffect(
+      testLayer((request) => {
+        invalidCalls.push(request.url)
+        if (request.url.startsWith(Installation.UPDATE_URL)) return jsonResponse({ error: "Channel not found" })
+        return jsonResponse({ version: "1.19.3" })
+      }),
+    ).effect("falls back to the npm registry when the update service has no v1 release", () =>
+      Effect.gen(function* () {
+        invalidCalls.length = 0
+        expect(yield* Installation.use.latest("curl")).toBe("1.19.3")
+        expect(invalidCalls.at(-1)).toBe(npm)
+      }),
+    )
+
+    testEffect(testLayer(() => jsonResponse({ version: "2.0.27" }))).effect(
+      "ignores OpenCode 2 releases from the update service",
       () =>
         Effect.gen(function* () {
-          const result = yield* Installation.use.latest("unknown")
-          expect(result).toBe("1.2.3")
+          expect(yield* Installation.use.latest("curl")).toBe(InstallationVersion)
         }),
     )
 
-    testEffect(testLayer(() => jsonResponse({ tag_name: "v4.0.0-beta.1" }))).effect(
-      "strips v prefix from GitHub release tag",
+    for (const method of ["npm", "bun", "pnpm"] as const) {
+      const calls: string[] = []
+      testEffect(
+        testLayer((request) => {
+          calls.push(request.url)
+          return jsonResponse({ version: "1.5.0" })
+        }),
+      ).effect(`reads ${method} versions via registry`, () =>
+        Effect.gen(function* () {
+          calls.length = 0
+          expect(yield* Installation.use.latest(method)).toBe("1.5.0")
+          expect(calls).toEqual([npm])
+        }),
+      )
+
+      testEffect(testLayer(() => jsonResponse({ version: "2.0.0" }))).effect(
+        `ignores OpenCode 2 releases from ${method}`,
+        () =>
+          Effect.gen(function* () {
+            expect(yield* Installation.use.latest(method)).toBe(InstallationVersion)
+          }),
+      )
+    }
+
+    testEffect(testLayer(() => jsonResponse({ version: "1.3.4" }))).effect("reads scoop manifest versions", () =>
+      Effect.gen(function* () {
+        expect(yield* Installation.use.latest("scoop")).toBe("1.3.4")
+      }),
+    )
+
+    testEffect(testLayer(() => jsonResponse({ version: "2.3.4" }))).effect(
+      "ignores OpenCode 2 releases from scoop",
       () =>
         Effect.gen(function* () {
-          const result = yield* Installation.use.latest("curl")
-          expect(result).toBe("4.0.0-beta.1")
+          expect(yield* Installation.use.latest("scoop")).toBe(InstallationVersion)
         }),
     )
 
-    const npmCalls: string[] = []
-    testEffect(
-      testLayer((request) => {
-        npmCalls.push(request.url)
-        return jsonResponse({ version: "1.5.0" })
-      }),
-    ).effect("reads npm versions via registry", () =>
-      Effect.gen(function* () {
-        const result = yield* Installation.use.latest("npm")
-        expect(result).toBe("1.5.0")
-        expect(npmCalls).toContain(`https://registry.npmjs.org/opencode-ai/${InstallationChannel}`)
-      }),
-    )
-
-    const bunCalls: string[] = []
-    testEffect(
-      testLayer((request) => {
-        bunCalls.push(request.url)
-        return jsonResponse({ version: "1.6.0" })
-      }),
-    ).effect("reads bun versions via registry", () =>
-      Effect.gen(function* () {
-        const result = yield* Installation.use.latest("bun")
-        expect(result).toBe("1.6.0")
-        expect(bunCalls).toContain(`https://registry.npmjs.org/opencode-ai/${InstallationChannel}`)
-      }),
-    )
-
-    const pnpmCalls: string[] = []
-    testEffect(
-      testLayer((request) => {
-        pnpmCalls.push(request.url)
-        return jsonResponse({ version: "1.7.0" })
-      }),
-    ).effect("reads pnpm versions via registry", () =>
-      Effect.gen(function* () {
-        const result = yield* Installation.use.latest("pnpm")
-        expect(result).toBe("1.7.0")
-        expect(pnpmCalls).toContain(`https://registry.npmjs.org/opencode-ai/${InstallationChannel}`)
-      }),
-    )
-
-    testEffect(testLayer(() => jsonResponse({ version: "2.3.4" }))).effect("reads scoop manifest versions", () =>
-      Effect.gen(function* () {
-        const result = yield* Installation.use.latest("scoop")
-        expect(result).toBe("2.3.4")
-      }),
-    )
-
-    testEffect(testLayer(() => jsonResponse({ d: { results: [{ Version: "3.4.5" }] } }))).effect(
+    testEffect(testLayer(() => jsonResponse({ d: { results: [{ Version: "1.4.5" }] } }))).effect(
       "reads chocolatey feed versions",
       () =>
         Effect.gen(function* () {
-          const result = yield* Installation.use.latest("choco")
-          expect(result).toBe("3.4.5")
+          expect(yield* Installation.use.latest("choco")).toBe("1.4.5")
         }),
     )
 
-    testEffect(
-      testLayer(
-        () => jsonResponse({ versions: { stable: "2.0.0" } }),
-        (cmd, args) => {
-          // getBrewFormula: return core formula (no tap)
-          if (cmd === "brew" && args.includes("--formula") && args.includes("anomalyco/tap/opencode")) return ""
-          if (cmd === "brew" && args.includes("--formula") && args.includes("opencode")) return "opencode"
-          return ""
-        },
-      ),
-    ).effect("reads brew formulae API versions", () =>
+    testEffect(testLayer(() => jsonResponse({ d: { results: [{ Version: "2.0.0" }] } }))).effect(
+      "ignores OpenCode 2 releases from chocolatey",
+      () =>
+        Effect.gen(function* () {
+          expect(yield* Installation.use.latest("choco")).toBe(InstallationVersion)
+        }),
+    )
+
+    const brewCore = (cmd: string, args: readonly string[]) => {
+      // getBrewFormula: return core formula (no tap)
+      if (cmd === "brew" && args.includes("--formula") && args.includes("anomalyco/tap/opencode")) return ""
+      if (cmd === "brew" && args.includes("--formula") && args.includes("opencode")) return "opencode"
+      return ""
+    }
+    testEffect(testLayer(() => jsonResponse({ versions: { stable: "1.8.0" } }), brewCore)).effect(
+      "reads brew formulae API versions",
+      () =>
+        Effect.gen(function* () {
+          expect(yield* Installation.use.latest("brew")).toBe("1.8.0")
+        }),
+    )
+
+    testEffect(testLayer(() => jsonResponse({ versions: { stable: "2.0.25" } }), brewCore)).effect(
+      "ignores OpenCode 2 in Homebrew Core",
+      () =>
+        Effect.gen(function* () {
+          expect(yield* Installation.use.latest("brew")).toBe(InstallationVersion)
+        }),
+    )
+
+    const brewTap = (stable: string) => (cmd: string, args: readonly string[]) => {
+      if (cmd === "brew" && args.includes("anomalyco/tap/opencode") && args.includes("--formula")) return "opencode"
+      if (cmd === "brew" && args.includes("--json=v2")) return JSON.stringify({ formulae: [{ versions: { stable } }] })
+      return ""
+    }
+    // HTTP is not used for the tap formula.
+    testEffect(testLayer(() => jsonResponse({}), brewTap("1.9.0"))).effect("reads brew tap info JSON via CLI", () =>
       Effect.gen(function* () {
-        const result = yield* Installation.use.latest("brew")
-        expect(result).toBe("2.0.0")
+        expect(yield* Installation.use.latest("brew")).toBe("1.9.0")
       }),
     )
 
-    const brewInfoJson = JSON.stringify({
-      formulae: [{ versions: { stable: "2.1.0" } }],
-    })
-    testEffect(
-      testLayer(
-        () => jsonResponse({}), // HTTP not used for tap formula
-        (cmd, args) => {
-          if (cmd === "brew" && args.includes("anomalyco/tap/opencode") && args.includes("--formula")) return "opencode"
-          if (cmd === "brew" && args.includes("--json=v2")) return brewInfoJson
-          return ""
-        },
-      ),
-    ).effect("reads brew tap info JSON via CLI", () =>
-      Effect.gen(function* () {
-        const result = yield* Installation.use.latest("brew")
-        expect(result).toBe("2.1.0")
-      }),
+    testEffect(testLayer(() => jsonResponse({}), brewTap("2.1.0"))).effect(
+      "ignores OpenCode 2 in the Homebrew tap",
+      () =>
+        Effect.gen(function* () {
+          expect(yield* Installation.use.latest("brew")).toBe(InstallationVersion)
+        }),
     )
   })
 

@@ -60,8 +60,22 @@ export class UpgradeFailedError extends Schema.TaggedErrorClass<UpgradeFailedErr
   }
 }
 
+// OpenCode 1 only updates within its own major version. OpenCode 2 is offered separately through
+// upgradeMajor, so package sources that already publish 2.x (such as Homebrew Core) must not be
+// reported as a normal update.
+export function isUpdate(current: string, latest: string) {
+  if (!semver.valid(latest)) return false
+  if (!semver.valid(current)) return semver.major(latest) === 1
+  return semver.major(latest) === semver.major(current) && semver.gt(latest, current)
+}
+
+// The update service's v1 channel only ever contains OpenCode 1 releases.
+export const UPDATE_URL = "https://opencode.ai/update/api/v1/cli/github"
+
+// Source builds check the stable release line.
+const NPM_TAG = InstallationChannel === "local" ? "latest" : InstallationChannel
+
 // Response schemas for external version APIs
-const GitHubRelease = Schema.Struct({ tag_name: Schema.String })
 const NpmPackage = Schema.Struct({ version: Schema.String })
 const BrewFormula = Schema.Struct({ versions: Schema.Struct({ stable: Schema.String }) })
 const BrewInfoV2 = Schema.Struct({
@@ -71,6 +85,7 @@ const ChocoPackage = Schema.Struct({
   d: Schema.Struct({ results: Schema.Array(Schema.Struct({ Version: Schema.String })) }),
 })
 const ScoopManifest = NpmPackage
+const UpdateArtifact = NpmPackage
 
 export interface Interface {
   readonly info: () => Effect.Effect<Info>
@@ -226,6 +241,74 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
       return installed
     })
 
+    const npmLatest = Effect.fnUntraced(function* () {
+      const response = yield* httpOk.execute(
+        HttpClientRequest.get(`${yield* NpmConfig.registry(process.cwd())}/opencode-ai/${NPM_TAG}`).pipe(
+          HttpClientRequest.acceptJson,
+        ),
+      )
+      const data = yield* HttpClientResponse.schemaBodyJson(NpmPackage)(response)
+      return data.version
+    })
+
+    // No retries: a failed check falls back to the npm registry instead.
+    const serviceLatest = Effect.fnUntraced(function* () {
+      const response = yield* HttpClient.filterStatusOk(http).execute(
+        HttpClientRequest.get(`${UPDATE_URL}?current=${encodeURIComponent(InstallationVersion)}`).pipe(
+          HttpClientRequest.acceptJson,
+        ),
+      )
+      const data = yield* HttpClientResponse.schemaBodyJson(UpdateArtifact)(response)
+      return data.version
+    })
+
+    const discover = Effect.fnUntraced(function* (detectedMethod: Method) {
+      if (detectedMethod === "brew") {
+        const formula = yield* getBrewFormula()
+        if (formula.includes("/")) {
+          const infoJson = yield* text(["brew", "info", "--json=v2", formula])
+          const info = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(BrewInfoV2))(infoJson)
+          return info.formulae[0].versions.stable
+        }
+        const response = yield* httpOk.execute(
+          HttpClientRequest.get("https://formulae.brew.sh/api/formula/opencode.json").pipe(
+            HttpClientRequest.acceptJson,
+          ),
+        )
+        const data = yield* HttpClientResponse.schemaBodyJson(BrewFormula)(response)
+        return data.versions.stable
+      }
+
+      if (detectedMethod === "npm" || detectedMethod === "bun" || detectedMethod === "pnpm") return yield* npmLatest()
+
+      if (detectedMethod === "choco") {
+        const response = yield* httpOk.execute(
+          HttpClientRequest.get(
+            "https://community.chocolatey.org/api/v2/Packages?$filter=Id%20eq%20%27opencode%27%20and%20IsLatestVersion&$select=Version",
+          ).pipe(HttpClientRequest.setHeaders({ Accept: "application/json;odata=verbose" })),
+        )
+        const data = yield* HttpClientResponse.schemaBodyJson(ChocoPackage)(response)
+        return data.d.results[0].Version
+      }
+
+      if (detectedMethod === "scoop") {
+        const response = yield* httpOk.execute(
+          HttpClientRequest.get(
+            "https://raw.githubusercontent.com/ScoopInstaller/Main/master/bucket/opencode.json",
+          ).pipe(HttpClientRequest.setHeaders({ Accept: "application/json" })),
+        )
+        const data = yield* HttpClientResponse.schemaBodyJson(ScoopManifest)(response)
+        return data.version
+      }
+
+      // curl, yarn, and unknown installs. Preview builds have no update service channel.
+      if (NPM_TAG !== "latest") return yield* npmLatest()
+      return yield* serviceLatest().pipe(
+        Effect.timeout("10 seconds"),
+        Effect.catch(() => npmLatest()),
+      )
+    })
+
     const result: Interface = {
       info: Effect.fn("Installation.info")(function* () {
         return {
@@ -268,61 +351,10 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
         return "unknown" as Method
       }),
       latest: Effect.fn("Installation.latest")(function* (installMethod?: Method) {
-        const detectedMethod = installMethod || (yield* result.method())
-
-        if (detectedMethod === "brew") {
-          const formula = yield* getBrewFormula()
-          if (formula.includes("/")) {
-            const infoJson = yield* text(["brew", "info", "--json=v2", formula])
-            const info = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(BrewInfoV2))(infoJson)
-            return info.formulae[0].versions.stable
-          }
-          const response = yield* httpOk.execute(
-            HttpClientRequest.get("https://formulae.brew.sh/api/formula/opencode.json").pipe(
-              HttpClientRequest.acceptJson,
-            ),
-          )
-          const data = yield* HttpClientResponse.schemaBodyJson(BrewFormula)(response)
-          return data.versions.stable
-        }
-
-        if (detectedMethod === "npm" || detectedMethod === "bun" || detectedMethod === "pnpm") {
-          const response = yield* httpOk.execute(
-            HttpClientRequest.get(
-              `${yield* NpmConfig.registry(process.cwd())}/opencode-ai/${InstallationChannel}`,
-            ).pipe(HttpClientRequest.acceptJson),
-          )
-          const data = yield* HttpClientResponse.schemaBodyJson(NpmPackage)(response)
-          return data.version
-        }
-
-        if (detectedMethod === "choco") {
-          const response = yield* httpOk.execute(
-            HttpClientRequest.get(
-              "https://community.chocolatey.org/api/v2/Packages?$filter=Id%20eq%20%27opencode%27%20and%20IsLatestVersion&$select=Version",
-            ).pipe(HttpClientRequest.setHeaders({ Accept: "application/json;odata=verbose" })),
-          )
-          const data = yield* HttpClientResponse.schemaBodyJson(ChocoPackage)(response)
-          return data.d.results[0].Version
-        }
-
-        if (detectedMethod === "scoop") {
-          const response = yield* httpOk.execute(
-            HttpClientRequest.get(
-              "https://raw.githubusercontent.com/ScoopInstaller/Main/master/bucket/opencode.json",
-            ).pipe(HttpClientRequest.setHeaders({ Accept: "application/json" })),
-          )
-          const data = yield* HttpClientResponse.schemaBodyJson(ScoopManifest)(response)
-          return data.version
-        }
-
-        const response = yield* httpOk.execute(
-          HttpClientRequest.get("https://api.github.com/repos/anomalyco/opencode/releases/latest").pipe(
-            HttpClientRequest.acceptJson,
-          ),
-        )
-        const data = yield* HttpClientResponse.schemaBodyJson(GitHubRelease)(response)
-        return data.tag_name.replace(/^v/, "")
+        const found = yield* discover(installMethod || (yield* result.method()))
+        // Older versions and other majors (OpenCode 2) report the installed version, so callers offer
+        // OpenCode 2 through the major upgrade instead of a normal update.
+        return isUpdate(InstallationVersion, found) ? found : InstallationVersion
       }, Effect.orDie),
       upgrade: Effect.fn("Installation.upgrade")(function* (m: Method, target: string) {
         let upgradeResult: { code: number; stdout: string; stderr: string } | undefined

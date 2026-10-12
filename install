@@ -65,6 +65,18 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+requested_version="${requested_version#v}"
+
+# This installer only installs OpenCode 1. OpenCode 1 clients run it with VERSION set when upgrading,
+# so refusing 2.x also keeps older clients from replacing themselves with OpenCode 2 by accident.
+if [[ "$requested_version" =~ ^([0-9]+)\. ]] && [ "${BASH_REMATCH[1]}" -ge 2 ]; then
+    echo -e "${RED}Error: OpenCode ${requested_version} is not an OpenCode 1 release, so this installer can't install it.${NC}"
+    echo -e "${MUTED}To install OpenCode 2, run: ${NC}curl -fsSL https://opencode.ai/v2/install | bash"
+    echo -e "${MUTED}To upgrade an existing OpenCode 1 install, run: ${NC}opencode upgrade --major"
+    echo -e "${MUTED}Docs: https://opencode.ai/v2/docs${NC}"
+    exit 1
+fi
+
 INSTALL_DIR=$HOME/.opencode/bin
 mkdir -p "$INSTALL_DIR"
 
@@ -181,16 +193,19 @@ else
     fi
 
     if [ -z "$requested_version" ]; then
-        url="https://github.com/anomalyco/opencode/releases/latest/download/$filename"
-        specific_version=$(curl -s https://api.github.com/repos/anomalyco/opencode/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+        # The update service's v1 channel only contains OpenCode 1 releases. GitHub's release list, filtered
+        # to v1 tags, is the fallback. GitHub's Latest release may be OpenCode 2.
+        specific_version=$(curl -fsSL --max-time 10 "https://opencode.ai/update/api/v1/cli/github" 2>/dev/null | grep -o '"version": *"[^"]*"' | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/' || true)
+        if ! [[ "$specific_version" =~ ^1\.[0-9]+\.[0-9]+$ ]]; then
+            specific_version=$(curl -fsSL --max-time 30 "https://api.github.com/repos/anomalyco/opencode/releases?per_page=100" 2>/dev/null | grep -o '"tag_name": *"v1\.[0-9]*\.[0-9]*"' | head -n 1 | sed 's/.*"v\([^"]*\)"$/\1/' || true)
+        fi
 
-        if [[ $? -ne 0 || -z "$specific_version" ]]; then
+        if [[ -z "$specific_version" ]]; then
             echo -e "${RED}Failed to fetch version information${NC}"
             exit 1
         fi
+        url="https://github.com/anomalyco/opencode/releases/download/v${specific_version}/$filename"
     else
-        # Strip leading 'v' if present
-        requested_version="${requested_version#v}"
         url="https://github.com/anomalyco/opencode/releases/download/v${requested_version}/$filename"
         specific_version=$requested_version
 
