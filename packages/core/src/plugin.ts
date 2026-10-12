@@ -11,6 +11,7 @@ import { KV } from "./kv.js"
 import { PluginHost } from "./plugin/host.js"
 import { type Failure, type Generation, Service } from "./plugin/service.js"
 import { State } from "./state.js"
+import { PluginScheduling } from "./plugin/scheduling.js"
 
 export { awaitActivation, type Generation, type Interface, Service } from "./plugin/service.js"
 
@@ -45,6 +46,7 @@ const layer = Layer.effect(
     })
     const host = yield* PluginHost.make({ list })
     const load = Effect.fnUntraced(function* (plugin: Generation) {
+      yield* PluginScheduling.checkpoint
       const activation: Activation = { plugin, scope: yield* Scope.fork(scope) }
       const inherit = yield* State.inherit()
       const grouped = State.group((failure, refresh) => {
@@ -130,6 +132,7 @@ const layer = Layer.effect(
                     Array.from(previous.entries()).toReversed(),
                     ([id, slot]) =>
                       Effect.gen(function* () {
+                        yield* PluginScheduling.checkpoint
                         active.delete(id)
                         if (slot.activation && !slot.activation.failure)
                           yield* Scope.close(slot.activation.scope, Exit.void)
