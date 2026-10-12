@@ -19,6 +19,8 @@ export function createTmuxClipboard(clipboard: OwnedClipboardService, env = proc
       }
       // This asks tmux to emit OSC 52 itself, so allow-passthrough is not needed.
       await runTmux(["load-buffer", "-w", "-t", client, "-"], env, text.replaceAll("\0", ""))
+      // tmux's clipboard feature and exit status do not confirm terminal acceptance.
+      return "attempted"
     },
   }
 }

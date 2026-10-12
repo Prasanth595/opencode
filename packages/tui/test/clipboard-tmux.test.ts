@@ -51,7 +51,7 @@ test.skipIf(process.platform !== "linux" || !Bun.which("tmux") || !Bun.which("sc
         },
         { ...process.env, TMUX: `${socket},0,0`, TMUX_PANE: pane },
       )
-      await clipboard.write("reattached\0 client\n世界")
+      expect(await clipboard.write("reattached\0 client\n世界")).toBe("attempted")
       expect(new TextDecoder().decode(run(["save-buffer", "-"]).stdout)).toBe("reattached client\n世界")
 
       run(["detach-client", "-s", "copy"])
@@ -81,7 +81,7 @@ test.skipIf(process.platform !== "linux" || !Bun.which("tmux") || !Bun.which("sc
 test("keeps the normal clipboard outside tmux", () => {
   const clipboard = {
     read: async () => undefined,
-    write: async () => {},
+    write: async () => "written" as const,
     dispose: async () => {},
   }
   expect(createTmuxClipboard(clipboard, {})).toBe(clipboard)
