@@ -1,5 +1,3 @@
-import { Permission } from "@opencode/schema/permission"
-import { Question } from "@opencode/schema/question"
 import { Tool } from "@opencode/schema/tool"
 import type { Rpc } from "@opencode/schema/rpc"
 import type { RpcCallOptions, RpcEventPayload } from "@opencode/client/promise/api"
@@ -634,9 +632,6 @@ const executePromiseTool = (tool: Info, input: any, context: Tool.Context) =>
     catch: (error) => error,
   }).pipe(
     Effect.catch((error) => {
-      // A user's decline, rethrown from a wrapped tool, must keep ending the step instead of becoming tool output.
-      if (error instanceof Permission.DeclinedError || error instanceof Question.CancelledError)
-        return Effect.die(error)
       if (error instanceof Tool.Error) return Effect.fail(error)
       return Effect.fail(new Tool.Error({ message: error instanceof Error ? error.message : String(error), error }))
     }),

@@ -65,5 +65,3 @@ export const Rule = Schema.Struct({
 
 export const Ruleset = Schema.Array(Rule).annotate({ identifier: "Permission.Ruleset" })
 export type Ruleset = typeof Ruleset.Type
-
-export class DeclinedError extends Schema.TaggedError<DeclinedError>()("Permission.DeclinedError", {}) {}

@@ -20,9 +20,3 @@ export interface Prompt extends Schema.Schema.Type<typeof Prompt> {}
 
 export const Answer = Schema.Array(Schema.String).annotate({ identifier: "Question.Answer" })
 export type Answer = typeof Answer.Type
-
-export class CancelledError extends Schema.TaggedError<CancelledError>()("QuestionTool.CancelledError", {}) {
-  override get message() {
-    return "The user dismissed this question"
-  }
-}
