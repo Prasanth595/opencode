@@ -470,8 +470,14 @@ const make = Effect.gen(function* () {
       return undefined
     }
 
+    const detected = yield* method()
+    if (!detected) {
+      yield* Effect.logInfo("update check skipped", { reason: "method-not-found" })
+      return undefined
+    }
+
     const current = yield* Ref.get(installedVersion)
-    const version = yield* latest()
+    const version = yield* latest(detected)
     yield* Effect.logInfo("update check", {
       current,
       latest: version,
