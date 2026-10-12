@@ -4,14 +4,17 @@ import { InvalidRequestError, ServiceUnavailableError } from "@opencode/protocol
 import { Cause, Effect, Exit } from "effect"
 import { HttpApiBuilder } from "effect/http-api"
 import { Api } from "../api"
-import { response } from "../location"
+import { awaitPlugins, response } from "../location"
 
 export const PluginHandler = HttpApiBuilder.group(Api, "server.plugin", (handlers) =>
   handlers
-    .handle("plugin.list", () =>
-      Effect.gen(function* () {
-        return yield* response(Plugin.Service.use((plugin) => plugin.list()))
-      }),
+    .handle(
+      "plugin.list",
+      () =>
+        Effect.gen(function* () {
+          yield* awaitPlugins
+          return yield* response(Plugin.Service.use((plugin) => plugin.list()))
+        }),
     )
     .handle("plugin.check", (ctx) =>
       Effect.gen(function* () {
