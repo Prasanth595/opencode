@@ -222,18 +222,17 @@ async function run(input: {
   wait?: () => Promise<void>
   terminalDelay?: number
   models?: ModelInfo[]
-  modelStatus?: number
+  modelUnavailable?: boolean
 }) {
-  using server = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    fetch: () =>
-      Response.json(
-        { location: { ...location, project: { id: "proj_1", directory: location.directory } }, data: input.models ?? [] },
-        { status: input.modelStatus ?? 200 },
-      ),
-  })
-  const sdk = OpenCode.make({ baseUrl: server.url.href })
+  const sdk = OpenCode.make({ baseUrl: "https://opencode.test" })
+  spyOn(sdk.model, "list").mockImplementation(() =>
+    input.modelUnavailable
+      ? Promise.reject(new Error("unavailable"))
+      : ok({
+          location: { ...location, project: { id: "proj_1", directory: location.directory } },
+          data: input.models ?? [],
+        }),
+  )
   const values: V2Event[] = [{ id: "evt_connected", type: "server.connected", data: {} }]
   let wake: (() => void) | undefined
   const wait = Promise.withResolvers<void>()
@@ -345,9 +344,9 @@ describe("runNonInteractivePrompt", () => {
   })
 
   test("falls back to the model id when the catalog is unavailable or the model is absent", async () => {
-    for (const modelStatus of [200, 503]) {
+    for (const modelUnavailable of [false, true]) {
       const output = await capture({
-        modelStatus,
+        modelUnavailable,
         turn: (messageID) => [prompted(messageID), stepStarted(), settled()],
       })
       expect(output.stderr).toContain("> build · test-model")
