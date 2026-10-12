@@ -47,6 +47,7 @@ export function createEarlyWindow() {
   const file = path.join(app.getPath("userData"), windowStateFile(id))
   const state = resolveWindowState(readWindowState(file), { width: 1280, height: 800 }, displays)
   const icons = app.isPackaged ? path.join(process.resourcesPath, "icons") : path.join(root, "../../resources/icons")
+
   const win = new BrowserWindow({
     x: state.x,
     y: state.y,
@@ -66,6 +67,7 @@ export function createEarlyWindow() {
       additionalArguments: windowArguments(id),
     },
   })
+
   manageWindowState(win, file, state, displays)
   // Closing the only window before the rest of the app has adopted it is a quit.
   win.once("closed", () => {
@@ -73,6 +75,7 @@ export function createEarlyWindow() {
     pending = undefined
     app.quit()
   })
+
   const record: EarlyWindow = {
     id,
     win,
@@ -80,9 +83,11 @@ export function createEarlyWindow() {
     shownAt: Date.now(),
     openExternal: (url) => {
       const target = resolveExternalURL(url)
+
       if (target) void shell.openExternal(target)
     },
   }
+
   pending = record
   // The renderer boots while the main bundle and layers load, instead of after them. Everything the
   // page needs before its first request is wired here; the IPC port arrives once the layers are up.
@@ -96,5 +101,6 @@ export function createEarlyWindow() {
 export function takeEarlyWindow() {
   const taken = pending
   pending = undefined
+
   return taken
 }
