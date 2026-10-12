@@ -16,7 +16,7 @@ export type Delivery = typeof Delivery.Type
 export interface UserPayload extends Schema.Schema.Type<typeof UserPayload> {}
 export const UserPayload = Schema.Struct({
   ...Prompt.fields,
-  /** Selection applied when this input is delivered, not when it is admitted. */
+  /** Applied at delivery: the next safe step boundary for steer, or after current work finishes for queue. */
   agent: Agent.ID.pipe(optional),
   /** Includes the variant captured by the sender. */
   model: Model.Ref.pipe(optional),

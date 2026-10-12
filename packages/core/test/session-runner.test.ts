@@ -4104,6 +4104,31 @@ describe("SessionRunnerLLM", () => {
     expect((yield* s.context).map((message) => message.type)).toEqual(["user", "assistant", "user", "assistant"])
   })
 
+  scenario("applies a steered selection only after the active step settles", function* (s) {
+    yield* s.admit("Start building")
+    yield* s.llm.push(TestLLM.tool("call-echo", "echo", { text: "hello" }), TestLLM.stop())
+    const first = yield* s.resumePaused
+    const before = yield* s.session.get(sessionID)
+    const selection = {
+      agent: Agent.ID.make("reviewer"),
+      model: {
+        id: ID.make("replacement"),
+        providerID: Provider.ID.make("fake"),
+        variant: Model.VariantID.make("high"),
+      },
+    }
+    yield* s.session.prompt({ sessionID, text: "Review instead", delivery: "steer", ...selection })
+    expect((yield* s.session.get(sessionID)).agent).toBe(before.agent)
+    expect((yield* s.session.get(sessionID)).model).toEqual(before.model)
+    yield* first.finish
+    expect(
+      (yield* s.context).flatMap((message) => (message.type === "assistant" ? [String(message.agent)] : [])),
+    ).toEqual(["build", "reviewer"])
+    expect(s.requests.map((request) => String(request.model.id))).toEqual(["fake-model", "replacement"])
+    expect(s.requests.map(userTexts)).toEqual([["Start building"], ["Start building", "Review instead"]])
+    expect(yield* s.session.get(sessionID)).toMatchObject(selection)
+  })
+
   scenario("promotes queued input after continuation ends", function* (s) {
     yield* s.admit("Start working")
 

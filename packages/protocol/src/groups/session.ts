@@ -412,7 +412,8 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
           OpenApi.annotations({
             identifier: "session.prompt",
             summary: "Send message",
-            description: "Durably admit one session input and schedule agent-loop execution unless resume is false.",
+            description:
+              "Durably admit one session input and schedule agent-loop execution unless resume is false. Agent and model selections apply at delivery: the next safe step boundary for steer, or after current work finishes for queue.",
           }),
         ),
     )
