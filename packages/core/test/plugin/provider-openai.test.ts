@@ -3,7 +3,7 @@ import { Agent } from "@opencode/schema/agent"
 import { Session } from "@opencode/core/session"
 import { OpenAIResponses } from "@opencode/ai/protocols/openai-responses"
 import { describe, expect } from "bun:test"
-import { ConfigProvider, DateTime, Effect } from "effect"
+import { DateTime, Effect } from "effect"
 import { Credential } from "@opencode/core/credential"
 import { Integration } from "@opencode/core/integration"
 import { Location } from "@opencode/core/location"
@@ -73,12 +73,12 @@ describe("OpenAIPlugin", () => {
         {
           id: Integration.MethodID.make("chatgpt-browser"),
           type: "oauth",
-          label: "ChatGPT Pro/Plus (browser)",
+          label: "Codex browser (legacy)",
         },
         {
           id: Integration.MethodID.make("chatgpt-headless"),
           type: "oauth",
-          label: "ChatGPT Pro/Plus (headless)",
+          label: "Codex device code (legacy)",
         },
       ])
     }),
@@ -120,6 +120,13 @@ describe("OpenAIPlugin", () => {
         })
         catalog.models.update(Provider.ID.openai, Model.ID.make("gpt-4.1"), () => {})
         catalog.models.update(Provider.ID.openai, Model.ID.make("gpt-6-astra"), (model) => {
+          model.limit = { context: 1_050_000, input: 922_000, output: 128_000 }
+        })
+        catalog.models.update(Provider.ID.openai, Model.ID.make("gpt-6.1-sol"), (model) => {
+          model.limit = { context: 1_050_000, input: 922_000, output: 128_000 }
+        })
+        catalog.models.update(Provider.ID.openai, Model.ID.make("gpt-6.1-sol-fast"), (model) => {
+          model.modelID = Model.ID.make("gpt-6.1-sol")
           model.limit = { context: 1_050_000, input: 922_000, output: 128_000 }
         })
         catalog.models.update(Provider.ID.openai, Model.ID.make("gpt-5.10"), (model) => {
@@ -181,6 +188,16 @@ describe("OpenAIPlugin", () => {
       expect(gpt56.limit).toEqual({ context: 400_000, input: 272_000, output: 128_000 })
       expect(required(yield* models.get(Provider.ID.openai, Model.ID.make("gpt-4.1"))).enabled).toBe(false)
       expect(required(yield* models.get(Provider.ID.openai, Model.ID.make("gpt-6-astra"))).enabled).toBe(true)
+      expect(required(yield* models.get(Provider.ID.openai, Model.ID.make("gpt-6.1-sol"))).limit).toEqual({
+        context: 628_000,
+        input: 500_000,
+        output: 128_000,
+      })
+      expect(required(yield* models.get(Provider.ID.openai, Model.ID.make("gpt-6.1-sol-fast"))).limit).toEqual({
+        context: 628_000,
+        input: 500_000,
+        output: 128_000,
+      })
       expect(required(yield* models.get(Provider.ID.openai, Model.ID.make("gpt-5.10"))).enabled).toBe(true)
       expect(required(yield* models.get(Provider.ID.openai, Model.ID.make("gpt-5"))).enabled).toBe(false)
       expect(required(yield* models.get(Provider.ID.openai, Model.ID.make("gpt-5.04-astra"))).enabled).toBe(false)
