@@ -37,6 +37,7 @@ import {
   TuiStartupProvider,
   TuiTerminalEnvironmentProvider,
   useTuiApp,
+  useTuiPaths,
   useTuiStartup,
   useTuiTerminalEnvironment,
   type TuiApp,
@@ -84,7 +85,7 @@ import { Toast, ToastProvider, useToast } from "./ui/toast"
 import { isFallbackTitle } from "@opencode/util/session-title-fallback"
 import * as Model from "./util/model"
 import { ArgsProvider, useArgs, type Args } from "./context/args"
-import { openHref, openUrl } from "@opencode/util/open"
+import { openHref, openUrl, resolveOpenTarget } from "@opencode/util/open"
 import { PromptRefProvider, usePromptRef } from "./context/prompt"
 import { Config, ConfigProvider, useConfig } from "./config"
 import { newSessionLocation } from "./config/new-session-location"
@@ -453,6 +454,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
 
 function App() {
   const app = useTuiApp()
+  const paths = useTuiPaths()
   const startup = useTuiStartup()
   const config = useConfig()
   const devtools = createMemo(() => config.data.debug?.devtools ?? app.channel === "local")
@@ -477,6 +479,7 @@ function App() {
   const plugins = usePlugin()
   const clipboard = useClipboard()
   const terminalEnvironment = useTuiTerminalEnvironment()
+  const linkBase = () => location.current?.directory || paths.cwd
   let paletteTimer: ReturnType<typeof setTimeout> | undefined
   const afterFrame = () => {
     // The native writer can still be flushing the frame when FRAME fires. Keep OSC probes behind visible app output.
@@ -1334,7 +1337,11 @@ function App() {
       }}
       onMouseUp={(event) => {
         const url = clickedLink(renderer, event)
-        if (url) return void openHref(url).catch(toast.error)
+        if (url) {
+          const base = linkBase()
+          // Skip links we cannot open so the terminal/IDE can handle them (e.g. Cmd-click).
+          if (resolveOpenTarget(url, base)) return void openHref(url, base).catch(toast.error)
+        }
         if (copyOnSelectEnabled()) Selection.copyOnSelectRelease(event, renderer, toast, clipboard)
       }}
     >

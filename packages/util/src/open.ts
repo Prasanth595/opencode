@@ -14,14 +14,14 @@ export function openPath(target: string) {
 }
 
 /** Open an http(s) URL in the browser, or a local file path / file:// link with the OS handler. */
-export function openHref(input: string) {
-  const target = resolveOpenTarget(input)
+export function openHref(input: string, base?: string) {
+  const target = resolveOpenTarget(input, base)
   if (!target) return Promise.reject(new Error(`Only http, https, and local file links can be opened: ${input}`))
   return open(target)
 }
 
 /** @internal */
-export function resolveOpenTarget(input: string) {
+export function resolveOpenTarget(input: string, base?: string) {
   if (URL.canParse(input)) {
     const url = new URL(input)
     if (url.protocol === "http:" || url.protocol === "https:") return url.href
@@ -33,6 +33,9 @@ export function resolveOpenTarget(input: string) {
         return undefined
       }
     }
+    return undefined
   }
   if (path.isAbsolute(input)) return input
+  // Resolve project-relative Markdown links such as plan/example.md against the session directory.
+  if (base !== undefined && input.length > 0 && !input.startsWith("#")) return path.resolve(base, input)
 }

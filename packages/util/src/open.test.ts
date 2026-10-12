@@ -29,9 +29,17 @@ describe("resolveOpenTarget", () => {
     expect(resolveOpenTarget(file)).toBe(file)
   })
 
-  test("rejects remote file URLs and unsafe schemes", () => {
+  test("resolves relative paths against a session directory base", () => {
+    const base = path.resolve("/repo")
+    expect(resolveOpenTarget("plan/example.md", base)).toBe(path.join(base, "plan/example.md"))
+    expect(resolveOpenTarget("./src/foo.ts", base)).toBe(path.join(base, "src/foo.ts"))
+    expect(resolveOpenTarget("../sibling.md", base)).toBe(path.resolve(base, "../sibling.md"))
+  })
+
+  test("rejects remote file URLs, anchors, and unsafe schemes", () => {
     expect(resolveOpenTarget("file://example.com/share/index.html")).toBeUndefined()
     expect(resolveOpenTarget("javascript:alert(1)")).toBeUndefined()
+    expect(resolveOpenTarget("#section", "/repo")).toBeUndefined()
     expect(resolveOpenTarget("packages/tui/src/ui/link.tsx")).toBeUndefined()
     expect(resolveOpenTarget("not a url")).toBeUndefined()
   })

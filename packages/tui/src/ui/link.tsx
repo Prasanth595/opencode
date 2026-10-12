@@ -37,10 +37,11 @@ export function Link(props: LinkProps) {
  * Returns the hyperlink under a plain left click. opentui marks the release that ends a selection gesture with
  * `isDragging`, and a fresh "cell" selection means the pointer never moved; other releases, such as the end of a drag
  * that started outside text, are not clicks. Each rendered cell stores its full URL, so a click on any row of a wrapped
- * link resolves the whole link. Modified clicks are left to the terminal's own hyperlink handling.
+ * link resolves the whole link. Modified clicks (including Cmd/meta when the terminal reports it) are left to the
+ * terminal's own hyperlink handling.
  */
 export function clickedLink(renderer: CliRenderer, event: MouseEvent) {
-  if (!event.isDragging || event.modifiers.ctrl || event.modifiers.alt || event.modifiers.shift) return
+  if (!event.isDragging || Object.values(event.modifiers).some(Boolean)) return
   const selection = renderer.getSelection()
   if (!selection?.isStart || selection.behavior !== "cell") return
   return renderer.getLinkAt(event.x, event.y) ?? undefined
