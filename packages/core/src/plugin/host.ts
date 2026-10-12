@@ -204,14 +204,18 @@ export const make = Effect.fn("PluginHost.make")(function* (
           callback({
             list: editor.list,
             get: (id) => editor.get(Provider.ID.make(id)),
-            add: (definition) =>
-              editor.add({
+            add: (definition) => {
+              const invalid = definition.models.find((model) => !Number.isFinite(model.time?.released))
+              if (invalid)
+                throw new Error(`plugin model "${invalid.providerID}/${invalid.modelID}" is invalid: missing "time"`)
+              return editor.add({
                 ...definition,
                 sourceConnection:
                   definition.sourceConnection?.type === "credential"
                     ? { ...definition.sourceConnection, id: Credential.ID.make(definition.sourceConnection.id) }
                     : definition.sourceConnection,
-              }),
+              })
+            },
             update: (id, update) => editor.update(Provider.ID.make(id), update),
             remove: (id) => editor.remove(Provider.ID.make(id)),
             models: {
