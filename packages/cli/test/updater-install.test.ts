@@ -5,7 +5,7 @@ import { Global } from "@opencode/util/global"
 import { AppProcess } from "@opencode/util/process"
 import { expect, spyOn, test } from "bun:test"
 import { Effect, FileSystem, Layer, PlatformError, Stream } from "effect"
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
+import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { Updater } from "../src/services/updater"
@@ -23,6 +23,7 @@ function fixture(
   failCleanup = false,
   releasePackage = name,
   formula?: string,
+  executableOverride?: (root: string, home: string) => Effect.Effect<string, PlatformError.PlatformError, FileSystem.FileSystem>,
 ) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem
@@ -30,12 +31,14 @@ function fixture(
     const root = yield* fs.makeTempDirectoryScoped({ prefix: "opencode-updater-" })
     const execPath = process.execPath
     const modules = path.join(root, "node_modules")
-    const executable = formula
-      ? path.join(root, "Cellar", formula, "2.0.20", "bin", "opencode")
-      : path.join(modules, "@opencode", "cli", "bin", "opencode")
+    const executable = executableOverride
+      ? yield* executableOverride(root, path.join(root, "home"))
+      : formula
+        ? path.join(root, "Cellar", formula, "2.0.20", "bin", "opencode")
+        : path.join(modules, "@opencode", "cli", "bin", "opencode")
     yield* fs.makeDirectory(path.dirname(executable), { recursive: true })
     yield* fs.writeFileString(executable, "binary")
-    if (!formula)
+    if (!formula && !executableOverride)
       yield* fs.writeFileString(
         path.join(modules, "@opencode", "cli", "package.json"),
         JSON.stringify({ name, bin: { opencode: "bin/opencode" } }),
@@ -69,6 +72,13 @@ function fixture(
       log: path.join(root, "log"),
       repos: path.join(root, "repos"),
     })
+    // Windows locates the installer's Git Bash through `git --exec-path`; answer it with a fixture install.
+    const git = path.join(root, "Git")
+    const bash = process.platform === "win32" ? path.join(git, "bin", "bash.exe") : "bash"
+    if (process.platform === "win32") {
+      yield* fs.makeDirectory(path.dirname(bash), { recursive: true })
+      yield* fs.writeFileString(bash, "bash")
+    }
     const commands: string[][] = []
     const updater = yield* Updater.Service.pipe(
       Effect.provide(Updater.layer),
@@ -91,7 +101,7 @@ function fixture(
                 }),
               )
             : fs.remove(target, options),
-        realPath: (input) => (input === execPath ? Effect.succeed(executable) : fs.realPath(input)),
+        realPath: (input) => (input === execPath ? fs.realPath(executable) : fs.realPath(input)),
       }),
       Effect.provideService(
         AppProcess.Service,
@@ -100,8 +110,11 @@ function fixture(
           run: (command) =>
             Effect.suspend(() => {
               if (command._tag !== "StandardCommand") return Effect.die("Unexpected piped install command")
-              commands.push([command.command, ...command.args])
-              const result = respond(command)
+              const lookup = command.command === "git" && command.args[0] === "--exec-path"
+              if (!lookup) commands.push([command.command, ...command.args])
+              const result = lookup
+                ? { stdout: Buffer.from(`${path.join(git, "mingw64", "libexec", "git-core")}\n`) }
+                : respond(command)
               if (result.error) return Effect.fail(result.error)
               return Effect.succeed({
                 command: command.command,
@@ -117,7 +130,7 @@ function fixture(
         }),
       ),
     )
-    return { updater, commands, requests, global, fs, executable }
+    return { updater, commands, requests, global, fs, executable, bash }
   })
 }
 
@@ -197,7 +210,11 @@ it.live("bun ignores install cache cleanup failures", () =>
         const installer = command.command === "curl" ? command.args[2] : command.args[0]
         expect(existsSync(path.dirname(installer))).toBe(true)
         return {
-          exitCode: command.command === (failure === "download" ? "curl" : failure === "install" ? "bash" : "") ? 1 : 0,
+          exitCode:
+            path.basename(command.command, ".exe") ===
+            (failure === "download" ? "curl" : failure === "install" ? "bash" : "")
+              ? 1
+              : 0,
           stderr: Buffer.from(`${failure} failed`),
         }
       })
@@ -206,7 +223,7 @@ it.live("bun ignores install cache cleanup failures", () =>
       expect(installer).toStartWith(path.join(test.global.cache, "update-"))
       expect(test.commands).toEqual([
         ["curl", "-fsSL", "-o", installer, "https://opencode.ai/v2/install"],
-        ...(failure === "download" ? [] : [["bash", installer, "--version", "2.3.4-beta.1", "--no-modify-path"]]),
+        ...(failure === "download" ? [] : [[test.bash, installer, "--version", "2.3.4-beta.1", "--no-modify-path"]]),
       ])
       expect(yield* test.fs.readDirectory(test.global.cache)).toEqual([])
       expect(result._tag).toBe(failure === "success" ? "None" : "Some")
@@ -389,25 +406,53 @@ windows("windows keeps the uninstall link in the temporary directory, not the re
 windows("windows links the curl binary before the installer replaces it", () =>
   Effect.gen(function* () {
     const layout = { executable: "", cache: "" }
-    const test = yield* fixture((command) => {
-      if (command.command === "bash") {
-        expect(readFileSync(layout.executable, "utf8")).toBe("binary")
-        expect(upgradeLinks(layout.cache)).toHaveLength(1)
-      }
-      return {}
-    })
-    layout.executable = path.join(test.global.home, ".opencode", "bin", "opencode.exe")
+    const test = yield* fixture(
+      (command) => {
+        if (path.basename(command.command, ".exe") === "bash") {
+          expect(readFileSync(layout.executable, "utf8")).toBe("binary")
+          expect(upgradeLinks(layout.cache)).toHaveLength(1)
+        }
+        return {}
+      },
+      "@opencode/cli",
+      false,
+      "@opencode/cli",
+      undefined,
+      (_root, home) => Effect.succeed(path.join(home, ".opencode", "bin", "opencode.exe")),
+    )
+    layout.executable = test.executable
     layout.cache = test.global.cache
-    yield* test.fs.makeDirectory(path.dirname(layout.executable), { recursive: true })
-    yield* test.fs.writeFileString(layout.executable, "binary")
     const original = process.execPath
     process.execPath = layout.executable
     yield* Effect.addFinalizer(() => Effect.sync(() => (process.execPath = original)))
     expect(yield* test.updater.method()).toBe("curl")
     yield* test.updater.upgrade("curl", "2.3.4")
-    expect(test.commands.map((command) => command[0])).toEqual(["curl", "bash"])
+    expect(test.commands.map((command) => command[0])).toEqual(["curl", test.bash])
     expect(yield* test.fs.readFileString(layout.executable)).toBe("binary")
     expect(links(test.global.cache)).toEqual([])
+  }),
+)
+
+unix("curl method detection resolves symlinked home directories", () =>
+  Effect.gen(function* () {
+    const test = yield* fixture(
+      () => ({}),
+      "@opencode/cli",
+      false,
+      "@opencode/cli",
+      undefined,
+      (root, home) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem
+          const realHome = path.join(root, "real-home")
+          const bin = path.join(realHome, ".opencode", "bin", "opencode")
+          yield* fs.makeDirectory(path.dirname(bin), { recursive: true })
+          yield* fs.symlink(realHome, home)
+          return bin
+        }),
+    )
+    expect(yield* test.updater.method()).toBe("curl")
+    expect(test.commands).toEqual([])
   }),
 )
 
