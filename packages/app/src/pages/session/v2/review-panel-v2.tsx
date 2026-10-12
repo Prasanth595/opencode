@@ -57,6 +57,7 @@ export type ReviewPanelV2Props = {
   gitChangesEnabled?: boolean
   branch?: string
   sessionID?: () => string | undefined
+  activeModel?: () => { providerID: string; modelID: string; variant?: string | null } | undefined
   onGitChange?: () => void
   onLineComment?: (comment: SessionReviewLineComment) => void
   onLineCommentUpdate?: (comment: SessionReviewCommentUpdate) => void
@@ -358,8 +359,21 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
               onClick={() =>
                 void runGit(
                   async () => {
+                    const active = props.activeModel?.()
                     const response = await sdk().client.instance.vcsGenerateMessage(
-                      { directory: sdk().directory, sessionID: props.sessionID?.() ?? "" },
+                      {
+                        directory: sdk().directory,
+                        sessionID: props.sessionID?.() ?? "",
+                        ...(active
+                          ? {
+                              model: {
+                                providerID: active.providerID,
+                                modelID: active.modelID,
+                                ...(active.variant ? { variant: active.variant } : {}),
+                              },
+                            }
+                          : {}),
+                      },
                       { throwOnError: true },
                     )
                     setGit("message", response.data?.message ?? "")

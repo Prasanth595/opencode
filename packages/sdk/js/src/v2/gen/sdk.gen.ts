@@ -2370,6 +2370,11 @@ export class Instance extends HeyApiClient {
       directory?: string
       workspace?: string
       sessionID?: string
+      model?: {
+        providerID: string
+        modelID: string
+        variant?: string
+      }
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -2381,6 +2386,7 @@ export class Instance extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "sessionID" },
+            { in: "body", key: "model" },
           ],
         },
       ],

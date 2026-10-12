@@ -292,14 +292,18 @@ const scenarios: Scenario[] = [
         yield* dirtyFile(ctx, true)
         const session = yield* ctx.session({
           title: "Commit message session",
-          model: { providerID: "test", id: "test-model" },
+          model: { providerID: "test", id: "stale-model" },
         })
         yield* ctx.message(session.id, { text: "add the exercise file" })
         yield* ctx.llmText("feat: add exercise file")
         return session
       }),
     )
-    .at((ctx) => ({ path: "/vcs/commit-message", headers: ctx.headers(), body: { sessionID: ctx.state.id } }))
+    .at((ctx) => ({
+      path: "/vcs/commit-message",
+      headers: ctx.headers(),
+      body: { sessionID: ctx.state.id, model: { providerID: "test", modelID: "test-model" } },
+    }))
     .json(
       200,
       (body) => {

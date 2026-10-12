@@ -288,7 +288,16 @@ export const FileInput = Schema.Struct({ file: Schema.String })
 export type FileInput = Schema.Schema.Type<typeof FileInput>
 export const CommitInput = Schema.Struct({ message: Schema.String })
 export type CommitInput = Schema.Schema.Type<typeof CommitInput>
-export const CommitMessageInput = Schema.Struct({ sessionID: Schema.String })
+export const CommitMessageInput = Schema.Struct({
+  sessionID: Schema.String,
+  model: Schema.optional(
+    Schema.Struct({
+      providerID: Schema.String,
+      modelID: Schema.String,
+      variant: Schema.optional(Schema.String),
+    }),
+  ),
+})
 export const CommitMessage = Schema.Struct({ message: Schema.String })
 export const OperationResult = Schema.Struct({ success: Schema.Boolean, output: Schema.String })
 export type OperationResult = Schema.Schema.Type<typeof OperationResult>

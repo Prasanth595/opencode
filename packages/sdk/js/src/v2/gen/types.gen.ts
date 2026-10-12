@@ -8753,6 +8753,11 @@ export type InstanceVcsStagedDiffResponse = InstanceVcsStagedDiffResponses[keyof
 export type InstanceVcsGenerateMessageData = {
   body?: {
     sessionID: string
+    model?: {
+      providerID: string
+      modelID: string
+      variant?: string
+    }
   }
   path?: never
   query?: {

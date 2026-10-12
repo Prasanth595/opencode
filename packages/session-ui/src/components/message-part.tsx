@@ -1476,6 +1476,7 @@ export interface ToolProps {
   tool: string
   sessionID?: string
   output?: string
+  attachments?: readonly FilePart[]
   status?: string
   time?: { start: number; end?: number }
   hideDetails?: boolean
@@ -1569,6 +1570,10 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     const state = part().state
     return state.status === "pending" ? undefined : state.time
   })
+  const partAttachments = createMemo(() => {
+    const state = part().state
+    return state.status === "completed" ? state.attachments : undefined
+  })
   const taskId = createMemo(() => {
     if (part().tool !== "task") return
     const value = partMetadata().sessionId
@@ -1647,6 +1652,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               metadata={partMetadata()}
               // @ts-expect-error
               output={part().state.output}
+              attachments={partAttachments()}
               status={part().state.status}
               time={partTime()}
               hideDetails={props.hideDetails}
@@ -1965,6 +1971,16 @@ ToolRegistry.register({
   render(props) {
     const i18n = useI18n()
     const pending = createMemo(() => props.status === "pending" || props.status === "running")
+    const hasTextResponse = createMemo(
+      () =>
+        !!props.output?.trim() &&
+        !props.attachments?.some(
+          (attachment) =>
+            attachment.mime.startsWith("image/") &&
+            attachment.mime !== "image/svg+xml" &&
+            attachment.mime !== "image/vnd.fastbidsheet",
+        ),
+    )
     const url = createMemo(() => {
       const value = props.input.url
       if (typeof value !== "string") return ""
@@ -1973,7 +1989,8 @@ ToolRegistry.register({
     return (
       <BasicTool
         {...props}
-        hideDetails
+        hideDetails={props.hideDetails || !hasTextResponse()}
+        defaultOpen={props.defaultOpen ?? true}
         icon="window-cursor"
         trigger={
           <div data-slot="basic-tool-tool-info-structured">
@@ -2002,7 +2019,11 @@ ToolRegistry.register({
             </Show>
           </div>
         }
-      />
+      >
+        <Show when={hasTextResponse()}>
+          <ToolResponse output={props.output} />
+        </Show>
+      </BasicTool>
     )
   },
 })

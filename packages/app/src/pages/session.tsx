@@ -1407,6 +1407,7 @@ export default function Page() {
       return sync().data.vcs?.branch
     },
     sessionID: () => params.id,
+    activeModel: () => prompt.model.current(),
     onGitChange: refreshVcs,
     get title() {
       return changesTitleV2()
