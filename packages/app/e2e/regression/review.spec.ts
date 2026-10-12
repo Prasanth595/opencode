@@ -1,7 +1,7 @@
 import type { OpenCodeEvent, SessionMessageInfo } from "@opencode/client/promise"
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { base64Encode } from "@opencode/util/encode"
-import { SERVER, project, provider, session, workspaceKey } from "../utils/app"
+import { SERVER, holdRoute, project, provider, session, workspaceKey } from "../utils/app"
 import { mockOpenCodeServer } from "../utils/mock-server"
 import { fileDiff, fileNode, openSession } from "../utils/workspace"
 import { expectSessionTitle } from "../utils/waits"
@@ -12,11 +12,13 @@ for (const view of ["desktop", "mobile"] as const) {
   test(`offers Git initialization for a project without VCS (${view})`, async ({ page }) => {
     if (view === "mobile") await page.setViewportSize({ width: 390, height: 844 })
     const requests: { directory: string; provider?: string }[] = []
+
     const workspace = await openSession(page, {
       name: "ReviewWithoutGit",
       project: { vcs: undefined },
       onVcsInit: (input) => requests.push(input),
     })
+
     if (view === "desktop") await page.getByRole("button", { name: "Toggle review" }).click()
     else await page.getByRole("tablist", { name: "Session view" }).getByRole("tab", { name: "Changes" }).click()
 
@@ -31,10 +33,90 @@ for (const view of ["desktop", "mobile"] as const) {
   })
 }
 
+test("Git initialization belongs to its session and refreshes after a session switch", async ({ page }) => {
+  const requests: { directory: string; provider?: string }[] = []
+
+  const workspace = await openSession(page, {
+    name: "ReviewInitSwitch",
+    project: { vcs: undefined },
+    onVcsInit: (input) => requests.push(input),
+    sessions: [
+      { id: "ses_init_a", title: "Initialize Alpha" },
+      { id: "ses_init_b", title: "Initialize Beta" },
+    ],
+    seed: { panes: { ses_init_a: { review: true }, ses_init_b: { review: true } } },
+  })
+
+  // The successful init finishes while another session is routed.
+  const request = await holdRoute(page, (url) => url.pathname === "/api/vcs/init", { method: "POST" })
+  const panel = page.locator("#review-panel")
+  const init = panel.getByRole("button", { name: "Create Git repository", exact: true })
+  const pending = panel.getByRole("button", { name: "Creating Git repository…", exact: true })
+  await expect(init).toBeEnabled()
+  await init.click()
+  await request.arrived
+  await expect(pending).toBeDisabled()
+
+  await page.locator("[data-titlebar-tab-slot]", { hasText: "Initialize Beta" }).click()
+  await expectSessionTitle(page, "Initialize Beta")
+  await expect(init).toBeEnabled()
+  await expect(pending).toHaveCount(0)
+
+  await page.locator("[data-titlebar-tab-slot]", { hasText: "Initialize Alpha" }).click()
+  await expectSessionTitle(page, "Initialize Alpha")
+  await expect(pending).toBeDisabled()
+  await page.locator("[data-titlebar-tab-slot]", { hasText: "Initialize Beta" }).click()
+  await expectSessionTitle(page, "Initialize Beta")
+  await expect(init).toBeEnabled()
+
+  const response = page.waitForResponse((item) => new URL(item.url()).pathname === "/api/vcs/init")
+  // The worktree event can refresh project-wide UI by itself; the completed action must also reload Alpha's cache.
+  const refreshed = page.waitForResponse((item) => new URL(item.url()).pathname === "/api/session/ses_init_a")
+  request.release()
+  expect((await response).status()).toBe(204)
+  expect((await refreshed).status()).toBe(200)
+  expect(requests).toEqual([{ directory: workspace.directory, provider: "git" }])
+  await expect(panel.getByRole("button", { name: "Git changes", exact: true })).toBeVisible()
+  await expect(init).toHaveCount(0)
+  await expect(page.getByText("Request failed", { exact: true })).toHaveCount(0)
+
+  await page.locator("[data-titlebar-tab-slot]", { hasText: "Initialize Alpha" }).click()
+  await expectSessionTitle(page, "Initialize Alpha")
+  await expect(panel.getByRole("button", { name: "Git changes", exact: true })).toBeVisible()
+  await expect(pending).toHaveCount(0)
+})
+
+test("a rejected Git init releases its session's button without showing an error in another session", async ({ page }) => {
+  await openSession(page, {
+    name: "ReviewInitFailure",
+    project: { vcs: undefined },
+    sessions: [
+      { id: "ses_init_failure_a", title: "Initialize Alpha" },
+      { id: "ses_init_failure_b", title: "Initialize Beta" },
+    ],
+    seed: { panes: { ses_init_failure_a: { review: true }, ses_init_failure_b: { review: true } } },
+  })
+  const request = await holdRoute(page, (url) => url.pathname === "/api/vcs/init", { method: "POST" })
+  const init = page.locator("#review-panel").getByRole("button", { name: "Create Git repository", exact: true })
+  await init.click()
+  await request.arrived
+  await page.locator("[data-titlebar-tab-slot]", { hasText: "Initialize Beta" }).click()
+  await expectSessionTitle(page, "Initialize Beta")
+  await expect(init).toBeEnabled()
+  const response = page.waitForResponse((item) => new URL(item.url()).pathname === "/api/vcs/init")
+  request.release()
+  expect((await response).status()).toBe(501)
+  await expect(page.getByText("Request failed", { exact: true })).toHaveCount(0)
+  await page.locator("[data-titlebar-tab-slot]", { hasText: "Initialize Alpha" }).click()
+  await expectSessionTitle(page, "Initialize Alpha")
+  await expect(init).toBeEnabled()
+})
+
 test("open file tab browses, searches, and tracks missing files", async ({ page }) => {
   const searches: { query: string; dirs?: string; limit?: number }[] = []
   const directory = "C:/OpenCode/ReviewOpenFile"
   const files = Array.from({ length: 80 }, (_, index) => `file-${String(index).padStart(2, "0")}.ts`)
+
   const workspace = await openSession(page, {
     name: "ReviewOpenFile",
     vcsDiff: [fileDiff("src/changed.ts")],
@@ -49,6 +131,7 @@ test("open file tab browses, searches, and tracks missing files", async ({ page 
     fileContent: (path) => ({ type: "text", content: `contents:${path}` }),
     findFiles: (input) => {
       searches.push(input)
+
       return input.query === "nested" ? [fileNode(directory, "src/nested.ts")] : []
     },
     seed: {
@@ -90,6 +173,8 @@ test("open file tab browses, searches, and tracks missing files", async ({ page 
     route.fulfill({
       status: 404,
       headers: { "access-control-allow-origin": "*" },
+      // SAFETY: the server's wire body for a missing file, which the client decodes into its own error.
+      // oxlint-disable-next-line anti-slop-effect/no-manual-tagged-construction -- see SAFETY above
       json: { _tag: "FileNotFoundError", path: "README.md", message: "File not found: README.md" },
     }),
   )
@@ -142,9 +227,10 @@ test("open file tab browses, searches, and tracks missing files", async ({ page 
     .toBeLessThanOrEqual(1)
   const scrolled = await viewport.evaluate((element) => element.scrollTop)
   expect(scrolled).toBeGreaterThan(0)
-  await root.evaluate((element) => ((element as HTMLElement & { e2eProbe?: string }).e2eProbe = "original"))
+  await root.evaluate((element) => void (element.dataset.e2eProbe = "original"))
+
   const expectSidebarKept = async () => {
-    expect(await root.evaluate((element) => (element as HTMLElement & { e2eProbe?: string }).e2eProbe)).toBe("original")
+    expect(await root.evaluate((element) => element.dataset.e2eProbe)).toBe("original")
     await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBe(scrolled)
   }
 
@@ -269,7 +355,9 @@ test("file tree expands Windows paths and scrolls long names in both directions"
           { ...fileNode(directory, longPath), path: `frontend\\${longFilename}` },
         ]
       }
+
       if (path) return []
+
       return [
         { ...fileNode(directory, "frontend", "directory"), name: "", path: "frontend\\" },
         fileNode(directory, "README.md"),
@@ -371,6 +459,7 @@ test("a restored file tab keeps the file tree on Files Changed", async ({ page }
 
 test("rereads a file each time an artifact link opens it", async ({ page }) => {
   const file = { content: "first draft" }
+
   const messages = [
     { id: "msg_prompt", type: "user", text: "Write the shopping list", time: { created: 1 } },
     {
@@ -382,6 +471,7 @@ test("rereads a file each time an artifact link opens it", async ({ page }) => {
       time: { created: 2, completed: 3 },
     },
   ] satisfies SessionMessageInfo[]
+
   await openSession(page, {
     name: "ArtifactReopen",
     fileList: () => [],
@@ -405,6 +495,9 @@ test("rereads a file each time an artifact link opens it", async ({ page }) => {
   await expect(panel.getByText("first draft", { exact: true })).toHaveCount(0)
 })
 
+/** What the image case's frame probe records on the window. */
+type ImageProbe = { problems: string[]; frames: number; running: boolean }
+
 test("image files keep the review panel painted while loading", async ({ page }) => {
   await page.setViewportSize({ width: 960, height: 900 })
   const directory = "C:/OpenCode/ReviewImage"
@@ -418,12 +511,16 @@ test("image files keep the review panel painted while loading", async ({ page })
       if (path !== image) return undefined
       read.resolve()
       await release.promise
+
       return { type: "binary", content: "iVBORw0KGgo=", encoding: "base64", mimeType: "image/png" }
     },
     fileList: (path) => {
       if (!path) return [fileNode(directory, "assets", "directory"), fileNode(directory, "src", "directory")]
+
       if (path === "assets") return [fileNode(directory, image)]
+
       if (path === "src") return [fileNode(directory, "src/example.ts")]
+
       return []
     },
   })
@@ -432,27 +529,37 @@ test("image files keep the review panel painted while loading", async ({ page })
 
   // Records every painted frame from before the click until after the image read completes.
   await page.evaluate(() => {
-    const probe = { problems: [] as string[], frames: 0, running: true }
+    const probe: ImageProbe = { problems: [], frames: 0, running: true }
+
     const sample = () => {
       const panel = document.querySelector<HTMLElement>('#review-panel [data-component="session-review-v2"]')
       const rect = panel?.getBoundingClientRect()
+
       const hit =
         rect?.width && rect.height ? document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2) : null
+
       const frame = [
         !panel?.checkVisibility() && "hidden",
         !panel?.textContent?.trim() && "blank",
         !(hit && document.querySelector("#review-panel")?.contains(hit)) && "outside the review panel",
         hit && getComputedStyle(hit).backgroundColor === "rgb(0, 0, 0)" && "black",
-      ].filter((problem) => typeof problem === "string")
+      ].filter((problem) => problem !== false && problem !== null)
+
       probe.problems.push(...frame)
       probe.frames += 1
+
       if (probe.running) requestAnimationFrame(sample)
     }
-    ;(window as Window & { e2eImageProbe?: typeof probe }).e2eImageProbe = probe
+
+    // The evaluates below read it.
+    Object.assign(window, { e2eImageProbe: probe })
     requestAnimationFrame(sample)
   })
+
   const frames = () =>
-    page.evaluate(() => (window as Window & { e2eImageProbe?: { frames: number } }).e2eImageProbe!.frames)
+    // SAFETY: the evaluate above stored the probe on the window before any frame is counted.
+    page.evaluate(() => (window as Window & { e2eImageProbe?: ImageProbe }).e2eImageProbe!.frames)
+
   const response = page.waitForResponse((item) => item.url().includes(`/api/fs/read/${image}`))
   await page.getByRole("button", { name: /preview\.png/ }).click()
   await read.promise
@@ -465,11 +572,80 @@ test("image files keep the review panel painted while loading", async ({ page })
   await expect.poll(frames).toBeGreaterThan(loaded)
   expect(
     await page.evaluate(() => {
-      const probe = (window as Window & { e2eImageProbe?: { problems: string[]; running: boolean } }).e2eImageProbe!
+      // SAFETY: the evaluate above stored the probe on the window.
+      const probe = (window as Window & { e2eImageProbe?: ImageProbe }).e2eImageProbe!
       probe.running = false
+
       return probe.problems
     }),
   ).toEqual([])
+})
+
+test("video files expand into an in-window theatre overlay and collapse on Escape without remounting", async ({
+  page,
+}) => {
+  const directory = "C:/OpenCode/ReviewVideo"
+  const file = "demo.webm"
+
+  const webm = Buffer.from(
+    "GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQJChYECGFOAZwEAAAAAAAH5EU2bdLpNu4tTq4QVSalmU6yBoU27i1OrhBZUrmtTrIHWTbuMU6uEElTDZ1OsggEyTbuMU6uEHFO7a1OsggHj7AEAAAAAAABZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmsCrXsYMPQkBNgIxMYXZmNjMuMS4xMDJXQYxMYXZmNjMuMS4xMDJEiYhAj0AAAAAAABZUrmvXrgEAAAAAAABO14EBc8WIiQeUklk95R2cgQAitZyDdW5kiIEAhoVWX1ZQOIOBASPjg4Q7msoA4JCwgUC6gSSagQJVsIRVuYEBVe6BAOwBAAAAAAAAAgAAElTDZ/pzc59jwIBnyJlFo4dFTkNPREVSRIeMTGF2ZjYzLjEuMTAyc3PVY8CLY8WIiQeUklk95R1nyKBFo4dFTkNPREVSRIeTTGF2YzYzLjEuMTAyIGxpYnZweGfIoUWjiERVUkFUSU9ORIeTMDA6MDA6MDEuMDAwMDAwMDAwAB9DtnWt54EAo6iBAACAsAIAnQEqQAAkAABHCIWFiJmEiAICAAaOT8zHm/FYAP7/q1CAHFO7a5G7j7OBALeK94EB8YIBsfCBAw==",
+    "base64",
+  )
+
+  await openSession(page, {
+    name: "ReviewVideo",
+    fileList: (path) => (path ? [] : [fileNode(directory, file)]),
+    seed: {
+      panes: { ses_reviewvideo: { review: true } },
+    },
+  })
+  await page.route(`**/api/fs/read/${file}*`, (route) =>
+    route.fulfill({
+      status: 200,
+      headers: { "access-control-allow-origin": "*", "content-type": "application/octet-stream" },
+      body: webm,
+    }),
+  )
+
+  const panel = page.locator("#review-panel")
+  await panel.getByRole("button", { name: "Open file" }).click()
+  await panel.getByRole("button", { name: file }).click()
+  await expect(panel.getByRole("tab", { name: file, exact: true })).toHaveAttribute("aria-selected", "true")
+
+  const stage = panel.locator('[data-slot="artifact-stage"]')
+  const video = stage.locator('video[data-slot="artifact-media"]')
+  const fullscreen = stage.getByRole("button", { name: "Enter full screen", exact: true })
+  const exitFullscreen = stage.getByRole("button", { name: "Exit full screen", exact: true })
+
+  await expect(video).toBeVisible()
+  await expect(fullscreen).toHaveAttribute("aria-pressed", "false")
+  const inlineBounds = (await stage.boundingBox())!
+  expect(inlineBounds.width).toBeLessThan(1000)
+
+  await video.evaluate((element) => {
+    element.dataset.e2eProbe = "retained"
+  })
+
+  await fullscreen.click()
+  await expect(exitFullscreen).toHaveAttribute("aria-pressed", "true")
+  await expect(stage).toHaveAttribute("data-expanded", "")
+  expect(await stage.evaluate((element) => element.matches(":popover-open"))).toBe(true)
+  expect(await page.evaluate(() => document.fullscreenElement)).toBeNull()
+  expect(await video.evaluate((element) => element.dataset.e2eProbe)).toBe("retained")
+  await expect.poll(() => stage.boundingBox()).toEqual({ x: 0, y: 0, width: 1440, height: 900 })
+
+  await page.keyboard.press("Escape")
+  await expect(fullscreen).toHaveAttribute("aria-pressed", "false")
+  await expect(stage).not.toHaveAttribute("data-expanded")
+  expect(await stage.evaluate((element) => element.matches(":popover-open"))).toBe(false)
+  expect(await video.evaluate((element) => element.dataset.e2eProbe)).toBe("retained")
+  await expect.poll(() => stage.boundingBox()).toEqual(inlineBounds)
+
+  await video.dblclick()
+  await expect(exitFullscreen).toHaveAttribute("aria-pressed", "true")
+  await page.mouse.click(8, 8)
+  await expect(fullscreen).toHaveAttribute("aria-pressed", "false")
+  expect(await video.evaluate((element) => element.dataset.e2eProbe)).toBe("retained")
 })
 
 test("restores review state and the side-panel tab per session", async ({ page }) => {
@@ -478,6 +654,7 @@ test("restores review state and the side-panel tab per session", async ({ page }
     { id: "ses_review_state_b", title: "Beta review state" },
     { id: "ses_review_state_c", title: "Gamma review state" },
   ]
+
   const directory = "C:/OpenCode/ReviewState"
   await openSession(page, {
     name: "ReviewState",
@@ -493,10 +670,13 @@ test("restores review state and the side-panel tab per session", async ({ page }
   const panel = page.locator("#review-panel")
   const review = panel.locator("#session-side-panel-review-tab")
   const toggle = page.getByRole("button", { name: "Toggle review" })
+
   const selectedTab = (name: string) =>
     expect(panel.getByRole("tab", { name, exact: true })).toHaveAttribute("aria-selected", "true")
+
   const selectedFile = (file: string) =>
     expect(page.locator('[data-slot="session-review-v2-file-name"]')).toHaveText(file)
+
   const switchSession = async (title: string) => {
     await page.locator("[data-titlebar-tab-slot]", { hasText: title }).click()
     await expectSessionTitle(page, title)
@@ -551,9 +731,22 @@ test("restores review state and the side-panel tab per session", async ({ page }
   await selectedFile("gamma.ts")
   await review.press("End")
   await selectedTab("README.md")
+
+  // A hidden side-panel tab does not claim Close Tab while the side region is collapsed.
+  await toggle.click()
+  await expect(panel).toBeHidden()
+  await page.keyboard.press("Control+w")
+  await expect(page.locator("[data-titlebar-tab-slot]", { hasText: "Alpha review state" })).toHaveCount(0)
+  await expectSessionTitle(page, "Beta review state")
+  await page.keyboard.press("Control+Shift+T")
+  await expectSessionTitle(page, "Alpha review state")
+  await toggle.click()
+  await selectedTab("README.md")
+
   await page.keyboard.press("Control+w")
   await expect(panel.getByRole("tab", { name: "README.md", exact: true })).toHaveCount(0)
   await expect(review).toHaveAttribute("aria-selected", "true")
+  await expectSessionTitle(page, "Alpha review state")
 })
 
 test("shows and restores last turn changes from the session diff", async ({ page }) => {
@@ -603,6 +796,7 @@ test("keeps the review state a session stored before extensions", async ({ page 
   })
   const mode = (name: string) => page.getByRole("button", { name, exact: true })
   const changes = page.getByRole("tablist", { name: "Session view", exact: true }).getByRole("tab", { name: "Changes" })
+
   const trigger = (file: string) =>
     page
       .locator(`[data-component="session-review"] [data-file="${file}"]`)
@@ -643,8 +837,10 @@ test("desktop review waits for the session's stored mode before it loads changes
   const working: string[] = []
   page.on("request", (request) => {
     const url = new URL(request.url())
+
     if (url.pathname.endsWith("/vcs/diff") && url.searchParams.get("mode") === "working") working.push(request.url())
   })
+
   const desktop = (hold?: string) =>
     `/e2e/utils/settings-wsl.html?${new URLSearchParams({
       server: SERVER,
@@ -653,6 +849,7 @@ test("desktop review waits for the session's stored mode before it loads changes
       path: `/server/${base64Encode("sidecar")}/session/${id}`,
       ...(hold && { hold }),
     })}`
+
   const mode = (name: string) => page.getByRole("button", { name, exact: true })
   const file = page.locator('[data-slot="session-review-v2-file-name"]')
   const toggle = page.getByRole("button", { name: "Toggle review", exact: true })
@@ -686,6 +883,62 @@ test("desktop review waits for the session's stored mode before it loads changes
   expect(working).toEqual([])
 })
 
+test("a chosen mode the session stops offering shows as Git, and comes back when it is offered again", async ({
+  page,
+}) => {
+  // The mock server reads the branches on each request, so a reload sees the session's branch change.
+  const vcs = { current: "feature", default: "dev" }
+  await openSession(page, {
+    name: "ReviewModeBack",
+    vcs,
+    vcsDiff: ({ mode }) => (mode === "branch" ? [fileDiff("beta.ts")] : [fileDiff("gamma.ts")]),
+  })
+  const mode = (name: string) => page.getByRole("button", { name, exact: true })
+  const file = page.locator('[data-slot="session-review-v2-file-name"]')
+
+  await page.getByRole("button", { name: "Toggle review", exact: true }).click()
+  await mode("Git changes").click()
+  await page.getByRole("option", { name: "Branch changes" }).click()
+  await expect(file).toHaveText("beta.ts")
+
+  // Back on the default branch, Branch is not offered.
+  vcs.current = "dev"
+  await page.reload()
+  await expect(mode("Git changes")).toBeVisible()
+  await expect(file).toHaveText("gamma.ts")
+
+  vcs.current = "feature"
+  await page.reload()
+  await expect(mode("Branch changes")).toBeVisible()
+  await expect(file).toHaveText("beta.ts")
+})
+
+test("names a single change source and keeps the review header rows at 48px", async ({ page }) => {
+  // Turn changes are offered only for Git, so another VCS offers one source.
+  await openSession(page, { name: "ReviewHeader", project: { vcs: "hg" }, vcsDiff: [fileDiff("src/alpha.ts")] })
+  await page.getByRole("button", { name: "Toggle review", exact: true }).click()
+  const panel = page.locator("#review-panel")
+  const toggle = panel.getByRole("button", { name: "Toggle file tree" })
+  const header = panel.locator('[data-slot="session-review-v2-sidebar-header"]')
+  const toolbar = panel.locator('[data-slot="session-review-v2-toolbar"]')
+
+  await expect(header.getByText("Git changes", { exact: true })).toBeVisible()
+  await expect(panel.getByRole("button", { name: "Git changes" })).toHaveCount(0)
+  await expect(toggle).toHaveAttribute("aria-expanded", "true")
+  await expect(header).toHaveCSS("height", "48px")
+  await expect(toolbar).toHaveCSS("height", "48px")
+
+  await toggle.click()
+  await expect(toggle).toHaveAttribute("aria-expanded", "false")
+  await expect(toolbar.getByText("Git changes", { exact: true })).toBeVisible()
+  await expect(toolbar).toHaveCSS("height", "48px")
+
+  await toggle.click()
+  await expect(toggle).toHaveAttribute("aria-expanded", "true")
+  await expect(header).toHaveCSS("height", "48px")
+  await expect(toolbar).toHaveCSS("height", "48px")
+})
+
 for (const direction of ["ltr", "rtl"] as const) {
   test(`review toggle stays at the header edge in ${direction}`, async ({ page }) => {
     await page.setViewportSize({ width: 1000, height: 900 })
@@ -708,6 +961,7 @@ for (const direction of ["ltr", "rtl"] as const) {
     await expect
       .poll(async () => {
         const box = (await panel.boundingBox())!
+
         return (
           closed.x >= box.x &&
           closed.x + closed.width <= box.x + box.width &&
@@ -716,12 +970,20 @@ for (const direction of ["ltr", "rtl"] as const) {
         )
       })
       .toBe(true)
-    await expect
-      .poll(async () => {
-        const box = await panel.locator('[data-slot="session-side-panel-actions"]').boundingBox()
-        return box ? box.y + box.height / 2 : undefined
-      })
-      .toBe(closed.y + closed.height / 2)
+
+    for (const control of [
+      panel.locator('[data-slot="session-side-panel-actions"]'),
+      panel.getByRole("button", { name: "Open file", exact: true }),
+    ]) {
+      await expect
+        .poll(async () => {
+          const box = await control.boundingBox()
+
+          return box ? box.y + box.height / 2 : undefined
+        })
+        .toBe(closed.y + closed.height / 2)
+    }
+
     await toggle.press("Enter")
     await expect(toggle).toHaveAttribute("aria-expanded", "false")
     await expect(toggle).toBeFocused()
@@ -731,7 +993,9 @@ for (const direction of ["ltr", "rtl"] as const) {
     // Pause in the same task as each click so even the first painted state can be inspected.
     for (const opened of [true, false]) {
       await toggle.evaluate((element) => {
-        ;(element as HTMLButtonElement).click()
+        // SAFETY: `toggle` is the review toggle, a button.
+        const button = element as HTMLButtonElement
+        button.click()
         document
           .getAnimations()
           .filter((animation) => animation.timeline instanceof DocumentTimeline)
@@ -739,6 +1003,7 @@ for (const direction of ["ltr", "rtl"] as const) {
       })
       await expect(toggle).toHaveAttribute("aria-expanded", String(opened))
       await expect(panel).toHaveAttribute("aria-hidden", String(!opened))
+
       for (const progress of [0.25, 0.8]) await expectHeaderClearOfToggle(page, toggle, progress)
       await page.evaluate(() =>
         document
@@ -747,6 +1012,7 @@ for (const direction of ["ltr", "rtl"] as const) {
           .forEach((animation) => animation.finish()),
       )
     }
+
     await expect(panel).toBeHidden()
   })
 }
@@ -764,6 +1030,7 @@ async function statusInset(status: Locator, side: "left" | "right") {
   return status.evaluate((element, side) => {
     const viewport = element.closest<HTMLElement>(".scroll-view__viewport")!.getBoundingClientRect()
     const box = element.getBoundingClientRect()
+
     return side === "right" ? viewport.right - box.right : box.left - viewport.left
   }, side)
 }
@@ -781,18 +1048,22 @@ function filesystemEvent(directory: string, file: string, event: "add" | "change
 async function expectHeaderClearOfToggle(page: Page, toggle: Locator, progress: number) {
   const geometry = await page.locator('[data-slot="session-chat-panel"]').evaluate((chat, progress) => {
     const row = chat.parentElement!
+
     const animations = row
       .getAnimations({ subtree: true })
       .filter((animation) => animation.timeline instanceof DocumentTimeline)
+
     const width = animations.find(
       (animation) => animation instanceof CSSTransition && animation.transitionProperty === "width",
     )!
+
     animations.forEach((animation) => {
       animation.pause()
       animation.currentTime = Number(width.effect!.getTiming().duration) * progress
     })
     const chatBounds = chat.getBoundingClientRect()
     const panelBounds = document.querySelector("#review-panel")!.getBoundingClientRect()
+
     return {
       row: row.getBoundingClientRect().width,
       panelWidth: panelBounds.width,
@@ -804,8 +1075,11 @@ async function expectHeaderClearOfToggle(page: Page, toggle: Locator, progress: 
       panels: chatBounds.width + panelBounds.width + parseFloat(getComputedStyle(row).columnGap),
     }
   }, progress)
+
   expect(geometry.gap).toBeCloseTo(8, 1)
+
   if (geometry.panelWidth > 0) expect(Math.abs(geometry.row - geometry.panels)).toBeLessThanOrEqual(1)
+
   if (progress === 0.25) {
     expect(geometry.contentOpacity).toBeGreaterThan(0)
     expect(geometry.contentOpacity).toBeLessThan(1)

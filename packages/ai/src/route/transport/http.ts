@@ -1,5 +1,5 @@
 import { Clock, Duration, Effect, Stream } from "effect"
-import { Headers, HttpClientRequest } from "effect/unstable/http"
+import { Headers, HttpClientRequest } from "effect/http"
 import { Auth } from "../auth.js"
 import { render as renderEndpoint } from "../endpoint.js"
 import { Framing } from "../framing.js"
@@ -88,6 +88,7 @@ export const httpJson = <Body, Frame>(input: HttpJsonInput<Body, Frame>): HttpJs
         url: parts.url,
         body: parts.bodyText,
         headers: parts.headers,
+        encoding: prepareInput.request.http?.encoding,
       })
       return {
         request,

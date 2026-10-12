@@ -28,6 +28,7 @@ describe("visibleTimelineMessages", () => {
     delivery: "steer",
     payload: { text: "queued" },
   } satisfies SessionInboxInfo
+
   const work = {
     id: "msg_5",
     type: "assistant",
@@ -65,8 +66,9 @@ describe("visibleTimelineMessages", () => {
         shellToolDefaultOpen: () => false,
         editToolDefaultOpen: () => false,
         timelineDetail: () => timelinePresets[2].value,
-        pendingUserMessageIDs: () => new Set([steer.id]),
+        pendingInputIDs: () => new Set([steer.id]),
       })
+
       expect(projection.activeMessageID()).toBe("msg_1")
       expect(projection.rows().map((row) => [row._tag, row.userMessageID])).toEqual([
         ["UserMessage", "msg_1"],
@@ -113,7 +115,7 @@ describe("visibleTimelineMessages", () => {
     expect(visibleTimelineMessages(delivered, [])).toBe(delivered)
   })
 
-  test("preserves steer order and excludes reverted steers", () => {
+  test("preserves pending input order and excludes reverted steers", () => {
     const source = [...messages, work]
     const pending = [steer, { ...steer, id: "msg_4" }]
     expect(visibleTimelineMessages(source, pending).map((message) => message.id)).toEqual([
@@ -123,6 +125,30 @@ describe("visibleTimelineMessages", () => {
       "msg_3",
       "msg_4",
     ])
+
+    // A notice admitted after the steers, before the next step, sinks with them in admission order. The
+    // server delivers steers in that order and the store moves each delivered input to the end, so the
+    // rendered order does not change at delivery.
+    const notice = {
+      id: "msg_4a",
+      sessionID: "ses_1",
+      time: { created: 4 },
+      type: "synthetic",
+      delivery: "steer",
+      payload: { text: "", description: "Task finished" },
+    } satisfies SessionInboxInfo
+
+    const noticeMessage = {
+      id: notice.id,
+      type: "synthetic",
+      ...notice.payload,
+      time: notice.time,
+    } satisfies SessionMessageInfo
+
+    const pendingOrder = visibleTimelineMessages([...messages, noticeMessage, work], [...pending, notice])
+
+    // The order the server delivers in: active work, then steers and notices by admission.
+    expect(pendingOrder.map((message) => message.id)).toEqual(["msg_1", "msg_2", "msg_5", "msg_3", "msg_4", "msg_4a"])
     expect(visibleTimelineMessages(source, pending, "msg_4").map((message) => message.id)).toEqual([
       "msg_1",
       "msg_2",
@@ -153,10 +179,25 @@ describe("visibleTimelineMessages", () => {
     ])
     expect(visibleTimelineMessages(messages, [], "msg_0")).toEqual([])
   })
+
+  test("keeps a pre-promotion failed idle marker after the pending input that triggered it", () => {
+    const failed = [
+      { id: "msg_3", type: "user", text: "queued", time: { created: 3 } },
+      {
+        id: "msg_idle",
+        type: "idle",
+        outcome: "failed",
+        error: { type: "unknown", message: 'Agent not found: "build"' },
+        time: { created: 4 },
+      },
+    ] satisfies SessionMessageInfo[]
+
+    expect(visibleTimelineMessages(failed, [steer]).map((message) => message.id)).toEqual(["msg_3", "msg_idle"])
+  })
 })
 
 describe("applyTimelineMessageHandoff", () => {
-  const handoff = {
+  const message = {
     id: "msg_image",
     type: "user",
     text: "",
@@ -171,20 +212,81 @@ describe("applyTimelineMessageHandoff", () => {
     time: { created: 1 },
   } satisfies SessionMessageInfo
 
+  const selection = { agent: "plan", model: { id: "next", providerID: "provider", variant: "high" } }
+  const handoff = { message, selection }
+  const switched = { agent: "plan", model: selection.model }
+
   test("shows a promoted image-only prompt before client admission", () => {
-    expect(applyTimelineMessageHandoff([], handoff)).toEqual([handoff])
+    expect(applyTimelineMessageHandoff([], handoff, switched)).toEqual([message])
   })
 
   test("adds attachments to the client's optimistic row", () => {
-    const optimistic = { id: handoff.id, type: "user", text: "", time: { created: 2 } } satisfies SessionMessageInfo
-    expect(applyTimelineMessageHandoff([optimistic], handoff)).toEqual([{ ...optimistic, files: handoff.files }])
+    const optimistic = { id: message.id, type: "user", text: "", time: { created: 2 } } satisfies SessionMessageInfo
+    expect(applyTimelineMessageHandoff([optimistic], handoff, switched)).toEqual([
+      { ...optimistic, files: message.files },
+    ])
   })
 
   test("keeps the durable attachment payload", () => {
     const durable = {
-      ...handoff,
+      ...message,
       files: [{ data: "YQ==", mime: "image/png", source: { type: "inline" } }],
     } satisfies SessionMessageInfo
-    expect(applyTimelineMessageHandoff([durable], handoff)).toEqual([durable])
+
+    const source = [durable]
+
+    expect(applyTimelineMessageHandoff(source, handoff, switched)).toBe(source)
+  })
+
+  const agent = {
+    id: "msg_image_agent",
+    type: "agent-switched",
+    agent: "plan",
+    previous: "build",
+    time: { created: 1 },
+  } satisfies SessionMessageInfo
+
+  const model = {
+    id: "msg_image_model",
+    type: "model-switched",
+    model: selection.model,
+    time: { created: 1 },
+  } satisfies SessionMessageInfo
+
+  // The session takes each switch from its echo, which also lands the durable notice.
+  test.each([
+    {
+      name: "both switches pending",
+      session: { agent: "build", model: { id: "old", providerID: "provider" } },
+      notices: [agent, model],
+    },
+    {
+      name: "only a variant change",
+      session: { agent: "plan", model: { ...selection.model, variant: undefined } },
+      notices: [model],
+    },
+    {
+      name: "the agent echoed",
+      session: { agent: "plan", model: { id: "old", providerID: "provider" } },
+      notices: [model],
+    },
+    { name: "both echoed", session: switched, notices: [] },
+  ])("projects the prompt's switches ahead of it: $name", (row) => {
+    expect(applyTimelineMessageHandoff(messages.slice(0, 2), handoff, row.session)).toEqual([
+      ...messages.slice(0, 2),
+      ...row.notices,
+      message,
+    ])
+  })
+
+  test("projects pending switches ahead of the client's optimistic row", () => {
+    const optimistic = { ...message, files: [] } satisfies SessionMessageInfo
+    const session = { agent: "build", model: selection.model }
+
+    expect(applyTimelineMessageHandoff([messages[0], optimistic], handoff, session)).toEqual([
+      messages[0],
+      agent,
+      message,
+    ])
   })
 })

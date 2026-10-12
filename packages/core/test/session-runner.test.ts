@@ -845,7 +845,16 @@ const fragmentFixture = (kind: FragmentKind, id: string, chunks: readonly string
       return {
         partialEvents,
         completeEvents: [...partialEvents, LLMEvent.toolInputEnd({ id, name: "echo" })],
-        expectedAssistant: { type: "assistant", content: [expectedContent] },
+        expectedAssistant: {
+          type: "assistant",
+          content: [
+            {
+              type: "tool",
+              id,
+              state: { status: "error", input: {}, error: { type: "tool.input-incomplete" } },
+            },
+          ],
+        },
         expectedContent,
       }
     }
@@ -4913,6 +4922,14 @@ describe("SessionRunnerLLM", () => {
           output: Schema.Struct({}),
           execute: () => Effect.die(new Permission.DeclinedError()),
         },
+        wrapped: {
+          name: "wrapped",
+          description: "Fail with a decline attached to a tool error",
+          input: Schema.Struct({}),
+          output: Schema.Struct({}),
+          execute: () =>
+            Effect.fail(new Tool.Error({ message: "Wrapped decline", error: new Permission.DeclinedError() })),
+        },
       },
       { codemode: false },
     )
@@ -4922,6 +4939,7 @@ describe("SessionRunnerLLM", () => {
       TestLLM.toolCalls(
         LLMEvent.toolCall({ id: "call-failed", name: "failed", input: {} }),
         LLMEvent.toolCall({ id: "call-declined", name: "declined", input: {} }),
+        LLMEvent.toolCall({ id: "call-wrapped", name: "wrapped", input: {} }),
       ),
     )
 
@@ -4936,6 +4954,10 @@ describe("SessionRunnerLLM", () => {
         Expected.failedTool({ id: "call-failed" }, { error: { message: "Ordinary tool failure" } }),
         Expected.failedTool(
           { id: "call-declined" },
+          { error: { type: "aborted", message: "The user declined this tool call" } },
+        ),
+        Expected.failedTool(
+          { id: "call-wrapped" },
           { error: { type: "aborted", message: "The user declined this tool call" } },
         ),
       ]),
@@ -6019,6 +6041,30 @@ describe("SessionRunnerLLM", () => {
       {
         type: "session.step.failed.1",
         data: { error: { type: "provider.invalid-output", message: "Invalid JSON input for tool call echo" } },
+      },
+    ])
+  })
+
+  scenario("settles unfinished tool input after an output limit", function* (s) {
+    yield* s.llm.push(
+      TestLLM.complete(
+        { reason: { normalized: "length" } },
+        LLMEvent.toolInputStart({ id: "call-incomplete", name: "echo" }),
+        LLMEvent.toolInputDelta({ id: "call-incomplete", name: "echo", text: '{"text":"partial' }),
+      ),
+      TestLLM.stop(),
+    )
+
+    yield* s.runPrompt("Recover unfinished tool input")
+
+    expect(s.requests).toHaveLength(2)
+    expect(s.executions).toEqual([])
+    expect(requireAssistant(yield* s.context).content).toMatchObject([
+      {
+        type: "tool",
+        id: "call-incomplete",
+        executed: false,
+        state: { status: "error", error: { type: "tool.input-incomplete" } },
       },
     ])
   })
