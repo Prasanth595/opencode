@@ -548,7 +548,7 @@ describe("Config", () => {
     ),
   )
 
-  it.live("keeps the last resolved wellknown config across failures and restarts until its source is removed", () =>
+  it.live("keeps the last resolved wellknown config across failures and restarts while authenticated, drops it after logout", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
       (tmp) => {
@@ -660,7 +660,10 @@ describe("Config", () => {
             expect(requests).toBeGreaterThan(before)
 
             key = undefined
-            expect(yield* warm.reload("logged-out", warm.switched)).toEqual(loaded)
+            // Logged out: the endpoint no longer contributes documents, so its
+            // cached config cannot resolve {env:TOKEN} to "" and shadow the
+            // wiring of still-authenticated endpoints (anomalyco/opencode#54645).
+            expect(yield* warm.reload("logged-out", warm.switched)).toEqual(removed)
 
             manifestStatus = 503
             const updated = yield* warm.bus
