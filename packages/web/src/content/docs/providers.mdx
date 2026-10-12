@@ -1430,7 +1430,7 @@ See the [Helicone Header Directory](https://docs.helicone.ai/helicone-headers/he
 
 ### Prime Inference
 
-[Prime Inference](https://docs.primeintellect.ai/inference/overview) is an OpenAI-compatible API for open models. It is available in OpenCode as the `prime` provider through the models.dev catalog.
+[Prime Inference](https://docs.primeintellect.ai/inference/overview) is an OpenAI-compatible API for hosted and gateway models. It is available in OpenCode as the `prime` provider through the models.dev catalog.
 
 #### Team billing
 
@@ -1451,14 +1451,16 @@ Requests bill the API key owner's personal balance unless the request includes t
 }
 ```
 
-The `{env:PRIME_TEAM_ID}` placeholder resolves against the `PRIME_TEAM_ID` environment variable of the OpenCode server service, not your shell. Export it there and restart the service:
+The `{env:PRIME_TEAM_ID}` placeholder reads the environment of the OpenCode process loading the config. Set the variable before starting OpenCode:
 
 ```bash
-opencode service set env PRIME_TEAM_ID=your-team-id
-opencode service start
+export PRIME_TEAM_ID=your-team-id
+opencode
 ```
 
-If a request without the header fails with an insufficient-balance error, check which account the API key bills to in the [billing dashboard](https://app.primeintellect.ai/dashboard/billing).
+If you connect to an existing server, set the variable in that server's environment and restart it. Exporting the variable in a client shell does not update a running server.
+
+If a request fails with an insufficient-balance error, check the account selected by the header and API key in the [billing dashboard](https://app.primeintellect.ai/dashboard/billing). See [Prime's troubleshooting guide](https://docs.primeintellect.ai/inference/troubleshooting#insufficient-funds).
 
 ---
 
