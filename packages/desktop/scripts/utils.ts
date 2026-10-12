@@ -1,4 +1,4 @@
-import { chmod, copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { Option, Schema } from "effect"
@@ -115,11 +115,11 @@ async function copyCliToResources(pkg: string, dest: string) {
   await prepareCli(dest)
 
   const manifest = Option.getOrUndefined(
-    Schema.decodeUnknownOption(Manifest)(await readFile(join(pkg, "package.json"), "utf8")),
+    Schema.decodeUnknownOption(Manifest)(await Bun.file(join(pkg, "package.json")).text()),
   )
 
   if (!manifest) throw new Error(`Bundled CLI package has no version: ${pkg}`)
-  await writeFile(versionFile(dest), manifest.version)
+  await Bun.write(versionFile(dest), manifest.version)
 }
 
 export function versionFile(cli: string) {
