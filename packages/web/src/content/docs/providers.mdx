@@ -1428,6 +1428,40 @@ See the [Helicone Header Directory](https://docs.helicone.ai/helicone-headers/he
 
 ---
 
+### Prime Inference
+
+[Prime Inference](https://docs.primeintellect.ai/inference/overview) is an OpenAI-compatible API for open models. It is available in OpenCode as the `prime` provider through the models.dev catalog.
+
+#### Team billing
+
+Requests bill the API key owner's personal balance unless the request includes the `X-Prime-Team-ID` header. To bill a team instead, get your team ID from the Prime Intellect [team profile](https://app.primeintellect.ai/dashboard/team-profile) and configure the header in your opencode config.
+
+```jsonc title="~/.config/opencode/opencode.jsonc"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "prime": {
+      "options": {
+        "headers": {
+          "X-Prime-Team-ID": "{env:PRIME_TEAM_ID}"
+        }
+      }
+    }
+  }
+}
+```
+
+The `{env:PRIME_TEAM_ID}` placeholder resolves against the `PRIME_TEAM_ID` environment variable of the OpenCode server service, not your shell. Export it there and restart the service:
+
+```bash
+opencode service set env PRIME_TEAM_ID=your-team-id
+opencode service start
+```
+
+If a request without the header fails with an insufficient-balance error, check which account the API key bills to in the [billing dashboard](https://app.primeintellect.ai/dashboard/billing).
+
+---
+
 ### llama.cpp
 
 You can configure opencode to use local models through [llama.cpp's](https://github.com/ggml-org/llama.cpp) llama-server utility
