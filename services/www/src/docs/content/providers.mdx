@@ -580,6 +580,51 @@ The configuration key becomes the provider prefix and each `models` key becomes 
 }
 ```
 
+### RodiumAi
+
+[RodiumAi](https://www.rodiumai.io) is an OpenAI-compatible gateway for Africa: top up with Mobile Money, one `rd_sk_…`
+key, and catalogue ids such as `openai/gpt-4o` or `rodiumai/smart`. The models.dev catalog entry is tracked in
+[anomalyco/models.dev#9447](https://github.com/anomalyco/models.dev/pull/9447).
+
+Provide `RODIUMAI_API_KEY` to the OpenCode server or connect a RodiumAi account, then select a model:
+
+```text
+/connect
+# Select RodiumAi, then paste your API key.
+/models
+```
+
+```jsonc title="opencode.jsonc"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "rodiumai/openai/gpt-4o",
+}
+```
+
+Until the catalog lands, configure it as a custom OpenAI-compatible provider:
+
+```jsonc title="opencode.jsonc"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "rodiumai/openai/gpt-4o",
+  "providers": {
+    "rodiumai": {
+      "env": ["RODIUMAI_API_KEY"],
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "baseURL": "https://api.rodiumai.io/v1",
+      },
+      "models": {
+        "openai/gpt-4o": {},
+        "openai/gpt-4o-mini": {},
+        "anthropic/claude-sonnet-4-6": {},
+        "rodiumai/smart": {},
+      },
+    },
+  },
+}
+```
+
 ## Errors
 
 Provider and model errors usually identify the failed stage. Check the server process environment and the exact model
