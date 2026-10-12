@@ -72,3 +72,39 @@ describe("ConfigMarkdown.parse", () => {
     expect(parsed.data.description).toBe("Use when the user needs to crawl pages. Keywords: crawl, scrape")
   })
 })
+
+describe("ConfigMarkdown.parse sanitize context", () => {
+  test("keeps multiline blocks when another line needs the colon fallback", () => {
+    const content = [
+      "---",
+      "description: Scope: test",
+      "request:",
+      "  headers:",
+      "    x-a: b",
+      "permissions:",
+      "  - action: edit",
+      '    resource: "*"',
+      "    effect: deny",
+      "---",
+      "body",
+    ].join("\n")
+    const parsed = ConfigMarkdown.parse(content)
+    expect(parsed.data.description).toBe("Scope: test")
+    expect(parsed.data.request).toEqual({ headers: { "x-a": "b" } })
+    expect(parsed.data.permissions).toEqual([{ action: "edit", resource: "*", effect: "deny" }])
+  })
+
+  test("keeps an anchored flow reference when the colon fallback runs", () => {
+    const content = [
+      "---",
+      "defs: &rule {action: edit, effect: deny}",
+      "description: Scope: test",
+      "permissions: [*rule]",
+      "---",
+      "body",
+    ].join("\n")
+    const parsed = ConfigMarkdown.parse(content)
+    expect(parsed.data.description).toBe("Scope: test")
+    expect(parsed.data.permissions).toEqual([{ action: "edit", effect: "deny" }])
+  })
+})
