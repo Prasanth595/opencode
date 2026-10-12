@@ -7,6 +7,10 @@ import { rm } from "fs/promises"
 import path from "path"
 import { parseArgs } from "util"
 
+const repo = "anomalyco/opencode"
+// Release refs come from the canonical repository so the range is correct in forks, which lack V1 and release tags.
+const v1 = "refs/release/v1"
+const dev = "refs/release/dev"
 const root = path.resolve(import.meta.dir, "..")
 const review = path.join(root, "RELEASE_REVIEW.md")
 const changelog = path.join(root, "UPCOMING_CHANGELOG.md")
@@ -29,7 +33,8 @@ if (values.help) {
 Generates release notes and a public API review, opens the result in your
 editor, and asks for confirmation before triggering the release workflow.
 
-The editor is selected from $VISUAL, then $EDITOR, and defaults to vim.
+The editor is selected from $VISUAL, then $EDITOR, and defaults to vim
+(notepad on Windows).
 
 Options:
   -f, --from <tag>   Previous release tag (default: latest stable V2 tag)
@@ -54,13 +59,18 @@ process.chdir(root)
 
 console.log("\n=== Generating changelog ===\n")
 await rm(review, { force: true })
-await $`git fetch origin "+refs/tags/v2.*:refs/tags/v2.*" "+refs/heads/v1:refs/remotes/origin/v1"`
+await $`git fetch https://github.com/${repo}.git ${["+refs/tags/v2.*:refs/tags/v2.*", `+refs/heads/v1:${v1}`, `+refs/heads/dev:${dev}`]}`
+if (!values.print && (await $`git rev-parse HEAD`.text()) !== (await $`git rev-parse ${dev}`.text()))
+  throw new Error(
+    `HEAD is not the latest ${repo} dev, which the release builds. Run \`git switch --detach ${dev}\` first.`,
+  )
 const base =
   values.from ??
   (await $`git tag --list "v2.*" --sort=-version:refname`.text()).split("\n").find((tag) => /^v2\.\d+\.\d+$/.test(tag))
 if (!base) throw new Error("No stable V2 release tag was found")
-console.log(`Comparing ${commitRange(base, values.to)}`)
-await generateReview(base, values.to)
+console.log(`Comparing ${commitRange(base, values.to).join(" ")}`)
+const contributors = await communityContributors(base, values.to)
+await generateReview(base, values.to, contributors)
 
 if (!(await Bun.file(review).exists())) throw new Error("OpenCode did not create RELEASE_REVIEW.md")
 if (values.print) {
@@ -68,13 +78,20 @@ if (values.print) {
   process.exit(0)
 }
 
-const editor = Bun.spawn(["sh", "-c", 'exec ${VISUAL:-${EDITOR:-vim}} "$1"', "release", review], {
-  cwd: root,
-  env: process.env,
-  stdin: "inherit",
-  stdout: "inherit",
-  stderr: "inherit",
-})
+const editor = Bun.spawn(
+  process.platform === "win32"
+    ? // cmd.exe runs the editor command as written, including quoted paths and `.cmd` shims such as `code --wait`.
+      ["cmd.exe", "/d", "/s", "/c", `"${process.env.VISUAL || process.env.EDITOR || "notepad"} "${review}""`]
+    : ["sh", "-c", 'exec ${VISUAL:-${EDITOR:-vim}} "$1"', "release", review],
+  {
+    cwd: root,
+    env: process.env,
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+    windowsVerbatimArguments: true,
+  },
+)
 if ((await editor.exited) !== 0) {
   console.error("Release cancelled because the editor exited with an error")
   process.exit(1)
@@ -87,16 +104,22 @@ const releaseNotes = notes[1].trim()
 if (!releaseNotes) throw new Error("Release review has no changelog")
 await Bun.write(changelog, `${releaseNotes}\n`)
 
+const uncredited = credited(releaseNotes).filter((login) => !contributors.has(login.toLowerCase()))
+if (uncredited.length > 0)
+  console.warn(
+    `\nWarning: the notes credit ${uncredited.map((login) => `@${login}`).join(", ")}, who are not community contributors to this release.\n`,
+  )
+
 const answer = prompt(`Trigger the ${version} release? [y/N]`)
 if (answer?.trim().toLowerCase() !== "y" && answer?.trim().toLowerCase() !== "yes") {
   console.log("Release cancelled")
   process.exit(0)
 }
 
-await $`gh workflow run publish.yml --ref dev ${input} -f release_notes=${releaseNotes}`
+await $`gh workflow run publish.yml --repo ${repo} --ref dev ${input} -f release_notes=${releaseNotes}`
 console.log(`Triggered the ${version} release`)
 
-async function generateReview(base: string, head: string) {
+async function generateReview(base: string, head: string, contributors: Map<string, Contribution>) {
   const endpoint = await Service.ensure()
   const client = OpenCode.make({
     baseUrl: endpoint.url,
@@ -136,7 +159,7 @@ async function generateReview(base: string, head: string) {
   })()
 
   try {
-    await client.session.prompt({ sessionID: session.id, text: reviewPrompt(base, head) })
+    await client.session.prompt({ sessionID: session.id, text: reviewPrompt(base, head, contributors) })
     await completed
     const messages = await client.message.list({ sessionID: session.id, limit: 100, order: "desc" })
     const response = messages.data.find((message) => message.type === "assistant")
@@ -152,19 +175,79 @@ async function generateReview(base: string, head: string) {
 // V1 history was merged into dev when V2 was promoted, so it must be excluded from the release range. Merges are skipped
 // because dev only takes squash merges, and the promotion merge would otherwise show the whole V1 tree.
 function commitRange(base: string, head: string) {
-  return `--no-merges ${base}..${head} --not origin/v1`
+  return ["--no-merges", `${base}..${head}`, "--not", v1]
 }
 
-function reviewPrompt(base: string, head: string) {
+type Contribution = { login: string; changes: string[] }
+
+// Commit names and emails do not reliably map to GitHub accounts, so credit only the logins GitHub links to each commit
+// and its pull request.
+async function communityContributors(base: string, head: string) {
+  const team = (await Bun.file(path.join(root, ".github/TEAM_MEMBERS")).text())
+    .split(/\r?\n/)
+    .map((line) => line.trim().toLowerCase())
+    .filter((line) => line && !line.startsWith("#"))
+  const hashes = (await $`git log --format=%H ${commitRange(base, head)}`.text()).split("\n").filter(Boolean)
+  const batches = Array.from({ length: Math.ceil(hashes.length / 40) }, (_, index) =>
+    hashes.slice(index * 40, index * 40 + 40),
+  )
+  const [owner, name] = repo.split("/")
+  const output = await Promise.all(
+    batches.map((batch) => {
+      const query = `{ repository(owner: "${owner}", name: "${name}") { ${batch
+        .map(
+          (hash, index) =>
+            `c${index}: object(oid: "${hash}") { ... on Commit { messageHeadline authors(first: 20) { nodes { user { login } } } associatedPullRequests(first: 1) { nodes { number author { __typename login } } } } }`,
+        )
+        .join(" ")} } }`
+      // App PR authors are Bot actors, while bot commit authors appear as `[bot]` logins. Unlinked emails have no user.
+      const jq = `.data.repository[] | select(. != null) | . as $commit | ($commit.associatedPullRequests.nodes[0] // {}) as $pr | ([($pr.author // {}) | select(.__typename == "User") | .login] + [($commit.authors.nodes // [])[] | .user.login // empty]) | map(select(endswith("[bot]") | not)) | unique[] | [., ($pr.number // "" | tostring), $commit.messageHeadline] | @tsv`
+      return $`gh api graphql -f query=${query} --jq ${jq}`.text()
+    }),
+  )
+  const rows = output
+    .join("\n")
+    .split("\n")
+    .filter(Boolean)
+    .map((row) => row.split("\t"))
+    .filter((row) => !team.includes(row[0].toLowerCase()))
+  return new Map(
+    Array.from(
+      Map.groupBy(rows, (row) => row[0].toLowerCase()),
+      ([key, group]): [string, Contribution] => [
+        key,
+        { login: group[0][0], changes: group.map((row) => (row[1] ? `#${row[1]} ${row[2]}` : row[2])) },
+      ],
+    ),
+  )
+}
+
+function credited(notes: string) {
+  const mentions = notes.replace(/`[^`\n]*`/g, "").matchAll(/(?<![\w/@.-])@([A-Za-z0-9][A-Za-z0-9-]*)(?![\w/-])/g)
+  return [...new Set(Array.from(mentions, (match) => match[1]))]
+}
+
+function reviewPrompt(base: string, head: string, contributors: Map<string, Contribution>) {
+  const credits = [...contributors.values()]
+    .map((contributor) => `- @${contributor.login}: ${contributor.changes.join("; ")}`)
+    .join("\n")
   return `Create a concise pre-release review for a maintainer.
 
-The previous stable V2 release is ${base}. Inspect every relevant commit in \`git log ${commitRange(base, head)}\` and
+The previous stable V2 release is ${base}. Inspect every relevant commit in \`git log ${commitRange(base, head).join(" ")}\` and
 read each commit's actual diff with \`git show\`. Do not use a whole-tree \`git diff\` between the endpoints, which
 includes V1 history merged into dev. Do not compare against V1 release tags or commits outside that range. Do not rely
 only on commit titles. Write a
 user-facing changelog with sections for Core, TUI, Desktop, SDK, and Extensions, omitting empty sections and changes that
-are entirely internal. Group bug fixes separately from improvements. Preserve community contributor attribution when it
-is available from merged pull requests, but never thank authors listed in .github/TEAM_MEMBERS.
+are entirely internal. Group bug fixes separately from improvements.
+
+${
+  credits
+    ? `Thank only these community contributors, next to the changes they made, as [@login](https://github.com/login) with
+the login exactly as written. Never derive a login from a commit name or email, and never thank anyone else:
+
+${credits}`
+    : "This release has no community contributors, so do not thank anyone."
+}
 
 Start the changelog with a "### Highlights" section: the few changes worth telling people about, written for humans.
 Pick 2 to 5 user-visible changes a user would notice, try, or share: new capabilities, clearly better workflows, or fixes
