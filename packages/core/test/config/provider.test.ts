@@ -93,7 +93,8 @@ describe("ConfigProviderPlugin.Plugin", () => {
           info: decode({
             providers: {
               proxy: {
-                compatibility: { requireFinishReason: false },
+                // Model-version features are model-only and are not accepted on the provider.
+                compatibility: { requireFinishReason: false, supportsEffortUpdates: false },
                 models: { claude: { compatibility: { supportsPromptCacheKey: true } } },
               },
             },

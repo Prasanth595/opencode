@@ -2,7 +2,7 @@ export * as Provider from "./provider.js"
 
 import { Effect, Schema } from "effect"
 import { Integration } from "./integration.js"
-import { Compatibility } from "./model-compatibility.js"
+import { ProviderCompatibility } from "./model-compatibility.js"
 import { optional, statics } from "./schema.js"
 import { ephemeral, inventory } from "./event.js"
 
@@ -80,7 +80,7 @@ export const Info = Schema.Struct({
   activation: Activation,
   package: Package,
   /** Inherited by every model of this provider; model compatibility overrides individual fields. */
-  compatibility: Compatibility.pipe(optional),
+  compatibility: ProviderCompatibility.pipe(optional),
   ...Overlays,
 })
   .annotate({ identifier: "Provider.Info" })

@@ -630,6 +630,15 @@ export type ModelCompatibility = {
   supportsEffortUpdates?: boolean
 }
 
+export type ProviderCompatibility = {
+  reasoningField?: ModelReasoningField
+  requireReasoning?: boolean
+  maxTokensField?: ModelMaxTokensField
+  requireFinishReason?: boolean
+  requireAssistantAfterTool?: boolean
+  supportsPromptCacheKey?: boolean
+}
+
 export type ModelCost = {
   tier?: { type: "context"; size: number }
   input: MoneyUSDPerMillionTokens
@@ -1907,7 +1916,7 @@ export type ProviderInfo = {
   name: string
   activation: "auto" | "enabled" | "disabled"
   package: string
-  compatibility?: ModelCompatibility
+  compatibility?: ProviderCompatibility
   settings?: ProviderSettings
   headers?: { [x: string]: string }
   body?: { [x: string]: any }
@@ -2242,7 +2251,7 @@ export type ConfigEntry =
             name?: string
             env?: Array<string>
             package?: string
-            compatibility?: ModelCompatibility
+            compatibility?: ProviderCompatibility
             settings?: ConfigProviderSettings
             headers?: { [x: string]: string }
             body?: { [x: string]: JsonValue }

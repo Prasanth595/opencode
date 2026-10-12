@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Struct } from "effect"
 import { optional } from "./schema.js"
 
 // Shared by model and provider schemas; kept separate because model.ts imports provider.ts.
@@ -27,3 +27,9 @@ export const Compatibility = Schema.Struct({
   /** Supports per-message effort updates. Overrides model-ID detection. */
   supportsEffortUpdates: Schema.Boolean.pipe(optional),
 }).annotate({ identifier: "Model.Compatibility" })
+
+// Provider defaults inherited by its models. Model-version features stay model-only.
+export interface ProviderCompatibility extends Schema.Schema.Type<typeof ProviderCompatibility> {}
+export const ProviderCompatibility = Schema.Struct(
+  Struct.omit(Compatibility.fields, ["supportsThinkingBlockBinding", "supportsEffortUpdates"]),
+).annotate({ identifier: "Provider.Compatibility" })
