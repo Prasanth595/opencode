@@ -377,4 +377,15 @@ describe("Formatter", () => {
       }),
     ),
   )
+
+  it.live("appends to the literal file path when the path contains $ sequences", () =>
+    withFormatter({ markdown }, (formatter, directory) =>
+      Effect.gen(function* () {
+        const file = path.join(directory, "test$&.md")
+        yield* Effect.promise(() => fs.writeFile(file, ""))
+        expect(yield* formatter.file(file)).toBe(true)
+        expect(yield* Effect.promise(() => fs.readFile(file, "utf8"))).toBe("md")
+      }),
+    ),
+  )
 })
