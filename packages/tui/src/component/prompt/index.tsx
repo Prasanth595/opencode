@@ -264,6 +264,28 @@ export function Prompt(props: PromptProps) {
     enabled: !disabled(),
     commands: [
       {
+        id: "session.queue",
+        title: "Queue message",
+        slash: { name: "queue", arguments: true },
+        run: async (value) => {
+          const text = value?.trim()
+          if (!text) {
+            toast.show({ message: "Usage: /queue <message>", variant: "warning" })
+            return
+          }
+          const sessionID = props.sessionID
+          if (!sessionID) {
+            toast.show({ message: "Open a session before queueing a message", variant: "warning" })
+            return
+          }
+          const agent = local.agent.current()
+          const model = local.model.selection()
+          if (!agent || !model) return
+          input.setText(text)
+          await submit("queue")
+        },
+      },
+      {
         id: "session.cd",
         title: "Change working directory",
         slash: { name: "cd", arguments: true },
@@ -1118,11 +1140,11 @@ export function Prompt(props: PromptProps) {
     }
     if (move.creating()) return false
     if (auto()?.visible) return false
-    const trimmed = store.prompt.text.trim()
+    let trimmed = store.prompt.text.trim()
     if (!trimmed && (!props.sessionID || store.mode === "shell" || delivery === "queue"))
       return delivery === "steer" ? (await props.onEmptySubmit?.()) === true : false
     const exitWord = trimmed === "exit" || trimmed === "quit" || trimmed === ":q"
-    const inputText = expandTrackedPastedText(
+    let inputText = expandTrackedPastedText(
       store.prompt.text,
       input.extmarks.getAllForTypeId(promptPartTypeId).flatMap((extmark) => {
         const ref = store.extmarkToPart.get(extmark.id)
@@ -1132,7 +1154,21 @@ export function Prompt(props: PromptProps) {
         return [{ start: extmark.start, end: extmark.end, text: part.text }]
       }),
     )
-    const slash = argumentSlash(inputText, keymapCommands())
+    let slash = argumentSlash(inputText, keymapCommands())
+    const queuedSlash = slash?.command.id === "session.queue"
+    if (slash && queuedSlash) {
+      if (!props.sessionID || !slash.input?.trim()) {
+        toast.show({
+          message: props.sessionID ? "Usage: /queue <message>" : "Open a session before queueing a message",
+          variant: "warning",
+        })
+        return false
+      }
+      inputText = slash.input.trim()
+      trimmed = inputText
+      delivery = "queue"
+      slash = undefined
+    }
     if (delivery === "queue" && (store.mode === "shell" || exitWord || slash)) {
       toast.show({ message: "This prompt cannot be queued", variant: "warning" })
       return false
@@ -1146,7 +1182,7 @@ export function Prompt(props: PromptProps) {
       await slash.command.run(slash.input)
       return true
     }
-    const slashHead = parseSlashHead(inputText, /\s/)
+    const slashHead = queuedSlash ? undefined : parseSlashHead(inputText, /\s/)
     const isCommand =
       slashHead !== undefined &&
       (data.location.command.list(currentLocation.ref) ?? []).some((command) => command.name === slashHead.name)
@@ -1313,7 +1349,7 @@ export function Prompt(props: PromptProps) {
       const send = async () => {
         // Commands inherit the composer selection; command-specific overrides
         // remain server-owned and run after this preparation.
-        await commitSelection()
+        if (delivery !== "queue") await commitSelection()
         return client.api.session.command({
           sessionID: target,
           name: slashHead.name,
@@ -1322,6 +1358,9 @@ export function Prompt(props: PromptProps) {
           agents: entry.agents,
           skills: entry.skills?.length ? entry.skills : undefined,
           delivery,
+          agent: delivery === "queue" ? agent.id : undefined,
+          model:
+            delivery === "queue" ? { providerID: selection.providerID, id: selection.modelID, variant } : undefined,
         })
       }
       void (newSession ? newSession.gate.then(send) : send()).catch((error) =>
@@ -1329,7 +1368,7 @@ export function Prompt(props: PromptProps) {
       )
     } else {
       move.startSubmit()
-      if (!(await attempt("Failed to prepare session", prepareAgent))) return true
+      if (delivery !== "queue" && !(await attempt("Failed to prepare session", prepareAgent))) return true
       // Revert must settle before optimistic admission: its committed echo
       // splices every local row at or after the boundary, which would include
       // a freshly admitted prompt.
@@ -1364,10 +1403,13 @@ export function Prompt(props: PromptProps) {
           skills: entry.skills?.length ? entry.skills : undefined,
           delivery,
           gate: newSession?.gate,
+          ...(delivery === "queue"
+            ? { agent: agent.id, model: { providerID: selection.providerID, id: selection.modelID, variant } }
+            : {}),
           // Commit the captured selection after earlier admissions, including
           // compaction setup. Cached state may still precede their SSE echoes;
           // the server makes an unchanged selection a no-op.
-          prepare: commitModel,
+          prepare: delivery === "queue" ? undefined : commitModel,
         })
         .catch((error) => (newSession ? newSession.recover(error) : fail("Failed to send prompt", error)))
       if (pendingEditorSelection) editor.markSelectionSent()

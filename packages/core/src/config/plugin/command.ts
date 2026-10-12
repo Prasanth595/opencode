@@ -121,16 +121,19 @@ export const Plugin = define({
                   yield* subagents.background(recovery)
                   return
                 }
-                if (agent !== undefined) {
+                if (input.delivery !== "queue" && agent !== undefined) {
                   const session = yield* ctx.session.get({ sessionID: input.sessionID })
                   if (session.agent !== agent) yield* ctx.session.switchAgent({ sessionID: input.sessionID, agent })
                 }
-                if (model !== undefined) yield* ctx.session.switchModel({ sessionID: input.sessionID, model })
+                if (input.delivery !== "queue" && model !== undefined)
+                  yield* ctx.session.switchModel({ sessionID: input.sessionID, model })
                 yield* ctx.session.prompt({
                   ...input.prompt,
                   sessionID: input.sessionID,
                   text,
                   delivery: input.delivery,
+                  agent: input.delivery === "queue" ? (agent ?? input.prompt.agent) : undefined,
+                  model: input.delivery === "queue" ? (model ?? input.prompt.model) : undefined,
                 })
               }).pipe(Effect.asVoid),
           })

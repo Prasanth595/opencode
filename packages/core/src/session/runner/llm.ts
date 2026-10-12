@@ -166,11 +166,22 @@ const layer = Layer.effect(
               const ready = yield* restore(
                 Effect.gen(function* () {
                   const selected = yield* prepareContext(sessionID)
+                  let changed = false
+                  let prepared = selected
                   const promoted = yield* SessionInbox.promote(
                     db,
                     bus,
                     sessionID,
                     entering && !continuing ? promotable : "steer",
+                    () => {
+                      changed = true
+                    },
+                    (payload) =>
+                      Effect.gen(function* () {
+                        if (!payload.agent && !payload.model) return
+                        prepared = yield* prepareContext(sessionID, payload)
+                        yield* context.resolveModel(prepared.session)
+                      }),
                   )
                   // A control admitted during context preparation owns this boundary.
                   if (promoted === undefined) return undefined
@@ -179,7 +190,12 @@ const layer = Layer.effect(
                       onlyIfMissing: true,
                     })
                   if (promoted > 0) step = 1
-                  return { _tag: "Ready" as const, context: yield* context.load(selected) }
+                  // Deferred selection belongs to the promoted input, including its
+                  // permissions and instruction discovery, rather than the preceding work.
+                  return {
+                    _tag: "Ready" as const,
+                    context: yield* context.load(changed ? prepared : selected),
+                  }
                 }),
               )
               if (ready) return ready
@@ -198,8 +214,11 @@ const layer = Layer.effect(
       }
     })
 
-    const prepareContext = Effect.fn("SessionRunner.prepareContext")(function* (sessionID: SessionSchema.ID) {
-      const selected = yield* context.select(sessionID)
+    const prepareContext = Effect.fn("SessionRunner.prepareContext")(function* (
+      sessionID: SessionSchema.ID,
+      selection?: SessionInbox.UserPayload,
+    ) {
+      const selected = yield* context.select(sessionID, selection)
       // A blocked initial instruction baseline must leave admitted input pending.
       yield* InstructionState.prepare(db, bus, selected.instructions, sessionID)
       return selected

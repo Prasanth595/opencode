@@ -73,6 +73,59 @@ const it = testEffect(
 const decode = Schema.decodeUnknownSync(Info)
 
 describe("ConfigCommandPlugin.Plugin", () => {
+  it.live("defers configured agent overrides for queued commands", () =>
+    Effect.gen(function* () {
+      const command = yield* Command.Service
+      const plan = Agent.Info.default(Agent.ID.make("plan"))
+      const prompts: { agent?: string; model?: { id: string } }[] = []
+      yield* ConfigCommandPlugin.Plugin.effect(
+        host({
+          command: { list: () => Effect.die("unused"), transform: command.transform, reload: command.reload },
+          agent: {
+            transform: () => Effect.die("unused"),
+            reload: () => Effect.die("unused"),
+            list: () => Effect.die("unused"),
+            get: () => Effect.succeed({ location: location({ directory: AbsolutePath.make("/test") }), data: plan }),
+          },
+          session: {
+            prompt: (input) =>
+              Effect.sync(() => {
+                prompts.push(input)
+                return SessionInbox.User.make({
+                  id: SessionMessage.ID.make("msg_test"),
+                  sessionID: input.sessionID,
+                  time: { created: DateTime.makeUnsafe(0) },
+                  type: "user",
+                  payload: { text: input.text },
+                  delivery: "queue",
+                })
+              }),
+            switchAgent: () => Effect.die("must not switch while queued"),
+            switchModel: () => Effect.die("must not switch while queued"),
+          },
+        }),
+      ).pipe(
+        Effect.provide(
+          Config.testLayer([
+            new Document({
+              type: "document",
+              info: decode({ commands: { review: { template: "Review", agent: "plan" } } }),
+            }),
+          ]),
+        ),
+      )
+      yield* command.execute({
+        name: "review",
+        invocation: {
+          sessionID: Session.ID.make("ses_test"),
+          prompt: { text: "", agent: Agent.ID.make("build") },
+          delivery: "queue",
+        },
+      })
+      expect(prompts).toMatchObject([{ agent: "plan" }])
+    }),
+  )
+
   for (const item of [
     ...["$&", "$$", "$`", "$'"].flatMap((input) => [
       { template: "Explain $ARGUMENTS.", input, expected: `Explain ${input}.` },
