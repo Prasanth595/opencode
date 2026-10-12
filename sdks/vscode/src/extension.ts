@@ -59,13 +59,6 @@ export function activate(context: vscode.ExtensionContext) {
 
     terminal.show()
     terminal.sendText("opencode")
-
-    const fileRef = getActiveFile()
-    if (!fileRef) {
-      return
-    }
-
-    terminal.sendText(fileRef, false)
   }
 
   function getActiveFile() {
