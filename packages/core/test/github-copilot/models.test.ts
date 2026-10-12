@@ -208,11 +208,17 @@ test("discovers context tiers, resolves independent reasoning, and prices actual
     if (!model) throw new Error("Model missing")
     expect(catalog.size).toBe(1)
     expect(model.context).toEqual({ default: 272_000, long: 922_000 })
+    expect(model.variants.map((variant) => String(variant.id))).toEqual(["medium", "high"])
     const resolve = (variant?: string) =>
       Effect.runPromise(
         ModelResolver.withVariant(model, variant === undefined ? undefined : Model.VariantID.make(variant)),
       )
     expect((await resolve()).limit).toEqual({ context: 400_000, input: 272_000, output: 128_000 })
+    expect((await resolve("high")).limit).toEqual({ context: 400_000, input: 272_000, output: 128_000 })
+    expect((await resolve("default@default")).limit).toEqual({ context: 400_000, input: 272_000, output: 128_000 })
+    for (const variant of ["unknown", "unknown@long", "@long", "high@unknown"]) {
+      await expect(resolve(variant)).rejects.toMatchObject({ _tag: "SessionRunnerModel.VariantUnavailableError" })
+    }
     expect((await resolve("medium@default")).settings?.reasoningEffort).toBe("medium")
     expect((await resolve("high@long")).limit.context).toBe(1_050_000)
     expect((await resolve("high@long")).settings?.reasoningEffort).toBe("high")

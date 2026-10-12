@@ -109,6 +109,8 @@ Each variant can contain `settings`, `headers`, and `body`. Its values are appli
 
 For Copilot models that advertise Default and Long input budgets, use `/context-window` or "Switch context window" in the
 command palette. Reasoning effort stays independent of the context window. OpenCode uses Default unless you select Long.
+Existing sessions with no context tier or a plain reasoning variant such as `high` also use the smaller Default budget
+and compact earlier than before. Long is opt-in.
 
 For CLI requests, combine reasoning and context in the variant:
 

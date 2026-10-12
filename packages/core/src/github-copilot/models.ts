@@ -161,7 +161,6 @@ function build(id: Model.ID, remote: UsableModel, baseURL: string, previous?: Mo
     ? remote.version.slice(remote.id.length + 1)
     : remote.version
   const released = previous?.time.released || Date.parse(version)
-  const reasoning = variants(remote, messages)
 
   return Model.Info.make({
     ...Model.Info.default(Provider.ID.githubCopilot, id),
@@ -182,16 +181,7 @@ function build(id: Model.ID, remote: UsableModel, baseURL: string, previous?: Mo
       input,
       output: ["text"],
     },
-    variants: [
-      ...reasoning,
-      ...(context
-        ? ["default", "long"].flatMap((tier) =>
-            ["default", ...reasoning.map((variant) => variant.id)].map((effort) => ({
-              id: Model.VariantID.make(`${effort}@${tier}`),
-            })),
-          )
-        : []),
-    ],
+    variants: variants(remote, messages),
     time: { released: Number.isFinite(released) ? released : 0 },
     cost: [
       {

@@ -10,6 +10,7 @@ import { useModels } from "@/providers/models/models"
 import { cycleModelVariant, getConfiguredAgentVariant, resolveModelVariant } from "@/providers/models/variant"
 import { useComposerState } from "./persistence"
 import { useConfiguredModel } from "@/providers/models/configured"
+import { selectModelVariant } from "@opencode/util/model-variant"
 
 export function createComposerControls(input: { model?: ModelSelection } = {}) {
   const local = useLocal()
@@ -42,6 +43,7 @@ export function createComposerModelSelection(input: {
   agent: () => { name: string; model?: ModelKey; variant?: string } | undefined
 }) {
   const sdk = useWorkspaceLocation()
+  const data = useData()
   const models = useModels()
   const local = useLocal()
   const prompt = useComposerState()
@@ -162,6 +164,7 @@ export function createComposerModelSelection(input: {
 
         return resolveModelVariant({
           variants: this.list(),
+          context: hasContext(),
           selected: this.selected(),
           configured: this.configured(),
           preferred: model ? models.variant.get({ providerID: model.provider.id, modelID: model.id }) : undefined,
@@ -175,8 +178,11 @@ export function createComposerModelSelection(input: {
           const model = current()
 
           if (!model) return
-          prompt.model.set({ providerID: model.provider.id, modelID: model.id, variant: value ?? null })
-          models.variant.set({ providerID: model.provider.id, modelID: model.id }, value)
+
+          const variant = selectModelVariant(this.current(), value, this.list(), hasContext())
+
+          prompt.model.set({ providerID: model.provider.id, modelID: model.id, variant: variant ?? null })
+          models.variant.set({ providerID: model.provider.id, modelID: model.id }, variant)
         })
       },
       cycle() {
@@ -186,12 +192,21 @@ export function createComposerModelSelection(input: {
         this.set(
           cycleModelVariant({
             variants,
+            context: hasContext(),
             selected: this.current() ?? null,
             configured: undefined,
           }),
         )
       },
     },
+  }
+
+  function hasContext() {
+    const model = current()
+
+    return !!data.location.model
+      .list({ directory: sdk().directory })
+      ?.find((item) => item.providerID === model?.provider.id && item.id === model?.id)?.context
   }
 
   return selection satisfies ModelSelection

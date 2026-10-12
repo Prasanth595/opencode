@@ -34,7 +34,7 @@ function required<T>(value: T | undefined): T {
 const decode = Schema.decodeUnknownSync(Info)
 
 describe("ConfigProviderPlugin.Plugin", () => {
-  it.effect("combines configured reasoning variants with context and preserves input caps", () =>
+  it.effect("resolves configured reasoning with context without listing combinations and preserves input caps", () =>
     Effect.gen(function* () {
       const models = yield* Model.Service
       const providers = yield* Provider.Service
@@ -65,8 +65,7 @@ describe("ConfigProviderPlugin.Plugin", () => {
         }),
       ])
       const model = required(yield* models.get(providerID, modelID))
-      expect(model.variants.map((variant) => variant.id)).toContain(Model.VariantID.make("custom@v2@default"))
-      expect(model.variants.map((variant) => variant.id)).toContain(Model.VariantID.make("custom@v2@long"))
+      expect(model.variants.map((variant) => String(variant.id))).toEqual(["medium", "custom@v2"])
       for (const variant of [undefined, "custom@v2", "custom@v2@default", "custom@v2@long"]) {
         const resolved = yield* ModelResolver.withVariant(
           model,

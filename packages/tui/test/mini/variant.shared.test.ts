@@ -5,6 +5,8 @@ import {
   pickVariant,
   resolveVariant,
   selectVariant,
+  fitVariant,
+  variantOptions,
 } from "../../src/mini/variant.shared"
 import type { RunSession } from "../../src/mini/session.shared"
 import type { RunProvider } from "../../src/mini/types"
@@ -50,16 +52,7 @@ describe("run variant shared", () => {
   })
 
   test("cycles reasoning without changing the selected context window", () => {
-    const variants = [
-      "low",
-      "high",
-      "default@default",
-      "low@default",
-      "high@default",
-      "default@long",
-      "low@long",
-      "high@long",
-    ]
+    const variants = ["low", "high"]
     expect(cycleVariant("low@long", variants, true)).toBe("high@long")
     expect(cycleVariant("high@long", variants, true)).toBe("default@long")
     expect(cycleVariant("default@long", variants, true)).toBe("low@long")
@@ -68,7 +61,7 @@ describe("run variant shared", () => {
     expect(selectVariant("high@long", undefined, true)).toBe("default@long")
     expect(selectVariant("high@long", "low@default", true)).toBe("low@default")
     expect(selectVariant("high", "low", false)).toBe("low")
-    expect(cycleVariant("high@long", [...variants, "custom@v2", "custom@v2@long"], true)).toBe("custom@v2@long")
+    expect(cycleVariant("high@long", [...variants, "custom@v2"], true)).toBe("custom@v2@long")
     expect(cycleVariant(undefined, ["high", "default@long"])).toBe("high")
     expect(selectVariant("default@long", "high", false)).toBe("high")
     expect(
@@ -81,6 +74,41 @@ describe("run variant shared", () => {
         })),
       ),
     ).toBe("GPT-5 · OpenAI · high · long context")
+  })
+
+  test("retains context preferences against reasoning-only catalogs and builds local picker options", () => {
+    const variants = ["low", "high", "custom@v2"]
+    expect(resolveVariant(undefined, "high@long", "low", variants, true)).toBe("high@long")
+    expect(resolveVariant(undefined, undefined, "custom@v2@long", variants, true)).toBe("custom@v2@long")
+    expect(resolveVariant(undefined, "unknown@long", "default@long", variants, true)).toBe("default@long")
+    expect(fitVariant("unknown@long", [], true)).toBeUndefined()
+    expect(fitVariant("default@long", [], true)).toBe("default@long")
+    expect(fitVariant("high@long", variants)).toBeUndefined()
+    expect(variantOptions(variants, true)).toEqual([
+      ...variants,
+      "default@default",
+      "low@default",
+      "high@default",
+      "custom@v2@default",
+      "default@long",
+      "low@long",
+      "high@long",
+      "custom@v2@long",
+    ])
+    expect(variantOptions([], true)).toEqual(["default@default", "default@long"])
+  })
+
+  test("cycles real suffix-named efforts and preserves their identity across context choices", () => {
+    const variants = ["high", "explicit@long"]
+    expect(cycleVariant("high@default", variants, true)).toBe("explicit@long@default")
+    expect(cycleVariant("explicit@long@default", variants, true)).toBe("default@default")
+    expect(cycleVariant("explicit@long", variants, true)).toBe("default@long")
+    expect(selectVariant("high@default", "explicit@long", true, variants)).toBe("explicit@long@default")
+    expect(selectVariant("explicit@long@default", "explicit@long@long", true, variants)).toBe("explicit@long@long")
+    expect(fitVariant("explicit@long@default", variants, true)).toBe("explicit@long@default")
+    expect(fitVariant("unknown@long@default", variants, true)).toBeUndefined()
+    expect(variantOptions(variants, true)).toContain("explicit@long@default")
+    expect(variantOptions(variants, true)).toContain("explicit@long@long")
   })
 
   test("picks the latest matching variant from session history", () => {

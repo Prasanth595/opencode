@@ -4,6 +4,7 @@ import { ToolFailure } from "@opencode/ai"
 import type { Context } from "@opencode/plugin/effect/plugin"
 import type { SessionHooks } from "@opencode/plugin/effect/session"
 import { Effect, Predicate, Schema } from "effect"
+import { isModelVariantAvailable } from "@opencode/util/model-variant"
 import { Agent } from "../../agent.js"
 import { Config } from "../../config.js"
 import { Job } from "../../job.js"
@@ -87,7 +88,13 @@ export const Plugin = {
         return yield* new ToolFailure({
           message: `Model "${ref.providerID}/${ref.id}" is not available. Use the models tool to see what is available.`,
         })
-      if (ref.variant !== undefined && !model.variants.some((variant) => variant.id === ref.variant))
+      if (
+        !isModelVariantAvailable(
+          ref.variant,
+          model.variants.map((variant) => variant.id),
+          !!model.context,
+        )
+      )
         return yield* new ToolFailure({
           message:
             model.variants.length === 0

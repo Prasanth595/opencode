@@ -8,7 +8,7 @@ test("context picker preserves reasoning at narrow and wide terminal sizes", asy
   await using setup = await renderLocal({
     models: [
       {
-        ...model("first", ["high", "default@default", "high@default", "default@long", "high@long"]),
+        ...model("first", ["high"]),
         context: { default: 272_000, long: 922_000 },
       },
     ],
@@ -34,7 +34,7 @@ test("context picker displays configured input caps", async () => {
   await using setup = await renderLocal({
     models: [
       {
-        ...model("first", ["default@default", "default@long"]),
+        ...model("first"),
         context: { default: 272_000, long: 922_000 },
         limit: { context: 1_050_000, input: 100_000, output: 128_000 },
       },

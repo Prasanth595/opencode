@@ -182,6 +182,7 @@ const withSubagent = (location: Location.Ref) =>
       providers.transform((editor) => {
         editor.models.update(overrideModel.providerID, overrideModel.id, (model) => {
           model.variants = [{ id: Model.VariantID.make("fast") }]
+          model.context = { default: 100_000, long: 200_000 }
         })
         editor.models.update(Provider.ID.make("test"), Model.ID.make("plain"), () => {})
       }),
@@ -709,10 +710,19 @@ describe("SubagentTool", () => {
             variant: Model.VariantID.make("default"),
           })
 
+          for (const variant of ["fast@long", "default@long", "fast@default"]) {
+            const result = yield* call(`call-context-${variant}`, { model: `test/override#${variant}` })
+            expect(result).toMatchObject({ status: "completed" })
+            expect((yield* sessions.get(outputSessionID(result.metadata))).model?.variant).toBe(
+              Model.VariantID.make(variant),
+            )
+          }
+
           const failures = [
             ["not-a-ref", 'Invalid model "not-a-ref". Use "providerID/modelID" or "providerID/modelID#variant".'],
             ["test/missing", 'Model "test/missing" is not available. Use the models tool to see what is available.'],
             ["test/override#slow", 'Variant "slow" is not available for "test/override". Available: fast.'],
+            ["test/override#slow@long", 'Variant "slow@long" is not available for "test/override". Available: fast.'],
             ["test/plain#high", 'Model "test/plain" has no variants. Omit the variant.'],
           ] as const
           for (const [model, message] of failures) {

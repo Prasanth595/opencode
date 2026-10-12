@@ -26,6 +26,7 @@ import { usePermission } from "./permission"
 import { useLocation } from "./location"
 import { parse } from "../util/model"
 import { contextSelection } from "../util/context"
+import { isModelVariantAvailable, selectModelVariant } from "@opencode/util/model-variant"
 
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   name: "Local",
@@ -248,7 +249,18 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
               : undefined),
         )
         const info = models()?.find((item) => item.providerID === model.providerID && item.id === model.modelID)
-        return { ...model, variant: info?.variants.some((item) => item.id === variant) ? variant : undefined }
+        return {
+          ...model,
+          variant:
+            info &&
+            isModelVariantAvailable(
+              variant,
+              info.variants.map((item) => item.id),
+              !!info.context,
+            )
+              ? variant
+              : undefined,
+        }
       }
 
       function durableSelection(sessionID: string): ModelSelection | undefined {
@@ -273,7 +285,14 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           return {
             ...selected,
             variant:
-              !info || info.variants.some((variant) => variant.id === selected.variant) ? selected.variant : undefined,
+              !info ||
+              isModelVariantAvailable(
+                selected.variant,
+                info.variants.map((variant) => variant.id),
+                !!info.context,
+              )
+                ? selected.variant
+                : undefined,
           }
         }
         const model = newSessionModel()
@@ -477,7 +496,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           selected() {
             const m = currentSelection()
             const info = models()?.find((item) => item.providerID === m?.providerID && item.id === m?.modelID)
-            const value = info?.context ? contextSelection(m?.variant).effort : m?.variant
+            const value = info?.context
+              ? contextSelection(
+                  m?.variant,
+                  info.variants.map((variant) => variant.id),
+                ).effort
+              : m?.variant
             return normalizeModelVariant(value)
           },
           current() {
@@ -487,17 +511,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             const m = currentSelection()
             if (!m) return []
             const info = models()?.find((item) => item.providerID === m.providerID && item.id === m.modelID)
-            return (
-              info?.variants
-                ?.filter((variant) => !info.context || !/@(default|long)$/.test(variant.id))
-                .map((variant) => variant.id) ?? []
-            )
+            return info?.variants?.map((variant) => variant.id) ?? []
           },
           set(value: string | undefined) {
             const m = currentSelection()
             if (!m) return
             const info = models()?.find((item) => item.providerID === m.providerID && item.id === m.modelID)
-            const variant = info?.context ? `${value ?? "default"}@${contextSelection(m.variant).tier}` : value
+            const variant = selectModelVariant(m.variant, value, this.list(), !!info?.context)
             if (route.data.type === "session") {
               setSessionDraft(route.data.sessionID, { ...m, variant: normalizeModelVariant(variant) })
             }
@@ -526,7 +546,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           set(tier: "default" | "long") {
             const m = currentSelection()
             if (!m || !this.budgets()) return
-            const variant = `${contextSelection(m.variant).effort ?? "default"}@${tier}`
+            const info = models()?.find((item) => item.providerID === m.providerID && item.id === m.modelID)
+            const effort = contextSelection(
+              m.variant,
+              info?.variants.map((variant) => variant.id),
+            ).effort
+            const variant = `${effort ?? "default"}@${tier}`
             if (route.data.type === "session") setSessionDraft(route.data.sessionID, { ...m, variant })
             setPreferences("variant", modelPreferenceKey(m), variant)
             void repository.saveVariant(m, variant).catch(() => undefined)

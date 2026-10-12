@@ -22,7 +22,15 @@ import {
   resolveSessionInfo,
 } from "./runtime.boot"
 import { createRuntimeLifecycle } from "./runtime.lifecycle"
-import { cycleVariant, formatModelLabel, resolveVariant, selectVariant } from "./variant.shared"
+import { isModelVariantAvailable } from "@opencode/util/model-variant"
+import {
+  cycleVariant,
+  fitVariant,
+  formatModelLabel,
+  resolveVariant,
+  selectVariant,
+  variantOptions,
+} from "./variant.shared"
 import { verbosityPreset } from "./verbosity"
 import type {
   LocalReplayRow,
@@ -144,7 +152,8 @@ function variantsFor(providers: RunProvider[], model: RunInput["model"]) {
     return []
   }
 
-  return Object.keys(providers.find((item) => item.id === model.providerID)?.models?.[model.modelID]?.variants ?? {})
+  const info = providers.find((item) => item.id === model.providerID)?.models?.[model.modelID]
+  return Object.keys(info?.variants ?? {})
 }
 
 function formRequestOptions(location: LocationRef | undefined) {
@@ -334,7 +343,13 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
           return
         }
 
-        state.activeVariant = resolveVariant(undefined, undefined, saved, state.variants)
+        state.activeVariant = resolveVariant(
+          undefined,
+          undefined,
+          saved,
+          state.variants,
+          !!state.providers.find((provider) => provider.id === model.providerID)?.models[model.modelID]?.context,
+        )
       })
       state.switching = switching
       await switching
@@ -351,18 +366,32 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
         modelLabel: formatModelLabel(model, state.activeVariant, state.providers),
         status: `model ${model.modelID}`,
         variant: state.activeVariant,
-        variants: state.variants,
+        variants: variantOptions(
+          state.variants,
+          !!state.providers.find((provider) => provider.id === model.providerID)?.models[model.modelID]?.context,
+        ),
       }
     },
     onVariantSelect: async (variant) => {
       const model = state.model ?? state.defaultModel
-      if (!model || state.variants.length === 0) {
+      if (
+        !model ||
+        (state.variants.length === 0 &&
+          !state.providers.find((provider) => provider.id === model.providerID)?.models[model.modelID]?.context)
+      ) {
         return {
           status: "no variants available",
         }
       }
 
-      if (variant && !state.variants.includes(variant)) {
+      if (
+        variant &&
+        !fitVariant(
+          variant,
+          state.variants,
+          !!state.providers.find((provider) => provider.id === model.providerID)?.models[model.modelID]?.context,
+        )
+      ) {
         return {
           status: `variant ${variant} unavailable`,
         }
@@ -373,13 +402,17 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
         state.activeVariant,
         variant,
         !!state.providers.find((provider) => provider.id === model.providerID)?.models[model.modelID]?.context,
+        state.variants,
       )
       void input.host.preferences.saveVariant(model, state.activeVariant)
       return {
         status: state.activeVariant ? `variant ${state.activeVariant}` : "variant default",
         modelLabel: formatModelLabel(model, state.activeVariant, state.providers),
         variant: state.activeVariant,
-        variants: state.variants,
+        variants: variantOptions(
+          state.variants,
+          !!state.providers.find((provider) => provider.id === model.providerID)?.models[model.modelID]?.context,
+        ),
       }
     },
     onInterrupt: () => {
@@ -635,14 +668,17 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     state.providers = info.providers
     const model = state.model ?? state.defaultModel
     state.variants = variantsFor(state.providers, model)
+    const context = !!state.providers.find((provider) => provider.id === model?.providerID)?.models[
+      model?.modelID ?? ""
+    ]?.context
     state.activeVariant = boot
-      ? resolveVariant(ctx.variant, current, saved, state.variants)
-      : current && !state.variants.includes(current)
-        ? undefined
-        : current
+      ? resolveVariant(ctx.variant, current, saved, state.variants, context)
+      : isModelVariantAvailable(current, state.variants, context)
+        ? current
+        : undefined
     if (footer.isClosed) return
     footer.event({ type: "models", providers: info.providers })
-    footer.event({ type: "variants", variants: state.variants, current: state.activeVariant })
+    footer.event({ type: "variants", variants: variantOptions(state.variants, context), current: state.activeVariant })
     if (model)
       footer.event({
         type: "model",
@@ -686,9 +722,23 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
         if (state.model || !currentClient(attempt)) return
         state.defaultModel = model
         state.variants = variantsFor(state.providers, model)
-        if (changed) state.activeVariant = resolveVariant(ctx.variant, state.activeVariant, saved, state.variants)
+        if (changed)
+          state.activeVariant = resolveVariant(
+            ctx.variant,
+            state.activeVariant,
+            saved,
+            state.variants,
+            !!state.providers.find((provider) => provider.id === model.providerID)?.models[model.modelID]?.context,
+          )
         if (state.activeVariant) state.model = model
-        footer.event({ type: "variants", variants: state.variants, current: state.activeVariant })
+        footer.event({
+          type: "variants",
+          variants: variantOptions(
+            state.variants,
+            !!state.providers.find((provider) => provider.id === model.providerID)?.models[model.modelID]?.context,
+          ),
+          current: state.activeVariant,
+        })
         footer.event({
           type: "model",
           model: formatModelLabel(model, state.activeVariant, state.providers),
