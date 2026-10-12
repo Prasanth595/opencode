@@ -66,6 +66,23 @@ test("adapts OpenTUI image and text reads", async () => {
   expect(requests).toEqual([{ preferredTypes: ["image/png", "text/plain"], selection: "clipboard" }])
 })
 
+test("reads files copied in Finder as file URLs instead of their icon bitmap", async () => {
+  const clipboard = createClipboardAdapter(
+    coreClipboard({
+      read: {
+        status: "read",
+        representation: { mimeType: "image/png", bytes: new Uint8Array([0, 1, 2, 255]) },
+      },
+    }),
+    async () => ["/tmp/one image.png", "/tmp/two.webp"],
+  )
+
+  expect(await clipboard.read()).toEqual({
+    data: "file:///tmp/one%20image.png\nfile:///tmp/two.webp",
+    mime: "text/plain",
+  })
+})
+
 test("uses all available routes but skips the process host remotely", async () => {
   const writes = { host: 0, terminal: 0 }
   const host: HostClipboardService = {
