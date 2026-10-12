@@ -163,11 +163,15 @@ const layer = Layer.effect(
               const ready = yield* restore(
                 Effect.gen(function* () {
                   const selected = yield* prepareContext(sessionID)
+                  let changed = false
                   const promoted = yield* SessionInbox.promote(
                     db,
                     bus,
                     sessionID,
                     entering && !continuing ? promotable : "steer",
+                    () => {
+                      changed = true
+                    },
                   )
                   // A control admitted during context preparation owns this boundary.
                   if (promoted === undefined) return undefined
@@ -176,7 +180,12 @@ const layer = Layer.effect(
                       onlyIfMissing: true,
                     })
                   if (promoted > 0) step = 1
-                  return { _tag: "Ready" as const, context: yield* context.load(selected) }
+                  // Deferred selection belongs to the promoted input, including its
+                  // permissions and instruction discovery, rather than the preceding work.
+                  return {
+                    _tag: "Ready" as const,
+                    context: yield* context.load(changed ? yield* prepareContext(sessionID) : selected),
+                  }
                 }),
               )
               if (ready) return ready

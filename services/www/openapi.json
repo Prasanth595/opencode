@@ -2186,6 +2186,12 @@
                   "metadata": {
                     "type": "object"
                   },
+                  "agent": {
+                    "$ref": "#/components/schemas/Agent.ID"
+                  },
+                  "model": {
+                    "$ref": "#/components/schemas/Model.Ref"
+                  },
                   "delivery": {
                     "anyOf": [
                       {
@@ -18356,6 +18362,12 @@
             "items": {
               "$ref": "#/components/schemas/Prompt.SkillAttachment"
             }
+          },
+          "agent": {
+            "$ref": "#/components/schemas/Agent.ID"
+          },
+          "model": {
+            "$ref": "#/components/schemas/Model.Ref"
           },
           "metadata": {
             "type": "object"

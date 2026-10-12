@@ -264,6 +264,40 @@ export function Prompt(props: PromptProps) {
     enabled: !disabled(),
     commands: [
       {
+        id: "session.queue",
+        title: "Queue message",
+        slash: { name: "queue", arguments: true },
+        run: async (value) => {
+          const text = value?.trim()
+          if (!text) {
+            toast.show({ message: "Usage: /queue <message>", variant: "warning" })
+            return
+          }
+          const sessionID = props.sessionID
+          if (!sessionID) {
+            toast.show({ message: "Open a session before queueing a message", variant: "warning" })
+            return
+          }
+          const agent = local.agent.current()
+          const model = local.model.selection()
+          if (!agent || !model) return
+          await data.session
+            .prompt({
+              sessionID,
+              text,
+              agent: agent.id,
+              model: { providerID: model.providerID, id: model.modelID, variant: model.variant },
+              delivery: "queue",
+              resume: true,
+            })
+            .then(
+              () => toast.show({ message: "Message queued", variant: "success" }),
+              (error) =>
+                toast.show({ title: "Failed to queue message", message: errorMessage(error), variant: "error" }),
+            )
+        },
+      },
+      {
         id: "session.cd",
         title: "Change working directory",
         slash: { name: "cd", arguments: true },
@@ -1327,7 +1361,7 @@ export function Prompt(props: PromptProps) {
       )
     } else {
       move.startSubmit()
-      if (!(await attempt("Failed to prepare session", prepareAgent))) return true
+      if (delivery !== "queue" && !(await attempt("Failed to prepare session", prepareAgent))) return true
       // Revert must settle before optimistic admission: its committed echo
       // splices every local row at or after the boundary, which would include
       // a freshly admitted prompt.
@@ -1362,10 +1396,13 @@ export function Prompt(props: PromptProps) {
           skills: entry.skills?.length ? entry.skills : undefined,
           delivery,
           gate: newSession?.gate,
+          ...(delivery === "queue"
+            ? { agent: agent.id, model: { providerID: selection.providerID, id: selection.modelID, variant } }
+            : {}),
           // Commit the captured selection after earlier admissions, including
           // compaction setup. Cached state may still precede their SSE echoes;
           // the server makes an unchanged selection a no-op.
-          prepare: commitModel,
+          prepare: delivery === "queue" ? undefined : commitModel,
         })
         .catch((error) => (newSession ? newSession.recover(error) : fail("Failed to send prompt", error)))
       if (pendingEditorSelection) editor.markSelectionSent()
