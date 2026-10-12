@@ -71,6 +71,8 @@ const description = [
 export const create = (
   inventory: Inventory,
   executeTool: (name: string, tool: Info, input: unknown, context: Context) => Effect.Effect<Result, Error>,
+  /** Runs before a Code Mode `fetch` reaches the network; a failure denies the call. */
+  guardFetch: (url: string, context: Context) => Effect.Effect<void, unknown>,
 ) => {
   return {
     name: "execute",
@@ -105,6 +107,7 @@ export const create = (
               return text === "" ? null : text
             }),
           progressHooks(record),
+          (url) => guardFetch(url, context),
         ).execute(code)
         const toolCalls = yield* Ref.get(calls)
         const collected = (yield* Ref.get(files))
@@ -222,6 +225,7 @@ function runtime(
   inventory: Inventory,
   executeTool: (name: string, tool: Info, input: unknown) => Effect.Effect<unknown, unknown>,
   hooks?: CodeMode.Hooks,
+  guardFetch: (url: string) => Effect.Effect<void, unknown> = () => Effect.void,
 ) {
   // A path may carry namespace metadata, a callable tool, child tools, or all three.
   const root: ToolNode = { children: new Map() }
@@ -236,7 +240,7 @@ function runtime(
     })
   }
   const tools = renderTools(root)
-  return CodeMode.make<typeof tools>({ tools, extensions: [CodeModeWeb.extension], hooks })
+  return CodeMode.make<typeof tools>({ tools, extensions: [CodeModeWeb.extension(guardFetch)], hooks })
 }
 
 function getNode<T>(root: Node<T>, path: string) {
