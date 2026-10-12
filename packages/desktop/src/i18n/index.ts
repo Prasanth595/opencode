@@ -12,6 +12,7 @@ import { dict as desktopDa } from "./da"
 import { dict as desktopJa } from "./ja"
 import { dict as desktopPl } from "./pl"
 import { dict as desktopRu } from "./ru"
+import { dict as desktopBe } from "./be"
 import { dict as desktopAr } from "./ar"
 import { dict as desktopNo } from "./no"
 import { dict as desktopBr } from "./br"
@@ -28,6 +29,7 @@ import { dict as appDa } from "../../../app/src/i18n/da"
 import { dict as appJa } from "../../../app/src/i18n/ja"
 import { dict as appPl } from "../../../app/src/i18n/pl"
 import { dict as appRu } from "../../../app/src/i18n/ru"
+import { dict as appBe } from "../../../app/src/i18n/be"
 import { dict as appAr } from "../../../app/src/i18n/ar"
 import { dict as appNo } from "../../../app/src/i18n/no"
 import { dict as appBr } from "../../../app/src/i18n/br"
@@ -45,6 +47,7 @@ export type Locale =
   | "ja"
   | "pl"
   | "ru"
+  | "be"
   | "ar"
   | "no"
   | "br"
@@ -65,6 +68,7 @@ const LOCALES: readonly Locale[] = [
   "ja",
   "pl",
   "ru",
+  "be",
   "bs",
   "ar",
   "no",
@@ -90,6 +94,7 @@ function detectLocale(): Locale {
     if (language.toLowerCase().startsWith("ja")) return "ja"
     if (language.toLowerCase().startsWith("pl")) return "pl"
     if (language.toLowerCase().startsWith("ru")) return "ru"
+    if (language.toLowerCase().startsWith("be")) return "be"
     if (language.toLowerCase().startsWith("ar")) return "ar"
     if (
       language.toLowerCase().startsWith("no") ||
@@ -149,6 +154,7 @@ function build(locale: Locale): Dictionary {
   if (locale === "ja") return { ...base, ...i18n.flatten(appJa), ...i18n.flatten(desktopJa) }
   if (locale === "pl") return { ...base, ...i18n.flatten(appPl), ...i18n.flatten(desktopPl) }
   if (locale === "ru") return { ...base, ...i18n.flatten(appRu), ...i18n.flatten(desktopRu) }
+  if (locale === "be") return { ...base, ...i18n.flatten(appBe), ...i18n.flatten(desktopBe) }
   if (locale === "ar") return { ...base, ...i18n.flatten(appAr), ...i18n.flatten(desktopAr) }
   if (locale === "no") return { ...base, ...i18n.flatten(appNo), ...i18n.flatten(desktopNo) }
   if (locale === "br") return { ...base, ...i18n.flatten(appBr), ...i18n.flatten(desktopBr) }
