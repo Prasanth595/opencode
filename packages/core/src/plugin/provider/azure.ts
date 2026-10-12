@@ -160,7 +160,7 @@ export function make(
                     placeholder: "e.g. my-models",
                     required: true,
                     pattern: resourcePattern.source,
-                    description: "Requests use your `az login` session.",
+                    description: "Enter the name of your Azure OpenAI or AI Services resource.",
                   },
                 ]),
           },
