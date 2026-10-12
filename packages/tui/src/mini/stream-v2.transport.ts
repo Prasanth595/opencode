@@ -56,7 +56,7 @@ type StreamInput = {
   trace?: Trace
   signal?: AbortSignal
   onCatalogRefresh?: (signal?: AbortSignal) => unknown | Promise<unknown>
-  contextLimit?: (model: NonNullable<RunInput["model"]>) => number | undefined
+  contextLimit?: (model: NonNullable<RunInput["model"]> & { variant?: string }) => number | undefined
 }
 
 export type SessionTurnInput = {
@@ -160,7 +160,7 @@ type State = {
   errors: Set<string>
   pending: Map<string, PendingPrompt>
   admitted: Set<string>
-  stepModel: RunInput["model"]
+  stepModel: (NonNullable<RunInput["model"]> & { variant?: string }) | undefined
   activeCompaction?: string
 }
 
@@ -1071,7 +1071,11 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
       return
     }
     if (event.type === "session.step.started") {
-      state.stepModel = { providerID: event.data.model.providerID, modelID: event.data.model.id }
+      state.stepModel = {
+        providerID: event.data.model.providerID,
+        modelID: event.data.model.id,
+        variant: event.data.model.variant,
+      }
       write([], { phase: "running", status: "assistant responding" })
       return
     }
@@ -1366,6 +1370,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
         event.data.tokens.cache.read +
         event.data.tokens.cache.write
       const limit = state.stepModel ? input.contextLimit?.(state.stepModel) : undefined
+      const providerID = state.stepModel?.providerID
       state.stepModel = undefined
       if (!showTools()) flushQuietText(event.data.assistantMessageID)
       write([], {
@@ -1375,6 +1380,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
                 tokens: total,
                 percent: limit ? Math.round((total / limit) * 100) : undefined,
                 cost: event.data.cost || undefined,
+                ...(providerID === "github-copilot" ? { providerID } : {}),
               }
             : undefined,
       })

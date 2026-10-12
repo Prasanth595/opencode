@@ -147,9 +147,23 @@ export const Plugin = define({
             }
             if (config.disabled !== undefined) model.enabled = !config.disabled
             if (config.limit !== undefined) model.limit = { ...model.limit, ...config.limit }
+            if (model.context) {
+              for (const effort of [
+                "default",
+                ...model.variants
+                  .filter((variant) => !/@(default|long)$/.test(variant.id))
+                  .map((variant) => variant.id),
+              ]) {
+                for (const tier of ["default", "long"]) {
+                  const id = Model.VariantID.make(`${effort}@${tier}`)
+                  if (!model.variants.some((variant) => variant.id === id)) model.variants.push({ id })
+                }
+              }
+            }
           })
           if (config.variants === undefined && !source?.base)
             models.update(providerID, id, (model) => {
+              if (model.context) return
               model.variants = [
                 ...Variant.resolve({
                   ...model,

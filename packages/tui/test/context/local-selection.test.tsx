@@ -202,3 +202,40 @@ function selectionMessage(url: URL) {
     },
   })
 }
+test("context selection stays independent of reasoning and survives session navigation", async () => {
+  await using setup = await renderLocal({
+    models: [
+      {
+        ...model("first", [
+          "medium",
+          "high",
+          "default@default",
+          "default@long",
+          "medium@default",
+          "medium@long",
+          "high@default",
+          "high@long",
+          "custom@v2",
+          "custom@v2@default",
+          "custom@v2@long",
+        ]),
+        context: { default: 272_000, long: 922_000 },
+      },
+    ],
+    sessions: [session("ses_first", { providerID: "provider", id: "first", variant: "medium@default" })],
+  })
+  setup.route.navigate({ type: "session", sessionID: "ses_first" })
+  await setup.data.session.sync("ses_first")
+  expect(setup.local.model.variant.list()).toEqual(["medium", "high", "custom@v2"])
+  expect(setup.local.model.variant.current()).toBe("medium")
+  setup.local.model.context.set("long")
+  expect(setup.local.model.selection()?.variant).toBe("medium@long")
+  setup.local.model.variant.set("high")
+  expect(setup.local.model.selection()?.variant).toBe("high@long")
+  setup.route.navigate({ type: "home" })
+  setup.route.navigate({ type: "session", sessionID: "ses_first" })
+  expect(setup.local.model.context.current()).toBe("long")
+  expect(setup.local.model.variant.current()).toBe("high")
+  setup.local.model.context.set("default")
+  expect(setup.local.model.selection()?.variant).toBe("high@default")
+})

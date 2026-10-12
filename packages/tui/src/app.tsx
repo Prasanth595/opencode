@@ -96,6 +96,7 @@ import { CommandPaletteDialog } from "./component/command-palette"
 import { COMMAND_PALETTE_COMMAND, Keymap, type KeymapCommand } from "./context/keymap"
 
 import { DialogVariant } from "./component/dialog-variant"
+import { DialogContext } from "./component/dialog-context"
 import { destroyRenderer } from "./util/renderer"
 import { cliErrorMessage, errorFormat } from "./util/error"
 import { AttentionProvider } from "./context/attention"
@@ -932,6 +933,17 @@ function App() {
             })
           }
           dialog.replace(() => <DialogVariant />)
+        },
+      },
+      {
+        name: "context.list",
+        title: "Switch context window",
+        category: "Agent",
+        palette: local.model.context.budgets() ? (true as const) : undefined,
+        slash: { name: "context-window" },
+        run: () => {
+          if (!local.model.context.budgets()) return
+          dialog.replace(() => <DialogContext />)
         },
       },
       {

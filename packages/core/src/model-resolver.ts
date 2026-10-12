@@ -148,15 +148,32 @@ export const withVariant = (
         variant: id,
       }),
     )
+  const effort = model.context && id && /@(default|long)$/.test(id) ? id.slice(0, id.lastIndexOf("@")) : undefined
+  const base = effort ? model.variants.find((item) => item.id === effort) : undefined
+  const budget = model.context?.[id?.endsWith("@long") ? "long" : "default"]
+  const input = budget === undefined ? undefined : Math.min(budget, model.limit.input ?? budget)
   return Effect.succeed(
     variant
       ? {
           ...model,
-          settings: Provider.mergeOverlay(model.settings, Provider.modelSettings(variant.settings)),
-          headers: Provider.mergeHeaders(model.headers, variant.headers),
-          body: Provider.mergeOverlay(model.body, variant.body),
+          ...(input === undefined
+            ? {}
+            : {
+                limit: { ...model.limit, input, context: Math.min(model.limit.context, input + model.limit.output) },
+              }),
+          settings: Provider.mergeOverlay(
+            Provider.mergeOverlay(model.settings, Provider.modelSettings(base?.settings)),
+            Provider.modelSettings(variant.settings),
+          ),
+          headers: Provider.mergeHeaders(Provider.mergeHeaders(model.headers, base?.headers), variant.headers),
+          body: Provider.mergeOverlay(Provider.mergeOverlay(model.body, base?.body), variant.body),
         }
-      : model,
+      : input === undefined
+        ? model
+        : {
+            ...model,
+            limit: { ...model.limit, input, context: Math.min(model.limit.context, input + model.limit.output) },
+          },
   )
 }
 
@@ -399,7 +416,7 @@ export const layer = Layer.effect(
         }),
         capabilities: selected.capabilities,
         cost: selected.cost,
-        limit: selected.limit,
+        limit: selectedVariant.limit,
         compaction: runtimeInfo.settings?.compaction,
         transport: provider?.settings?.transport,
         chunkTimeout: Provider.timeout(provider?.settings?.chunkTimeout),

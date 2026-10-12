@@ -9,6 +9,7 @@
 import { createSession, sessionVariant, type RunSession, type SessionMessages } from "./session.shared"
 import type { RunInput, RunProvider } from "./types"
 import { cycleModelVariant, normalizeModelVariant } from "../model-preference"
+import { contextSelection } from "../util/context"
 
 export function modelInfo(providers: RunProvider[] | undefined, model: NonNullable<RunInput["model"]>) {
   const provider = providers?.find((item) => item.id === model.providerID)
@@ -24,12 +25,31 @@ export function formatModelLabel(
   providers?: RunProvider[],
 ): string {
   const names = modelInfo(providers, model)
-  const label = variant ? ` · ${variant}` : ""
+  const info = providers?.find((provider) => provider.id === model.providerID)?.models[model.modelID]
+  const selection = info?.context ? contextSelection(variant) : undefined
+  const value = selection
+    ? [normalizeModelVariant(selection.effort), `${selection.tier} context`].filter(Boolean).join(" · ")
+    : variant
+  const label = value ? ` · ${value}` : ""
   return `${names.model} · ${names.provider}${label}`
 }
 
-export function cycleVariant(current: string | undefined, variants: string[]): string | undefined {
+export function cycleVariant(current: string | undefined, variants: string[], context = false): string | undefined {
+  if (context) {
+    const selection = contextSelection(current)
+    const effort = cycleModelVariant(
+      selection.effort,
+      variants.filter((variant) => !/@(default|long)$/.test(variant)),
+    )
+    return `${effort ?? "default"}@${selection.tier}`
+  }
   return cycleModelVariant(current, variants)
+}
+
+export function selectVariant(current: string | undefined, next: string | undefined, context: boolean) {
+  return context && (!next || !/@(default|long)$/.test(next))
+    ? `${next ?? "default"}@${contextSelection(current).tier}`
+    : next
 }
 
 export function pickVariant(model: RunInput["model"], input: RunSession | SessionMessages): string | undefined {

@@ -215,7 +215,13 @@ export function RunFooterView(props: RunFooterViewProps) {
     const current = usage()
     return current && current.tokens > 0 ? formatContextUsage(current.tokens, current.percent) : ""
   })
-  const cost = createMemo(() => (usage()?.cost ? money.format(usage()!.cost!) : ""))
+  const cost = createMemo(() => {
+    const value = usage()
+    if (!value?.cost) return ""
+    if (value.providerID === "github-copilot")
+      return `${(value.cost * 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} AI credits`
+    return money.format(value.cost)
+  })
   const takeover = createMemo(() => exiting() || (busy() && armed()) || !!props.state().notice.trim())
   const footerDetails = createMemo(() => props.miniSettings().footer === "show" && !takeover())
   const interruptLabel = createMemo(() => {

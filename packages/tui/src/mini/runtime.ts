@@ -22,7 +22,7 @@ import {
   resolveSessionInfo,
 } from "./runtime.boot"
 import { createRuntimeLifecycle } from "./runtime.lifecycle"
-import { cycleVariant, formatModelLabel, resolveVariant } from "./variant.shared"
+import { cycleVariant, formatModelLabel, resolveVariant, selectVariant } from "./variant.shared"
 import { verbosityPreset } from "./verbosity"
 import type {
   LocalReplayRow,
@@ -275,7 +275,10 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     onFormReply: async (next) => {
       if (state.demo?.formReply(next)) return
       try {
-        await state.sdk.session.form.reply(next, formRequestOptions(next.sessionID === "global" ? next.location : undefined))
+        await state.sdk.session.form.reply(
+          next,
+          formRequestOptions(next.sessionID === "global" ? next.location : undefined),
+        )
       } catch (error) {
         if (!formAlreadySettled(error)) throw error
       }
@@ -284,7 +287,10 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     onFormCancel: async (next) => {
       if (state.demo?.formCancel(next)) return
       try {
-        await state.sdk.session.form.cancel(next, formRequestOptions(next.sessionID === "global" ? next.location : undefined))
+        await state.sdk.session.form.cancel(
+          next,
+          formRequestOptions(next.sessionID === "global" ? next.location : undefined),
+        )
       } catch (error) {
         if (!formAlreadySettled(error)) throw error
       }
@@ -299,7 +305,11 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       }
 
       if (!state.model) state.model = model
-      state.activeVariant = cycleVariant(state.activeVariant, state.variants)
+      state.activeVariant = cycleVariant(
+        state.activeVariant,
+        state.variants,
+        !!state.providers.find((provider) => provider.id === model.providerID)?.models[model.modelID]?.context,
+      )
       void input.host.preferences.saveVariant(model, state.activeVariant)
       return {
         status: state.activeVariant ? `variant ${state.activeVariant}` : "variant default",
@@ -359,7 +369,11 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       }
 
       if (!state.model) state.model = model
-      state.activeVariant = variant
+      state.activeVariant = selectVariant(
+        state.activeVariant,
+        variant,
+        !!state.providers.find((provider) => provider.id === model.providerID)?.models[model.modelID]?.context,
+      )
       void input.host.preferences.saveVariant(model, state.activeVariant)
       return {
         status: state.activeVariant ? `variant ${state.activeVariant}` : "variant default",
@@ -810,8 +824,14 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
         },
         trace: log,
         onCatalogRefresh: requestCatalogRefresh,
-        contextLimit: (model) =>
-          state.providers.find((provider) => provider.id === model.providerID)?.models[model.modelID]?.limit?.context,
+        contextLimit: (model) => {
+          const info = state.providers.find((provider) => provider.id === model.providerID)?.models[model.modelID]
+          const budget = info?.context?.[model.variant?.endsWith("@long") ? "long" : "default"]
+          const input = budget === undefined ? undefined : Math.min(budget, info?.limit?.input ?? budget)
+          return info?.limit && input !== undefined
+            ? Math.min(info.limit.context, input + (info.limit.output ?? 0))
+            : info?.limit?.context
+        },
       })
       if (footer.isClosed) {
         await handle.close()

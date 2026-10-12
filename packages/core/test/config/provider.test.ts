@@ -34,6 +34,52 @@ function required<T>(value: T | undefined): T {
 const decode = Schema.decodeUnknownSync(Info)
 
 describe("ConfigProviderPlugin.Plugin", () => {
+  it.effect("combines configured reasoning variants with context and preserves input caps", () =>
+    Effect.gen(function* () {
+      const models = yield* Model.Service
+      const providers = yield* Provider.Service
+      const providerID = Provider.ID.githubCopilot
+      const modelID = Model.ID.make("context-test")
+      yield* providers.transform((editor) => {
+        editor.models.update(providerID, modelID, (model) => {
+          model.context = { default: 272_000, long: 922_000 }
+          model.limit = { context: 1_050_000, input: 922_000, output: 128_000 }
+          model.variants = [{ id: Model.VariantID.make("medium"), settings: { reasoningEffort: "medium" } }]
+        })
+      })
+      yield* addPlugin([
+        new Document({
+          type: "document",
+          info: decode({
+            providers: {
+              "github-copilot": {
+                models: {
+                  "context-test": {
+                    limit: { input: 100_000 },
+                    variants: [{ id: "custom@v2", settings: { reasoningEffort: "high" }, headers: { custom: "yes" } }],
+                  },
+                },
+              },
+            },
+          }),
+        }),
+      ])
+      const model = required(yield* models.get(providerID, modelID))
+      expect(model.variants.map((variant) => variant.id)).toContain(Model.VariantID.make("custom@v2@default"))
+      expect(model.variants.map((variant) => variant.id)).toContain(Model.VariantID.make("custom@v2@long"))
+      for (const variant of [undefined, "custom@v2", "custom@v2@default", "custom@v2@long"]) {
+        const resolved = yield* ModelResolver.withVariant(
+          model,
+          variant === undefined ? undefined : Model.VariantID.make(variant),
+        )
+        expect(resolved.limit).toEqual({ context: 228_000, input: 100_000, output: 128_000 })
+        if (!variant) continue
+        expect(resolved.settings?.reasoningEffort).toBe("high")
+        expect(resolved.headers?.custom).toBe("yes")
+      }
+    }),
+  )
+
   it.effect("inherits the provider compaction setting with model overrides and rejects unsupported routes", () =>
     Effect.gen(function* () {
       const models = yield* Model.Service
