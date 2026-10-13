@@ -337,7 +337,7 @@ export function Autocomplete(props: {
           client.api.file,
           { ...requestLocation, directory: requestLocation.directory ?? paths.cwd },
           base,
-          input.location?.home ?? paths.home,
+          input.location?.home || paths.home,
         ).catch(() => undefined)
         if (!result)
           return info.value?.mode === input.visible

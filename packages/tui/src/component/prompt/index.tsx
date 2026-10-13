@@ -277,7 +277,8 @@ export function Prompt(props: PromptProps) {
           const sourceProjectID = session?.projectID ?? data.location.info()?.project.id
           const value = input.trim()
           // Expand ~ against the server home when attached remotely; the location owns the filesystem.
-          const home = currentLocation.current?.home ?? data.location.info()?.home ?? paths.home
+          // Empty homes (workerd reports os.homedir() as "") fall through to the client home.
+          const home = currentLocation.current?.home || data.location.info()?.home || paths.home
           const expanded =
             value === "~" ? home : value.startsWith("~/") ? path.join(home, value.slice(2)) : value
           const directory = path.resolve(
