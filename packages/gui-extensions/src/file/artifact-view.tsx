@@ -317,7 +317,17 @@ function ArtifactImage(props: MediaProps) {
 
 function ImageStage(props: MediaProps & { src: string }) {
   const ctx = useExtension()
-  const [view, setView] = createStore({ width: 0, height: 0, imageWidth: 0, imageHeight: 0, zoom: 1, x: 0, y: 0 })
+
+  const [view, setView] = createStore({
+    width: 0,
+    height: 0,
+    imageWidth: 0,
+    imageHeight: 0,
+    zoom: 1,
+    x: 0,
+    y: 0,
+    dragging: false,
+  })
 
   const fit = () =>
     Math.min(
@@ -338,7 +348,25 @@ function ImageStage(props: MediaProps & { src: string }) {
   const y = () => bound(view.y, view.imageHeight, view.zoom)
   const reset = () => setView({ zoom: 1, x: 0, y: 0 })
 
+  const pan = (left: number, top: number) =>
+    setView({ x: bound(left, view.imageWidth, view.zoom), y: bound(top, view.imageHeight, view.zoom) })
+
   let stage: HTMLDivElement | undefined
+  let drag: { id: number; clientX: number; clientY: number; x: number; y: number } | undefined
+  let dragged = false
+
+  const cursor = () => {
+    if (view.zoom === 1) return undefined
+
+    return view.dragging ? "grabbing" : "grab"
+  }
+
+  const endDrag = (event: PointerEvent) => {
+    if (event.pointerId !== drag?.id) return
+
+    drag = undefined
+    setView("dragging", false)
+  }
 
   const zoomAt = (zoom: number, clientX: number, clientY: number) => {
     if (!stage) return
@@ -388,10 +416,7 @@ function ImageStage(props: MediaProps & { src: string }) {
         }
 
         // Use the OS's trackpad momentum directly, with no second animation loop.
-        setView({
-          x: bound(x() - event.deltaX * unit, view.imageWidth, view.zoom),
-          y: bound(y() - event.deltaY * unit, view.imageHeight, view.zoom),
-        })
+        pan(x() - event.deltaX * unit, y() - event.deltaY * unit)
       }}
     >
       <img
@@ -401,25 +426,60 @@ function ImageStage(props: MediaProps & { src: string }) {
         draggable={false}
         class="absolute left-1/2 top-1/2 select-none"
         style={{
-          width: `${view.imageWidth * fit()}px`,
-          height: `${view.imageHeight * fit()}px`,
+          width: view.imageWidth ? `${view.imageWidth * fit()}px` : undefined,
+          height: view.imageHeight ? `${view.imageHeight * fit()}px` : undefined,
           "max-width": "none",
           "max-height": "none",
           transform: `translate(-50%, -50%) translate(${x()}px, ${y()}px) scale(${view.zoom})`,
+          "touch-action": view.zoom > 1 ? "none" : "auto",
+          cursor: cursor(),
         }}
+        onPointerDown={(event) => {
+          if (!event.isPrimary || event.button !== 0) return
+
+          dragged = false
+
+          if (view.zoom === 1) return
+
+          drag = { id: event.pointerId, clientX: event.clientX, clientY: event.clientY, x: x(), y: y() }
+          event.currentTarget.setPointerCapture(event.pointerId)
+          setView("dragging", true)
+        }}
+        onPointerMove={(event) => {
+          if (!drag || drag.id !== event.pointerId) return
+
+          const dx = event.clientX - drag.clientX
+          const dy = event.clientY - drag.clientY
+
+          if (!dragged && Math.hypot(dx, dy) < 3) return
+
+          dragged = true
+          pan(drag.x + dx, drag.y + dy)
+        }}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onLostPointerCapture={endDrag}
         onError={() => props.onError()}
         onLoad={(event) => {
           const image = event.currentTarget
+          const width = image.naturalWidth || image.width || image.clientWidth || 300
+          const height = image.naturalHeight || image.height || image.clientHeight || 150
 
           setView({
-            imageWidth: image.naturalWidth,
-            imageHeight: image.naturalHeight,
+            imageWidth: width,
+            imageHeight: height,
             width: stage?.clientWidth ?? 0,
             height: stage?.clientHeight ?? 0,
           })
-          props.onInfo({ width: image.naturalWidth, height: image.naturalHeight })
+          props.onInfo({ width, height })
         }}
         onClick={(event) => {
+          if (dragged) {
+            dragged = false
+
+            return
+          }
+
           if (view.zoom > 1) return reset()
 
           zoomAt(1 / fit(), event.clientX, event.clientY)

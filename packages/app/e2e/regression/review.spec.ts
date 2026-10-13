@@ -501,12 +501,26 @@ test("rereads a file each time an artifact link opens it", async ({ page }) => {
 type ImageProbe = { problems: string[]; frames: number; running: boolean }
 
 test("image gestures anchor zoom, pan, and reset independently of the pane", async ({ page }) => {
+  // Some browsers expose no natural dimensions for a viewBox-only SVG.
+  await page.addInitScript(() => {
+    for (const name of ["naturalWidth", "naturalHeight"]) {
+      const original = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, name)!
+      Object.defineProperty(HTMLImageElement.prototype, name, {
+        ...original,
+        get() {
+          return this.alt === "second.svg" ? 0 : original.get?.call(this)
+        },
+      })
+    }
+  })
   await openSession(page, {
     name: "ImageGestures",
     fileList: () => [],
-    fileContent: () => ({
+    fileContent: (path) => ({
       content:
-        '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1600"><rect width="1600" height="1600" fill="#6699aa"/></svg>',
+        path === "second.svg"
+          ? '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1600"><rect width="1600" height="1600" fill="#6699aa"/></svg>'
+          : '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1600"><rect width="1600" height="1600" fill="#6699aa"/></svg>',
     }),
     pageMessages: () => ({
       items: [
@@ -553,6 +567,25 @@ test("image gestures anchor zoom, pan, and reset independently of the pane", asy
   await page.mouse.wheel(40, 60)
   await expect.poll(async () => (await image.boundingBox())!.x).toBeCloseTo(zoomed.x - 40, 1)
   expect((await image.boundingBox())!.y).toBeCloseTo(zoomed.y - 60, 1)
+  const scrolled = (await image.boundingBox())!
+  await page.mouse.down()
+  await page.mouse.move(anchor.x + 60, anchor.y + 40, { steps: 5 })
+  await page.mouse.up()
+  await expect(fit).toBeEnabled()
+  expect((await image.boundingBox())!.x).toBeCloseTo(scrolled.x + 60, 1)
+  expect((await image.boundingBox())!.y).toBeCloseTo(scrolled.y + 40, 1)
+  // Touch uses the same captured-pointer path and must not generate a click-to-fit.
+  const touch = await page.context().newCDPSession(page)
+  await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: anchor.x, y: anchor.y }] })
+  await touch.send("Input.dispatchTouchEvent", {
+    type: "touchMove",
+    touchPoints: [{ x: anchor.x - 30, y: anchor.y - 20 }],
+  })
+  await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] })
+  await touch.detach()
+  await expect(fit).toBeEnabled()
+  expect((await image.boundingBox())!.x).toBeCloseTo(scrolled.x + 30, 1)
+  expect((await image.boundingBox())!.y).toBeCloseTo(scrolled.y + 20, 1)
   // Keyboard-accessible fit restores the exact original geometry.
   await fit.focus()
   await page.keyboard.press("Enter")
@@ -568,6 +601,15 @@ test("image gestures anchor zoom, pan, and reset independently of the pane", asy
   await page.getByRole("link", { name: "Second", exact: true }).click()
   await expect(panel.getByRole("img", { name: "second.svg", exact: true })).toBeVisible()
   await expect(fit).toBeDisabled()
+  await panel.getByRole("img", { name: "second.svg", exact: true }).hover()
+  const second = (await panel.getByRole("img", { name: "second.svg", exact: true }).boundingBox())!
+  expect(second.width).toBeGreaterThan(0)
+  expect(second.height).toBeGreaterThan(0)
+  await page.keyboard.down("Control")
+  await page.mouse.wheel(0, -50)
+  await expect(fit).toBeEnabled()
+  await page.keyboard.up("Control")
+  await fit.click()
   await page.setViewportSize({ width: 1200, height: 700 })
   await expect
     .poll(async () => {
