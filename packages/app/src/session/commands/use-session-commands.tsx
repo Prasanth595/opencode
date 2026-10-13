@@ -233,12 +233,19 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
 
   const autoAccepting = () => settings.permissions.autoApproves(sessionProject())
 
-  // Turning auto-accept on covers this session's project; turning it off stops it here, even when it covered every project.
+  // From a session the toggle sets this project's choice, falling back to the default when they match.
   const toggleAutoAccept = () => {
     const project = sessionProject()
+    const active = !autoAccepting()
 
-    if (autoAccepting()) {
-      settings.permissions.setAutoApproveScope(project, "off")
+    if (!project) settings.permissions.setAutoApproveDefault(active)
+    else
+      settings.permissions.setAutoApproveOverride(
+        project,
+        active === settings.permissions.autoApproveDefault() ? undefined : active,
+      )
+
+    if (!active) {
       showToast({
         title: language.t("toast.permissions.autoaccept.off.title"),
         description: language.t("toast.permissions.autoaccept.off.description"),
@@ -247,7 +254,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       return
     }
 
-    settings.permissions.setAutoApproveScope(project, project ? "project" : "all")
     showToast({
       title: project
         ? language.t("toast.permissions.autoaccept.project.title")

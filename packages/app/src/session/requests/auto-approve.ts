@@ -11,7 +11,7 @@ const retryLimit = 2
 const retryDelayMs = 1000
 
 // Auto-approves permission requests on one server connection for the projects
-// the client-local auto-approve setting covers: every project, or chosen ones.
+// the client-local settings cover: the app-wide default, unless a project overrides it.
 export function createPermissionAutoApprover(input: { sdk: ServerSDK; data: Data }) {
   const permissions = useSettings().permissions
   const enabled = () => permissions.autoApprovesOnServer(input.sdk.scope)

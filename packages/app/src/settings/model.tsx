@@ -23,9 +23,6 @@ export type NotificationSettings = Settings["notifications"]
 
 export type SoundSettings = Settings["sounds"]
 
-// Where permission requests are approved without asking, as seen from one project.
-export type AutoApproveScope = "off" | "project" | "all"
-
 // Names a project for per-project settings: project IDs are only unique within one server.
 export function projectSettingsKey(scope: ServerScope, projectID: string | undefined) {
   return projectID ? ScopedKey.from(scope, projectID) : undefined
@@ -135,11 +132,11 @@ const appearanceSchema = Persistence.struct({
 })
 
 const permissionsSchema = Persistence.struct({
-  // Approves requests in every project on every server.
+  // The default for every project.
   autoApprove: Schema.Boolean,
-  // Projects that approve requests on their own, keyed by server scope and project ID.
+  // Projects that override the default, keyed by server scope and project ID. Absent projects use the default.
   autoApproveProjects: Persistence.record(
-    Schema.Literal(true).pipe(Schema.catchDecoding(() => Effect.succeed(Option.none()))),
+    Schema.Boolean.pipe(Schema.catchDecoding(() => Effect.succeed(Option.none()))),
   ),
 })
 
@@ -327,14 +324,14 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
       void document.fonts?.load(`440 13px ${mono}`).catch(() => undefined)
     })
 
-    // Where a project's requests are approved without asking; without a project only "all" can apply.
-    function autoApproveScope(project: ScopedKey | undefined): AutoApproveScope {
-      if (store.permissions?.autoApprove) return "all"
+    const autoApproveDefault = withFallback(
+      () => store.permissions?.autoApprove,
+      defaultSettings.permissions.autoApprove,
+    )
 
-      if (project && store.permissions?.autoApproveProjects?.[project]) return "project"
-
-      return "off"
-    }
+    // A project's explicit choice, or undefined when it uses the default.
+    const autoApproveOverride = (project: ScopedKey | undefined) =>
+      project ? store.permissions?.autoApproveProjects?.[project] : undefined
 
     return {
       ready,
@@ -418,24 +415,29 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         },
       },
       permissions: {
-        autoApproveScope,
-        autoApproves: (project: ScopedKey | undefined) => autoApproveScope(project) !== "off",
-        // Whether any request on the server may be approved without asking.
-        autoApprovesOnServer(scope: ServerScope) {
-          if (store.permissions?.autoApprove) return true
-          const prefix = ScopedKey.prefix(scope)
-
-          return Object.keys(store.permissions?.autoApproveProjects ?? {}).some((key) => key.startsWith(prefix))
+        autoApproveDefault,
+        setAutoApproveDefault(value: boolean) {
+          setStore("permissions", "autoApprove", value)
         },
-        // "All projects" replaces every per-project choice, so turning it off later leaves nothing approving.
-        setAutoApproveScope(project: ScopedKey | undefined, value: AutoApproveScope) {
-          if (value === "all") return setStore("permissions", { autoApprove: true, autoApproveProjects: {} })
+        autoApproveOverride,
+        // Undefined makes the project use the default again.
+        setAutoApproveOverride(project: ScopedKey, value: boolean | undefined) {
           const projects = { ...store.permissions?.autoApproveProjects }
 
-          if (project && value === "project") projects[project] = true
+          if (value === undefined) delete projects[project]
+          else projects[project] = value
+          setStore("permissions", "autoApproveProjects", reconcile(projects))
+        },
+        // Whether a project's requests are approved without asking.
+        autoApproves: (project: ScopedKey | undefined) => autoApproveOverride(project) ?? autoApproveDefault(),
+        // Whether any request on the server may be approved without asking.
+        autoApprovesOnServer(scope: ServerScope) {
+          if (autoApproveDefault()) return true
+          const prefix = ScopedKey.prefix(scope)
 
-          if (project && value === "off") delete projects[project]
-          setStore("permissions", { autoApprove: false, autoApproveProjects: projects })
+          return Object.entries(store.permissions?.autoApproveProjects ?? {}).some(
+            ([key, value]) => value && key.startsWith(prefix),
+          )
         },
       },
       workspaces: {

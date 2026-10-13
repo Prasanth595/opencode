@@ -44,7 +44,6 @@ import { SettingsNavigation, type SettingsNavGroup } from "./navigation"
 import { SettingsProjectGeneral } from "./workspaces/project"
 import { ProjectSettingsExtensions } from "./workspaces/project-extensions"
 import { useSettingsSurface } from "./surface"
-import { projectSettingsKey } from "./model"
 import { settingsViewRedirect } from "./route"
 import { pageIcons } from "./pages"
 import { revealSettingsSearch } from "./search-reveal"
@@ -267,7 +266,6 @@ function RootSettings() {
   })
 
   const sourceDirectory = useSettingsDirectory(sourceServer)
-  const sourceProject = useSettingsProject(sourceServer, sourceDirectory)
   // Development builds list the built-in GUI extensions of this window.
   const guiExtensions = !!GuiExtensionsSettings && platform.platform === "desktop"
   createEffect(() => {
@@ -358,7 +356,7 @@ function RootSettings() {
       mobileAction={multiple() ? <AddServerMenu compact onAddServer={addServer} /> : undefined}
     >
       <Tabs.Content value="general" class="settings-panel">
-        <SettingsGeneral project={sourceProject()} />
+        <SettingsGeneral />
       </Tabs.Content>
       <Tabs.Content value="appearance" class="settings-panel">
         <SettingsAppearance />
@@ -582,35 +580,6 @@ function ProjectSettings(props: { server: ServerConnection.Any; project: LocalPr
 
 function connectionFor(list: readonly ServerConnection.Any[], key: string | undefined) {
   return list.find((item) => ServerConnection.key(item) === key)
-}
-
-// The project settings were opened from: a session's, a draft's, or the project selected on Home.
-function useSettingsProject(
-  server: Accessor<ServerConnection.Any | undefined>,
-  directory: Accessor<string | undefined>,
-) {
-  const surface = useSettingsSurface()
-  const layout = useLayout()
-  const serverCtx = useServerCtx(server)
-
-  return createMemo(() => {
-    const ctx = serverCtx()
-
-    if (!ctx) return undefined
-    const route = surface.route()
-
-    if (route.type === "session")
-      return projectSettingsKey(ctx.sdk.scope, ctx.data.session.get(route.sessionId)?.projectID)
-    const dir = route.type === "draft" ? directory() : layout.home.selection().directory
-
-    if (!dir) return undefined
-
-    return projectSettingsKey(
-      ctx.sdk.scope,
-      ctx.data.location.info({ directory: dir })?.project.id ??
-        ctx.sync.data.project.find((project) => project.worktree === dir || project.sandboxes?.includes(dir))?.id,
-    )
-  })
 }
 
 function useSettingsDirectory(server: Accessor<ServerConnection.Any | undefined>) {
