@@ -9,6 +9,7 @@ export function createComposerSubmission(input: {
   context: (ContextItem & { key: string })[]
 }) {
   const initial = input.target
+  const before = input.target.current()
   let target = input.target
   let cleared: Prompt | undefined
   let following: Prompt | undefined
@@ -18,6 +19,7 @@ export function createComposerSubmission(input: {
     prompt: input.prompt,
     context: input.context,
     target: () => target,
+    unchanged: () => (cleared !== undefined ? target.current() === cleared : target.current() === before),
     clear() {
       if (initial !== target) {
         initial.reset()
@@ -25,9 +27,20 @@ export function createComposerSubmission(input: {
         // A preparing session may already have an unsent follow-up in its promoted composer.
         if (preserveDraft && target.current().some((part) => isAttachment(part) || part.content.length > 0))
           following = clonePrompt(target.current())
+
+        if (!following) target.reset()
+        cleared = target.current()
+
+        return
       }
 
-      if (!following) target.reset()
+      if (target.current() !== before) {
+        cleared = before
+
+        return
+      }
+
+      target.reset()
       cleared = target.current()
     },
     retarget(next: ComposerStateTarget, options?: { preserveDraft?: boolean }) {
