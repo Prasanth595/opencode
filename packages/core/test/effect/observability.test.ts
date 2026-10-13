@@ -139,3 +139,49 @@ test("file logger flattens nested objects", async () => {
   expect(line).toContain("session.id=session-1")
   expect(line).not.toContain("request={")
 })
+
+test("file logger repeats shared objects instead of marking them circular", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-log-test-"))
+  await using _ = {
+    async [Symbol.asyncDispose]() {
+      await fs.rm(dir, { recursive: true, force: true })
+    },
+  }
+  const file = path.join(dir, "opencode.log")
+  const shared = { value: 42 }
+  const empty = {}
+
+  await Effect.logInfo({ first: shared, second: shared, third: empty, fourth: empty }).pipe(
+    Effect.provide(Logger.layer([fileLogger(file, "run-a")]).pipe(Layer.provide(NodeFileSystem.layer), Layer.orDie)),
+    Effect.scoped,
+    Effect.runPromise,
+  )
+
+  const line = (await Bun.file(file).text()).trim()
+  expect(line).toContain("first.value=42")
+  expect(line).toContain("second.value=42")
+  expect(line).toContain("third={}")
+  expect(line).toContain("fourth={}")
+  expect(line).not.toContain("[Circular]")
+})
+
+test("file logger still marks ancestor cycles as circular", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-log-test-"))
+  await using _ = {
+    async [Symbol.asyncDispose]() {
+      await fs.rm(dir, { recursive: true, force: true })
+    },
+  }
+  const file = path.join(dir, "opencode.log")
+  const cycle: Record<string, unknown> = {}
+  cycle.self = cycle
+
+  await Effect.logInfo({ loop: cycle }).pipe(
+    Effect.provide(Logger.layer([fileLogger(file, "run-a")]).pipe(Layer.provide(NodeFileSystem.layer), Layer.orDie)),
+    Effect.scoped,
+    Effect.runPromise,
+  )
+
+  const line = (await Bun.file(file).text()).trim()
+  expect(line).toContain("loop.self=[Circular]")
+})

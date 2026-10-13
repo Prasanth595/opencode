@@ -36,13 +36,19 @@ function flatten(
   seen = new WeakSet<object>(),
 ): Array<readonly [string, unknown]> {
   if (seen.has(input)) return [[prefix, "[Circular]"]]
+  // Only ancestors count as circular: forget each object once its own subtree is
+  // done, so the same object reachable through two sibling fields is logged twice.
   seen.add(input)
   const entries = Object.entries(input)
-  if (entries.length === 0 && prefix) return [[prefix, input]]
-  return entries.flatMap(([key, value]) => {
-    const path = prefix ? `${prefix}.${key}` : key
-    return plain(value) ? flatten(value, path, seen) : [[path, value] as const]
-  })
+  const result: Array<readonly [string, unknown]> =
+    entries.length === 0 && prefix
+      ? [[prefix, input]]
+      : entries.flatMap(([key, value]) => {
+          const path = prefix ? `${prefix}.${key}` : key
+          return plain(value) ? flatten(value, path, seen) : [[path, value] as const]
+        })
+  seen.delete(input)
+  return result
 }
 
 function plain(input: unknown): input is Record<string, unknown> {
