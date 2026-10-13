@@ -253,6 +253,7 @@ export default Plugin.define({
       messageID: SessionMessage.ID.make("msg_host_effect"),
       id: Tool.CallID.make("call_host_effect"),
       progress: () => Effect.void,
+      checkpoint: () => Effect.void,
     }
 
     expect(yield* execute(checkTool, { count: 3, code: "  v42  " }, context)).toEqual({
