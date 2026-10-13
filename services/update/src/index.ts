@@ -554,9 +554,23 @@ export function resolveChannel(channel: string) {
 function cachedRead<T>(key: string, load: () => Promise<T>) {
   const now = Date.now()
   const hit = reads.get(key)
-  if (hit && hit.expires > now) return hit.value as Promise<T>
+  if (hit) {
+    reads.delete(key)
+    if (hit.expires > now) {
+      reads.set(key, hit)
+      return hit.value as Promise<T>
+    }
+  }
   // Lookup paths are caller-controlled identifiers, so bound the number of retained entries.
-  if (reads.size >= 1_000) reads.clear()
+  if (reads.size >= 1_000) {
+    reads.forEach((entry, k) => {
+      if (entry.expires <= now) reads.delete(k)
+    })
+    if (reads.size >= 1_000) {
+      const oldest = reads.keys().next().value
+      if (oldest !== undefined) reads.delete(oldest)
+    }
+  }
   // Concurrent callers share one in-flight read. Failed reads are dropped so the next request retries D1.
   const value = load()
   reads.set(key, { expires: now + readTtl, value })

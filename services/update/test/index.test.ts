@@ -93,6 +93,21 @@ test("reuses D1 reads across lookups for 1 minute", async () => {
   expect(db.queries).toHaveLength(4)
 })
 
+test("evicts stale and cold entries without clearing hot reads", async () => {
+  const db = database()
+  db.insert({ channel: "hot", version: "1.0.0", time: 1, active: true })
+  setSystemTime(new Date("2026-10-13T01:00:00Z"))
+
+  expect(await version(await lookup(db.env, "hot/cli/opencode"))).toBe("1.0.0")
+  expect(db.queries).toHaveLength(2)
+
+  for (let i = 0; i < 600; i++) {
+    expect((await lookup(db.env, `cold-${i}/cli/opencode`)).status).toBe(404)
+    expect(await version(await lookup(db.env, "hot/cli/opencode"))).toBe("1.0.0")
+  }
+  expect(db.queries).toHaveLength(1202)
+})
+
 test("retries D1 on the next lookup after a failed read", async () => {
   const db = database()
   db.insert({ channel: "retry", version: "1.0.0", time: 1, active: true })
