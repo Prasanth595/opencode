@@ -63,7 +63,10 @@ export type FinishReason = Schema.Schema.Type<typeof FinishReason>
  * Matches the same escape-hatch field on `LLMEvent`.
  */
 export class Usage extends Schema.Class<Usage>("AI.Usage")({
-  /** Effective input size of the final message iteration, when reported; not billed totals. */
+  /**
+   * Effective input size of the final message iteration, when reported; not billed totals. Excludes output the response
+   * itself carried into continuation requests.
+   */
   contextTokens: Schema.optional(Schema.Number),
   inputTokens: Schema.optional(Schema.Number),
   outputTokens: Schema.optional(Schema.Number),

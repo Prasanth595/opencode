@@ -205,6 +205,7 @@ const GeminiGenerationConfig = Schema.Struct({
 const GeminiBodyFields = {
   cachedContent: Schema.optional(Schema.String),
   contents: Schema.Array(GeminiContent),
+  continuationToken: Schema.optional(Schema.String),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   safetySettings: optionalArray(GeminiSafetySetting),
   serviceTier: Schema.optional(Schema.String),
@@ -228,6 +229,7 @@ type GeminiUsage = Schema.Schema.Type<typeof GeminiUsage>
 const GeminiCandidate = Schema.Struct({
   content: optionalNull(GeminiResponseContent),
   finishReason: optionalNull(Schema.String),
+  continuationToken: optionalNull(Schema.String),
 })
 
 const GeminiPromptFeedback = Schema.StructWithRest(
@@ -252,9 +254,11 @@ interface ParserState {
   readonly route: string
   readonly providerMetadataKey: string
   readonly finishReason?: string
+  readonly continuationToken?: string
   readonly hasToolCalls: boolean
   readonly promptFeedback?: GeminiPromptFeedback
   readonly usage?: Usage
+  readonly previousUsage?: Usage
   readonly lifecycle: Lifecycle.State
   readonly reasoningSignature?: string
   readonly textSignature?: string
@@ -522,6 +526,20 @@ const mapUsage = (usage: GeminiUsage | undefined, metadataKey: string) => {
   })
 }
 
+// Every continuation request bills the response so far as input again, so billed counts sum across requests. The
+// final request's prompt minus that carried-over output is the context the response continued from.
+const continuedUsage = (previous: Usage, usage: Usage | undefined) =>
+  new Usage({
+    contextTokens: ProviderShared.subtractTokens(usage?.inputTokens, previous.outputTokens),
+    inputTokens: ProviderShared.sumTokens(previous.inputTokens, usage?.inputTokens),
+    outputTokens: ProviderShared.sumTokens(previous.outputTokens, usage?.outputTokens),
+    nonCachedInputTokens: ProviderShared.sumTokens(previous.nonCachedInputTokens, usage?.nonCachedInputTokens),
+    cacheReadInputTokens: ProviderShared.sumTokens(previous.cacheReadInputTokens, usage?.cacheReadInputTokens),
+    reasoningTokens: ProviderShared.sumTokens(previous.reasoningTokens, usage?.reasoningTokens),
+    totalTokens: ProviderShared.sumTokens(previous.totalTokens, usage?.totalTokens),
+    providerMetadata: usage?.providerMetadata ?? previous.providerMetadata,
+  })
+
 const mapFinishReason = (finishReason: string | undefined, hasToolCalls: boolean): FinishReason => {
   if (finishReason === undefined) return hasToolCalls ? "tool-calls" : "unknown"
   if (finishReason === "STOP") return hasToolCalls ? "tool-calls" : "stop"
@@ -573,7 +591,7 @@ const finish = (state: ParserState): ReadonlyArray<LLMEvent> => {
         promptBlockReason === undefined ? mapFinishReason(finishReason, state.hasToolCalls) : "content-filter",
       raw: finishReason,
     },
-    usage: state.usage,
+    usage: state.previousUsage === undefined ? state.usage : continuedUsage(state.previousUsage, state.usage),
     providerMetadata:
       state.promptFeedback === undefined
         ? undefined
@@ -604,19 +622,30 @@ const step = (state: ParserState, event: GeminiEvent) => {
     return Effect.fail(
       ProviderShared.eventError(state.route, `Invalid ${state.route} stream event`, ProviderShared.encodeJson(event)),
     )
+  const candidate = event.candidates?.[0]
   const nextState = {
     ...state,
     promptFeedback: event.promptFeedback ?? state.promptFeedback,
     usage: event.usageMetadata
       ? (mapUsage(event.usageMetadata, state.providerMetadataKey) ?? state.usage)
       : state.usage,
+    // Mid-stream checkpoint tokens only resume dropped streams; continuing needs the token that ends the request.
+    continuationToken:
+      candidate?.finishReason === "CONTINUATION" ? (candidate.continuationToken ?? undefined) : state.continuationToken,
   }
-  const candidate = event.candidates?.[0]
   if (candidate?.finishReason && mapFinishReason(candidate.finishReason, state.hasToolCalls) === "error")
     return Effect.fail(
       ProviderShared.eventError(
         state.route,
         `Gemini stopped with ${candidate.finishReason}`,
+        ProviderShared.encodeJson(event),
+      ),
+    )
+  if (candidate?.finishReason === "CONTINUATION" && !candidate.continuationToken)
+    return Effect.fail(
+      ProviderShared.eventError(
+        state.route,
+        "Gemini stopped with CONTINUATION without a continuation token",
         ProviderShared.encodeJson(event),
       ),
     )
@@ -818,6 +847,21 @@ export const protocol = Protocol.make({
     step,
     onHalt: (state) => Effect.succeed(finish(state)),
   },
+  // Text and reasoning continue mid-token in the next request, so open blocks, signatures, and tool-call ids carry over.
+  continueResponse: (state: ParserState) =>
+    state.continuationToken === undefined
+      ? undefined
+      : {
+          body: { continuationToken: state.continuationToken },
+          state: {
+            ...state,
+            finishReason: undefined,
+            continuationToken: undefined,
+            usage: undefined,
+            previousUsage:
+              state.previousUsage === undefined ? state.usage : continuedUsage(state.previousUsage, state.usage),
+          },
+        },
 })
 
 export const route = Route.make({
