@@ -139,6 +139,7 @@ export function DialogMcp(props: { initialServer?: string; details?: boolean } =
           <DialogSelect
             title="MCP servers"
             options={options()}
+            focusTarget={props.initialServer}
             preserveSelection
             onMove={(option) => setFocused(option.value as string)}
             onSelect={(option) => select(option.value as string)}
