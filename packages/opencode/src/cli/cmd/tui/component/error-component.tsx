@@ -4,6 +4,7 @@ import { Clipboard } from "@tui/util/clipboard"
 import { createSignal } from "solid-js"
 import { Installation } from "@/installation"
 import { win32FlushInputBuffer } from "../win32"
+import { destroy } from "../util/teardown"
 import { getScrollAcceleration } from "../util/scroll"
 
 export function ErrorComponent(props: {
@@ -18,8 +19,7 @@ export function ErrorComponent(props: {
 
   const handleExit = async () => {
     await props.onBeforeExit?.()
-    renderer.setTerminalTitle("")
-    renderer.destroy()
+    destroy(renderer)
     win32FlushInputBuffer()
     await props.onExit()
   }
