@@ -16,11 +16,11 @@ test.skipIf(process.platform !== "linux" || !Bun.which("tmux") || !Bun.which("sc
     const pane = new TextDecoder()
       .decode(run(["-f", "/dev/null", "new-session", "-d", "-s", "copy", "-P", "-F", "#{pane_id}", "sleep 60"]).stdout)
       .trim()
-    const attach = (term = "xterm-256color") => {
+    const attach = (term = "xterm-256color", env: NodeJS.ProcessEnv = {}) => {
       const proc = Bun.spawn(
         ["script", "-q", "-c", `tmux -S '${socket.replaceAll("'", "'\''")}' attach -t copy`, "/dev/null"],
         {
-          env: { ...process.env, TERM: term, TMUX: undefined, TMUX_PANE: undefined },
+          env: { ...process.env, TERM: term, TMUX: undefined, TMUX_PANE: undefined, ...env },
           stdin: "pipe",
           stdout: "pipe",
           stderr: "ignore",
@@ -69,6 +69,48 @@ test.skipIf(process.platform !== "linux" || !Bun.which("tmux") || !Bun.which("sc
       clients.push(attach("vt100"))
       await connected()
       await expect(clipboard.write("unsupported terminal")).rejects.toThrow("does not advertise clipboard support")
+
+      const writes: { text: string; display?: string; wayland?: string }[] = []
+      const native = createTmuxClipboard(
+        clipboard,
+        { TMUX: `${socket},0,0`, TMUX_PANE: pane, DISPLAY: ":999" },
+        {
+          async write(text, env) {
+            writes.push({ text, display: env.DISPLAY, wayland: env.WAYLAND_DISPLAY })
+          },
+          async dispose() {},
+        },
+      )
+      run(["detach-client", "-s", "copy"])
+      clients.push(attach("vt100", { SSH_CONNECTION: "fixture", DISPLAY: "localhost:20.0", WAYLAND_DISPLAY: "stale" }))
+      await connected()
+      expect(await native.write("forwarded\0 text")).toBe("written")
+      expect(writes).toEqual([{ text: "forwarded text", display: "localhost:20.0", wayland: undefined }])
+
+      run(["detach-client", "-s", "copy"])
+      clients.push(attach("vt100", { SSH_CONNECTION: "fixture", DISPLAY: "localhost:21.0", WAYLAND_DISPLAY: "stale" }))
+      await connected()
+      expect(await native.write("reconnected")).toBe("written")
+      expect(writes.at(-1)).toEqual({ text: "reconnected", display: "localhost:21.0", wayland: undefined })
+
+      run(["detach-client", "-s", "copy"])
+      clients.push(
+        attach("vt100", {
+          SSH_CONNECTION: undefined,
+          SSH_TTY: undefined,
+          DISPLAY: ":22",
+          WAYLAND_DISPLAY: "wayland-local",
+        }),
+      )
+      await connected()
+      expect(await native.write("local desktop")).toBe("written")
+      expect(writes.at(-1)).toEqual({ text: "local desktop", display: ":22", wayland: "wayland-local" })
+
+      run(["detach-client", "-s", "copy"])
+      clients.push(attach("xterm-256color", { SSH_CONNECTION: "fixture", DISPLAY: ":0", WAYLAND_DISPLAY: "stale" }))
+      await connected()
+      expect(await native.write("plain ssh")).toBe("attempted")
+      expect(writes).toHaveLength(3)
     } finally {
       run(["kill-server"])
       clients.forEach((client) => client.proc.kill())
@@ -85,4 +127,39 @@ test("keeps the normal clipboard outside tmux", () => {
     dispose: async () => {},
   }
   expect(createTmuxClipboard(clipboard, {})).toBe(clipboard)
+})
+
+test("uses an explicitly forwarded display outside tmux, without using the remote desktop", async () => {
+  const writes: { text: string; display?: string; wayland?: string }[] = []
+  const clipboard = {
+    read: async () => undefined,
+    write: async () => "attempted" as const,
+    dispose: async () => {},
+  }
+  const host = {
+    async write(text: string, env: NodeJS.ProcessEnv) {
+      writes.push({ text, display: env.DISPLAY, wayland: env.WAYLAND_DISPLAY })
+    },
+    async dispose() {},
+  }
+  const native = createTmuxClipboard(
+    clipboard,
+    { SSH_CONNECTION: "fixture", DISPLAY: "localhost:10.0", WAYLAND_DISPLAY: "stale" },
+    host,
+  )
+  expect(await native.write("direct\0 SSH")).toBe("written")
+  expect(writes).toEqual([{ text: "direct SSH", display: "localhost:10.0", wayland: undefined }])
+  expect(createTmuxClipboard(clipboard, { SSH_CONNECTION: "fixture", DISPLAY: ":0" }, host)).toBe(clipboard)
+  expect(createTmuxClipboard(clipboard, { SSH_CONNECTION: "fixture" }, host)).toBe(clipboard)
+  const failed = createTmuxClipboard(
+    clipboard,
+    { SSH_CONNECTION: "fixture", DISPLAY: "localhost:10.0" },
+    {
+      ...host,
+      write: async () => {
+        throw new Error("Forwarded display disconnected")
+      },
+    },
+  )
+  await expect(failed.write("must not claim success")).rejects.toThrow("Forwarded display disconnected")
 })

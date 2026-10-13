@@ -197,6 +197,7 @@ export type TuiInput = {
   updater?: UpdateSource
   packages: PackageSource
   environment?: Readonly<Record<string, string>>
+  clipboardCommand?: ReadonlyArray<string>
   terminalHandoff?: () => Promise<
     | {
         readonly renderer: CliRenderer
@@ -271,7 +272,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
       })
       renderer.setMaxListeners(15)
       const clipboard = yield* Effect.acquireRelease(
-        Effect.sync(() => createTuiClipboard(renderer)),
+        Effect.sync(() => createTuiClipboard(renderer, input.clipboardCommand)),
         (clipboard) =>
           Effect.tryPromise(() => clipboard.dispose()).pipe(
             Effect.catch((error) => Effect.sync(() => log("error", "Failed to dispose TUI clipboard", { error }))),

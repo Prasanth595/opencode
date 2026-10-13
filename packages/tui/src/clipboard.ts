@@ -8,18 +8,31 @@ import {
 } from "@opentui/core"
 import type { ClipboardContent, ClipboardService } from "./context/clipboard"
 import { createTmuxClipboard } from "./clipboard/tmux"
+import { createClipboardProcess } from "./clipboard/process"
 
 export type OwnedClipboardService = Required<ClipboardService> & Readonly<{ dispose(): Promise<void> }>
 
-export function createTuiClipboard(renderer: RendererClipboardBoundary): OwnedClipboardService {
-  return createTmuxClipboard(
+export function createTuiClipboard(
+  renderer: RendererClipboardBoundary,
+  command?: ReadonlyArray<string>,
+): OwnedClipboardService {
+  const host = command ? createClipboardProcess(command) : undefined
+  const clipboard = createTmuxClipboard(
     createClipboardAdapter(
       createClipboard({
         host: createHostClipboard(),
         terminal: createRendererClipboardAdapter(renderer),
       }),
     ),
+    process.env,
+    host,
   )
+  return {
+    ...clipboard,
+    async dispose() {
+      await Promise.all([clipboard.dispose(), host?.dispose()])
+    },
+  }
 }
 
 export function createClipboardAdapter(clipboard: CoreClipboardService): OwnedClipboardService {

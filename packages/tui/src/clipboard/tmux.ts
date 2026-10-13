@@ -1,19 +1,70 @@
 import type { OwnedClipboardService } from "../clipboard"
+import { readFile } from "node:fs/promises"
+import type { ClipboardProcess } from "./process"
+import { spawn } from "node:child_process"
+import { once } from "node:events"
 
-export function createTmuxClipboard(clipboard: OwnedClipboardService, env = process.env): OwnedClipboardService {
+export function createTmuxClipboard(
+  clipboard: OwnedClipboardService,
+  env = process.env,
+  host?: ClipboardProcess,
+): OwnedClipboardService {
   const pane = env.TMUX_PANE
-  if (!env.TMUX || !pane) return clipboard
+  if (!env.TMUX || !pane) {
+    if (!host || !forwardedX11(env)) return clipboard
+    return {
+      ...clipboard,
+      async write(text) {
+        await host.write(text.replaceAll("\0", ""), { ...env, WAYLAND_DISPLAY: undefined })
+        return "written"
+      },
+    }
+  }
   return {
     ...clipboard,
     async write(text) {
       // A persistent pane can be reattached from another computer. Its original
       // desktop clipboard and SSH environment do not identify the current client.
-      const [client, features] = (
-        await runTmux(["display-message", "-p", "-t", pane, "#{client_tty}\n#{client_termfeatures}"], env)
+      const [client, pid, features] = (
+        await runTmux(
+          ["display-message", "-p", "-t", pane, "#{client_tty}\n#{client_pid}\n#{client_termfeatures}"],
+          env,
+        )
       )
         .trim()
         .split("\n")
       if (!client) throw new Error("No tmux client is attached to copy to")
+      // tmux refreshes its session environment on attach, but that environment
+      // is shared by clients. Read the selected client's own environment instead.
+      const attached =
+        host && process.platform === "linux"
+          ? await readFile(`/proc/${pid}/environ`, "utf8").then(
+              (value) =>
+                Object.fromEntries(
+                  value
+                    .split("\0")
+                    .filter(Boolean)
+                    .map((entry) => [entry.slice(0, entry.indexOf("=")), entry.slice(entry.indexOf("=") + 1)]),
+                ),
+              () => undefined,
+            )
+          : undefined
+      if (
+        host &&
+        attached &&
+        (forwardedX11(attached) || (!ssh(attached) && (attached.DISPLAY || attached.WAYLAND_DISPLAY)))
+      ) {
+        await host.write(
+          text.replaceAll("\0", ""),
+          {
+            ...attached,
+            // A forwarded X11 connection must not use the server's Wayland desktop.
+            WAYLAND_DISPLAY: ssh(attached) ? undefined : attached.WAYLAND_DISPLAY,
+          },
+          ssh(attached) ? Number(pid) : undefined,
+        )
+        return "written"
+      }
       if (!features?.split(",").includes("clipboard")) {
         throw new Error("The attached tmux terminal does not advertise clipboard support")
       }
@@ -25,18 +76,26 @@ export function createTmuxClipboard(clipboard: OwnedClipboardService, env = proc
   }
 }
 
+function ssh(env: NodeJS.ProcessEnv) {
+  return Boolean(env.SSH_TTY || env.SSH_CONNECTION)
+}
+
+function forwardedX11(env: NodeJS.ProcessEnv) {
+  return ssh(env) && /^(localhost|127\.0\.0\.1|\[::1\]):\d+(\.\d+)?$/.test(env.DISPLAY ?? "")
+}
+
 async function runTmux(args: string[], env: NodeJS.ProcessEnv, text?: string) {
-  const proc = Bun.spawn(["tmux", ...args], {
+  const proc = spawn("tmux", args, {
     env,
-    stdin: text === undefined ? "ignore" : new Blob([text]),
-    stdout: "pipe",
-    stderr: "pipe",
+    stdio: ["pipe", "pipe", "pipe"],
   })
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ])
-  if (code !== 0) throw new Error(stderr.trim() || "tmux clipboard command failed")
-  return stdout
+  const stdout: string[] = []
+  const stderr: string[] = []
+  proc.stdout.setEncoding("utf8").on("data", (text: string) => stdout.push(text))
+  proc.stderr.setEncoding("utf8").on("data", (text: string) => stderr.push(text))
+  proc.stdin.on("error", () => proc.kill())
+  proc.stdin.end(text)
+  const [code] = await once(proc, "close")
+  if (code !== 0) throw new Error(stderr.join("").trim() || "tmux clipboard command failed")
+  return stdout.join("")
 }
