@@ -11,6 +11,9 @@
     "./sdk": "./src/sdk/index.ts",
     "./sdk/main": "./src/sdk/main.ts",
     "./sdk/bridge": "./src/sdk/bridge.ts",
+    "./file": "./src/file/contract.ts",
+    "./review": "./src/review/contract.ts",
+    "./browser": "./src/browser/contract.ts",
     "./updater": "./src/updater/contract.ts"
   },
   "scripts": {

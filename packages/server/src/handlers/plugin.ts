@@ -13,6 +13,15 @@ export const PluginHandler = HttpApiBuilder.group(Api, "server.plugin", (handler
         return yield* response(Plugin.Service.use((plugin) => plugin.list()))
       }),
     )
+    .handle("plugin.gui", (ctx) =>
+      Effect.gen(function* () {
+        const plugins = yield* Plugin.Service
+        const source = yield* plugins.gui(ctx.query.id)
+        if (!source)
+          return yield* new InvalidRequestError({ message: `Plugin has no GUI entry: ${ctx.query.id}`, field: "id" })
+        return yield* response(Effect.succeed(source))
+      }),
+    )
     .handle("plugin.check", (ctx) =>
       Effect.gen(function* () {
         const plugins = yield* Plugin.Service

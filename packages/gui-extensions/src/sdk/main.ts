@@ -225,7 +225,7 @@ type MainStores<D> = [D] extends [never]
 
 /**
  * The spec of each Ipc the definition declares in `provides`, as a full token or an `Ipc.ref`; any spec when there is
- * no definition, as for an installed extension's plain JavaScript.
+ * no definition, as for a plain JavaScript bundle.
  */
 type ProvidedSpec<D> = [D] extends [never]
   ? IpcSpec

@@ -97,7 +97,7 @@ Read [You Might Not Need an Effect](https://react.dev/learn/you-might-not-need-a
 ## Tests
 
 - Follow the Tests section of `packages/app/AGENTS.md`.
-- Unit-test pure logic that carries a contract: path and security checks, storage migration, protocol parsing, archive validation.
+- Unit-test pure logic that carries a contract: path and security checks, storage migration, protocol parsing.
 - UI behavior is proven by the app e2e keeper suites in `packages/app/e2e/regression/`. Do not add unit tests that repeat them.
 - Test a main-process entry through its `Ipc` contract with real inputs, not through Electron mocks.
 - The hosts own their contracts, so an extension does not test them again: main storage in `packages/desktop/src/main/extension/storage.test.ts`, the real window host in `packages/app/component-tests/extension-host.spec.ts`, and the built-in graph in `packages/app/component-tests/extension-graph.spec.ts`.

@@ -1,3 +1,4 @@
+import { Predicate } from "effect"
 import { For, onCleanup, Show } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { Button } from "@opencode/ui/button"
@@ -7,9 +8,10 @@ import { useLanguage } from "@/runtime/i18n/language"
 import { usePlatform } from "@/runtime/platform/platform"
 import { SettingsList } from "@/settings/list"
 import { SettingsRow } from "@/settings/row"
+import { showToast } from "@/shell/notifications/toast"
 import { useExtensionHost } from "./host"
 
-/** Development builds: every built-in GUI extension of this window, with enable and reload controls. */
+/** Every GUI extension of this desktop window, built-in or from a plugin, with enable and reload controls. */
 export function GuiExtensionsSettings() {
   const language = useLanguage()
   const host = useExtensionHost()
@@ -25,7 +27,9 @@ export function GuiExtensionsSettings() {
     )
   }
 
-  const enabled = (id: string) => installed.list.find((item) => item.id === id)?.enabled ?? true
+  const itemOf = (id: string) => installed.list.find((item) => item.id === id)
+
+  const enabled = (id: string) => itemOf(id)?.enabled ?? true
 
   const status = (id: string) => {
     const value = host.state.status[id] ?? "loading"
@@ -41,12 +45,23 @@ export function GuiExtensionsSettings() {
     return language.t("settings.guiExtensions.status.loading")
   }
 
-  const toggle = (id: string, next: boolean) => void (next ? bridge?.manager.enable(id) : bridge?.manager.disable(id))
+  const run = (work: Promise<void> | undefined) =>
+    void work?.catch((cause: unknown) =>
+      showToast({
+        variant: "error",
+        title:
+          Predicate.hasProperty(cause, "code") && cause.code === "notFound"
+            ? language.t("settings.guiExtensions.error.notFound")
+            : language.t("common.requestFailed"),
+      }),
+    )
+
+  const toggle = (id: string, next: boolean) => run(next ? bridge?.manager.enable(id) : bridge?.manager.disable(id))
 
   // Main entries reload through the manager; the renderer entry reloads here.
   const reload = (id: string) => {
     host.reload(id)
-    void bridge?.manager.reload(id)
+    run(bridge?.manager.reload(id))
   }
 
   return (
@@ -67,11 +82,20 @@ export function GuiExtensionsSettings() {
             <For each={host.definitions()}>
               {(definition) => (
                 <SettingsRow
-                  title={<bdi dir="ltr">{definition.id}</bdi>}
+                  title={
+                    <span class="flex items-center gap-2">
+                      <bdi dir="ltr">{definition.id}</bdi>
+                      <Show when={itemOf(definition.id)?.plugin}>
+                        <span class="text-11-regular text-v2-text-text-muted">
+                          {language.t("settings.guiExtensions.plugin")}
+                        </span>
+                      </Show>
+                    </span>
+                  }
                   description={
                     <>
                       {status(definition.id)}
-                      <Show when={host.state.failures[definition.id]?.error}>
+                      <Show when={host.state.failures[definition.id]?.error ?? itemOf(definition.id)?.error}>
                         {(error) => <pre class="mt-1 whitespace-pre-wrap text-text-danger-base">{error()}</pre>}
                       </Show>
                     </>

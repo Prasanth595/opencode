@@ -4,7 +4,7 @@ import { Schema } from "effect"
 import { ephemeral, inventory } from "./event.js"
 import { optional } from "./schema.js"
 
-export const ID = Schema.String.pipe(Schema.brand("Plugin.ID"))
+export const ID = Schema.String.pipe(Schema.brand("Plugin.ID"), Schema.annotate({ identifier: "Plugin.ID" }))
 export type ID = typeof ID.Type
 
 export const Source = Schema.Union([
@@ -25,8 +25,19 @@ export const Features = Schema.Struct({
   server: Schema.Literal(true).pipe(optional),
   tui: Schema.Literal(true).pipe(optional),
   rpc: Schema.Literal(true).pipe(optional),
+  /** The package exports `./gui`, a GUI extension bundle the desktop and web app load. */
+  gui: Schema.Literal(true).pipe(optional),
 }).annotate({ identifier: "Plugin.Features" })
 export type Features = typeof Features.Type
+
+/** A plugin's prebuilt CommonJS GUI extension bundle, with the plugin revision it belongs to. */
+export interface GuiSource extends Schema.Schema.Type<typeof GuiSource> {}
+export const GuiSource = Schema.Struct({
+  /** The bundle's CommonJS source. */
+  source: Schema.String,
+  /** Changes whenever the plugin is replaced or reloaded. */
+  revision: Schema.String,
+}).annotate({ identifier: "Plugin.GuiSource" })
 
 export const State = Schema.Union([
   Schema.Struct({ status: Schema.Literal("active") }),

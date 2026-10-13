@@ -12,6 +12,11 @@ export interface Entrypoints {
   readonly server?: string
   readonly tui?: string
   readonly rpc?: string
+  /**
+   * A prebuilt CommonJS GUI extension bundle (`./gui`). Each app window runs its default export; the desktop app's main
+   * process runs its `main` export.
+   */
+  readonly gui?: string
 }
 
 export function resolve(target: Target): Entrypoints {
@@ -40,7 +45,12 @@ export function resolve(target: Target): Entrypoints {
     }
     return undefined
   }
-  return { server: entry(["server", ""]), tui: entry(["tui"]), rpc: entry(["rpc"]) }
+  return {
+    server: entry(["server", ""]),
+    tui: entry(["tui"]),
+    rpc: entry(["rpc"]),
+    gui: entry(["gui"]),
+  }
 }
 
 export function load(entrypoint: string): Promise<unknown> {

@@ -28,15 +28,19 @@ export type AgentColor = string
 
 export type PermissionEffect = "allow" | "deny" | "ask"
 
+export type PluginID = string
+
 export type PluginSource =
   | { type: "builtin" }
   | { type: "package"; target: string; version?: string; outdated?: true; updating?: true }
   | { type: "local"; path: string }
   | { type: "sdk" }
 
-export type PluginFeatures = { server?: true; tui?: true; rpc?: true }
+export type PluginFeatures = { server?: true; tui?: true; rpc?: true; gui?: true }
 
 export type PluginState = { status: "active" } | { status: "failed"; error: string; ref?: string }
+
+export type PluginGuiSource = { source: string; revision: string }
 
 export type SessionID = string
 
@@ -346,7 +350,7 @@ export type ConfigProviderSettings = {
 
 export type PermissionRule = { action: string; resource: string; effect: PermissionEffect }
 
-export type PluginInfo = { id?: string; source: PluginSource; features: PluginFeatures; state: PluginState }
+export type PluginInfo = { id?: PluginID; source: PluginSource; features: PluginFeatures; state: PluginState }
 
 export type SessionForkBoundary =
   | { type: "before"; messageID: SessionMessageID }
@@ -2895,6 +2899,19 @@ export type PluginListInput = {
 }
 
 export type PluginListOutput = { location: LocationPublicRef; data: Array<PluginInfo> }
+
+export type PluginGuiInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined } | undefined
+    readonly id: string
+  }["location"]
+  readonly id: {
+    readonly location?: { readonly directory?: string | undefined } | undefined
+    readonly id: string
+  }["id"]
+}
+
+export type PluginGuiOutput = { location: LocationPublicRef; data: PluginGuiSource }
 
 export type PluginCheckInput = {
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]

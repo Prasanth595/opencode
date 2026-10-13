@@ -7,7 +7,7 @@ import { cancellable, invoke, listen, send } from "./ipc-client"
 /** The listeners' attachment to main's extension events, while any listener is registered. */
 type Attachment = { stop?: () => void }
 
-/** The renderer end of the GUI extension bridge; main hosts every Ipc, embed, and archive. */
+/** The renderer end of the GUI extension bridge; main hosts every Ipc and embed. */
 export function createExtensionBridge(): Bridge {
   const listeners = new Set<(message: BridgeMessage) => void>()
   const dispatch = (message: BridgeMessage) => listeners.forEach((listener) => listener(message))
@@ -62,18 +62,13 @@ export function createExtensionBridge(): Bridge {
     capture: (id) => invoke("ExtensionCapture", { id }).then((data) => data ?? undefined),
     runMenubarItem: (id) => send("ExtensionMenubarItem", { id }),
     configure: (servers) => send("ExtensionConfigure", { servers }),
+    plugins: (plugins) => send("ExtensionPlugins", { plugins }),
     manager: {
       initial: window.electron.extensions,
       list: () => invoke("ExtensionList"),
       enable: (id) => manage(invoke("ExtensionEnable", { id })),
       disable: (id) => manage(invoke("ExtensionDisable", { id })),
       reload: (id) => manage(invoke("ExtensionReload", { id })),
-      install: (source) =>
-        manage(invoke("ExtensionInstall", { source: Predicate.isString(source) ? source : new Uint8Array(source) })),
-      remove: (id) => manage(invoke("ExtensionRemove", { id })),
-      source: (id) => manage(invoke("ExtensionSource", { id })),
-      asset: (id, path) =>
-        `oc://extensions/${encodeURIComponent(id)}/${path.split("/").map(encodeURIComponent).join("/")}`,
     },
   }
 }

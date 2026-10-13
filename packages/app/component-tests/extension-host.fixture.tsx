@@ -40,7 +40,7 @@ import { createRegion, RegionContent } from "../src/runtime/extension/panels"
 import { ExtensionSlot } from "../src/runtime/extension/render"
 import { persistedHandle } from "../src/runtime/extension/stores"
 import { LanguageProvider } from "../src/runtime/i18n/language"
-import { GuiExtensionsSettings } from "../src/runtime/extension/settings-page-dev"
+import { GuiExtensionsSettings } from "../src/runtime/extension/settings-manager"
 
 export { bindExtension, useExtension, Contract, createKeyed, Panel, Slot, Store } from "@opencode/gui-extensions/sdk"
 

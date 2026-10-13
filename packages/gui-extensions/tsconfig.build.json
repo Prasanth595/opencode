@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "noEmit": false,
+    // Publish declarations so plugin authors' compiler options do not typecheck the SDK's implementation.
+    "declaration": true,
+    "emitDeclarationOnly": true
+  },
+  // The published SDK: the window and main entries, and the contracts plugins may use.
+  "include": [],
+  "files": [
+    "src/sdk/index.ts",
+    "src/sdk/main.ts",
+    "src/file/contract.ts",
+    "src/review/contract.ts",
+    "src/browser/contract.ts",
+    "src/updater/contract.ts"
+  ]
+}

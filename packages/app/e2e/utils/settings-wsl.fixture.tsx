@@ -207,10 +207,6 @@ export function mount(input: {
         enable: async () => undefined,
         disable: async () => undefined,
         reload: async () => undefined,
-        install: async () => undefined,
-        remove: async () => undefined,
-        source: async () => "",
-        asset: () => "",
       },
     }
 

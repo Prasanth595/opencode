@@ -95,6 +95,9 @@ await $`bun ./packages/sdk/script/publish.ts`
 console.log("\n=== ui ===\n")
 await $`bun ./packages/ui/script/publish.ts`
 
+console.log("\n=== gui-extensions ===\n")
+await $`bun ./packages/gui-extensions/script/publish.ts`
+
 if (Script.release && !Script.preview) {
   if ((await $`git diff --quiet`.nothrow()).exitCode !== 0) await $`git commit -am "release: ${tag}"`
   await $`git tag -d ${tag}`.nothrow()

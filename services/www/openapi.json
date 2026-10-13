@@ -569,6 +569,107 @@
         "summary": "List plugins"
       }
     },
+    "/api/plugin/gui": {
+      "get": {
+        "tags": ["plugin"],
+        "operationId": "plugin.gui",
+        "parameters": [
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "directory": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/Plugin.ID"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "location": {
+                      "$ref": "#/components/schemas/Location.PublicRef"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Plugin.GuiSource"
+                    }
+                  },
+                  "required": ["location", "data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Read an active plugin's prebuilt CommonJS `./gui` bundle. App windows run its default export; the desktop app's main process runs its `main` export.",
+        "summary": "Read plugin GUI bundle"
+      }
+    },
     "/api/plugin/check": {
       "post": {
         "tags": ["plugin"],
@@ -17311,15 +17412,35 @@
           "rpc": {
             "type": "boolean",
             "enum": [true]
+          },
+          "gui": {
+            "type": "boolean",
+            "enum": [true]
           }
         },
         "additionalProperties": false
+      },
+      "Plugin.GuiSource": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          }
+        },
+        "required": ["source", "revision"],
+        "additionalProperties": false
+      },
+      "Plugin.ID": {
+        "type": "string"
       },
       "Plugin.Info": {
         "type": "object",
         "properties": {
           "id": {
-            "type": "string"
+            "$ref": "#/components/schemas/Plugin.ID"
           },
           "source": {
             "$ref": "#/components/schemas/Plugin.Source"

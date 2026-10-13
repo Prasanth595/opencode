@@ -1,8 +1,9 @@
-import { createMemo, lazy, onCleanup, Show, Suspense, type ParentProps } from "solid-js"
+import { createMemo, createSignal, lazy, onCleanup, Show, Suspense, type ParentProps } from "solid-js"
 import { extensionEnabled } from "@opencode/gui-extensions/sdk/bridge"
 import type { Definition } from "@opencode/gui-extensions/sdk"
 import { builtins } from "./builtins"
 import { createInstalled } from "./installed"
+import { ExtensionPlugins } from "./plugins"
 import { createMenubarItems, MenubarItemsProvider } from "./menubar-items"
 import { usePlatform } from "@/runtime/platform/platform"
 import { ExtensionHostProvider, useExtensionHost } from "./host"
@@ -15,6 +16,8 @@ import { ExtensionServerEndpoints } from "./server-shell"
 import { createContext, useContext } from "solid-js"
 
 const HostApisContext = createContext<HostApis>()
+
+const PluginsContext = createContext<(definitions: readonly Definition[]) => void>()
 
 const ExtensionHotReload = import.meta.env.DEV ? lazy(() => import("./hmr")) : undefined
 
@@ -38,10 +41,14 @@ export function ExtensionRoot(props: ParentProps) {
 
   const os = platform.platform === "desktop" ? platform.os : undefined
 
-  // Built-ins only: installed `.ocdx` archives run their main entry until that format ships renderer bundles.
-  const definitions = builtins.filter(
+  const localBuiltins = builtins.filter(
     (definition: Definition) => !definition.os || (!!os && definition.os.includes(os)),
   )
+
+  // GUI extensions of the plugins on the server that runs the app, found once the app interface lists its servers.
+  const [plugins, setPlugins] = createSignal<readonly Definition[]>([])
+
+  const definitions = createMemo<readonly Definition[]>(() => [...localBuiltins, ...unique(plugins(), localBuiltins)])
 
   // Only enable preferences cross this boundary; the host derives blocked status from live hard dependencies.
   const disabled = createMemo(() => {
@@ -49,45 +56,61 @@ export function ExtensionRoot(props: ParentProps) {
 
     if (!state) return undefined
 
-    return new Set(definitions.flatMap((definition) => (extensionEnabled(definition, state) ? [] : [definition.id])))
+    return new Set(definitions().flatMap((definition) => (extensionEnabled(definition, state) ? [] : [definition.id])))
   })
 
   const failed = (id: string) => installed.list().some((item) => item.id === id && item.error !== undefined)
 
   return (
     <HostApisContext.Provider value={apis}>
-      <ExtensionHostProvider
-        definitions={definitions}
-        disabled={disabled}
-        apis={apis.apis}
-        whenMounted={apis.whenMounted}
-        ipc={bridge ? (token) => ipcs.client(token) : undefined}
-        generation={ipcs.generation}
-        failed={failed}
-      >
-        <ExtensionStyles />
-        {ExtensionHotReload && (
-          <Suspense>
-            <ExtensionHotReload />
-          </Suspense>
-        )}
-        <MenubarItemsProvider value={menubar}>
-          <ExtensionServersProvider failed={failed}>{props.children}</ExtensionServersProvider>
-        </MenubarItemsProvider>
-      </ExtensionHostProvider>
+      <PluginsContext.Provider value={(next) => setPlugins(next)}>
+        <ExtensionHostProvider
+          definitions={definitions}
+          disabled={disabled}
+          apis={apis.apis}
+          whenMounted={apis.whenMounted}
+          ipc={bridge ? (token) => ipcs.client(token) : undefined}
+          generation={ipcs.generation}
+          failed={failed}
+        >
+          <ExtensionStyles />
+          {ExtensionHotReload && (
+            <Suspense>
+              <ExtensionHotReload />
+            </Suspense>
+          )}
+          <MenubarItemsProvider value={menubar}>
+            <ExtensionServersProvider failed={failed}>{props.children}</ExtensionServersProvider>
+          </MenubarItemsProvider>
+        </ExtensionHostProvider>
+      </PluginsContext.Provider>
     </HostApisContext.Provider>
   )
+}
+
+/** Plugin definitions whose ids no built-in took: built-ins win. */
+function unique(definitions: readonly Definition[], taken: readonly Definition[]) {
+  const ids = new Set(taken.map((definition) => definition.id))
+
+  return definitions.filter((definition) => {
+    if (!ids.has(definition.id)) return true
+    console.warn(`[extension] plugin GUI extension "${definition.id}" is skipped: the id is taken`)
+
+    return false
+  })
 }
 
 /** Attaches the session and layout HostApis and publishes extension commands. Renders once extensions are active. */
 export function ExtensionAttachment(props: ParentProps) {
   const host = useExtensionHost()
   const attachment = createExtensionAttachment(useHostApis())
+  const setPlugins = useContext(PluginsContext)
 
   return (
     <ExtensionAttachmentProvider value={attachment}>
       <ExtensionCommands />
       <ExtensionServerEndpoints />
+      <Show when={setPlugins}>{(set) => <ExtensionPlugins onChange={set()} />}</Show>
       <Show when={host.ready()}>
         <MountedInterface attach={attachment.attach} />
         {props.children}

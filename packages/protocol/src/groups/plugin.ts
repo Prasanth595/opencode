@@ -21,6 +21,25 @@ export const PluginGroup = HttpApiGroup.make("server.plugin")
       ),
   )
   .add(
+    HttpApiEndpoint.get("plugin.gui", "/api/plugin/gui", {
+      query: Schema.Struct({
+        ...LocationQuery.fields,
+        id: Plugin.ID,
+      }),
+      success: Location.response(Plugin.GuiSource),
+      error: InvalidRequestError,
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "plugin.gui",
+          summary: "Read plugin GUI bundle",
+          description:
+            "Read an active plugin's prebuilt CommonJS `./gui` bundle. App windows run its default export; the desktop app's main process runs its `main` export.",
+        }),
+      ),
+  )
+  .add(
     HttpApiEndpoint.post("plugin.check", "/api/plugin/check", {
       query: LocationQuery,
       payload: Schema.Struct({ target: Schema.String.pipe(Schema.optional) }),

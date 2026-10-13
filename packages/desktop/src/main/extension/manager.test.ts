@@ -13,23 +13,32 @@ test.each([
   { name: "an old enabled setting", rows: [{ id: "older", enabled: true }], expected: true },
   {
     name: "the newest old setting",
-    rows: [{ id: "older", enabled: false }, { id: "previous", enabled: true }],
+    rows: [
+      { id: "older", enabled: false },
+      { id: "previous", enabled: true },
+    ],
     expected: true,
   },
   {
     name: "the current enabled setting",
-    rows: [{ id: "previous", enabled: false }, { id: "current", enabled: true }],
+    rows: [
+      { id: "previous", enabled: false },
+      { id: "current", enabled: true },
+    ],
     expected: true,
   },
   {
     name: "the current disabled setting",
-    rows: [{ id: "previous", enabled: true }, { id: "current", enabled: false }],
+    rows: [
+      { id: "previous", enabled: true },
+      { id: "current", enabled: false },
+    ],
     expected: false,
   },
 ])("both hosts resolve $name from real database rows, and a new setting wins", (input) => {
   const database = openDatabase(":memory:")
   const definition = { id: "current", legacy: ["previous", "older"] }
-  const manager = createManager(database.db, () => false, [definition])
+  const manager = createManager(database.db, [definition])
   input.rows.forEach((row) => database.db.insert(extension).values(row).run())
 
   expect(manager.enabled(definition.id)).toBe(input.expected)
@@ -40,15 +49,19 @@ test.each([
   manager.setEnabled(definition.id, !input.expected)
   expect(manager.enabled(definition.id)).toBe(!input.expected)
   expect(extensionEnabled(definition, readEnableState(database.db.$client))).toBe(!input.expected)
-  expect(database.db.select().from(extension).all().filter((row) => row.id !== definition.id)).toEqual(
-    before.filter((row) => row.id !== definition.id),
-  )
+  expect(
+    database.db
+      .select()
+      .from(extension)
+      .all()
+      .filter((row) => row.id !== definition.id),
+  ).toEqual(before.filter((row) => row.id !== definition.id))
   database.close()
 })
 
 test.each([details, context])("$id preserves disabled state from its shipping legacy declaration", (definition) => {
   const database = openDatabase(":memory:")
-  const manager = createManager(database.db, () => false, [definition])
+  const manager = createManager(database.db, [definition])
   database.db.insert(extension).values({ id: definition.legacy[0], enabled: false }).run()
 
   expect(manager.enabled(definition.id)).toBe(false)

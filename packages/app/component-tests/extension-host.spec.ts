@@ -936,10 +936,6 @@ story("startup enable state does not wait for the manager, and live updates beat
         enable: async () => {},
         disable: async () => {},
         reload: async () => {},
-        install: async () => {},
-        remove: async () => {},
-        source: async () => "",
-        asset: () => "",
       },
     }
 
@@ -1003,7 +999,9 @@ story("startup enable state does not wait for the manager, and live updates beat
 
       const failed = mountExtensions({
         bridge: { ...bridge, manager: { ...bridge.manager, initial, list: () => reply.promise } },
-        definitions: [{ id: "disabled", renderer: async () => ({ default: () => void setups.push("wrongly enabled") }) }],
+        definitions: [
+          { id: "disabled", renderer: async () => ({ default: () => void setups.push("wrongly enabled") }) },
+        ],
       })
 
       await new Promise((resolve) => setTimeout(resolve, 50))

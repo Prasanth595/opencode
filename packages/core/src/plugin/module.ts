@@ -137,7 +137,9 @@ const load = Effect.fn("PluginModule.load")(function* (
     features: {
       ...(entrypoints.tui ? { tui: true as const } : {}),
       ...(entrypoints.rpc ? { rpc: true as const } : {}),
+      ...(entrypoints.gui ? { gui: true as const } : {}),
     },
+    gui: entrypoints.gui,
     revision: JSON.stringify([operation, loaded.version]),
     source: path.isAbsolute(operation.target)
       ? { type: "local" as const, path: fileURLToPath(entrypoint) }

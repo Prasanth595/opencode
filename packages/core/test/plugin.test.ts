@@ -1,4 +1,6 @@
 import { expect } from "bun:test"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import path from "path"
 import { Clock, Deferred, Effect } from "effect"
 import { TestClock } from "effect/testing"
@@ -103,6 +105,31 @@ it.live("loads a local plugin with its configured options", () =>
 
     expect(yield* commands.get("greet")).toMatchObject({ description: "Configured greeting" })
   }),
+)
+
+it.live("serves a local plugin's GUI bundle with its revision", () =>
+  Effect.gen(function* () {
+    const plugins = yield* Plugin.Service
+    yield* plugins.awaitActivation
+    const directory = yield* Effect.acquireRelease(
+      Effect.promise(() => mkdtemp(path.join(tmpdir(), "opencode-plugin-gui-"))),
+      (directory) => Effect.promise(() => rm(directory, { recursive: true, force: true })),
+    )
+    const bundle = "module.exports = { default: function setup() {}, main: function main() {} }"
+    yield* Effect.promise(async () => {
+      await writeFile(path.join(directory, "index.ts"), 'export default { id: "fixture.gui", setup() {} }')
+      await writeFile(path.join(directory, "gui.js"), bundle)
+    })
+    const modules = yield* PluginModule.make().pipe(Effect.provide(Watcher.testLayer))
+    const definition = yield* modules.load({ type: "add", target: directory, options: {} })
+    if ("pending" in definition || "blocked" in definition) return yield* Effect.die("Local plugin was not loaded")
+    yield* plugins.activate([definition])
+    const id = Plugin.ID.make("fixture.gui")
+
+    expect((yield* plugins.list()).find((plugin) => plugin.id === id)?.features).toEqual({ server: true, gui: true })
+    expect(yield* plugins.gui(id)).toEqual({ source: bundle, revision: definition.revision })
+    expect(yield* plugins.gui(Plugin.ID.make("missing"))).toBeUndefined()
+  }).pipe(Effect.scoped),
 )
 
 it.effect("unloading a plugin removes its commands and runs cleanup", () =>

@@ -50,11 +50,9 @@ import { revealSettingsSearch } from "./search-reveal"
 import { ExtensionSettingsPages } from "@/runtime/extension/settings-page-view"
 import "@/settings/settings.css"
 
-const GuiExtensionsSettings = import.meta.env.DEV
-  ? lazy(() =>
-      import("@/runtime/extension/settings-page-dev").then((module) => ({ default: module.GuiExtensionsSettings })),
-    )
-  : undefined
+const GuiExtensionsSettings = lazy(() =>
+  import("@/runtime/extension/settings-manager").then((module) => ({ default: module.GuiExtensionsSettings })),
+)
 
 const rootClientTabs = [
   { value: "general", icon: pageIcons.general, label: "settings.tab.preferences" },
@@ -266,8 +264,7 @@ function RootSettings() {
   })
 
   const sourceDirectory = useSettingsDirectory(sourceServer)
-  // Development builds list the built-in GUI extensions of this window.
-  const guiExtensions = !!GuiExtensionsSettings && platform.platform === "desktop"
+  const guiExtensions = platform.platform === "desktop"
   createEffect(() => {
     const view = surface.view()
 
@@ -371,7 +368,7 @@ function RootSettings() {
       <Tabs.Content value="experimental" class="settings-panel">
         <SettingsExperimental />
       </Tabs.Content>
-      {GuiExtensionsSettings && guiExtensions && (
+      {guiExtensions && (
         <Tabs.Content value="gui-extensions" class="settings-panel">
           <Suspense>
             <GuiExtensionsSettings />

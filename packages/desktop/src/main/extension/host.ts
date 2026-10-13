@@ -28,7 +28,7 @@ import {
   type Windows,
 } from "@opencode/gui-extensions/sdk/main"
 import { Exit, Match, Predicate, Schema } from "effect"
-import type { ExtensionEndpoint, ExtensionInstalled } from "../../shared/ipc-rpc/extensions"
+import type { ExtensionEndpoint, ExtensionInstalled, ExtensionPlugin } from "../../shared/ipc-rpc/extensions"
 import {
   ExtensionAvailable,
   ExtensionEvent,
@@ -56,7 +56,7 @@ import { createLifecycle, type ErrorLog, type Instance, type Revision } from "./
 import { createManager } from "./manager"
 import { evaluateMain } from "./module"
 import { getStore } from "../storage/store"
-import { createStorage, namespace } from "./storage"
+import { createStorage } from "./storage"
 import { createEmbeds } from "./embeds"
 
 export type ExtensionHost = ReturnType<typeof createHost>
@@ -65,7 +65,7 @@ type Loaded = {
   readonly setup: MainSetup
   readonly i18n?: Catalog
   readonly stores?: Definition["stores"]
-  /** A built-in's declared `provides`, the only Ipcs it may provide; unknown for an installed extension. */
+  /** The declared `provides`, the only Ipcs it may provide; unknown for a plugin bundle that exports no definition. */
   readonly provides?: NonNullable<Definition["provides"]>
 }
 
@@ -125,13 +125,12 @@ export function createHost(input: {
   const definitions: readonly Definition[] = builtins
   const local = definitions.filter((definition) => !definition.os || definition.os.includes(os))
 
-  const manager = createManager(
-    input.db,
-    (id) => id.startsWith("opencode") || definitions.some((definition) => definition.id === id),
-    definitions,
-  )
+  const manager = createManager(input.db, definitions)
 
   const embeds = createEmbeds()
+  // Local-server plugin packages that ship GUI extensions, as the windows last reported them. Their `./gui`
+  // bundles load from the local server, which main reaches first-hand, never from a window.
+  const plugins = new Map<string, ExtensionPlugin>()
   const entries = new Map<string, Entry>()
   const ipcs = new Map<string, Provider>()
   // Each live instance's catalog and messages, so a locale change reaches them.
@@ -292,18 +291,30 @@ export function createHost(input: {
         )
     }
 
-    const manifest = manager.installed().find((item) => item.id === id)?.manifest
-    const entry = manifest?.main
+    const plugin = plugins.get(id)
 
-    if (!manifest || !entry) return undefined
+    if (plugin) {
+      if (!plugin.main) return undefined
 
-    return () => {
-      const source = manager.file(id, entry)
-
-      if (!source) return Promise.reject(new ExtensionError("invalidManifest"))
-
-      return evaluateMain(source.toString("utf8"), manifest.imports.main ?? []).then((loaded) => prepare(id, loaded))
+      return () =>
+        readPluginBundle(id)
+          .then(evaluateMain)
+          .then((loaded) => prepare(id, loaded))
     }
+
+    return undefined
+  }
+
+  // The plugin's `./gui` bundle, read from the app's own server with the credential only main holds.
+  const readPluginBundle = async (id: string) => {
+    const endpoint = server("sidecar")
+
+    if (!endpoint) throw new ExtensionError("unavailable")
+    const { OpenCode } = await import("@opencode/client")
+    const client = OpenCode.make({ baseUrl: endpoint.url, headers: { ...endpoint.headers } })
+    const response = await client.plugin.gui({ id })
+
+    return response.data.source
   }
 
   const resolveMessages = async (catalog?: Catalog): Promise<Messages> => {
@@ -363,13 +374,13 @@ export function createHost(input: {
 
     function provide<S extends IpcSpec>(token: Ipc<S>, impl: IpcImpl<S>): IpcProvider<S>
     function provide(token: Ipc, impl: IpcImpl<IpcSpec>): IpcProvider<IpcSpec> {
-      // Installed extensions are plain JavaScript: a contract token here has no spec to serve.
+      // Plugin bundles are plain JavaScript: a contract token here has no spec to serve.
       if (token.kind !== "ipc") throw new Error("Contracts are provided by an extension's renderer entry")
 
       const ipc = token.id
       const declared = loaded.provides
 
-      // A built-in's definition is known: it provides only the Ipcs it declares, so the windows' `uses` find them.
+      // A declared definition is known: it provides only the Ipcs it declares, so the windows' `uses` find them.
       if (declared && !Object.values(declared).some((item) => item.kind === "ipc" && item.id === ipc))
         throw new Error(`${id} provides Ipc "${ipc}" its definition does not declare in provides`)
 
@@ -526,8 +537,7 @@ export function createHost(input: {
     }
   }
 
-  const known = (id: string) =>
-    local.some((definition) => definition.id === id) || manager.installed().some((item) => item.id === id)
+  const known = (id: string) => local.some((definition) => definition.id === id) || plugins.has(id)
 
   const installed = (): ExtensionInstalled[] => [
     ...local.map((definition) => ({
@@ -540,14 +550,16 @@ export function createHost(input: {
       ...revision(reloads.get(definition.id)?.toString()),
       ...failure(lifecycle.failure(definition.id)),
     })),
-    ...manager.installed().map((item) => ({
-      id: item.id,
-      name: item.manifest?.name ?? item.id,
-      version: item.manifest?.version ?? "",
+
+    ...[...plugins.values()].map((plugin) => ({
+      id: plugin.id,
+      name: plugin.id,
+      version: "",
       builtin: false,
-      enabled: item.enabled,
-      ...revision(item.revision),
-      ...failure(item.manifest ? lifecycle.failure(item.id) : "invalidManifest"),
+      enabled: manager.enabled(plugin.id),
+      plugin: true,
+      revision: plugin.revision,
+      ...failure(lifecycle.failure(plugin.id)),
     })),
   ]
 
@@ -599,8 +611,7 @@ export function createHost(input: {
   return {
     /** Activates every enabled main extension. The app calls this once its first window is up. */
     async start() {
-      const ids = [...local.map((definition) => definition.id), ...manager.installed().map((item) => item.id)]
-      await Promise.all(ids.map((id) => lifecycle.activate(id)))
+      await Promise.all(local.map((definition) => lifecycle.activate(definition.id)))
     },
     /** Activates the declared provider ahead of `start`, falling back to the Ipc id's extension prefix. */
     demand(ipc: string) {
@@ -612,7 +623,7 @@ export function createHost(input: {
 
       const id =
         declared?.id ??
-        [...local.map((definition) => definition.id), ...manager.installed().map((item) => item.id)].find(
+        [...local.map((definition) => definition.id), ...plugins.keys()].find(
           (id) => ipc === id || ipc.startsWith(`${id}.`),
         )
 
@@ -681,44 +692,49 @@ export function createHost(input: {
       await lifecycle.deactivate(id)
       changed()
     },
-    /** A development tool: packaged builds refuse it. A reload that fails keeps the last good revision running. */
+    /** Reloads an extension. A reload that fails keeps the last good revision running. */
     async reload(id: string) {
       if (!known(id)) throw new ExtensionError("notFound")
 
-      if (local.some((definition) => definition.id === id)) reloads.set(id, (reloads.get(id) ?? 0) + 1)
-      else manager.bump(id)
+      // A plugin's revision comes from its server; its reload reads the bundle again.
+      if (!plugins.has(id)) reloads.set(id, (reloads.get(id) ?? 0) + 1)
       await lifecycle.reload(id)
       changed()
     },
-    async install(source: Uint8Array | string) {
-      const manifest = await manager.install(source)
-      lifecycle.forget(manifest.id)
-      await lifecycle.deactivate(manifest.id)
-      changed()
-      await lifecycle.activate(manifest.id)
-    },
-    async remove(id: string) {
-      if (local.some((definition) => definition.id === id)) throw new ExtensionError("builtin")
 
-      if (!known(id)) throw new ExtensionError("notFound")
-      // Inside the queue, so an activation queued meanwhile finds the extension already gone.
-      await lifecycle.deactivate(id, () => {
-        manager.remove(id)
-        input.state.clear(namespace(id))
-        lifecycle.forget(id)
+    /**
+     * Takes the local-server plugins a window found. Each one's `main` setup starts, reloads when its revision
+     * changes, and stops when the plugin is gone. A plugin cannot take a built-in's id.
+     */
+    plugins(list: readonly ExtensionPlugin[]) {
+      const taken = new Set(local.map((definition) => definition.id))
+
+      const next = new Map(list.flatMap((plugin) => (taken.has(plugin.id) ? [] : [[plugin.id, plugin] as const])))
+
+      const removed = [...plugins.keys()].filter((id) => !next.has(id))
+
+      const changes = [...next.values()].flatMap((plugin) => {
+        const previous = plugins.get(plugin.id)
+
+        if (previous?.revision === plugin.revision && previous.main === plugin.main) return []
+
+        return [{ plugin, previous }]
       })
+
+      if (removed.length === 0 && changes.length === 0) return
+      removed.forEach((id) => plugins.delete(id))
+      changes.forEach((change) => plugins.set(change.plugin.id, change.plugin))
       changed()
+      removed.forEach((id) => void lifecycle.deactivate(id, () => lifecycle.forget(id)))
+      changes.forEach((change) => {
+        if (!change.previous) return void lifecycle.activate(change.plugin.id)
+
+        if (!change.plugin.main) return void lifecycle.deactivate(change.plugin.id)
+
+        if (manager.enabled(change.plugin.id)) void lifecycle.reload(change.plugin.id)
+      })
     },
-    source(id: string) {
-      const manifest = manager.installed().find((item) => item.id === id)?.manifest
 
-      if (!manifest) throw new ExtensionError("notFound")
-      const file = manager.file(id, manifest.renderer)
-
-      if (!file) throw new ExtensionError("notFound")
-
-      return file.toString("utf8")
-    },
     /** Disposes every main extension but one a restart handoff keeps; quitting awaits their async cleanups. */
     async dispose() {
       status.disposed = true
@@ -734,7 +750,7 @@ function read(entry: Entry) {
   return isGetter(entry.value) ? entry.value() : entry.value
 }
 
-// Installed extensions are plain JavaScript: these check the shapes the SDK types promise before the host relies on them.
+// Plugin bundles are plain JavaScript: these check the shapes the SDK types promise before the host relies on them.
 function isGetter(value: Item): value is () => Item {
   return Predicate.isFunction(value)
 }

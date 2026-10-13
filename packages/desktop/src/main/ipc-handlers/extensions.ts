@@ -1,7 +1,7 @@
-import { app, BrowserWindow } from "electron"
+import { BrowserWindow } from "electron"
 import { Effect } from "effect"
 import { ExtensionRpcs } from "../../shared/ipc-rpc"
-import { ExtensionError, extensionFailure } from "../extension/error"
+import { extensionFailure } from "../extension/error"
 import type { ExtensionHost } from "../extension/host"
 import { Extensions } from "../extension"
 import { IpcPortHandoff } from "../ipc-transport"
@@ -24,15 +24,10 @@ export const extensionHandlers = ExtensionRpcs.toLayer(
       return win.id
     }
 
-    // The manager (enable, reload, install archives) is a development tool until installed extensions have a trust
-    // model; packaged builds refuse it so no renderer can install and run main-process code.
+    // The manager enables, disables and reloads extensions.
     const manage = <A>(run: (host: ExtensionHost) => A | Promise<A>) =>
       Effect.tryPromise({
-        try: () => {
-          if (app.isPackaged) throw new ExtensionError("unavailable")
-
-          return extensions.host().then(run)
-        },
+        try: () => extensions.host().then(run),
         catch: extensionFailure,
       })
 
@@ -51,13 +46,18 @@ export const extensionHandlers = ExtensionRpcs.toLayer(
         Effect.sync(() => extensions.loaded()?.runMenubarItem(caller(context), id)),
       ExtensionMenubarItems: () => Effect.sync(() => extensions.loaded()?.listMenubarItems() ?? []),
       ExtensionConfigure: ({ servers }, context) => Effect.sync(() => extensions.configure(caller(context), servers)),
+      ExtensionPlugins: ({ plugins }, context) =>
+        Effect.sync(() => {
+          caller(context)
+          void extensions.host().then(
+            (host) => host.plugins(plugins),
+            () => undefined,
+          )
+        }),
       ExtensionList: () => Effect.promise(() => extensions.host().then((host) => host.list())),
       ExtensionEnable: ({ id }) => manage((host) => host.enable(id)),
       ExtensionDisable: ({ id }) => manage((host) => host.disable(id)),
       ExtensionReload: ({ id }) => manage((host) => host.reload(id)),
-      ExtensionInstall: ({ source }) => manage((host) => host.install(source)),
-      ExtensionRemove: ({ id }) => manage((host) => host.remove(id)),
-      ExtensionSource: ({ id }) => manage((host) => host.source(id)),
     })
   }),
 )

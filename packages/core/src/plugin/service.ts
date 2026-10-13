@@ -9,6 +9,8 @@ import { Context, type Effect, type Exit } from "effect"
 export interface Interface {
   readonly activate: (plugins: readonly Generation[], failures?: readonly Failure[]) => Effect.Effect<void>
   readonly list: () => Effect.Effect<Plugin.Info[]>
+  /** An active plugin's prebuilt `./gui` bundle, or undefined when it exports none. */
+  readonly gui: (id: Plugin.ID) => Effect.Effect<Plugin.GuiSource | undefined>
   readonly close: (exit: Exit.Exit<unknown, unknown>) => Effect.Effect<void>
   /** Wait for announced updates and activation to settle; failures remain in the inventory. */
   readonly awaitActivation: Effect.Effect<void>
@@ -22,6 +24,8 @@ export type Generation = PluginDefinition & {
   readonly revision: string
   readonly source?: Plugin.Source
   readonly features?: Plugin.Features
+  /** File URL of the package's `./gui` bundle. */
+  readonly gui?: string
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Plugin") {}

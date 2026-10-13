@@ -96,10 +96,6 @@ function fakeBridge() {
       enable: async () => {},
       disable: async () => {},
       reload: async () => {},
-      install: async () => {},
-      remove: async () => {},
-      source: async () => "",
-      asset: () => "",
     },
   }
 

@@ -30,6 +30,42 @@ export function extensionEnabled(definition: Pick<Definition, "id" | "legacy">, 
   return row?.enabled ?? true
 }
 
+/**
+ * A placeholder for a module that exists only in the other process, so one plugin `./gui` bundle runs in both: a window
+ * gets one for `electron` and Node built-ins, main gets one for Solid and the window-only modules. Bundlers hoist
+ * `require` calls and Solid hoists template creation to module scope, so the placeholder accepts any property read,
+ * call or construction and returns itself. It is never a thenable, so a promise never waits on it. Code that actually
+ * runs in the wrong process gets placeholders back instead of working values; keep each process's code in its entry.
+ *
+ * @param name - The module's name, shown when the placeholder is converted to a string.
+ * @returns The placeholder.
+ */
+export function inertModule(name: string): InertModule {
+  const label = `[inert module ${name}]`
+
+  const handler: ProxyHandler<InertModule> = {
+    get(_, key) {
+      if (key === "then") return undefined
+
+      if (key === Symbol.toPrimitive || key === "toString") return () => label
+
+      return placeholder
+    },
+    apply: () => placeholder,
+    construct: () => placeholder,
+  }
+
+  const placeholder = new Proxy(inertTarget, handler)
+
+  return placeholder
+}
+
+/** The function every inert module placeholder wraps, so the placeholder can be called and constructed. */
+function inertTarget() {}
+
+/** A placeholder `inertModule` returns: it answers every property read, call and construction with itself. */
+export type InertModule = typeof inertTarget
+
 /** Where an embed sits in its window, as the renderer measured it. */
 export interface BridgeLayout {
   /** The embed should be on screen. */
@@ -77,10 +113,22 @@ export interface Installed {
   readonly builtin: boolean
   /** The user has it enabled. */
   readonly enabled: boolean
-  /** Changes when an installed archive is replaced or reloaded. */
+  /** Changes when the extension is replaced or reloaded. */
   readonly revision?: string
   /** Why its main entry failed, if it did. */
   readonly error?: string
+  /** Comes from an OpenCode plugin package's `./gui` export on the local server, not a built-in. */
+  readonly plugin?: boolean
+}
+
+/** A local-server plugin that ships a GUI extension, as a window reports it to main. */
+export interface BridgePlugin {
+  /** The plugin's id, which is also its GUI extension's id. */
+  readonly id: string
+  /** Changes whenever the plugin is replaced or reloaded. */
+  readonly revision: string
+  /** The plugin's `./gui` bundle exports `main`, a setup main runs after it reads the bundle from the local server. */
+  readonly main: boolean
 }
 
 /**
@@ -224,6 +272,14 @@ export interface Bridge {
       readonly password?: string
     }[],
   ): void
+  /**
+   * Tells main which local-server plugins ship GUI extensions. Main reads each plugin's `./gui` bundle from the local
+   * server itself, never from the window, and lists every plugin so the manager can enable and disable it. Undefined
+   * where main does not host plugin entries.
+   *
+   * @param plugins - The plugins the window found on the local server.
+   */
+  readonly plugins?: (plugins: readonly BridgePlugin[]) => void
   /** The extension manager. */
   readonly manager: {
     /**
@@ -252,30 +308,5 @@ export interface Bridge {
      * @param id - The extension's id.
      */
     reload(id: string): Promise<void>
-    /**
-     * Installs an archive.
-     *
-     * @param source - The archive's bytes, or a URL to download it from.
-     */
-    install(source: Uint8Array | string): Promise<void>
-    /**
-     * Removes an installed extension and its stored state. Built-ins refuse.
-     *
-     * @param id - The extension's id.
-     */
-    remove(id: string): Promise<void>
-    /**
-     * CommonJS renderer bundle of an installed extension.
-     *
-     * @param id - The extension's id.
-     */
-    source(id: string): Promise<string>
-    /**
-     * The URL of an installed extension's asset.
-     *
-     * @param id - The extension's id.
-     * @param path - The asset's path in the archive.
-     */
-    asset(id: string, path: string): string
   }
 }

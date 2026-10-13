@@ -27,10 +27,6 @@ test("a list main pushes while the initial list is pending wins over the older r
       enable: async () => {},
       disable: async () => {},
       reload: async () => {},
-      install: async () => {},
-      remove: async () => {},
-      source: async () => "",
-      asset: () => "",
     },
   }
 
@@ -40,7 +36,10 @@ test("a list main pushes while the initial list is pending wins over the older r
   listeners.forEach((listener) => listener({ type: "extensions", list: [{ ...extension, enabled: false }] }))
   reply.resolve([{ ...extension, enabled: true }])
   await Bun.sleep(0)
-  expect({ known: root.installed.enableState() !== undefined, enabled: root.installed.list().map((item) => item.enabled) }).toEqual({
+  expect({
+    known: root.installed.enableState() !== undefined,
+    enabled: root.installed.list().map((item) => item.enabled),
+  }).toEqual({
     known: true,
     enabled: [false],
   })

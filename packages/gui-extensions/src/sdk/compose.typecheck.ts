@@ -279,7 +279,7 @@ export const mainStores: MainSetup<typeof Split> = (ctx) => {
 }
 
 // A main entry provides only the Ipcs its definition declares, a reference through its full token; with no
-// definition, as for an installed extension's plain JavaScript, any Ipc.
+// definition, as for a plain JavaScript bundle, any Ipc.
 const Other = Ipc.define({ id: "fixture.other", methods: { ping: {} } })
 
 const RefProvider = Extension.define({ id: "refProvider", provides: { pane: PaneRef } })

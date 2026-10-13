@@ -1,6 +1,8 @@
 export * as Plugin from "./plugin.js"
-export { Event, ID, Info, Source, State } from "@opencode/schema/plugin"
+export { Event, GuiSource, ID, Info, Source, State } from "@opencode/schema/plugin"
 
+import { readFile } from "node:fs/promises"
+import { fileURLToPath } from "node:url"
 import { Plugin } from "@opencode/schema/plugin"
 import { Node } from "@opencode/util/effect/app-node"
 import { LayerNode } from "@opencode/util/effect/layer-node"
@@ -42,6 +44,17 @@ const layer = Layer.effect(
     let inventory: Plugin.Info[] = []
     const list = Effect.fn("Plugin.list")(function* () {
       return inventory
+    })
+    const gui = Effect.fn("Plugin.gui")(function* (id: Plugin.ID) {
+      const slot = active.get(id)
+      const file = slot?.plugin.gui
+      if (!slot || !file) return undefined
+      const source = yield* Effect.tryPromise(() => readFile(fileURLToPath(file), "utf8")).pipe(
+        Effect.tapError((cause) => Effect.logWarning("failed to read plugin GUI bundle", { "plugin.id": id, cause })),
+        Effect.orElseSucceed(() => undefined),
+      )
+      if (source === undefined) return undefined
+      return { source, revision: slot.plugin.revision } satisfies Plugin.GuiSource
     })
     const host = yield* PluginHost.make({ list })
     const load = Effect.fnUntraced(function* (plugin: Generation) {
@@ -253,6 +266,7 @@ const layer = Layer.effect(
       awaitActivation: ready.await,
       hold,
       list,
+      gui,
     })
   }),
 )
