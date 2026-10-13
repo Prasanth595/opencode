@@ -1264,7 +1264,13 @@ function ProviderConnection(props: {
                           disabled={state.switching !== undefined}
                           aria-label={language.t("dialog.provider.accounts.options", { account: account.label })}
                         />
-                        <Menu.Portal>
+                        {/* The modal dialog aria-hides anything added outside it, this portal included, a frame
+                            after it opens. Kobalte leaves a node marked as a top layer visible. */}
+                        <Menu.Portal
+                          ref={(el) => {
+                            el.dataset.reactAriaTopLayer = "true"
+                          }}
+                        >
                           <Menu.Content onCloseAutoFocus={(event) => state.renaming && event.preventDefault()}>
                             <Menu.Item onSelect={() => setState({ renaming: account.id, confirming: undefined })}>
                               {language.t("common.rename")}
