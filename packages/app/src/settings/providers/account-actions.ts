@@ -16,6 +16,7 @@ export function useProviderAccountActions(directory: () => string | undefined) {
   const data = useData()
   const providers = useProviders(directory)
   const integrations = useIntegrations(directory)
+
   const location = () => {
     const value = directory()
 

@@ -992,6 +992,12 @@ test("providers: the account options rename and remove the active account", asyn
   await expect(trigger).toHaveText("Team")
 
   await settings.getByRole("button", { name: "Team options", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Rename", exact: true }).click()
+  await name.fill("Shared")
+  await settings.getByRole("tab", { name: "Providers", exact: true }).click()
+  await expect(trigger).toHaveText("Shared")
+
+  await settings.getByRole("button", { name: "Shared options", exact: true }).click()
   await page.getByRole("menuitem", { name: "Remove", exact: true }).click()
   await expect.poll(() => removed).toEqual(["cred_work"])
 })
