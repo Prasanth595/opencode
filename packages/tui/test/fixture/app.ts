@@ -13,6 +13,7 @@ export async function createAppFixture(
     height?: number
     state?: string
     config?: Config.Info
+    packages?: TuiInput["packages"]
     args?: TuiInput["args"]
     fetch?: FetchHandler
   } = {},
@@ -35,7 +36,7 @@ export async function createAppFixture(
       app: { name: "test", version: "test", channel: "test" },
       server: { endpoint: { url: server.url.toString() } },
       config: { get: async () => input.config ?? { animations: false }, update: async () => ({}) },
-      packages: { prepare: async () => ({ directory: "" }) },
+      packages: input.packages ?? { prepare: async () => ({ directory: "" }) },
       terminalHandoff: async () => ({ renderer: setup.renderer, mode: "dark", complete: ready.resolve }),
       args: input.args ?? {},
       log: () => {},
