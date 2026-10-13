@@ -344,6 +344,10 @@ test("context hides free-model cost but keeps paid-model zero cost", async ({ pa
     { id: "ses_context_mixed", title: "Previously paid", model: "free", cost: 1.25, usage: true, text: "2k·$1.25" },
     { id: "ses_context_unknown", title: "Unknown pricing", model: "missing", cost: 0, usage: false, text: "0·$0.00" },
     { id: "ses_context_output", title: "Output pricing", model: "output", cost: 0, usage: false, text: "0·$0.00" },
+    // The root's model is free, but its subagent spent on a paid model: the family total shows.
+    { id: "ses_context_family", title: "Paid subagent", model: "free", cost: 0, usage: true, text: "2k·$1.25" },
+    // A completed compaction resets the context until the next reply reports usage, as in the TUI.
+    { id: "ses_context_compacted", title: "Compacted", model: "paid", cost: 1.25, usage: true, text: "0·$1.25" },
   ]
 
   await openSession(page, {
@@ -353,12 +357,21 @@ test("context hides free-model cost but keeps paid-model zero cost", async ({ pa
       { id: "paid", name: "Paid", cost: { input: 1, output: 3 } },
       { id: "output", name: "Output", cost: { input: 0, output: 1 } },
     ),
-    sessions: cases.map((item) => ({
-      id: item.id,
-      title: item.title,
-      model: { id: item.model, providerID: "opencode" },
-      cost: item.cost,
-    })),
+    sessions: [
+      ...cases.map((item) => ({
+        id: item.id,
+        title: item.title,
+        model: { id: item.model, providerID: "opencode" },
+        cost: item.cost,
+      })),
+      {
+        id: "ses_context_family_child",
+        parentID: "ses_context_family",
+        title: "Subagent run",
+        model: { id: "paid", providerID: "opencode" },
+        cost: 1.25,
+      },
+    ],
     pageMessages: (id) => ({
       items: cases.flatMap((item): SessionMessageInfo[] =>
         item.id === id && item.usage
@@ -372,6 +385,19 @@ test("context hides free-model cost but keeps paid-model zero cost", async ({ pa
                 content: [{ type: "text", text: "Done." }],
                 time: { created: 1, completed: 2 },
               },
+              ...(item.id === "ses_context_compacted"
+                ? [
+                    {
+                      id: `msg_${item.id}_compaction`,
+                      type: "compaction" as const,
+                      status: "completed" as const,
+                      reason: "manual" as const,
+                      summary: "Current state",
+                      recent: "",
+                      time: { created: 3 },
+                    },
+                  ]
+                : []),
             ]
           : [],
       ),
