@@ -23,7 +23,7 @@ export const ModelGroup = HttpApiGroup.make("server.model")
       ),
   )
   .add(
-    HttpApiEndpoint.get("model.refresh", "/api/model/refresh", {
+    HttpApiEndpoint.post("model.refresh", "/api/model/refresh", {
       query: LocationQuery,
       success: Location.response(Schema.Array(Model.Info)),
       error: ServiceUnavailableError,

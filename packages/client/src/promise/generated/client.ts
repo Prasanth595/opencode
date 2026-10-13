@@ -1128,7 +1128,7 @@ export function make(options: ClientOptions) {
       refresh: (input?: ModelRefreshInput, requestOptions?: RequestOptions) =>
         request<ModelRefreshOutput>(
           {
-            method: "GET",
+            method: "POST",
             path: `/api/model/refresh`,
             query: { location: input?.["location"] },
             successStatus: 200,
