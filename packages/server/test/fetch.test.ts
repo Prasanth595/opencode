@@ -334,13 +334,21 @@ it.live("applies custom CORS origins to HTTP responses and PTY ticket checks", (
   }).pipe(Effect.scoped),
 )
 
-it.live("reports the server home directory on location.get", () =>
+it.live("reports the server home directory on location.get and wrapped responses", () =>
   Effect.gen(function* () {
     const handler = yield* ServerFetch.make(options)
     const response = yield* Effect.promise(() => handler(new Request("http://opencode.local/api/location")))
     expect(response.status).toBe(200)
     const location = Schema.decodeUnknownSync(Location.PublicInfo)(yield* Effect.promise(() => response.json()))
     expect(location.home).toBe(Global.Path.home)
+
+    const wrapped = yield* Effect.promise(() => handler(new Request("http://opencode.local/api/agent")))
+    expect(wrapped.status).toBe(200)
+    const body = (yield* Effect.promise(() => wrapped.json())) as { location: { directory?: string; home?: string } }
+    expect(body.location.directory).toBeTruthy()
+    // Wrapped responses encode the Location.PublicRef wrapper, which carries only the
+    // directory; home is reported exclusively by location.get.
+    expect(body.location.home).toBeUndefined()
   }),
 )
 
