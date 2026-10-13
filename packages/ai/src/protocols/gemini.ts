@@ -235,7 +235,6 @@ type GeminiUsage = Schema.Schema.Type<typeof GeminiUsage>
 const GeminiCandidate = Schema.Struct({
   content: optionalNull(GeminiResponseContent),
   finishReason: optionalNull(Schema.String),
-  continuationToken: optionalNull(Schema.String),
 })
 
 const GeminiPromptFeedback = Schema.StructWithRest(
@@ -624,7 +623,18 @@ const finish = (state: ParserState): ReadonlyArray<LLMEvent> => {
   return events
 }
 
-const step = (state: ParserState, event: GeminiEvent) => {
+const step = (state: ParserState, event: GeminiEvent | NextRequest) => {
+  // Usage is cumulative within one request, so the next request of the same response counts from zero.
+  if (event instanceof NextRequest)
+    return Effect.succeed([
+      {
+        ...state,
+        finishReason: undefined,
+        usage: undefined,
+        continuedUsage: [...(state.continuedUsage ?? []), state.usage ?? {}],
+      },
+      [],
+    ] as const)
   if (ProviderShared.isRecord(event.error)) {
     const body = ProviderShared.encodeJson(event)
     return Effect.fail(
@@ -647,15 +657,11 @@ const step = (state: ParserState, event: GeminiEvent) => {
       ProviderShared.eventError(state.route, `Invalid ${state.route} stream event`, ProviderShared.encodeJson(event)),
     )
   const candidate = event.candidates?.[0]
-  const usage = event.usageMetadata ?? state.usage
-  // Usage is cumulative within one request; a continuation ends the request and the next one counts from zero.
-  const continued = candidate?.finishReason === CONTINUATION
   const nextState = {
     ...state,
     promptFeedback: event.promptFeedback ?? state.promptFeedback,
-    usage: continued ? undefined : usage,
-    continuedUsage: continued ? [...(state.continuedUsage ?? []), usage ?? {}] : state.continuedUsage,
-    finishReason: continued ? undefined : (candidate?.finishReason ?? state.finishReason),
+    usage: event.usageMetadata ?? state.usage,
+    finishReason: candidate?.finishReason ?? state.finishReason,
   }
   if (candidate?.finishReason && mapFinishReason(candidate.finishReason, state.hasToolCalls) === "error")
     return Effect.fail(
@@ -844,27 +850,29 @@ const GeminiCheckpoint = Schema.Struct({
   ),
 })
 const decodeCheckpoint = Schema.decodeUnknownOption(GeminiCheckpoint)
-// A request continued without finishing on CONTINUATION still ends there, so the parser starts counting the next one.
-const RESUMED = { candidates: [{ finishReason: CONTINUATION }] }
+/** Marks where the transport starts another request for the same response; provider JSON can never match it. */
+class NextRequest {}
 
 export interface Prepared {
   readonly http: HttpTransport.HttpPrepared<string>
   readonly input: TransportPrepareInput<GeminiBody>
 }
 
-const http = HttpTransport.sseJson.with<GeminiBody>()
+const sse = HttpTransport.sseJson.with<GeminiBody>()
 
 /**
- * SSE transport that continues responses Gemini splits across requests, like Google's SDK. Chunks carry
- * `continuationToken` checkpoints and a request that reaches its output cap finishes with `CONTINUATION`; the
- * transport resends the original body with the latest token, also resuming a dropped request from its last checkpoint.
+ * SSE transport that continues responses Gemini splits across requests. Chunks carry `continuationToken` checkpoints,
+ * and a request that reaches its output cap finishes with `CONTINUATION`. The transport resends the original body with
+ * the latest token, which also resumes a request that ended or dropped before finishing.
  */
 export const transport: Transport<GeminiBody, Prepared, unknown> = {
-  id: http.id,
-  prepare: (input) => http.prepare(input).pipe(Effect.map((prepared) => ({ http: prepared, input }))),
+  id: sse.id,
+  prepare: (input) => sse.prepare(input).pipe(Effect.map((http) => ({ http, input }))),
   execute: (prepared, request, runtime) =>
     Effect.gen(function* () {
       const route = request.model.route.id
+      const label = `${request.model.provider}/${route}`
+      // Frames are parsed once here, so errors recover each frame's raw text for their body.
       const raw = new WeakMap<object, string>()
       const respond = (execution: TransportExecution<string>): Stream.Stream<unknown, AIError> =>
         Stream.suspend(() => {
@@ -873,7 +881,7 @@ export const transport: Transport<GeminiBody, Prepared, unknown> = {
           let dropped: AIError | undefined
           return execution.frames.pipe(
             Stream.mapEffect((frame) =>
-              ProviderShared.parseJson(route, frame, `Invalid ${request.model.provider}/${route} stream event`).pipe(
+              ProviderShared.parseJson(route, frame, `Invalid ${label} stream event`).pipe(
                 Effect.map((event) => {
                   if (typeof event === "object" && event !== null) raw.set(event, frame)
                   const candidate = Option.getOrUndefined(decodeCheckpoint(event))?.candidates?.[0]
@@ -892,33 +900,26 @@ export const transport: Transport<GeminiBody, Prepared, unknown> = {
             ),
             Stream.concat(
               Stream.suspend(() => {
-                const continuationToken = token
-                if (continuationToken === undefined || (finishReason !== undefined && finishReason !== CONTINUATION)) {
-                  if (dropped) return Stream.fail(dropped)
-                  if (finishReason === CONTINUATION)
-                    return Stream.fail(
-                      ProviderShared.eventError(
-                        `${request.model.provider}/${route}`,
-                        "Gemini continued the response without a token",
-                      ),
-                    )
-                  return Stream.empty
-                }
-                const next = Stream.unwrap(
-                  Effect.gen(function* () {
-                    const continued = yield* http.prepare({
-                      ...prepared.input,
-                      body: { ...prepared.input.body, continuationToken },
-                    })
-                    return respond(yield* http.execute(continued, request, runtime))
-                  }),
-                )
-                return finishReason === CONTINUATION ? next : Stream.concat(Stream.succeed(RESUMED), next)
+                if (token !== undefined && (finishReason === undefined || finishReason === CONTINUATION))
+                  return Stream.concat(Stream.succeed(new NextRequest()), next(token))
+                if (dropped) return Stream.fail(dropped)
+                if (finishReason === CONTINUATION)
+                  return Stream.fail(ProviderShared.eventError(label, "Gemini continued the response without a token"))
+                return Stream.empty
               }),
             ),
           )
         })
-      const first = yield* http.execute(prepared.http, request, runtime)
+      const next = (continuationToken: string) =>
+        Stream.unwrap(
+          sse
+            .prepare({ ...prepared.input, body: { ...prepared.input.body, continuationToken } })
+            .pipe(
+              Effect.flatMap((continued) => sse.execute(continued, request, runtime)),
+              Effect.map(respond),
+            ),
+        )
+      const first = yield* sse.execute(prepared.http, request, runtime)
       return {
         frames: respond(first),
         http: first.http,
@@ -943,7 +944,7 @@ export const protocol = Protocol.make({
   // Gemini's schema rules are this API's default, including for tuned endpoints whose IDs do not name Gemini.
   sanitizer: "gemini",
   stream: {
-    event: GeminiEvent,
+    event: Schema.Union([Schema.instanceOf(NextRequest), GeminiEvent]),
     initial: (request): ParserState => ({
       route: `${request.model.provider}/${request.model.route.id}`,
       providerMetadataKey: request.model.route.providerMetadataKey ?? String(request.model.provider),
