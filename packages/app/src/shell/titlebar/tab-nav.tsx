@@ -56,11 +56,13 @@ export function TabNavItem(props: {
 
   const servers = useServers()
   const serverCtx = useServerCtx(() => servers.list.find((item) => ServerConnection.key(item) === props.server))
+
   const avatar = useSessionTabAvatarState(
     () => props.server,
     () => props.session?.id ?? "",
     () => true,
   )
+
   const unread = () => !!props.session && !props.active && avatar.unread() && !avatar.loading()
 
   const project = createMemo(() => {
