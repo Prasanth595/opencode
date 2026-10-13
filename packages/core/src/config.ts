@@ -44,9 +44,10 @@ export interface Interface {
 
 export const Options = Schema.Struct({
   project: Schema.optional(Schema.Boolean),
-  // false skips the global config dir, ~/.claude, and ~/.agents; wellknown,
-  // file, and content entries still load.
+  // false skips the system and global config dirs, ~/.claude, and ~/.agents;
+  // wellknown, file, and content entries still load.
   global: Schema.optional(Schema.Boolean),
+  system: Schema.optional(Schema.Union([Schema.Boolean, Schema.String])),
   file: Schema.optional(Schema.String),
   content: Schema.optional(Schema.String),
 })
@@ -217,8 +218,13 @@ export const layer = (options?: Options) =>
               )
             : []
 
-        // Global entries sit below explicit and direct files; project
-        // directories rank above them.
+        // System entries sit at lowest priority so users and projects can
+        // override ordinary defaults while reversed policy evaluation gives
+        // system policies highest file-based authority. Global entries sit
+        // below explicit and direct files; project directories rank above them.
+        const systemSupplementary = sources.system?.present
+          ? yield* loadDirectory(sources.system.path).pipe(Effect.orDie)
+          : []
         const globalSupplementary = sources.global ? yield* loadDirectory(sources.global).pipe(Effect.orDie) : []
         const projectSupplementary = yield* Effect.forEach(
           sources.project.filter((root) => root.present),
@@ -228,6 +234,7 @@ export const layer = (options?: Options) =>
           Effect.map((entries) => entries.flat()),
         )
         return [
+          ...systemSupplementary,
           ...(yield* loadWellknown().pipe(Effect.orDie)),
           ...globalSupplementary,
           ...explicit,
