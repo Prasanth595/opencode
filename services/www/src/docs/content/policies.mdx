@@ -160,10 +160,11 @@ from broader configuration are evaluated later, so they override narrower ones.
 | Authority   | Source                                                                                                         |
 | ----------- | -------------------------------------------------------------------------------------------------------------- |
 | 1 (highest) | Connected OpenCode Console workspace                                                                           |
-| 2           | System `opencode.json(c)` (`/Library/Application Support/opencode`, `/etc/opencode`, `%ProgramData%\opencode`) |
-| 3           | Global `~/.config/opencode/opencode.json(c)`                                                                   |
-| 4           | Direct `opencode.json(c)`; outer directories beat inner ones                                                   |
-| 5 (lowest)  | `.opencode/opencode.json(c)`; outer directories beat inner ones                                                |
+| 2           | macOS managed preferences (`/Library/Managed Preferences/ai.opencode.managed.plist`)                           |
+| 3           | System `opencode.json(c)` (`/Library/Application Support/opencode`, `/etc/opencode`, `%ProgramData%\opencode`) |
+| 4           | Global `~/.config/opencode/opencode.json(c)`                                                                   |
+| 5           | Direct `opencode.json(c)`; outer directories beat inner ones                                                   |
+| 6 (lowest)  | `.opencode/opencode.json(c)`; outer directories beat inner ones                                                |
 
 A repository cannot re-enable a provider you deny globally:
 

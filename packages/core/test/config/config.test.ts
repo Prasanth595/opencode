@@ -273,6 +273,31 @@ describe("Config", () => {
     )
   })
 
+  test("resolves macOS managed preferences with user-specific profiles first", () => {
+    expect(ConfigDiscovery.preferencePaths("alice")).toEqual([
+      AbsolutePath.make(path.join("/Library/Managed Preferences", "alice", "ai.opencode.managed.plist")),
+      AbsolutePath.make("/Library/Managed Preferences/ai.opencode.managed.plist"),
+    ])
+  })
+
+  test("strips MDM payload metadata from managed preferences", () => {
+    expect(
+      JSON.parse(
+        ConfigDiscovery.stripPreferenceMetadata(
+          JSON.stringify({
+            PayloadDisplayName: "OpenCode",
+            PayloadIdentifier: "ai.opencode.managed",
+            PayloadType: "ai.opencode.managed",
+            PayloadUUID: "00000000-0000-0000-0000-000000000000",
+            PayloadVersion: 1,
+            _manualProfile: true,
+            share: "disabled",
+          }),
+        ),
+      ),
+    ).toEqual({ share: "disabled" })
+  })
+
   it.live("loads explicit file and content overrides in priority order", () =>
     Effect.acquireDisposable(Effect.promise(() => tmpdir())).pipe(
       Effect.flatMap((tmp) => {

@@ -35,6 +35,31 @@ Put machine-wide defaults in the system configuration directory:
 | Linux    | `/etc/opencode`                         |
 | Windows  | `%ProgramData%\opencode`                |
 
+The system directory works like the global directory. Besides
+`opencode.json(c)`, it loads `agents/`, `commands/`, `skills/`, and `plugins/`
+for every user on the machine:
+
+```text
+/etc/opencode/
+├── opencode.json
+├── agents/review.md
+├── commands/release.md
+└── skills/deploy/SKILL.md
+```
+
+On macOS, OpenCode also reads managed preferences that MDM tools deploy for the
+`ai.opencode.managed` domain. A user-specific profile replaces the
+machine-wide one:
+
+```text
+/Library/Managed Preferences/<user>/ai.opencode.managed.plist
+/Library/Managed Preferences/ai.opencode.managed.plist
+```
+
+Managed preferences load just below the system directory, so their
+[policies](/policies#precedence) have the most authority of any file. OpenCode
+reads them at startup and whenever another config change triggers a reload.
+
 Put user settings for every project in the global configuration:
 
 ```text

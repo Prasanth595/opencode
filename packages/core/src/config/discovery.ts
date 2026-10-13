@@ -1,5 +1,6 @@
 export * as ConfigDiscovery from "./discovery.js"
 
+import os from "os"
 import path from "path"
 import { Effect } from "effect"
 import { FSUtil } from "@opencode/util/fs-util"
@@ -13,6 +14,8 @@ export const names = ["opencode.json", "opencode.jsonc"]
 /** Eligible sources in priority order, including paths that may appear later. */
 export interface Sources {
   readonly system?: { readonly path: AbsolutePath; readonly present: boolean }
+  /** macOS MDM managed preferences plist (`ai.opencode.managed`), when one is deployed. */
+  readonly preferences?: AbsolutePath
   readonly global?: AbsolutePath
   readonly explicit?: AbsolutePath
   readonly direct: readonly AbsolutePath[]
@@ -26,6 +29,31 @@ export function systemDirectory(platform: NodeJS.Platform = process.platform, en
   if (platform === "darwin") return AbsolutePath.make("/Library/Application Support/opencode")
   if (platform === "win32") return AbsolutePath.make(path.join(env.ProgramData || "C:\\ProgramData", "opencode"))
   return AbsolutePath.make("/etc/opencode")
+}
+
+/** macOS MDM managed preferences plists, most specific first; the first one present wins. */
+export function preferencePaths(user: string) {
+  return [
+    AbsolutePath.make(path.join("/Library/Managed Preferences", user, "ai.opencode.managed.plist")),
+    AbsolutePath.make("/Library/Managed Preferences/ai.opencode.managed.plist"),
+  ]
+}
+
+// Keys macOS and MDM profiles inject into managed preferences that are not OpenCode config.
+const preferenceMetadata = new Set([
+  "PayloadDisplayName",
+  "PayloadIdentifier",
+  "PayloadType",
+  "PayloadUUID",
+  "PayloadVersion",
+  "_manualProfile",
+])
+
+/** Removes MDM payload metadata from `plutil -convert json` output. */
+export function stripPreferenceMetadata(json: string) {
+  const parsed: unknown = JSON.parse(json)
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return json
+  return JSON.stringify(Object.fromEntries(Object.entries(parsed).filter(([key]) => !preferenceMetadata.has(key))))
 }
 
 export const discover = Effect.fn("ConfigDiscovery.discover")(function* (options?: Options) {
@@ -80,8 +108,18 @@ export const discover = Effect.fn("ConfigDiscovery.discover")(function* (options
     )
     .map(({ item }) => item)
 
+  // A custom system directory replaces platform discovery, so it also skips host MDM preferences.
+  const preferences =
+    globalEnabled && (options?.system ?? true) === true && process.platform === "darwin"
+      ? (yield* Effect.filter(
+          preferencePaths(yield* Effect.try(() => os.userInfo().username).pipe(Effect.orElseSucceed(() => "user"))),
+          fs.isFile,
+        )).at(0)
+      : undefined
+
   return {
     system: globalEnabled && system ? { path: system, present: yield* fs.isDir(system) } : undefined,
+    preferences,
     global: globalEnabled ? globalDirectory : undefined,
     explicit: options?.file ? AbsolutePath.make(path.resolve(options.file)) : undefined,
     direct: visible.filter((item) => ![".agents", ".claude", ".opencode"].includes(path.basename(item))).toReversed(),
