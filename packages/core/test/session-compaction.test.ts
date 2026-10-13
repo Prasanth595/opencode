@@ -1,5 +1,14 @@
 import { expect, test } from "bun:test"
-import { GenerationOptions, LLMClient, LLMEvent, LanguageModel, ToolDefinition, type LLMRequest } from "@opencode/ai"
+import {
+  AIError,
+  InvalidRequestError,
+  GenerationOptions,
+  LLMClient,
+  LLMEvent,
+  LanguageModel,
+  ToolDefinition,
+  type LLMRequest,
+} from "@opencode/ai"
 import { OpenAIChat } from "@opencode/ai/protocols"
 import { Database } from "@opencode/core/database/database"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
@@ -33,6 +42,8 @@ import { asc, eq } from "drizzle-orm"
 import { testEffect } from "./lib/effect"
 
 let requests: LLMRequest[] = []
+let rejection: "context-overflow" | "payload-too-large" | undefined
+let repeatRejection = false
 const model = LanguageModel.make({
   id: "summary-model",
   provider: "test",
@@ -51,6 +62,11 @@ const cost = [
 const client = Layer.mock(LLMClient.Service)({
   stream: (request: LLMRequest) => {
     requests.push(request)
+    if (rejection) {
+      const classification = rejection
+      if (!repeatRejection) rejection = undefined
+      return Stream.fail(new AIError({ reason: new InvalidRequestError({ message: "Too large", classification }) }))
+    }
     return Stream.make(
       LLMEvent.textDelta({ id: "summary", text: "## Objective\n- manual summary" }),
       LLMEvent.stepFinish({
@@ -604,3 +620,194 @@ it.effect("forked session compaction reuses the fork root prompt cache key", () 
     expect(requests[0]?.promptCacheKey).toBe(rootID)
   }),
 )
+
+for (const scenario of [
+  {
+    name: "with a hook result before reduction",
+    recent: 30_000,
+    older: 1,
+    window: 10_000,
+    retained: false,
+    keptOlder: true,
+    resultAt: 1,
+  },
+  {
+    name: "with a hook result after reduction",
+    recent: 30_000,
+    older: 1,
+    window: 10_000,
+    retained: false,
+    keptOlder: true,
+    resultAt: 2,
+  },
+  {
+    name: "with a hook result after provider rejection",
+    recent: 1,
+    older: 1,
+    window: 200_000,
+    retained: true,
+    keptOlder: true,
+    rejection: "payload-too-large",
+    resultAt: 2,
+  },
+  {
+    name: "with repeated rejection and hook growth",
+    recent: 1,
+    older: 1,
+    window: 200_000,
+    retained: true,
+    keptOlder: true,
+    rejection: "payload-too-large",
+    repeated: true,
+  },
+  { name: "without shrinking", recent: 1, older: 1, window: 200_000, retained: true, keptOlder: true },
+  {
+    name: "after payload rejection",
+    recent: 1,
+    older: 1,
+    window: 200_000,
+    retained: true,
+    keptOlder: true,
+    rejection: "payload-too-large",
+  },
+  {
+    name: "dropping recent before newer exchanges",
+    recent: 30_000,
+    older: 1,
+    window: 10_000,
+    retained: false,
+    keptOlder: true,
+  },
+  {
+    name: "dropping recent and the oldest new exchange",
+    recent: 1,
+    older: 30_000,
+    window: 10_000,
+    retained: false,
+    keptOlder: false,
+  },
+  {
+    name: "after context overflow",
+    recent: 12_000,
+    older: 1,
+    window: 200_000,
+    retained: false,
+    keptOlder: true,
+    rejection: "context-overflow",
+  },
+] as const) {
+  it.effect(`compaction preserves checkpoint hook edits ${scenario.name}`, () =>
+    Effect.gen(function* () {
+      requests = []
+      rejection = "rejection" in scenario ? scenario.rejection : undefined
+      repeatRejection = "repeated" in scenario
+      const canary = `COMPACTION-TEST-CANARY-${crypto.randomUUID()}`
+      const session = yield* insertSession(Session.ID.create())
+      const hooks = yield* PluginHooks.Service
+      const compaction = yield* SessionCompaction.Service
+      yield* compaction.transform((editor) => editor.configure({ keep: 0 }))
+      const checkpoint = Schema.decodeUnknownSync(SessionMessage.CompactionCompleted)({
+        id: SessionMessage.ID.create(),
+        type: "compaction",
+        status: "completed",
+        reason: "auto",
+        summary: `SUMMARY ${canary}`,
+        recent: `RECENT ${canary} ${"old ".repeat(scenario.recent)}`,
+        time: { created: 0, completed: 0 },
+      })
+      const messages = [
+        checkpoint,
+        SessionMessage.User.make({
+          id: SessionMessage.ID.create(),
+          type: "user",
+          text: `OLDER-EXCHANGE ${"old ".repeat(scenario.older)}`,
+          time: { created: DateTime.makeUnsafe(1) },
+        }),
+        SessionMessage.User.make({
+          id: SessionMessage.ID.create(),
+          type: "user",
+          text: "NEWER-EXCHANGE",
+          time: { created: DateTime.makeUnsafe(2) },
+        }),
+        SessionMessage.User.make({
+          id: SessionMessage.ID.create(),
+          type: "user",
+          text: "Tail retained outside the summary request",
+          time: { created: DateTime.makeUnsafe(3) },
+        }),
+      ]
+      let calls = 0
+      let modelCalls = 0
+      yield* hooks.register("session", "model.request", (event) =>
+        Effect.sync(() => {
+          expect(event.headers["x-hook-attempt"]).toBeUndefined()
+          event.headers["x-hook-attempt"] = String(++modelCalls)
+        }),
+      )
+      yield* hooks.register("session", "compaction", (event) =>
+        Effect.sync(() => {
+          expect(JSON.stringify(event.messages).includes(canary)).toBe(true)
+          event.messages = JSON.parse(JSON.stringify(event.messages).replaceAll(canary, "[redacted]"))
+          expect(event.system.some((part) => part.text === "hook annotation")).toBe(false)
+          event.system.push({ type: "text", text: "hook annotation" })
+          expect(event.result).toBeUndefined()
+          expect(event.options.temperature).toBeUndefined()
+          event.options.temperature = ++calls / 10
+          if (repeatRejection) event.system.push({ type: "text", text: "growth ".repeat(20_000) })
+          if ("resultAt" in scenario && calls === scenario.resultAt) {
+            event.result = { summary: "## Objective\n- supplied by final hook" }
+          }
+        }),
+      )
+      const context = loaded(session, messages)
+      const outcome = yield* compaction.compact({
+        reason: "manual",
+        inputID: SessionMessage.ID.create(),
+        context: { ...context, model: { ...context.model, limit: { context: scenario.window, output: 2000 } } },
+      })
+      if ("repeated" in scenario) {
+        rejection = undefined
+        repeatRejection = false
+        expect(outcome.status).toBe("failed")
+        expect(requests).toHaveLength(5)
+        expect(calls).toBe(5)
+      } else {
+        expect(outcome.status).toBe("completed")
+      }
+      expect(modelCalls).toBe(calls)
+      expect(JSON.stringify(requests).includes(canary)).toBe(false)
+      for (const request of requests) {
+        expect(request.system.filter((part) => part.text === "hook annotation")).toHaveLength(1)
+        expect(request.generation?.temperature).toBe(Number(request.http?.headers?.["x-hook-attempt"]) / 10)
+      }
+      if ("resultAt" in scenario && scenario.resultAt !== undefined) {
+        expect(calls).toBe(scenario.resultAt)
+        expect(requests).toHaveLength("rejection" in scenario ? 1 : 0)
+        const store = yield* SessionStore.Service
+        expect(JSON.stringify(yield* store.context(session.id))).toContain("supplied by final hook")
+        return
+      }
+      if ("repeated" in scenario) return
+      expect(calls).toBe(scenario.name === "without shrinking" ? 1 : 2)
+      expect(requests).toHaveLength("rejection" in scenario ? 2 : 1)
+      expect(JSON.stringify(requests).includes(canary)).toBe(false)
+      const sent = JSON.stringify(requests.at(-1)?.messages)
+      if (scenario.name === "without shrinking") {
+        const original = SessionModelRequest.baseTranscript({
+          ...context,
+          agent: context.agent.info,
+          messages: messages.slice(0, -1),
+        })
+        expect(requests[0].messages.slice(0, -1)).toEqual(
+          JSON.parse(JSON.stringify(original.messages).replaceAll(canary, "[redacted]")),
+        )
+      }
+      expect(sent.includes("SUMMARY [redacted]")).toBe(true)
+      expect(sent.includes("RECENT [redacted]")).toBe(scenario.retained)
+      expect(sent.includes("OLDER-EXCHANGE")).toBe(scenario.keptOlder)
+      expect(sent.includes("NEWER-EXCHANGE")).toBe(true)
+      expect(checkpoint.summary.includes(canary)).toBe(true)
+      expect(checkpoint.recent.includes(canary)).toBe(true)
+    }),
+  )
+}
