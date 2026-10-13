@@ -109,6 +109,7 @@ import { SessionTerminalsProvider } from "./context/session-terminals"
 import { PanelProvider, usePanel } from "./context/panel"
 import { SessionFrame } from "./component/session-frame"
 import { createTuiClipboard } from "./clipboard"
+import { createProgramStatus, type PendingSession } from "./program-status"
 
 const appGlobalBindingCommands = ["session.list", "session.new", "open.menu"] as const
 
@@ -508,6 +509,40 @@ function App() {
     void client.api.session
       .environment({ sessionID: session.id, variables: terminalEnvironment.variables })
       .catch(toast.error)
+  })
+  createProgramStatus({
+    renderer,
+    sessions: () => {
+      const current = sessionTabs.current()
+      const tabs = sessionTabs.enabled() ? sessionTabs.tabs().map((tab) => tab.sessionID) : []
+      return Array.from(new Set(current && current !== "dummy" ? [...tabs, current] : tabs)).flatMap(
+        (sessionID): PendingSession[] => {
+          const status = sessionTabs.status(sessionID)
+          const title = data.session.get(sessionID)?.title
+          const members = [sessionID, ...data.session.family(sessionID)]
+          if (status.attention === "permission") {
+            const request = members.flatMap((id) => data.session.permission.list(id) ?? [])[0]
+            return [
+              {
+                id: sessionID,
+                title,
+                state: "blocked",
+                kind: "permission",
+                message: request ? `Allow ${request.action}?` : "Permission needs input",
+              },
+            ]
+          }
+          if (status.attention === "question") {
+            const form = members.flatMap((id) => data.session.form.list(id) ?? [])[0]
+            return [
+              { id: sessionID, title, state: "blocked", kind: "question", message: form?.title ?? "Input needs response" },
+            ]
+          }
+          if (status.busy) return [{ id: sessionID, title, state: "working" }]
+          return []
+        },
+      )
+    },
   })
   const [layout, updateLayout] = useStorage().store<{ verticalTabsWidth?: number }>("layout", {
     initial: { verticalTabsWidth: SESSION_SIDEBAR_WIDTH },
