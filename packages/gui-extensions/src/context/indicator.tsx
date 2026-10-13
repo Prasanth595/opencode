@@ -3,6 +3,7 @@ import { ProgressCircle } from "@opencode/ui/progress-circle"
 import { Button } from "@opencode/ui/button"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { useI18n } from "@opencode/ui/context/i18n"
+import { lastAssistantWithUsage } from "@opencode/client/solid"
 import { useExtension, type MountedSession } from "../sdk"
 import { catalogModel, syncCatalog } from "./catalog"
 
@@ -31,10 +32,6 @@ export function SessionContextUsage(props: {
     props.session.id ? props.session.server.data.session.message.list(props.session.id) : [],
   )
 
-  const info = createMemo(() =>
-    props.session.id ? props.session.server.data.session.get(props.session.id) : undefined,
-  )
-
   const usd = createMemo(
     () =>
       new Intl.NumberFormat(i18n.locale(), {
@@ -43,10 +40,15 @@ export function SessionContextUsage(props: {
       }),
   )
 
-  const context = createMemo(() => {
-    const message = messages().findLast((item) => item.type === "assistant" && !!item.tokens)
+  const info = createMemo(() =>
+    props.session.id ? props.session.server.data.session.get(props.session.id) : undefined,
+  )
 
-    if (message?.type !== "assistant" || !message.tokens) return
+  // Same step as the TUI: after the last completed compaction and before an undo boundary.
+  const context = createMemo(() => {
+    const message = lastAssistantWithUsage(messages(), info()?.revert?.messageID)
+
+    if (!message) return
     const model = catalogModel(props.session, message.model)?.model
 
     const total =
@@ -69,12 +71,13 @@ export function SessionContextUsage(props: {
   )
 
   // A root session's cost includes its subagent sessions, as in the TUI.
-  const cost = createMemo(() =>
-    usd().format(props.session.id ? props.session.server.data.session.cost(props.session.id) : 0),
-  )
+  const spent = createMemo(() => (props.session.id ? props.session.server.data.session.cost(props.session.id) : 0))
 
+  const cost = createMemo(() => usd().format(spent()))
+
+  // Spend anywhere in the family keeps the cost visible, even when this session's model is free.
   const showCost = createMemo(() => {
-    if ((info()?.cost ?? 0) > 0) return true
+    if (spent() > 0) return true
     const ref = info()?.model ?? messages().findLast((item) => item.type === "assistant")?.model
     const model = ref ? catalogModel(props.session, ref)?.model : undefined
 
