@@ -15,6 +15,7 @@ import {
   InvalidRequestError,
   RateLimitError,
   UnknownProviderError,
+  Usage,
 } from "@opencode/ai"
 import { OpenAIChat } from "@opencode/ai/protocols/openai-chat"
 import { AnthropicMessages, OpenAIResponses } from "@opencode/ai/protocols"
@@ -155,6 +156,43 @@ test("calculates step cost using the matching context tier", () => {
       { input: 80, output: 10, reasoning: 2, cache: { read: 20, write: 1 } },
     ),
   ).toBeCloseTo(0.0002926)
+})
+
+test("selects the context tier by the measured prompt of a continued response", () => {
+  const tiered = [
+    {
+      input: Money.USDPerMillionTokens.make(1),
+      output: Money.USDPerMillionTokens.make(2),
+      cache: { read: Money.USDPerMillionTokens.make(0.1), write: Money.USDPerMillionTokens.make(0.5) },
+    },
+    {
+      tier: { type: "context" as const, size: 150_000 },
+      input: Money.USDPerMillionTokens.make(3),
+      output: Money.USDPerMillionTokens.make(4),
+      cache: { read: Money.USDPerMillionTokens.make(0.2), write: Money.USDPerMillionTokens.make(0.6) },
+    },
+  ]
+  // Four continuation requests re-bill earlier output as input; the response continued from a 142-token prompt.
+  const tokens = SessionUsage.tokens(
+    new Usage({
+      contextTokens: 142,
+      inputTokens: 197_176,
+      nonCachedInputTokens: 98_586,
+      cacheReadInputTokens: 98_590,
+      outputTokens: 105_561,
+    }),
+  )
+
+  expect(tokens).toEqual({
+    input: 98_586,
+    output: 105_561,
+    reasoning: 0,
+    cache: { read: 98_590, write: 0 },
+    prompt: 142,
+  })
+  expect(SessionUsage.tokens(new Usage({ inputTokens: 10, nonCachedInputTokens: 10 })).prompt).toBeUndefined()
+  expect(SessionUsage.calculateCost(tiered, tokens)).toBeCloseTo(0.319567)
+  expect(SessionUsage.calculateCost(tiered, { ...tokens, prompt: undefined })).toBeCloseTo(0.73772)
 })
 
 test("ignores malformed model cost fields", () => {

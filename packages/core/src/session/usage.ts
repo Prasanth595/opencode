@@ -2,7 +2,7 @@ export * as SessionUsage from "./usage.js"
 
 import type { Usage } from "@opencode/ai"
 import { Money } from "@opencode/schema/money"
-import type { TokenUsage } from "@opencode/schema/token-usage"
+import { TokenUsage } from "@opencode/schema/token-usage"
 import type { Model } from "@opencode/schema/model"
 
 const finite = (value: number) => (Number.isFinite(value) ? value : 0)
@@ -16,11 +16,13 @@ export const tokens = (usage: Usage | undefined): TokenUsage.Info => ({
     read: safe(usage?.cacheReadInputTokens),
     write: safe(usage?.cacheWriteInputTokens),
   },
+  prompt: usage?.contextTokens === undefined ? undefined : safe(usage.contextTokens),
 })
 
 // TODO(#35765): Use Copilot's reported billed amount once billing has a dedicated typed runtime contract.
 export function calculateCost(costs: Model.Info["cost"], usage: TokenUsage.Info) {
-  const context = usage.input + usage.cache.read + usage.cache.write
+  // Context tiers price each request by its own prompt, which billed input overstates for continued responses.
+  const context = TokenUsage.prompt(usage)
   const tier = costs
     .filter((cost) => cost.tier?.type === "context" && context > cost.tier.size)
     .toSorted((a, b) => (b.tier?.size ?? 0) - (a.tier?.size ?? 0))[0]

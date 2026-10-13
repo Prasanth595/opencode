@@ -327,7 +327,7 @@ export const make = Effect.fnUntraced(function* (input: {
 
   const sendUsageUpdate = Effect.fn("cli.acp.turn.usage")(
     function* (attached: Attached, state: ACPTranslate.TurnState) {
-      const used = state.usage ? TokenUsage.total(state.usage.last) : 0
+      const used = state.usage ? TokenUsage.context(state.usage.last) : 0
       if (!used) return
       const catalog = yield* input.catalog.get(attached.cwd)
       const model = findModel(catalog.models, currentModel(catalog, yield* Ref.get(attached.selection)))

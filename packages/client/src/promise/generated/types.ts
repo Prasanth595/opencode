@@ -51,6 +51,7 @@ export type TokenUsageInfo = {
   output: number
   reasoning: number
   cache: { read: number; write: number }
+  prompt?: number
 }
 
 export type RelativePath = string
@@ -3193,6 +3194,7 @@ export type SessionImportInput = {
         readonly output: number
         readonly reasoning: number
         readonly cache: { readonly read: number; readonly write: number }
+        readonly prompt?: number
       }
       readonly outcome?: "succeeded" | "failed" | "interrupted"
       readonly time: {
@@ -3419,6 +3421,7 @@ export type SessionImportInput = {
             readonly output: number
             readonly reasoning: number
             readonly cache: { readonly read: number; readonly write: number }
+            readonly prompt?: number
           }
           readonly error?: {
             readonly type: string
@@ -3477,6 +3480,7 @@ export type SessionImportInput = {
                 readonly output: number
                 readonly reasoning: number
                 readonly cache: { readonly read: number; readonly write: number }
+                readonly prompt?: number
               }
             }
           | {
@@ -3498,6 +3502,7 @@ export type SessionImportInput = {
                 readonly output: number
                 readonly reasoning: number
                 readonly cache: { readonly read: number; readonly write: number }
+                readonly prompt?: number
               }
             }
         )
@@ -3536,6 +3541,7 @@ export type SessionImportInput = {
         readonly output: number
         readonly reasoning: number
         readonly cache: { readonly read: number; readonly write: number }
+        readonly prompt?: number
       }
       readonly outcome?: "succeeded" | "failed" | "interrupted"
       readonly time: {
@@ -3762,6 +3768,7 @@ export type SessionImportInput = {
             readonly output: number
             readonly reasoning: number
             readonly cache: { readonly read: number; readonly write: number }
+            readonly prompt?: number
           }
           readonly error?: {
             readonly type: string
@@ -3820,6 +3827,7 @@ export type SessionImportInput = {
                 readonly output: number
                 readonly reasoning: number
                 readonly cache: { readonly read: number; readonly write: number }
+                readonly prompt?: number
               }
             }
           | {
@@ -3841,6 +3849,7 @@ export type SessionImportInput = {
                 readonly output: number
                 readonly reasoning: number
                 readonly cache: { readonly read: number; readonly write: number }
+                readonly prompt?: number
               }
             }
         )
@@ -3879,6 +3888,7 @@ export type SessionImportInput = {
         readonly output: number
         readonly reasoning: number
         readonly cache: { readonly read: number; readonly write: number }
+        readonly prompt?: number
       }
       readonly outcome?: "succeeded" | "failed" | "interrupted"
       readonly time: {
@@ -4105,6 +4115,7 @@ export type SessionImportInput = {
             readonly output: number
             readonly reasoning: number
             readonly cache: { readonly read: number; readonly write: number }
+            readonly prompt?: number
           }
           readonly error?: {
             readonly type: string
@@ -4163,6 +4174,7 @@ export type SessionImportInput = {
                 readonly output: number
                 readonly reasoning: number
                 readonly cache: { readonly read: number; readonly write: number }
+                readonly prompt?: number
               }
             }
           | {
@@ -4184,6 +4196,7 @@ export type SessionImportInput = {
                 readonly output: number
                 readonly reasoning: number
                 readonly cache: { readonly read: number; readonly write: number }
+                readonly prompt?: number
               }
             }
         )

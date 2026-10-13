@@ -1,4 +1,5 @@
 import type { ModelInfo, SessionMessageAssistant, SessionMessageInfo } from "@opencode/client"
+import { TokenUsage } from "@opencode/schema/token-usage"
 import { Locale } from "./locale"
 
 type SessionNode = {
@@ -62,8 +63,7 @@ export function contextUsage(
 ) {
   const last = lastAssistantWithUsage(messages, boundary)
   if (!last) return
-  const tokens =
-    last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
+  const tokens = TokenUsage.context(last.tokens)
   if (tokens <= 0) return
   const model = models?.find((model) => model.providerID === last.model.providerID && model.id === last.model.id)
   return {

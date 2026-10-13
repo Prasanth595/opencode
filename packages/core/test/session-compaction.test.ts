@@ -239,6 +239,13 @@ it.effect("auto compaction estimates current content against the buffered prompt
     expect(SessionCompaction.estimateContext(grown)).toBe(90_000)
     expect(yield* due(grown)).toBe(true)
 
+    // A continued response re-bills its earlier output as input, so its measured prompt replaces billed input.
+    const continued = {
+      ...assistant,
+      tokens: { input: 98_586, output: 105_561, reasoning: 0, cache: { read: 98_590, write: 0 }, prompt: 142 },
+    }
+    expect(SessionCompaction.estimateContext({ ...grown, messages: [continued] })).toBe(105_703)
+
     const interrupted = { ...assistant, id: SessionMessage.ID.create(), tokens: undefined }
     expect(SessionCompaction.estimateContext({ ...grown, messages: [...grown.messages, interrupted] })).toBe(90_001)
     // Without provider usage, include 20 tokens for the system prompt, instructions, and tool definition.

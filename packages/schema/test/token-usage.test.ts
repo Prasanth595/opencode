@@ -16,3 +16,11 @@ test("supports zero and large usage totals without rounding", () => {
     }),
   ).toBe(7_000_000_008)
 })
+
+test("measures context from the provider prompt when one is reported", () => {
+  const tokens = { input: 98_586, output: 105_561, reasoning: 0, cache: { read: 98_590, write: 0 } }
+  expect(TokenUsage.prompt(tokens)).toBe(197_176)
+  expect(TokenUsage.context(tokens)).toBe(302_737)
+  expect(TokenUsage.prompt({ ...tokens, prompt: 142 })).toBe(142)
+  expect(TokenUsage.context({ ...tokens, prompt: 142 })).toBe(105_703)
+})

@@ -151,6 +151,7 @@ export type SessionStatsOutput = {
     readonly output: number
     readonly reasoning: number
     readonly cache: { readonly read: number; readonly write: number }
+    readonly prompt?: number | undefined
   }
   readonly cost: Money.USD
   readonly tools:
@@ -192,6 +193,7 @@ export type SessionStatsOutput = {
       readonly output: number
       readonly reasoning: number
       readonly cache: { readonly read: number; readonly write: number }
+      readonly prompt?: number | undefined
     }
     readonly cost: Money.USD
   }>
@@ -804,6 +806,7 @@ export type SessionLogOutput =
               readonly output: number
               readonly reasoning: number
               readonly cache: { readonly read: number; readonly write: number }
+              readonly prompt?: number | undefined
             }
             readonly snapshot?: Snapshot.ID | undefined
             readonly files?: ReadonlyArray<RelativePath> | undefined
@@ -837,6 +840,7 @@ export type SessionLogOutput =
                   readonly output: number
                   readonly reasoning: number
                   readonly cache: { readonly read: number; readonly write: number }
+                  readonly prompt?: number | undefined
                 }
               | undefined
             readonly snapshot?: Snapshot.ID | undefined
@@ -1117,6 +1121,7 @@ export type SessionLogOutput =
                   readonly output: number
                   readonly reasoning: number
                   readonly cache: { readonly read: number; readonly write: number }
+                  readonly prompt?: number | undefined
                 }
               | undefined
           }
@@ -1147,6 +1152,7 @@ export type SessionLogOutput =
                   readonly output: number
                   readonly reasoning: number
                   readonly cache: { readonly read: number; readonly write: number }
+                  readonly prompt?: number | undefined
                 }
               | undefined
           }
@@ -1202,6 +1208,7 @@ export type SessionLogOutput =
               readonly output: number
               readonly reasoning: number
               readonly cache: { readonly read: number; readonly write: number }
+              readonly prompt?: number | undefined
             }
           }
         }

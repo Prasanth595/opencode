@@ -17,6 +17,7 @@ import {
 import type { StreamOptions } from "@opencode/ai/route"
 import type { SessionCompactionResult } from "@opencode/plugin/effect/session"
 import type { SessionError } from "@opencode/schema/session-error"
+import { TokenUsage } from "@opencode/schema/token-usage"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { Context, Effect, Layer, Result, Stream } from "effect"
 import { Agent } from "../agent.js"
@@ -890,9 +891,8 @@ export const estimatePrompt = (context: SessionContext.Loaded) => {
       estimated: estimateRequest({ system: base.system, tools: context.tools.definitions, messages: unmeasured }),
     }
 
-  const tokens = anchor.tokens
   return {
-    measured: tokens.input + tokens.cache.read + tokens.cache.write + tokens.output + tokens.reasoning,
+    measured: TokenUsage.context(anchor.tokens),
     estimated: unmeasured.reduce((sum, message) => sum + estimateMessage(message), 0),
   }
 }
