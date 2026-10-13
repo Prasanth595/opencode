@@ -108,3 +108,24 @@ describe("ConfigMarkdown.parse sanitize context", () => {
     expect(parsed.data.permissions).toEqual([{ action: "edit", effect: "deny" }])
   })
 })
+
+describe("ConfigMarkdown.parse sanitize regressions", () => {
+  // Values that start with `*`, `&` or `!` are aliases/anchors/tags to YAML, but
+  // they are plain text in these descriptions and need the colon fallback.
+  test("recovers a description that starts with an asterisk or bang", () => {
+    for (const value of ["*Important*: read this", "!Important: read this"]) {
+      const parsed = ConfigMarkdown.parse(`---\ndescription: ${value}\n---\nbody`)
+      expect(parsed.data.description).toBe(value)
+    }
+  })
+
+  test("recovers when several lines in the block need the fallback", () => {
+    const first = ConfigMarkdown.parse("---\ndescription: [Team] x\nsummary: Scope: test\n---\nbody")
+    expect(first.data.description).toBe("[Team] x")
+    expect(first.data.summary).toBe("Scope: test")
+
+    const second = ConfigMarkdown.parse("---\ndescription: [A] one\nsummary: [B] two\n---\nbody")
+    expect(second.data.description).toBe("[A] one")
+    expect(second.data.summary).toBe("[B] two")
+  })
+})
