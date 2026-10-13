@@ -865,6 +865,7 @@ export const protocol = Protocol.make({
         ...state,
         finishReason: undefined,
         continuationToken: undefined,
+        promptFeedback: undefined,
         usage: undefined,
         continuedUsage: [...(state.continuedUsage ?? []), state.usage ?? {}],
       },
