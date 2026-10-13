@@ -340,6 +340,54 @@ describe("PluginSupervisor reload", () => {
   )
 })
 
+it.live("loads a configured plugin directory whose package exports point at src", () =>
+  Effect.gen(function* () {
+    const directory = yield* tmpdirScoped()
+    const root = path.join(directory.path, ".opencode/myplugin")
+    yield* Effect.promise(async () => {
+      await Bun.write(
+        path.join(root, "src/plugin.ts"),
+        `export default {
+          id: "symprobe",
+          async setup(ctx) {
+            await ctx.command.transform((editor) => editor.add({ name: "symprobe-ready", execute: async () => {} }))
+          },
+        }`,
+      )
+      await Bun.write(
+        path.join(root, "package.json"),
+        JSON.stringify({
+          name: "symprobe",
+          type: "module",
+          main: "./src/plugin.ts",
+          exports: { ".": "./src/plugin.ts" },
+        }),
+      )
+      await Bun.write(
+        path.join(directory.path, ".opencode/opencode.json"),
+        JSON.stringify({ plugins: ["./myplugin"] }),
+      )
+    })
+    const locations = yield* LocationServiceMap.Service
+    yield* Effect.gen(function* () {
+      const commands = yield* Command.Service
+      const plugins = yield* Plugin.Service
+      yield* plugins.awaitActivation
+      yield* commands.get("symprobe-ready").pipe(
+        Effect.flatMap((command) => (command ? Effect.void : Effect.fail("pending"))),
+        Effect.retry({ times: 40, schedule: Schedule.spaced("25 millis") }),
+      )
+      const active = (yield* plugins.list()).some(
+        (plugin) => plugin.id === "symprobe" && plugin.state.status === "active",
+      )
+      expect(active).toBe(true)
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory.path) }))),
+    )
+  }),
+)
+
 it.live("applies organization integration changes to running external plugins", () =>
   Effect.gen(function* () {
     const directory = yield* tmpdirScoped()

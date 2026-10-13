@@ -64,6 +64,36 @@ describe("Host.resolve", () => {
     })
   }
 
+  it("resolves a local directory from package.json exports when index is absent", async () => {
+    await using plugin = await fixture({
+      "package.json": JSON.stringify({
+        name,
+        type: "module",
+        main: "./src/plugin.ts",
+        exports: { ".": "./src/plugin.ts", "./tui": "./src/tui.ts" },
+      }),
+      "src/plugin.ts": source,
+      "src/tui.ts": source,
+    })
+    assert.deepEqual(Host.resolve(plugin.target), {
+      server: plugin.url("src/plugin.ts"),
+      tui: plugin.url("src/tui.ts"),
+      rpc: undefined,
+    })
+  })
+
+  it("resolves a local directory from package.json main when exports and index are absent", async () => {
+    await using plugin = await fixture({
+      "package.json": JSON.stringify({ name, type: "module", main: "./lib/backend.js" }),
+      "lib/backend.js": source,
+    })
+    assert.deepEqual(Host.resolve(plugin.target), {
+      server: plugin.url("lib/backend.js"),
+      tui: undefined,
+      rpc: undefined,
+    })
+  })
+
   it("resolves local conventional entrypoints with package.json but no exports", async () => {
     await using plugin = await fixture({
       "package.json": JSON.stringify({ name, type: "module" }),
