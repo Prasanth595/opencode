@@ -6,7 +6,6 @@ import {
   InvalidProviderOutputError,
   InvalidRequestError,
   isContextOverflowFailure,
-  LLM,
   LLMClient,
   LLMEvent,
   LLMRequest,
@@ -477,7 +476,11 @@ export const layer = Layer.effect(
      * outputs. Only if it still does not fit are whole exchanges dropped, oldest first. Undefined when even the
      * newest exchange does not fit.
      */
-    const flattenAndDropOldest = (request: LLMRequest, context: SessionContext.Loaded, target: number) => {
+    const flattenAndDropOldest = (
+      request: Pick<LLMRequest, "system" | "tools" | "messages">,
+      context: SessionContext.Loaded,
+      target: number,
+    ) => {
       const previous = previousCompaction(context.messages)
       const end =
         request.messages.findLastIndex(
@@ -512,9 +515,7 @@ export const layer = Layer.effect(
         Token.estimate(note(exchanges.length))
       const kept = exchanges.slice(oldestToDrop(exchanges, (text) => Token.estimate(text) + 1, room))
       if (kept.length === 0) return undefined
-      return LLMRequest.update(request, {
-        messages: [...lead, Message.user(note(exchanges.length - kept.length) + kept.join("\n\n"))],
-      })
+      return [...lead, Message.user(note(exchanges.length - kept.length) + kept.join("\n\n"))]
     }
 
     const stream = (context: SessionContext.Loaded, request: LLMRequest, options: StreamOptions) => {
@@ -595,15 +596,9 @@ export const layer = Layer.effect(
     ) => {
       const base = transcript(context, messages)
       if (target !== undefined) {
-        const draft = LLM.request({
-          model: context.model.model,
-          system: base.system,
-          messages: base.messages,
-          tools: context.tools.definitions,
-        })
-        const reduced = flattenAndDropOldest(draft, context, target)
+        const reduced = flattenAndDropOldest({ ...base, tools: context.tools.definitions }, context, target)
         if (!reduced) return Effect.succeed(undefined)
-        base.messages = [...reduced.messages]
+        base.messages = reduced
       }
       return requests.compaction({
         session: context.session,

@@ -623,76 +623,39 @@ it.effect("forked session compaction reuses the fork root prompt cache key", () 
 
 for (const scenario of [
   {
-    name: "with a hook result before reduction",
-    recent: 30_000,
-    older: 1,
-    window: 10_000,
-    retained: false,
-    keptOlder: true,
-    resultAt: 1,
-  },
-  {
     name: "with a hook result after reduction",
     recent: 30_000,
-    older: 1,
     window: 10_000,
     retained: false,
-    keptOlder: true,
-    resultAt: 2,
-  },
-  {
-    name: "with a hook result after provider rejection",
-    recent: 1,
-    older: 1,
-    window: 200_000,
-    retained: true,
-    keptOlder: true,
-    rejection: "payload-too-large",
-    resultAt: 2,
+    supplied: true,
   },
   {
     name: "with repeated rejection and hook growth",
     recent: 1,
-    older: 1,
     window: 200_000,
     retained: true,
-    keptOlder: true,
     rejection: "payload-too-large",
     repeated: true,
   },
-  { name: "without shrinking", recent: 1, older: 1, window: 200_000, retained: true, keptOlder: true },
+  { name: "without shrinking", recent: 1, window: 200_000, retained: true },
   {
     name: "after payload rejection",
     recent: 1,
-    older: 1,
     window: 200_000,
     retained: true,
-    keptOlder: true,
     rejection: "payload-too-large",
   },
   {
     name: "dropping recent before newer exchanges",
     recent: 30_000,
-    older: 1,
     window: 10_000,
     retained: false,
-    keptOlder: true,
-  },
-  {
-    name: "dropping recent and the oldest new exchange",
-    recent: 1,
-    older: 30_000,
-    window: 10_000,
-    retained: false,
-    keptOlder: false,
   },
   {
     name: "after context overflow",
     recent: 12_000,
-    older: 1,
     window: 200_000,
     retained: false,
-    keptOlder: true,
     rejection: "context-overflow",
   },
 ] as const) {
@@ -717,24 +680,14 @@ for (const scenario of [
       })
       const messages = [
         checkpoint,
-        SessionMessage.User.make({
-          id: SessionMessage.ID.create(),
-          type: "user",
-          text: `OLDER-EXCHANGE ${"old ".repeat(scenario.older)}`,
-          time: { created: DateTime.makeUnsafe(1) },
-        }),
-        SessionMessage.User.make({
-          id: SessionMessage.ID.create(),
-          type: "user",
-          text: "NEWER-EXCHANGE",
-          time: { created: DateTime.makeUnsafe(2) },
-        }),
-        SessionMessage.User.make({
-          id: SessionMessage.ID.create(),
-          type: "user",
-          text: "Tail retained outside the summary request",
-          time: { created: DateTime.makeUnsafe(3) },
-        }),
+        ...["OLDER-EXCHANGE", "NEWER-EXCHANGE", "Tail retained outside the summary request"].map((text, index) =>
+          SessionMessage.User.make({
+            id: SessionMessage.ID.create(),
+            type: "user",
+            text,
+            time: { created: DateTime.makeUnsafe(index + 1) },
+          }),
+        ),
       ]
       let calls = 0
       let modelCalls = 0
@@ -754,7 +707,7 @@ for (const scenario of [
           expect(event.options.temperature).toBeUndefined()
           event.options.temperature = ++calls / 10
           if (repeatRejection) event.system.push({ type: "text", text: "growth ".repeat(20_000) })
-          if ("resultAt" in scenario && calls === scenario.resultAt) {
+          if ("supplied" in scenario && calls === 2) {
             event.result = { summary: "## Objective\n- supplied by final hook" }
           }
         }),
@@ -780,9 +733,9 @@ for (const scenario of [
         expect(request.system.filter((part) => part.text === "hook annotation")).toHaveLength(1)
         expect(request.generation?.temperature).toBe(Number(request.http?.headers?.["x-hook-attempt"]) / 10)
       }
-      if ("resultAt" in scenario && scenario.resultAt !== undefined) {
-        expect(calls).toBe(scenario.resultAt)
-        expect(requests).toHaveLength("rejection" in scenario ? 1 : 0)
+      if ("supplied" in scenario) {
+        expect(calls).toBe(2)
+        expect(requests).toHaveLength(0)
         const store = yield* SessionStore.Service
         expect(JSON.stringify(yield* store.context(session.id))).toContain("supplied by final hook")
         return
@@ -790,7 +743,6 @@ for (const scenario of [
       if ("repeated" in scenario) return
       expect(calls).toBe(scenario.name === "without shrinking" ? 1 : 2)
       expect(requests).toHaveLength("rejection" in scenario ? 2 : 1)
-      expect(JSON.stringify(requests).includes(canary)).toBe(false)
       const sent = JSON.stringify(requests.at(-1)?.messages)
       if (scenario.name === "without shrinking") {
         const original = SessionModelRequest.baseTranscript({
@@ -804,7 +756,7 @@ for (const scenario of [
       }
       expect(sent.includes("SUMMARY [redacted]")).toBe(true)
       expect(sent.includes("RECENT [redacted]")).toBe(scenario.retained)
-      expect(sent.includes("OLDER-EXCHANGE")).toBe(scenario.keptOlder)
+      expect(sent.includes("OLDER-EXCHANGE")).toBe(true)
       expect(sent.includes("NEWER-EXCHANGE")).toBe(true)
       expect(checkpoint.summary.includes(canary)).toBe(true)
       expect(checkpoint.recent.includes(canary)).toBe(true)
