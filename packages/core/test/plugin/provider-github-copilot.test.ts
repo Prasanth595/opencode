@@ -105,6 +105,9 @@ describe("GithubCopilotPlugin", () => {
           editor.update(Provider.ID.githubCopilot, (provider) => {
             provider.integrationID = Integration.ID.make("github-copilot")
           })
+          editor.update(Provider.ID.make("github-models"), (provider) => {
+            provider.integrationID = Integration.ID.make("github-models")
+          })
         })
         yield* integrations.transform((editor) => {
           editor.method.update({
@@ -113,6 +116,10 @@ describe("GithubCopilotPlugin", () => {
           })
           editor.method.update({
             integrationID: Integration.ID.make("github-copilot"),
+            method: { type: "env", names: ["GITHUB_TOKEN"] },
+          })
+          editor.method.update({
+            integrationID: Integration.ID.make("github-models"),
             method: { type: "env", names: ["GITHUB_TOKEN"] },
           })
         })
@@ -131,7 +138,13 @@ describe("GithubCopilotPlugin", () => {
         ])
         expect((yield* integrations.get(Integration.ID.make("github-copilot")))?.connections).toEqual([])
         expect(yield* integrations.connection.active(Integration.ID.make("github-copilot"))).toBeUndefined()
-        expect(yield* providers.get(Provider.ID.githubCopilot)).toBeUndefined()
+        expect((yield* providers.snapshot()).providers.map((provider) => provider.id)).toEqual([
+          Provider.ID.make("github-models"),
+        ])
+        expect(yield* integrations.connection.active(Integration.ID.make("github-models"))).toEqual({
+          type: "env",
+          name: "GITHUB_TOKEN",
+        })
       }),
     ),
   )
@@ -172,7 +185,9 @@ describe("GithubCopilotPlugin", () => {
         expect(connection).toMatchObject({ type: "credential", id: credential.id, method: "oauth" })
         expect((yield* integrations.get(integrationID))?.connections).toEqual([connection])
         expect(yield* integrations.connection.resolve(connection)).toEqual(credential.value)
-        expect(yield* providers.get(Provider.ID.githubCopilot)).toBeDefined()
+        expect((yield* providers.snapshot()).providers.map((provider) => provider.id)).toEqual([
+          Provider.ID.githubCopilot,
+        ])
       }),
     ),
   )
@@ -680,9 +695,10 @@ describe("GithubCopilotPlugin", () => {
         editor.models.update(Provider.ID.githubCopilot, Model.ID.make("gpt-5-chat-latest"), () => {})
       })
       yield* addPlugin()
-      expect(required(yield* models.get(Provider.ID.githubCopilot, Model.ID.make("gpt-5-chat-latest"))).enabled).toBe(
-        false,
-      )
+      expect(
+        required(yield* models.get(Provider.ID.githubCopilot, Model.ID.make("gpt-5-chat-latest")))
+          .enabled,
+      ).toBe(false)
     }),
   )
 
@@ -696,7 +712,8 @@ describe("GithubCopilotPlugin", () => {
       })
       yield* addPlugin()
       expect(
-        required(yield* models.get(Provider.ID.make("custom-copilot"), Model.ID.make("gpt-5-chat-latest"))).enabled,
+        required(yield* models.get(Provider.ID.make("custom-copilot"), Model.ID.make("gpt-5-chat-latest")))
+          .enabled,
       ).toBe(true)
     }),
   )
