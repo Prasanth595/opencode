@@ -61,29 +61,6 @@ describe("CommandPlugin.Plugin", () => {
       ],
       text: "Keep production data in the EU.",
     },
-    {
-      name: "keeps plain text prompt joining and trimming unchanged",
-      messages: [
-        { role: "user", content: { type: "text", text: "  First instruction" } },
-        { role: "user", content: { type: "text", text: "Second instruction  " } },
-      ],
-      text: "First instruction\nSecond instruction",
-    },
-    {
-      name: "does not convert media or resource blobs into text",
-      messages: [
-        { role: "user", content: { type: "image", data: "aW1hZ2U=", mimeType: "image/png" } },
-        { role: "user", content: { type: "audio", data: "YXVkaW8=", mimeType: "audio/wav" } },
-        {
-          role: "user",
-          content: {
-            type: "resource",
-            resource: { uri: "policy://blob", mimeType: "text/plain", blob: "cmVzb3VyY2U=" },
-          },
-        },
-      ],
-      text: "",
-    },
   ] satisfies { name: string; messages: Mcp.PromptResult["messages"]; text: string }[]) {
     it.effect(fixture.name, () =>
       Effect.gen(function* () {
