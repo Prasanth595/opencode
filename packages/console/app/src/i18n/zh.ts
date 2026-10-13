@@ -8,6 +8,7 @@ export const dict = {
   "go.graph.bonus": "{{count}} 倍用量",
   "nav.github": "GitHub",
   "nav.docs": "文档",
+  "nav.data": "数据",
   "nav.changelog": "更新日志",
   "nav.discord": "Discord",
   "nav.x": "X",
@@ -143,7 +144,7 @@ export const dict = {
   "home.growth.title": "开源 AI 编程代理",
   "home.growth.body":
     "拥有超过 <strong>{{stars}}</strong> 颗 GitHub Star，<strong>{{contributors}}</strong> 位贡献者，以及超过 <strong>{{commits}}</strong> 次提交，OpenCode 每月被超过 <strong>{{monthlyUsers}}</strong> 名开发者使用并信赖。",
-  "home.growth.githubStars": "GitHub Stars",
+  "home.growth.githubStars": "GitHub 星标",
   "home.growth.contributors": "贡献者",
   "home.growth.monthlyDevs": "月活开发者",
 
@@ -819,6 +820,10 @@ export const dict = {
   "enterprise.faq.q4": "OpenCode 企业版安全吗？",
   "enterprise.faq.a4":
     "是的。OpenCode 不存储您的代码或上下文数据。所有处理均在本地进行，或通过直接 API 调用您的 AI 提供商。通过集中配置和 SSO 集成，您的数据始终保留在您组织的基础设施内。",
+  "enterprise.faq.q5": "在哪里可以找到你们的安全与合规文档？",
+  "enterprise.faq.a5.before":
+    "我们的信任中心应有尽有：SOC 2 Type 2 报告、安全政策、子处理商清单，以及常见安全问题的解答。请访问",
+  "enterprise.faq.a5.after": "以查看相关文档，或申请在保密协议（NDA）下提供。",
 
   "brand.title": "OpenCode | 品牌",
   "brand.meta.description": "OpenCode 品牌指南",
@@ -850,7 +855,7 @@ export const dict = {
   "bench.detail.labels.from": "来源",
   "bench.detail.labels.to": "目标",
   "bench.detail.labels.prompt": "提示词",
-  "bench.detail.labels.commit": "Commit",
+  "bench.detail.labels.commit": "提交",
   "bench.detail.labels.averageDuration": "平均耗时",
   "bench.detail.labels.averageScore": "平均分数",
   "bench.detail.labels.averageCost": "平均成本",
