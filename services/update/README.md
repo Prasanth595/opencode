@@ -47,7 +47,7 @@ Minimum releases bypass rollout for clients that need them, and identified clien
 are not sent a fallback below their configured minimum. Rollout applies to all JSON
 endpoints and desktop manifests. Responses, including unavailable artifacts, are not cached.
 
-Duration changes apply to existing releases within 10 minutes (see [Read caching](#read-caching)).
+Duration changes apply to existing releases within 1 minute (see [Read caching](#read-caching)).
 Manual activation uses the original publication time too; set the duration to `0` to make it immediate.
 Apply the `0004_channel_rollout.sql` migration before deploying.
 
@@ -55,10 +55,10 @@ Apply the `0004_channel_rollout.sql` migration before deploying.
 
 Desktop and CLI clients poll these endpoints continuously, so each Worker isolate keeps the
 D1 reads behind public lookups (rollout durations, active and minimum artifacts, and the newest
-rollout fallback) for 10 minutes. Concurrent lookups share one in-flight read, and failed reads
+rollout fallback) for 1 minute. Concurrent lookups share one in-flight read, and failed reads
 are not kept. Caller-specific selection (minimum, rollout position) still runs per request, so
 HTTP responses remain `no-store`. Publishing, activation, minimum, and rollout changes can take
-up to 10 minutes to reach every isolate; desktop clients only poll every 10 minutes anyway.
+up to 1 minute to reach every isolate.
 
 Active and minimum artifacts are read through the `artifact_active` and `artifact_minimum`
 partial indexes, so a lookup reads only the selected rows rather than every published build.

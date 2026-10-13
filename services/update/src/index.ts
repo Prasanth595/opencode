@@ -38,7 +38,7 @@ const audience = "https://update.opencode.ai"
 const githubKeys = createRemoteJWKSet(new URL("https://token.actions.githubusercontent.com/.well-known/jwks"))
 // Clients poll every lookup path, and querying D1 on each request overloaded it.
 // Cache the caller-independent reads per isolate; caller-specific selection still runs per request.
-const readTtl = 10 * 60_000
+const readTtl = 60_000
 const reads = new Map<string, { expires: number; value: Promise<unknown> }>()
 
 export default {
