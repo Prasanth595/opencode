@@ -40,6 +40,47 @@ const transport = SessionModelTransport.Service.of({
 })
 
 describe("SessionModelRequest HTTP hooks", () => {
+  it.effect("applies agent request options before hooks for every request kind", () =>
+    Effect.gen(function* () {
+      const hooks = yield* PluginHooks.Service
+      yield* hooks.register("session", "context", (event) =>
+        Effect.sync(() => {
+          expect(event.options.temperature).toBe(0.7)
+          event.options.temperature = 0.2
+        }),
+      )
+      yield* hooks.register("session", "model.request", (event) =>
+        Effect.sync(() => {
+          expect(event.headers["x-agent"]).toBe("reviewer")
+          event.headers["x-agent"] = "hook"
+        }),
+      )
+      const requests = yield* SessionModelRequest.Service.pipe(Effect.provide(SessionModelRequest.layer))
+      for (const kind of KINDS) {
+        const prepared = yield* requests[kind]({
+          session,
+          agent: Agent.ID.make("reviewer"),
+          agentRequest: {
+            settings: {},
+            body: { temperature: 0.7, topP: 0.8, custom_option: "agent" },
+            headers: { "x-agent": "reviewer", "x-opencode-session-id": "wrong" },
+          },
+          model,
+          system: [],
+          messages: [],
+        })
+        expect(prepared.request.generation?.temperature).toBe(kind === "primary" ? 0.2 : 0.7)
+        expect(prepared.request.generation?.topP).toBe(0.8)
+        const body = yield* OpenAIChat.fromRequest(prepared.request)
+        expect(body.temperature).toBe(kind === "primary" ? 0.2 : 0.7)
+        expect(body.top_p).toBe(0.8)
+        expect(prepared.request.providerOptions?.custom_option).toBe("agent")
+        expect(prepared.request.http?.headers?.["x-agent"]).toBe("hook")
+        expect(prepared.request.http?.headers?.["x-opencode-session-id"]).toBe(session.id)
+      }
+    }).pipe(Effect.provideService(SessionModelTransport.Service, transport)),
+  )
+
   it.effect("tags every Session request kind on http.request and http.response", () =>
     Effect.gen(function* () {
       const hooks = yield* PluginHooks.Service

@@ -73,6 +73,7 @@ export interface Prepared<Event = SessionRequest> {
 export interface Input {
   readonly session: SessionSchema.Info
   readonly agent: Agent.ID
+  readonly agentRequest?: Agent.Info["request"]
   readonly model: SessionRunnerModel.Resolved
   readonly tools?: Tool.Snapshot
   readonly system: Array<SystemPart>
@@ -258,8 +259,8 @@ export const layer = Layer.effect(
           messages: input.messages,
           options:
             kind === "primary" || kind === "compaction"
-              ? { maxTokens: outputLimit(model.limit, kind, input.inputTokens) }
-              : {},
+              ? { maxTokens: outputLimit(model.limit, kind, input.inputTokens), ...input.agentRequest?.body }
+              : { ...input.agentRequest?.body },
         },
         Object.fromEntries(Array.from(given, ([d, t]) => [t.name, d])),
       )
@@ -280,6 +281,7 @@ export const layer = Layer.effect(
         model: model.model,
         http: {
           headers: {
+            ...input.agentRequest?.headers,
             "x-opencode-session-id": session.id,
             ...(session.parentID ? { "x-opencode-parent-session-id": session.parentID } : {}),
             "x-session-affinity": affinity,
