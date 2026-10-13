@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { Integration } from "@opencode-ai/schema/integration"
+import { Integration } from "@opencode/schema/integration"
 
 /**
  * The integration a remote MCP server owns its OAuth credential under. Identity is keyed on name + url, not
