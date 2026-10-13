@@ -41,6 +41,7 @@ export function SessionUserMessage(props: {
 }
 
 export function SessionAssistantContent(props: {
+  sessionID: string
   message: SessionMessageAssistant
   content: SessionMessageAssistant["content"][number]
   contentID: string
@@ -51,6 +52,7 @@ export function SessionAssistantContent(props: {
   toolOpen?: boolean
   onToolOpenChange?: (open: boolean) => void
   onContentRendered?: () => void
+  actions?: SessionUserActions
 }) {
   return (
     <Switch>
@@ -58,10 +60,12 @@ export function SessionAssistantContent(props: {
         {(content) => (
           <AssistantTextContent
             id={props.contentID}
+            sessionID={props.sessionID}
             text={content().text}
             message={props.message}
             showCopy={props.showAssistantCopyPartID === props.contentID}
             turnDurationMs={props.turnDurationMs}
+            actions={props.actions}
           />
         )}
       </Match>
