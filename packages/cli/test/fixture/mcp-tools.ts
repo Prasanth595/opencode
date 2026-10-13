@@ -1,15 +1,21 @@
 import { appendFile } from "node:fs/promises"
 import { createInterface } from "node:readline"
+import { Schema } from "effect"
 
 const mode = process.argv[2]
 const log = process.argv[3]
+const decodeRequest = Schema.decodeUnknownSync(
+  Schema.fromJsonString(
+    Schema.Struct({
+      id: Schema.optional(Schema.Union([Schema.Number, Schema.String])),
+      method: Schema.String,
+      params: Schema.optional(Schema.Struct({ cursor: Schema.optional(Schema.String) })),
+    }),
+  ),
+)
 
 for await (const line of createInterface({ input: process.stdin })) {
-  const request = JSON.parse(line) as {
-    id?: number | string
-    method: string
-    params?: { cursor?: string }
-  }
+  const request = decodeRequest(line)
   if (log) await appendFile(log, JSON.stringify(request) + "\n")
   if (request.id === undefined) continue
 
