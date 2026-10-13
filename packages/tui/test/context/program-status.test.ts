@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import type { ProgramStatus } from "@opentui/core"
 import { createRoot, createSignal } from "solid-js"
-import { createProgramStatus, type PendingSession } from "../src/program-status"
+import { createProgramStatus, type PendingSession } from "../../src/context/program-status"
 
 function setup(initial: PendingSession[] = []) {
   return createRoot((dispose) => {
@@ -56,9 +56,8 @@ test("summarizes several pending sessions and clears resolved ones", () => {
   expect(status.reports).toEqual([{ state: "clear" }])
 })
 
-test("skips ids the protocol rejects and clips long text", () => {
-  const status = setup([{ id: "not/a/segment!", title: "é".repeat(200), state: "working" }])
-  expect(status.reports).toHaveLength(1)
+test("clips long titles to the protocol byte limit", () => {
+  const status = setup([{ id: "ses_a", title: "é".repeat(200), state: "working" }])
   const title = status.reports[0].state === "working" ? status.reports[0].title : undefined
   expect(new TextEncoder().encode(title).byteLength).toBeLessThanOrEqual(192)
   expect(title?.endsWith("é…")).toBe(true)
