@@ -630,6 +630,7 @@ const step = (state: ParserState, event: GeminiEvent | NextRequest) => {
       {
         ...state,
         finishReason: undefined,
+        promptFeedback: undefined,
         usage: undefined,
         continuedUsage: [...(state.continuedUsage ?? []), state.usage ?? {}],
       },

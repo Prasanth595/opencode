@@ -1,7 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Deferred, Effect, Fiber } from "effect"
 import * as TestClock from "effect/testing/TestClock"
-import { LLM, AIError, LLMRequest, Message, ToolCallPart, ToolDefinition, Usage, Media } from "../../src/index.js"
+import { LLM, AIError, LLMEvent, LLMRequest, Message, ToolCallPart, ToolDefinition, Usage, Media } from "../../src/index.js"
 import { Auth, LLMClient } from "../../src/route.js"
 import { compileRequest } from "../../src/route/client.js"
 import * as Gemini from "../../src/protocols/gemini.js"
@@ -1955,6 +1955,20 @@ describe("Gemini response continuation", () => {
         providerMetadata: { google: { thoughtSignature: "call_sig" } },
       })
       expect(response.finishReason).toEqual({ normalized: "tool-calls", raw: "STOP" })
+    }),
+  )
+
+  it.effect("forgets a block once the resumed request finishes", () =>
+    Effect.gen(function* () {
+      const server = scripted([
+        sseEvents(text("THIRTEEN", { continuationToken: "checkpoint-1" }), { promptFeedback: { blockReason: "OTHER" } }),
+        sseEvents(text(" THOUSAND", { finishReason: "STOP" })),
+      ])
+      const response = yield* LLMClient.generate(continuedRequest).pipe(Effect.provide(server.layer))
+
+      expect(response.text).toBe("THIRTEEN THOUSAND")
+      expect(response.finishReason).toEqual({ normalized: "stop", raw: "STOP" })
+      expect(response.events.filter(LLMEvent.is.finish).map((event) => event.providerMetadata)).toEqual([undefined])
     }),
   )
 
