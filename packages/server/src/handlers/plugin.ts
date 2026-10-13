@@ -18,6 +18,7 @@ export const PluginHandler = HttpApiBuilder.group(Api, "server.plugin", (handler
     )
     .handle("plugin.check", (ctx) =>
       Effect.gen(function* () {
+        yield* awaitPlugins
         const plugins = yield* Plugin.Service
         const inventory = yield* plugins.list()
         const targets = [
@@ -57,6 +58,7 @@ export const PluginHandler = HttpApiBuilder.group(Api, "server.plugin", (handler
     )
     .handle("plugin.update", (ctx) =>
       Effect.gen(function* () {
+        yield* awaitPlugins
         const plugins = yield* Plugin.Service
         const inventory = new Set(
           (yield* plugins.list()).flatMap((plugin) => (plugin.source.type === "package" ? [plugin.source.target] : [])),
