@@ -19,7 +19,7 @@ import { useCommand } from "@/shell/commands/command"
 
 const cache = new Map<string, { tab: number; answers: string[][]; custom: string[]; customOn: boolean[] }>()
 
-const IS_MAC = typeof navigator === "object" && /(Mac|iPod|iPhone|iPad)/.test(navigator.platform)
+const IS_MAC = /(Mac|iPod|iPhone|iPad)/.test(navigator.platform)
 
 type QuestionField = FormStringField | FormMultiselectField
 
@@ -100,9 +100,9 @@ export const SessionQuestionDock: Component<{ request: FormInfo; onSubmit: () =>
 
   const [store, setStore] = createStore({
     tab: cached?.tab ?? 0,
-    answers: cached?.answers ?? ([] as string[][]),
-    custom: cached?.custom ?? ([] as string[]),
-    customOn: cached?.customOn ?? ([] as boolean[]),
+    answers: cached?.answers ?? [],
+    custom: cached?.custom ?? [],
+    customOn: cached?.customOn ?? [],
     editing: false,
     focus: 0,
     minimized: false,
@@ -128,7 +128,7 @@ export const SessionQuestionDock: Component<{ request: FormInfo; onSubmit: () =>
     if (total() === 1) return language.t("session.question.title")
     const n = Math.min(store.tab + 1, total())
 
-    return language.plural("session.question.progress", total(), { current: n, total: total() })
+    return language.t("session.question.progress", { current: n, total: total() })
   })
 
   const customLabel = () => language.t("ui.question.custom.answerPlaceholder")
@@ -263,10 +263,7 @@ export const SessionQuestionDock: Component<{ request: FormInfo; onSubmit: () =>
     })
   })
 
-  const fail = (err: unknown) => {
-    const message = err instanceof Error ? err.message : String(err)
-    showToast({ title: language.t("common.requestFailed"), description: message })
-  }
+  const fail = (err: Error) => showToast({ title: language.t("common.requestFailed"), description: err.message })
 
   const replyMutation = useMutation(() => ({
     mutationFn: (answer: FormAnswer) =>
@@ -421,6 +418,7 @@ export const SessionQuestionDock: Component<{ request: FormInfo; onSubmit: () =>
     if (/^[1-9]$/.test(event.key)) {
       if (event.repeat || event.isComposing || store.minimized || sending()) return
       const index = Number(event.key) - 1
+
       if (index >= count()) return
       event.preventDefault()
 
@@ -512,6 +510,7 @@ export const SessionQuestionDock: Component<{ request: FormInfo; onSubmit: () =>
     if (sending() || tab === store.tab) return
     setStore("tab", tab)
     setStore("editing", false)
+
     if (optionsRef) setStore("optionsHeight", optionsRef.scrollHeight)
 
     if (!store.minimized) focus(pickFocus(tab))
