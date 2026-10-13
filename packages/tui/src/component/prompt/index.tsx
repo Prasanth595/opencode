@@ -276,13 +276,16 @@ export function Prompt(props: PromptProps) {
           const sessionID = props.sessionID
           const session = sessionID ? data.session.get(sessionID) : undefined
           const sourceProjectID = session?.projectID ?? data.location.info()?.project.id
-          const home = await client.resolveServerHome().catch((error) => {
-            toast.show({ title: "Failed to change directory", message: errorMessage(error), variant: "error" })
-            return null
-          })
+          const value = input.trim()
+          const home =
+            !sessionID && (value === "~" || value.startsWith("~/"))
+              ? await client.resolveServerHome().catch((error) => {
+                  toast.show({ title: "Failed to change directory", message: errorMessage(error), variant: "error" })
+                  return null
+                })
+              : client.serverHome()
           if (home === null) return
           const serverHome = home ?? paths.home
-          const value = input.trim()
           const expanded =
             value === "~" ? serverHome : value.startsWith("~/") ? path.join(serverHome, value.slice(2)) : value
           const directory = path.resolve(
