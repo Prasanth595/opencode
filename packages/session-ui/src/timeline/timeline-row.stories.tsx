@@ -65,7 +65,7 @@ function AgentReasoningStory(props: { mode: ReasoningMode; reasoning: string; to
               props.reasoning === "blank"
                 ? "   "
                 : "## Inspecting stability\n\nI will inspect the timeline before changing its state.",
-            time: { created: STORY_TIME + 100, ...(props.tool || props.text ? { completed: STORY_TIME + 7100 } : {}) },
+            time: { created: STORY_TIME + 100, completed: props.tool || props.text ? STORY_TIME + 7100 : undefined },
           },
         ]),
     ...(props.tool
@@ -151,13 +151,13 @@ function HiddenReasoningStory() {
                     time: {
                       created: STORY_TIME + 200,
                       ran: STORY_TIME + 250,
-                      ...(finished ? { completed: STORY_TIME + 300 } : {}),
+                      completed: finished ? STORY_TIME + 300 : undefined,
                     },
                   },
                 ]
               : []),
           ],
-          time: { created: STORY_TIME, ...(finished ? { completed: STORY_TIME + 400 } : {}) },
+          time: { created: STORY_TIME, completed: finished ? STORY_TIME + 400 : undefined },
         },
       ],
       status: { type: finished ? "idle" : "busy" },
@@ -201,16 +201,14 @@ function RetryAndRecoverStory() {
           agent: "build",
           model: STORY_MODEL,
           content: finished ? [{ type: "text" as const, text: "Recovered response" }] : [],
-          ...(retry
+          retry: retry
             ? {
-                retry: {
-                  attempt: 2,
-                  at: 1_900_000_000_000,
-                  error: { type: "ProviderRateLimitError", message: "Rate limit reached. Retrying with backoff." },
-                },
+                attempt: 2,
+                at: 1_900_000_000_000,
+                error: { type: "ProviderRateLimitError" as const, message: "Rate limit reached. Retrying with backoff." },
               }
-            : {}),
-          time: { created: STORY_TIME, ...(finished ? { completed: STORY_TIME + 300 } : {}) },
+            : undefined,
+          time: { created: STORY_TIME, completed: finished ? STORY_TIME + 300 : undefined },
         },
       ],
       status: { type: finished ? "idle" : "busy" },
@@ -627,6 +625,7 @@ export const Conversation = {
   render: (args: { scenario: string; mode: ReasoningMode; reasoning: string; tool: boolean; text: string }) => {
     if (args.scenario === "reasoning") return <AgentReasoningStory {...args} />
 
+    // SAFETY: the scenario control only offers conversationScenarios keys, and "reasoning" returned above.
     return conversationScenarios[args.scenario as Exclude<keyof typeof conversationScenarios, "reasoning">].render()
   },
 }
