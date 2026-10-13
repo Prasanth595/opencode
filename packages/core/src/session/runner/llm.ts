@@ -289,11 +289,8 @@ const layer = Layer.effect(
           }),
           OutputLimit: Effect.fn("SessionRunner.continueOutputLimit")(function* (outcome) {
             // The current response is included. User input or any other finish breaks the streak.
-            const recent = yield* db
-              .select({
-                type: SessionMessageTable.type,
-                finish: sql<string | null>`json_extract(${SessionMessageTable.data}, '$.finish')`,
-              })
+            const rows = yield* db
+              .select()
               .from(SessionMessageTable)
               .where(
                 and(
@@ -305,6 +302,7 @@ const layer = Layer.effect(
               .limit(3)
               .all()
               .pipe(Effect.orDie)
+            const recent = yield* Effect.forEach(rows, SessionHistory.decodeMessageRow)
             const exhausted =
               recent.length === 3 &&
               recent.every((message) => message.type === "assistant" && message.finish === "length")
