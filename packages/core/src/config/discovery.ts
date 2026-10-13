@@ -60,12 +60,11 @@ export const discover = Effect.fn("ConfigDiscovery.discover")(function* (options
   const fs = yield* FSUtil.Service
   const global = yield* Global.Service
   const location = yield* Location.Service
-  const system =
-    options?.system === false
-      ? undefined
-      : typeof options?.system === "string"
-        ? AbsolutePath.make(path.resolve(options.system))
-        : systemDirectory()
+  const system = (() => {
+    if (options?.system === false) return
+    if (typeof options?.system === "string") return AbsolutePath.make(path.resolve(options.system))
+    return systemDirectory()
+  })()
   const globalDirectory = AbsolutePath.make(global.config)
   const globalAgentsDirectory = AbsolutePath.make(path.join(global.home, ".agents"))
   const globalClaudeDirectory = AbsolutePath.make(path.join(global.home, ".claude"))
