@@ -102,15 +102,14 @@ const it = testEffect(
 )
 
 describe("LocationActivity eviction", () => {
-  for (const [count, admission] of [
-    [1, "none"],
-    [2, "none"],
-    [1, "other"],
-    [1, "same"],
+  for (const [count, completion] of [
+    [1, "answer"],
+    [2, "answer"],
+    [1, "interrupt"],
+    [2, "interrupt"],
   ] as const) {
-    const newWork = admission !== "none"
     it.effect(
-      `interrupts ${count} waiting executions before eviction (${admission} session admitted during cleanup)`,
+      `preserves ${count} waiting executions until ${completion}, then evicts the idle location`,
       () =>
         Effect.gen(function* () {
           const db = (yield* Database.Service).db
@@ -121,7 +120,6 @@ describe("LocationActivity eviction", () => {
           const sessionIDs = Array.from({ length: count }, (_, index) =>
             Session.ID.make(`ses_waiting_question_${index}`),
           )
-          const newcomer = admission === "same" ? sessionIDs[0] : Session.ID.make("ses_new_question")
           const ref = LocationServiceMap.canonical({ directory: AbsolutePath.make("/project") })
           const idle = Location.Ref.make({ directory: ref.directory, workspaceID: Workspace.ID.make("wrk_idle") })
           yield* db
@@ -132,7 +130,7 @@ describe("LocationActivity eviction", () => {
           yield* db
             .insert(SessionTable)
             .values(
-              Array.from(new Set([...sessionIDs, newcomer]), (sessionID) => ({
+              sessionIDs.map((sessionID) => ({
                 id: sessionID,
                 project_id: Project.ID.global,
                 slug: "question",
@@ -145,7 +143,6 @@ describe("LocationActivity eviction", () => {
             .pipe(Effect.orDie)
 
           const created = yield* Deferred.make<void>()
-          const newCreated = yield* Deferred.make<void>()
           const pending: Form.Info[] = []
           const interrupted: SessionEvent.Execution.Interrupted["data"][] = []
           const unsubscribe = yield* bus.listen((event) =>
@@ -156,7 +153,6 @@ describe("LocationActivity eviction", () => {
               if (event.type !== Form.Event.Created.type) return
               pending.push(Schema.decodeUnknownSync(Form.Event.Created.data)(event.data).form)
               if (pending.length === count) yield* Deferred.succeed(created, undefined)
-              if (pending.length > count) yield* Deferred.succeed(newCreated, undefined)
             }),
           )
           yield* Effect.addFinalizer(() => unsubscribe)
@@ -164,7 +160,7 @@ describe("LocationActivity eviction", () => {
             execution.resume(sessionID).pipe(Effect.exit, Effect.forkScoped),
           )
           yield* Effect.addFinalizer(() =>
-            Effect.forEach([...sessionIDs, newcomer], (sessionID) => execution.interrupt(sessionID)).pipe(
+            Effect.forEach(sessionIDs, (sessionID) => execution.interrupt(sessionID)).pipe(
               Effect.andThen(TestClock.adjust("5 minutes")),
             ),
           )
@@ -177,45 +173,33 @@ describe("LocationActivity eviction", () => {
           // Human input produces no durable activity while the question is pending.
           yield* TestClock.adjust("1 minute")
           yield* TestClock.adjust("62 minutes")
-          // Interruption has cancelled each question, but slow cleanup still owns the graph.
+          // Quiet, unfinished work survives cleanup; only the unrelated idle graph expires.
           expect(Array.from(yield* execution.active).toSorted()).toEqual(sessionIDs.toSorted())
           expect(Array.from(yield* RcMap.keys(map.rcMap))).toEqual([ref])
-          expect(yield* forms.list()).toEqual([])
-          for (const form of pending) expect(yield* forms.state(form.id)).toEqual({ status: "cancelled" })
+          expect(yield* forms.list()).toEqual(pending)
+          for (const form of pending) expect(yield* forms.state(form.id)).toEqual({ status: "pending" })
+          expect(interrupted).toEqual([])
 
-          if (newWork) {
-            yield* execution.wake(newcomer)
-            if (admission === "other") yield* Deferred.await(newCreated)
-          }
-          yield* TestClock.adjust("5 minutes")
-          if (newWork) yield* Deferred.await(newCreated)
-          const results = yield* Effect.forEach(running, Fiber.join)
-          expect(results.every((exit) => exit._tag === "Failure")).toBe(true)
-          expect(Array.from(yield* execution.active)).toEqual(newWork ? [newcomer] : [])
-          expect(yield* store.listSuspended()).toEqual(newWork ? [newcomer] : [])
-          expect(interrupted.toSorted((a, b) => a.sessionID.localeCompare(b.sessionID))).toEqual(
-            sessionIDs.map((sessionID) => ({ sessionID, reason: "inactivity" })),
-          )
-          expect(Array.from(yield* RcMap.keys(map.rcMap))).toEqual(newWork ? [ref] : [])
-          if (newWork) {
-            expect(yield* forms.list({ sessionID: newcomer })).toEqual([pending[count]])
-            if (admission === "same") {
-              const later = LocationServiceMap.canonical({ directory: AbsolutePath.make("/later") })
-              yield* Location.Service.pipe(Effect.provide(map.get(later)), Effect.scoped)
-              yield* TestClock.adjust("30 minutes")
-              // Keep fresh work active while a different graph reaches its own deadline.
-              yield* bus.publish(SessionEvent.Execution.Started, { sessionID: newcomer }, { location: ref })
-              yield* TestClock.adjust("32 minutes")
-              expect(Array.from(yield* execution.active)).toEqual([newcomer])
-              expect(Array.from(yield* RcMap.keys(map.rcMap))).toEqual([ref])
-            }
-            yield* execution.interrupt(newcomer)
+          // Repeated sweeps must preserve the original questions, not recreate them.
+          yield* TestClock.adjust("2 hours")
+          expect(yield* forms.list()).toEqual(pending)
+          expect((yield* store.listSuspended()).toSorted()).toEqual(sessionIDs.toSorted())
+          expect(interrupted).toEqual([])
+
+          if (completion === "interrupt") {
+            yield* Effect.forEach(sessionIDs, (sessionID) => execution.interrupt(sessionID))
             yield* TestClock.adjust("5 minutes")
-            yield* execution.awaitIdle(newcomer)
-            yield* TestClock.adjust("62 minutes")
-            expect(yield* store.listSuspended()).toEqual([])
-            expect(Array.from(yield* RcMap.keys(map.rcMap))).toEqual([])
           }
+          if (completion === "answer") {
+            for (const form of pending) yield* forms.reply({ id: form.id, answer: { runtime: "bun" } })
+          }
+          const results = yield* Effect.forEach(running, Fiber.join)
+          expect(results.every((exit) => exit._tag === (completion === "answer" ? "Success" : "Failure"))).toBe(true)
+          expect(interrupted.every((event) => event.reason !== "inactivity")).toBe(true)
+          expect(Array.from(yield* execution.active)).toEqual([])
+          expect(yield* store.listSuspended()).toEqual([])
+          yield* TestClock.adjust("62 minutes")
+          expect(Array.from(yield* RcMap.keys(map.rcMap))).toEqual([])
         }),
     )
   }

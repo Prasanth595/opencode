@@ -50,26 +50,13 @@ export function layer(options: { readonly timeToLive?: Duration.Input; readonly 
         const now = clock.currentTimeMillisUnsafe()
         const expired = Array.from(entries.values()).filter((entry) => entry.expiresAt <= now)
         if (expired.length === 0) return
-        const active = yield* Effect.forEach(yield* execution.active, (sessionID) => sessions.get(sessionID))
         yield* Effect.forEach(
           expired,
           (entry) =>
             Effect.gen(function* () {
-              const owners = active.flatMap((session) =>
-                session && key(session.location) === key(entry.ref) ? [session] : [],
-              )
-              // Invalidation only detaches the cache entry; borrowers retain the old
-              // graph. Stop its executions and settle tool cleanup before detaching it.
-              yield* Effect.forEach(
-                owners,
-                (session) => execution.interrupt(session.id, { reason: "inactivity", awaitSettlement: true }),
-                {
-                  discard: true,
-                  concurrency: "unbounded",
-                },
-              )
               const remaining = yield* Effect.forEach(yield* execution.active, (sessionID) => sessions.get(sessionID))
-              // New work admitted during cleanup may now own the cached graph.
+              // Waiting for human input or a quiet tool is still unfinished work.
+              // Cache retention must not impose a deadline on an active execution.
               if (remaining.some((session) => session && key(session.location) === key(entry.ref))) {
                 yield* touch(entry.ref)
                 return
