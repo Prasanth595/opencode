@@ -1,3 +1,6 @@
+/* Vite can link this before the app entry CSS, so name every layer here or `components` ranks below Tailwind's base reset. */
+@layer properties, theme, base, components, utilities;
+
 @layer components {
   /* Shared by Composer submit actions and contrast icon buttons. */
   :is(

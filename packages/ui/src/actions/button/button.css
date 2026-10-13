@@ -1,3 +1,5 @@
+/* Vite can link this before the app entry CSS, so name every layer here or `components` ranks below Tailwind's base reset. */
+@layer properties, theme, base, components, utilities;
 @import "../submit.css";
 
 @layer components {
