@@ -282,6 +282,7 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
     Effect.gen(function* () {
       const tool = tools.get(id)
       if (!tool) return yield* Effect.die(new Error(`Tool input end before start: ${id}`))
+      // Keep a bounded excerpt for recovery errors; the full argument text is persisted below.
       tool.input = inputExcerpt(value)
       yield* bus.publish(SessionEvent.Tool.Input.Ended, {
         sessionID: input.sessionID,
@@ -353,6 +354,7 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
     if (tool.name !== event.name)
       return yield* Effect.die(new Error(`Tool input name changed for ${event.id}: ${tool.name} -> ${event.name}`))
     if (toolInput.has(event.id)) yield* endToolInput(event, event.raw)
+    // The parser's final raw input may differ from streamed deltas; use it for the recovery excerpt.
     tool.input = inputExcerpt(event.raw)
     tool.malformed = true
   })
