@@ -13,7 +13,7 @@ import { createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, S
 import { registerOpencodeSpinner } from "../register-spinner"
 import path from "path"
 import { fileURLToPath } from "url"
-import { useLocal } from "../../context/local"
+import { lastRunConfig, useLocal } from "../../context/local"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { tint, useTheme } from "../../context/theme"
 import { EmptyBorder, SplitBorder } from "../../ui/border"
@@ -308,27 +308,28 @@ export function Prompt(props: PromptProps) {
     ),
   )
 
-  // Initialize agent/model/variant from last user message when session changes
+  // Initialize agent/model/variant from the session's last run when the session changes.
+  // Stays unsynced until the model is actually applied, so a session opened before its provider's
+  // models or its messages have loaded does not keep the previous session's model.
   let syncedSessionID: string | undefined
   createEffect(() => {
     const sessionID = props.sessionID
-    const msg = lastUserMessage()
+    const last = sessionID ? lastRunConfig(sync.data.message[sessionID] ?? []) : undefined
 
     if (sessionID !== syncedSessionID) {
-      if (!sessionID || !msg) return
-
-      syncedSessionID = sessionID
+      if (!sessionID || !last) return
 
       // Only set agent if it's a primary agent (not a subagent)
-      const isPrimaryAgent = local.agent.list().some((x) => x.name === msg.agent)
-      if (msg.agent && isPrimaryAgent) {
-        // Keep command line --agent if specified.
-        if (!args.agent) local.agent.set(msg.agent)
-        if (msg.model) {
-          local.model.set(msg.model)
-          local.model.variant.set(msg.model.variant)
-        }
+      const isPrimaryAgent = local.agent.list().some((x) => x.name === last.agent)
+      if (!last.agent || !isPrimaryAgent) {
+        syncedSessionID = sessionID
+        return
       }
+      // Keep command line --agent if specified.
+      if (!args.agent) local.agent.set(last.agent)
+      if (!local.model.set(last.model, { silent: true })) return
+      local.model.variant.set(last.variant)
+      syncedSessionID = sessionID
     }
   })
 

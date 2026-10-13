@@ -13,6 +13,7 @@ import { useTheme } from "./theme"
 import { useToast } from "../ui/toast"
 import { useRoute } from "./route"
 import { usePermission } from "./permission"
+import type { AssistantMessage, UserMessage } from "@opencode-ai/sdk/v2"
 
 export type LocalTheme = {
   secondary: RGBA
@@ -46,6 +47,24 @@ export function recentModels(
     })
     .slice(0, 10)
     .map((item) => ({ providerID: item.providerID, modelID: item.modelID }))
+}
+
+/**
+ * The agent, model and variant a session last ran with. A long agent run can leave only assistant
+ * messages in the loaded page, so fall back to the newest one; compaction summaries run on their own model.
+ */
+export function lastRunConfig(messages: readonly (UserMessage | AssistantMessage)[]) {
+  const user = messages.findLast((message): message is UserMessage => message.role === "user")
+  if (user) return { agent: user.agent, model: user.model, variant: user.model.variant }
+  const assistant = messages.findLast(
+    (message): message is AssistantMessage => message.role === "assistant" && !message.summary,
+  )
+  if (!assistant) return undefined
+  return {
+    agent: assistant.agent,
+    model: { providerID: assistant.providerID, modelID: assistant.modelID },
+    variant: assistant.variant,
+  }
 }
 
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
@@ -317,23 +336,25 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           setModelStore("recent", recentModels(next, modelStore.recent))
           save()
         },
-        set(model: { providerID: string; modelID: string }, options?: { recent?: boolean }) {
-          batch(() => {
+        set(model: { providerID: string; modelID: string }, options?: { recent?: boolean; silent?: boolean }) {
+          return batch(() => {
             if (!isModelValid(model)) {
-              toast.show({
-                message: `Model ${model.providerID}/${model.modelID} is not valid`,
-                variant: "warning",
-                duration: 3000,
-              })
-              return
+              if (!options?.silent)
+                toast.show({
+                  message: `Model ${model.providerID}/${model.modelID} is not valid`,
+                  variant: "warning",
+                  duration: 3000,
+                })
+              return false
             }
             const a = agent.current()
-            if (!a) return
+            if (!a) return false
             setModelStore("model", a.name, model)
             if (options?.recent) {
               setModelStore("recent", recentModels(model, modelStore.recent))
               save()
             }
+            return true
           })
         },
         toggleFavorite(model: { providerID: string; modelID: string }) {
