@@ -1,4 +1,5 @@
 import { createMemo, type Accessor } from "solid-js"
+import type { SessionInfo } from "@opencode/client/promise"
 import { useGlobal, useServerCtx } from "@/runtime/server/runtime"
 import { sessionPermissionRequest, sessionFormRequest } from "@/session/requests/session-request-tree"
 import { ServerConnection } from "@/runtime/server/registry"
@@ -8,6 +9,7 @@ export function useSessionTabAvatarState(
   server: Accessor<ServerConnection.Key>,
   sessionId: Accessor<string>,
   root?: Accessor<boolean>,
+  snapshot?: Accessor<SessionInfo | undefined>,
 ) {
   const global = useGlobal()
   const settings = useSettings()
@@ -48,7 +50,9 @@ export function useSessionTabAvatarState(
 
   const needsAttention = createMemo(() => hasPermissions() || hasForms())
 
-  const unread = createMemo(() => needsAttention() || (serverCtx()?.notification.session.unread(sessionId()) ?? false))
+  const unread = createMemo(
+    () => needsAttention() || (serverCtx()?.notification.session.unread(sessionId(), snapshot?.()) ?? false),
+  )
 
   const loading = createMemo(() => {
     const data = serverCtx()?.data

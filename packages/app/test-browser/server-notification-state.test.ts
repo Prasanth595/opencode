@@ -1,4 +1,4 @@
-import { beforeAll, expect, mock, test } from "bun:test"
+import { beforeAll, expect, mock, setSystemTime, test, vi } from "bun:test"
 import { createEffect, createRoot } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { ServerSDK } from "@/runtime/server/client"
@@ -175,11 +175,15 @@ test("unread state and viewing follow the server's idle and viewed watermarks", 
   dispose.dispose()
 })
 
-test("carries the old local list's viewed state to the server once, then deletes the list", async () => {
+test("unread state honours the old local list until its viewed state is carried to the server, then deletes it", async () => {
   const key = "opencode.global.dat:notification"
   const lists: unknown[] = []
-  const views: unknown[] = []
+  const views: { sessionID: string; idle: number }[] = []
+  const failures = { remaining: 1 }
 
+  // The old list was found at time 10: sessions that went idle by then were read here unless the list says otherwise.
+  vi.useFakeTimers()
+  setSystemTime(new Date(10))
   localStorage.setItem(
     key,
     JSON.stringify({
@@ -190,54 +194,100 @@ test("carries the old local list's viewed state to the server once, then deletes
     }),
   )
 
+  const sessions = [
+    { id: "read-here", time: { idle: 5 } },
+    { id: "unread-here", time: { idle: 6 } },
+    { id: "viewed", time: { idle: 4, viewed: 4 } },
+    { id: "untracked", time: { idle: 7, viewed: 3 } },
+    { id: "new", time: { idle: 20 } },
+    { id: "never-ran", time: {} },
+  ]
+
   const start = () =>
-    createRoot((dispose) => {
-      createServerNotificationState({
+    createRoot((dispose) => ({
+      dispose,
+      state: createServerNotificationState({
         key: server,
         sdk: {
           scope: ServerScope.local,
+          connection: { status: () => "connected" },
           event: { listen: () => () => {} },
           api: {
             session: {
-              list: async (input: unknown) => {
+              list: async (input: { cursor?: string }) => {
                 lists.push(input)
 
-                return {
-                  data: [
-                    { id: "read-here", time: { idle: 5 } },
-                    { id: "unread-here", time: { idle: 6 } },
-                    { id: "untracked", time: { idle: 7, viewed: 3 } },
-                    { id: "viewed", time: { idle: 4, viewed: 4 } },
-                    { id: "never-ran", time: {} },
-                  ],
-                }
+                return input.cursor
+                  ? { data: sessions.slice(3), cursor: {} }
+                  : { data: sessions.slice(0, 3), cursor: { next: "second" } }
               },
-              view: async (input: unknown) => {
+              view: async (input: { sessionID: string; idle: number }) => {
                 views.push(input)
+
+                if (failures.remaining-- > 0) throw new Error("offline")
               },
             },
           },
         } as unknown as ServerSDK,
-        data: { session: {} } as unknown as Data,
+        data: { session: { get: () => undefined, root: (id: string) => id } } as unknown as Data,
         coordinator: {},
-      } as Parameters<typeof createServerNotificationState>[0])
+      } as Parameters<typeof createServerNotificationState>[0]),
+    }))
 
-      return dispose
-    })
+  // Sessions come from fetched snapshots here, like home rows for sessions that aren't loaded.
+  const unread = (state: ReturnType<typeof start>["state"]) =>
+    // SAFETY: the snapshots carry the id and time fields unread state reads.
+    sessions.filter((session) => state.session.unread(session.id, session as never)).map((session) => session.id)
 
-  // Sessions the old list still had unread stay unread; every other unread recent session is marked viewed.
-  start()
-  await new Promise((resolve) => setTimeout(resolve, 10))
-  expect(lists).toEqual([{ limit: 100, order: "desc", parentID: null }])
+  // Advances fake time, then lets the mocked requests it started settle.
+  const advance = async (ms: number) => {
+    vi.advanceTimersByTime(ms)
+
+    for (const _ of Array.from({ length: 50 })) await Promise.resolve()
+  }
+
+  const first = start()
+  // Until the stored list is read, nothing it had read can flash unread.
+  expect(unread(first.state)).toEqual([])
+  await advance(0)
+
+  // Nothing read here lights up, while a session that went idle after the list was found is new.
+  expect(unread(first.state)).toEqual(["unread-here", "new"])
+
+  // The carry-over waits for startup to settle, then a failed report keeps the list for the next connection.
+  await advance(4_999)
+  expect(lists).toEqual([])
+  await advance(1)
+  expect(views).toEqual([{ sessionID: "read-here", idle: 5 }])
+  expect(JSON.parse(localStorage.getItem(key) ?? "null")).toMatchObject({ started: 10 })
+  first.dispose()
+
+  // A later start keeps the first start's cutoff, reports every page, then deletes the list without anything flashing.
+  setSystemTime(new Date(100))
+  lists.length = 0
+  views.length = 0
+  const second = start()
+  await advance(0)
+  expect(unread(second.state)).toEqual(["unread-here", "new"])
+  await advance(5_000)
+  expect(lists).toEqual([
+    { limit: 200, order: "desc", parentID: null },
+    { limit: 200, order: "desc", parentID: null, cursor: "second" },
+  ])
   expect(views).toEqual([
     { sessionID: "read-here", idle: 5 },
     { sessionID: "untracked", idle: 7 },
   ])
   expect(localStorage.getItem(key)).toBeNull()
+  expect(unread(second.state)).toEqual(["unread-here", "new"])
+  second.dispose()
 
   // Without the old list, later starts never touch the server's viewed state.
-  start()
-  await new Promise((resolve) => setTimeout(resolve, 10))
-  expect(lists).toHaveLength(1)
+  const third = start()
+  await advance(5_000)
+  expect(lists).toHaveLength(2)
   expect(views).toHaveLength(2)
+  third.dispose()
+  vi.useRealTimers()
+  setSystemTime()
 })

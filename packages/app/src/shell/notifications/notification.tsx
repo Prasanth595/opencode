@@ -1,4 +1,5 @@
-import { createSignal, onCleanup } from "solid-js"
+import { createEffect, createMemo, onCleanup, untrack } from "solid-js"
+import { createStore } from "solid-js/store"
 import { Schema } from "effect"
 import type { SessionError } from "@opencode/schema/session-error"
 import type { SessionInfo } from "@opencode/client/promise"
@@ -26,20 +27,28 @@ export function openNotificationSession(tabs: NotificationTabs, server: ServerCo
 }
 
 /** A session is unread when its latest terminal execution is newer than the last one any client viewed. */
-export function isSessionUnread(session?: Pick<SessionInfo, "time">) {
+function isSessionUnread(session?: Pick<SessionInfo, "time">) {
   const time = session?.time
 
   return time?.idle !== undefined && (time.viewed === undefined || time.idle > time.viewed)
 }
 
-// The list Desktop kept before unread state moved to the server; read once to carry its viewed state over.
+// The list Desktop kept before unread state moved to the server. Until its viewed state reaches the server, unread
+// state still honours it, so sessions read here don't light up while the server catches up.
 const LegacyNotificationStore = Persistence.struct({
   list: Schema.optional(
     Persistence.array(Persistence.struct({ session: Schema.optional(Schema.String), viewed: Schema.Boolean })),
   ),
+  // When this client first found the list. Sessions that went idle later are new, whatever the list says.
+  started: Schema.optional(Schema.Finite),
 })
 
-const LEGACY_MIGRATION_LIMIT = 100
+// The carry-over waits this long after connecting so it doesn't compete with startup requests.
+const LEGACY_MIGRATION_DELAY = 5_000
+
+const LEGACY_MIGRATION_PAGE = 200
+
+const LEGACY_MIGRATION_CONCURRENCY = 4
 
 const VIEW_RETRY_DELAY = 250
 
@@ -59,51 +68,115 @@ export function createServerNotificationState(input: {
   // Idle watermarks already reported per root session, so reactive re-runs don't re-post them.
   const acknowledged = new Map<string, number>()
   // A failed view report re-runs the tracking caller with backoff, like the TUI.
-  const [viewRetry, setViewRetry] = createSignal(0)
+  const [state, setState] = createStore({ viewRetry: 0, legacyMigrated: false })
   let viewRetryTimer: ReturnType<typeof setTimeout> | undefined
   let viewRetryAttempt = 0
   onCleanup(() => clearTimeout(viewRetryTimer))
 
-  // Unread state now lives on the server. Desktop never reported views, so the server still holds sessions read here
-  // as unread: mark the most recent ones viewed unless the old list had them unread, then drop the list.
-  // A failed listing keeps the list so the next start retries.
   const legacyTarget = Persist.serverGlobal(input.sdk.scope, "notification")
-  const [legacy, , , legacyReady] = persisted(legacyTarget, LegacyNotificationStore, {}, platform)
+  const [legacy, setLegacy, , legacyReady] = persisted(legacyTarget, LegacyNotificationStore, {}, platform)
+  const started = Date.now()
+  const legacyStarted = () => legacy.started ?? started
 
-  void Promise.resolve(legacyReady.promise)
-    .then(async () => {
-      const list = legacy.list
+  // Sessions the old list still had unread, while its viewed state hasn't reached the server yet.
+  const legacyUnseen = createMemo(() => {
+    const list = legacy.list
 
-      if (list) {
-        const unseen = new Set(list.flatMap((item) => (!item.viewed && item.session ? [item.session] : [])))
-        const page = await input.sdk.api.session.list({ limit: LEGACY_MIGRATION_LIMIT, order: "desc", parentID: null })
+    if (!list || state.legacyMigrated) return
 
-        await Promise.allSettled(
-          page.data.flatMap((session) =>
-            session.time.idle !== undefined && isSessionUnread(session) && !unseen.has(session.id)
-              ? [input.sdk.api.session.view({ sessionID: session.id, idle: session.time.idle })]
-              : [],
-          ),
+    return new Set(list.flatMap((item) => (!item.viewed && item.session ? [item.session] : [])))
+  })
+
+  // Idle watermarks the carry-over reported, so rows drawn from an older fetched copy of a session stay read.
+  const legacyReported = new Map<string, number>()
+
+  const unread = (session?: Pick<SessionInfo, "id" | "time">) => {
+    const idle = session?.time.idle
+
+    // Until the old list is read, a session it had read could flash unread.
+    if (!legacyReady() || !session || idle === undefined || !isSessionUnread(session)) return false
+
+    if (idle <= (legacyReported.get(session.id) ?? -Infinity)) return false
+    const unseen = legacyUnseen()
+
+    return !unseen || unseen.has(session.id) || idle > legacyStarted()
+  }
+
+  // Carry the old list's viewed state to the server in the background: page through every root session and report
+  // the ones the server has unread but this client shows read. Then delete the list. A failure keeps it, and the
+  // next connection retries; reports already made are skipped because the server then has them read.
+  let legacyMigration: "idle" | "scheduled" | "running" = "idle"
+
+  const migrateLegacy = async () => {
+    legacyMigration = "running"
+    let cursor: string | undefined
+
+    for (;;) {
+      const page = await input.sdk.api.session.list({
+        limit: LEGACY_MIGRATION_PAGE,
+        order: "desc",
+        parentID: null,
+        cursor,
+      })
+
+      const hidden = page.data.flatMap((session) =>
+        session.time.idle !== undefined && isSessionUnread(session) && !unread(session)
+          ? [{ sessionID: session.id, idle: session.time.idle }]
+          : [],
+      )
+
+      for (let index = 0; index < hidden.length; index += LEGACY_MIGRATION_CONCURRENCY) {
+        if (disposed.value) return
+
+        await Promise.all(
+          hidden.slice(index, index + LEGACY_MIGRATION_CONCURRENCY).map(async (report) => {
+            await input.sdk.api.session.view(report)
+            legacyReported.set(report.sessionID, report.idle)
+          }),
         )
       }
 
-      removePersisted(legacyTarget, platform)
-    })
-    .catch(() => undefined)
+      if (page.data.length === 0 || !page.cursor.next) break
+      cursor = page.cursor.next
+    }
 
-  const unreadRoots = (directory: string) =>
+    removePersisted(legacyTarget, platform)
+    setState("legacyMigrated", true)
+  }
+
+  createEffect(() => {
+    if (!legacyReady() || !legacyUnseen()) return
+
+    if (untrack(() => legacy.started) === undefined) setLegacy("started", started)
+
+    if (input.sdk.connection.status() !== "connected" || legacyMigration !== "idle") return
+    legacyMigration = "scheduled"
+
+    const timer = setTimeout(
+      () =>
+        void migrateLegacy().catch(() => {
+          legacyMigration = "idle"
+        }),
+      LEGACY_MIGRATION_DELAY,
+    )
+
+    onCleanup(() => {
+      clearTimeout(timer)
+
+      if (legacyMigration === "scheduled") legacyMigration = "idle"
+    })
+  })
+
+  const roots = (directory: string) =>
     input.data.session
       .list()
       .filter(
         (session) =>
-          !session.parentID &&
-          session.time.archived === undefined &&
-          session.location.directory === directory &&
-          isSessionUnread(session),
+          !session.parentID && session.time.archived === undefined && session.location.directory === directory,
       )
 
   const view = (sessionID: string) => {
-    viewRetry()
+    void state.viewRetry
     const root = input.data.session.root(sessionID)
     const session = input.data.session.get(root)
     const idle = session?.time.idle
@@ -126,7 +199,7 @@ export function createServerNotificationState(input: {
         viewRetryAttempt++
         viewRetryTimer = setTimeout(() => {
           viewRetryTimer = undefined
-          setViewRetry((value) => value + 1)
+          setState("viewRetry", (value) => value + 1)
         }, delay)
       },
     )
@@ -211,19 +284,22 @@ export function createServerNotificationState(input: {
 
   return {
     session: {
-      /** Whether the session's root has an execution result no client has viewed yet. */
-      unread(sessionID: string) {
-        return isSessionUnread(input.data.session.get(input.data.session.root(sessionID)))
+      /**
+       * Whether the session's root has an execution result no client has viewed yet. `snapshot` stands in for a root
+       * session that isn't loaded, such as a row from the fetched home index.
+       */
+      unread(sessionID: string, snapshot?: SessionInfo) {
+        return unread(input.data.session.get(input.data.session.root(sessionID)) ?? snapshot)
       },
       /** Reports the session's latest idle transition to the server as viewed. */
       markViewed: view,
     },
     project: {
       hasUnread(directory: string) {
-        return unreadRoots(directory).length > 0
+        return roots(directory).some((session) => unread(session))
       },
       markViewed(directory: string) {
-        unreadRoots(directory).forEach((session) => view(session.id))
+        roots(directory).forEach((session) => view(session.id))
       },
     },
   }

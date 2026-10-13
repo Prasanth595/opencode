@@ -23,7 +23,6 @@ import { pathKey } from "@/workspaces/path-key"
 import { fetchSessionExport, saveSessionExport, sessionExportFilename } from "@/session/commands/export"
 import { usePlatform } from "@/runtime/platform/platform"
 import { sessionLabel, sessionTitle } from "@/session/title"
-import { isSessionUnread } from "@/shell/notifications/notification"
 import { showToast } from "@/shell/notifications/toast"
 import { archiveHomeSession } from "./archive"
 import type { HomeController } from "../model"
@@ -438,11 +437,12 @@ export function HomeSessionStatusController(props: {
     () => props.server,
     () => props.record.session.id,
     () => true,
+    // Home rows can come from the fetched index before the session is loaded.
+    () => props.record.session,
   )
 
   return props.render({
-    // Home rows can come from the fetched index before the session is loaded, so read its viewed state directly too.
-    unread: () => avatar.unread() || isSessionUnread(props.record.session),
+    unread: avatar.unread,
     loading: avatar.loading,
     open: () => props.isOpenTab(props.record),
   })
