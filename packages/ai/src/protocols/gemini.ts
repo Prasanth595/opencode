@@ -1,10 +1,15 @@
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Stream } from "effect"
 import { Tool } from "@opencode/schema/tool"
 import { Route } from "../route/client.js"
 import { Auth } from "../route/auth.js"
 import { Endpoint } from "../route/endpoint.js"
-import { Framing } from "../route/framing.js"
 import { Protocol } from "../route/protocol.js"
+import {
+  HttpTransport,
+  type Transport,
+  type TransportExecution,
+  type TransportPrepareInput,
+} from "../route/transport/index.js"
 import {
   AIError,
   LLMEvent,
@@ -25,6 +30,7 @@ import { GeminiGenerateContent } from "./utils/gemini-generate-content.js"
 import { Lifecycle } from "./utils/lifecycle.js"
 
 const ADAPTER = "gemini"
+const CONTINUATION = "CONTINUATION"
 // Google documents this sentinel for replaying Gemini 3 function calls after their original signature was lost.
 const SKIP_THOUGHT_SIGNATURE_VALIDATOR = "skip_thought_signature_validator"
 // Gemini 2.5 rejects a budget under the model's minimum: 512 on Flash-Lite, the highest, and 128 on Pro.
@@ -212,6 +218,7 @@ const GeminiBodyFields = {
   tools: optionalArray(GeminiTool),
   toolConfig: Schema.optional(GeminiToolConfig),
   generationConfig: Schema.optional(GeminiGenerationConfig),
+  continuationToken: Schema.optional(Schema.String),
 }
 const GeminiBody = Schema.Struct(GeminiBodyFields)
 export type GeminiBody = Schema.Schema.Type<typeof GeminiBody>
@@ -228,6 +235,7 @@ type GeminiUsage = Schema.Schema.Type<typeof GeminiUsage>
 const GeminiCandidate = Schema.Struct({
   content: optionalNull(GeminiResponseContent),
   finishReason: optionalNull(Schema.String),
+  continuationToken: optionalNull(Schema.String),
 })
 
 const GeminiPromptFeedback = Schema.StructWithRest(
@@ -254,7 +262,9 @@ interface ParserState {
   readonly finishReason?: string
   readonly hasToolCalls: boolean
   readonly promptFeedback?: GeminiPromptFeedback
-  readonly usage?: Usage
+  readonly usage?: GeminiUsage
+  /** Usage of the earlier requests of a response Gemini continued across requests. */
+  readonly continuedUsage?: ReadonlyArray<GeminiUsage>
   readonly lifecycle: Lifecycle.State
   readonly reasoningSignature?: string
   readonly textSignature?: string
@@ -497,7 +507,11 @@ const fromRequest = Effect.fn("Gemini.fromRequest")(function* (request: LLMReque
 // `cachedContentTokenCount` subset. `candidatesTokenCount` is *exclusive*
 // of `thoughtsTokenCount` — visible-only, not a total — so we sum the two
 // to produce the inclusive `outputTokens` the rest of the contract expects.
-const mapUsage = (usage: GeminiUsage | undefined, metadataKey: string) => {
+const mapUsage = (
+  usage: GeminiUsage | undefined,
+  metadataKey: string,
+  metadata: Record<string, unknown> = usage ?? {},
+) => {
   if (!usage) return undefined
   // Explicit provider nulls decode as `null`; normalize to `undefined` so the
   // token arithmetic below treats them like absent counts.
@@ -518,8 +532,33 @@ const mapUsage = (usage: GeminiUsage | undefined, metadataKey: string) => {
     cacheReadInputTokens: cached,
     reasoningTokens: thoughts,
     totalTokens: ProviderShared.totalTokens(promptTokens, outputTokens, usage.totalTokenCount ?? undefined),
-    providerMetadata: providerMetadata(metadataKey, usage),
+    providerMetadata: providerMetadata(metadataKey, metadata),
   })
+}
+
+// Each continued request re-bills the output so far as input. Reporting the first request's input with all output keeps
+// input plus output equal to the response's final context size, under-reporting billed input; the summed billed counts
+// remain in provider metadata.
+const mapContinuedUsage = (requests: ReadonlyArray<GeminiUsage>, metadataKey: string) => {
+  const sum = (field: keyof GeminiUsage) =>
+    ProviderShared.sumTokens(...requests.map((usage) => usage[field] ?? undefined))
+  return mapUsage(
+    {
+      promptTokenCount: requests[0].promptTokenCount,
+      cachedContentTokenCount: requests[0].cachedContentTokenCount,
+      candidatesTokenCount: sum("candidatesTokenCount"),
+      thoughtsTokenCount: sum("thoughtsTokenCount"),
+    },
+    metadataKey,
+    {
+      promptTokenCount: sum("promptTokenCount"),
+      cachedContentTokenCount: sum("cachedContentTokenCount"),
+      candidatesTokenCount: sum("candidatesTokenCount"),
+      thoughtsTokenCount: sum("thoughtsTokenCount"),
+      totalTokenCount: sum("totalTokenCount"),
+      requests: requests.length,
+    },
+  )
 }
 
 const mapFinishReason = (finishReason: string | undefined, hasToolCalls: boolean): FinishReason => {
@@ -545,7 +584,7 @@ const finish = (state: ParserState): ReadonlyArray<LLMEvent> => {
   const promptBlockReason =
     state.finishReason === undefined ? (state.promptFeedback?.blockReason ?? undefined) : undefined
   const finishReason = state.finishReason ?? promptBlockReason
-  if (finishReason === undefined && state.usage === undefined) return []
+  if (finishReason === undefined && state.usage === undefined && state.continuedUsage === undefined) return []
 
   const events: LLMEvent[] = []
   let lifecycle = state.lifecycle
@@ -573,7 +612,10 @@ const finish = (state: ParserState): ReadonlyArray<LLMEvent> => {
         promptBlockReason === undefined ? mapFinishReason(finishReason, state.hasToolCalls) : "content-filter",
       raw: finishReason,
     },
-    usage: state.usage,
+    usage:
+      state.continuedUsage === undefined
+        ? mapUsage(state.usage, state.providerMetadataKey)
+        : mapContinuedUsage([...state.continuedUsage, state.usage ?? {}], state.providerMetadataKey),
     providerMetadata:
       state.promptFeedback === undefined
         ? undefined
@@ -604,14 +646,17 @@ const step = (state: ParserState, event: GeminiEvent) => {
     return Effect.fail(
       ProviderShared.eventError(state.route, `Invalid ${state.route} stream event`, ProviderShared.encodeJson(event)),
     )
+  const candidate = event.candidates?.[0]
+  const usage = event.usageMetadata ?? state.usage
+  // Usage is cumulative within one request; a continuation ends the request and the next one counts from zero.
+  const continued = candidate?.finishReason === CONTINUATION
   const nextState = {
     ...state,
     promptFeedback: event.promptFeedback ?? state.promptFeedback,
-    usage: event.usageMetadata
-      ? (mapUsage(event.usageMetadata, state.providerMetadataKey) ?? state.usage)
-      : state.usage,
+    usage: continued ? undefined : usage,
+    continuedUsage: continued ? [...(state.continuedUsage ?? []), usage ?? {}] : state.continuedUsage,
+    finishReason: continued ? undefined : (candidate?.finishReason ?? state.finishReason),
   }
-  const candidate = event.candidates?.[0]
   if (candidate?.finishReason && mapFinishReason(candidate.finishReason, state.hasToolCalls) === "error")
     return Effect.fail(
       ProviderShared.eventError(
@@ -620,11 +665,7 @@ const step = (state: ParserState, event: GeminiEvent) => {
         ProviderShared.encodeJson(event),
       ),
     )
-  if (!candidate?.content)
-    return Effect.succeed([
-      { ...nextState, finishReason: candidate?.finishReason ?? nextState.finishReason },
-      [],
-    ] as const)
+  if (!candidate?.content) return Effect.succeed([nextState, []] as const)
 
   const events: LLMEvent[] = []
   let hasToolCalls = nextState.hasToolCalls
@@ -784,10 +825,106 @@ const step = (state: ParserState, event: GeminiEvent) => {
       nextReasoningId,
       nextTextId,
       seenCallIds,
-      finishReason: candidate.finishReason ?? nextState.finishReason,
     },
     events,
   ] as const)
+}
+
+// =============================================================================
+// Transport
+// =============================================================================
+const GeminiCheckpoint = Schema.Struct({
+  candidates: optionalNull(
+    Schema.Array(
+      Schema.Struct({
+        finishReason: optionalNull(Schema.String),
+        continuationToken: optionalNull(Schema.String),
+      }),
+    ),
+  ),
+})
+const decodeCheckpoint = Schema.decodeUnknownOption(GeminiCheckpoint)
+// A request continued without finishing on CONTINUATION still ends there, so the parser starts counting the next one.
+const RESUMED = { candidates: [{ finishReason: CONTINUATION }] }
+
+export interface Prepared {
+  readonly http: HttpTransport.HttpPrepared<string>
+  readonly input: TransportPrepareInput<GeminiBody>
+}
+
+const http = HttpTransport.sseJson.with<GeminiBody>()
+
+/**
+ * SSE transport that continues responses Gemini splits across requests, like Google's SDK. Chunks carry
+ * `continuationToken` checkpoints and a request that reaches its output cap finishes with `CONTINUATION`; the
+ * transport resends the original body with the latest token, also resuming a dropped request from its last checkpoint.
+ */
+export const transport: Transport<GeminiBody, Prepared, unknown> = {
+  id: http.id,
+  prepare: (input) => http.prepare(input).pipe(Effect.map((prepared) => ({ http: prepared, input }))),
+  execute: (prepared, request, runtime) =>
+    Effect.gen(function* () {
+      const route = request.model.route.id
+      const raw = new WeakMap<object, string>()
+      const respond = (execution: TransportExecution<string>): Stream.Stream<unknown, AIError> =>
+        Stream.suspend(() => {
+          let token: string | undefined
+          let finishReason: string | undefined
+          let dropped: AIError | undefined
+          return execution.frames.pipe(
+            Stream.mapEffect((frame) =>
+              ProviderShared.parseJson(route, frame, `Invalid ${request.model.provider}/${route} stream event`).pipe(
+                Effect.map((event) => {
+                  if (typeof event === "object" && event !== null) raw.set(event, frame)
+                  const candidate = Option.getOrUndefined(decodeCheckpoint(event))?.candidates?.[0]
+                  token = candidate?.continuationToken ?? (candidate?.finishReason ? undefined : token)
+                  finishReason = candidate?.finishReason ?? finishReason
+                  return event
+                }),
+              ),
+            ),
+            Stream.catchIf(
+              (error) => error.reason._tag === "Transport",
+              (error) => {
+                dropped = error
+                return Stream.empty
+              },
+            ),
+            Stream.concat(
+              Stream.suspend(() => {
+                const continuationToken = token
+                if (continuationToken === undefined || (finishReason !== undefined && finishReason !== CONTINUATION)) {
+                  if (dropped) return Stream.fail(dropped)
+                  if (finishReason === CONTINUATION)
+                    return Stream.fail(
+                      ProviderShared.eventError(
+                        `${request.model.provider}/${route}`,
+                        "Gemini continued the response without a token",
+                      ),
+                    )
+                  return Stream.empty
+                }
+                const next = Stream.unwrap(
+                  Effect.gen(function* () {
+                    const continued = yield* http.prepare({
+                      ...prepared.input,
+                      body: { ...prepared.input.body, continuationToken },
+                    })
+                    return respond(yield* http.execute(continued, request, runtime))
+                  }),
+                )
+                return finishReason === CONTINUATION ? next : Stream.concat(Stream.succeed(RESUMED), next)
+              }),
+            ),
+          )
+        })
+      const first = yield* http.execute(prepared.http, request, runtime)
+      return {
+        frames: respond(first),
+        http: first.http,
+        body: (frame) => (typeof frame === "object" && frame !== null ? raw.get(frame) : undefined),
+      }
+    }),
 }
 
 // =============================================================================
@@ -806,8 +943,8 @@ export const protocol = Protocol.make({
   // Gemini's schema rules are this API's default, including for tuned endpoints whose IDs do not name Gemini.
   sanitizer: "gemini",
   stream: {
-    event: Protocol.jsonEvent(GeminiEvent),
-    initial: (request) => ({
+    event: GeminiEvent,
+    initial: (request): ParserState => ({
       route: `${request.model.provider}/${request.model.route.id}`,
       providerMetadataKey: request.model.route.providerMetadataKey ?? String(request.model.provider),
       hasToolCalls: false,
@@ -830,7 +967,7 @@ export const route = Route.make({
     baseURL: DEFAULT_BASE_URL,
   }),
   auth: Auth.none,
-  framing: Framing.sse,
+  transport,
 })
 
 export * as Gemini from "./gemini.js"
