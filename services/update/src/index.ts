@@ -193,20 +193,12 @@ async function selectArtifacts(db: D1Database, rows: ArtifactRow[], current: str
         const floor = minimum && releaseVersion(minimum.version)
         if (current !== undefined && minimum && (!floor || !caller || semver.lt(caller, floor))) return minimum
         if (active.time_created <= cutoff) return active
-        const query = (before: number) =>
-          db
-            .prepare(
-              `${select} WHERE channel = ? AND name = ? AND distribution = ? AND time_created < ? AND time_created <= ? ORDER BY time_created DESC, version DESC LIMIT 1`,
-            )
-            .bind(active.channel, active.name, active.distribution, active.time_created, before)
-            .first<ArtifactRow>()
-        // The newest earlier release is shared by every caller. Only a caller whose cutoff precedes it
-        // (overlapping rollouts) needs its own query for an older fallback.
-        const newest = await cachedRead(
-          `previous:${active.channel}/${active.name}/${active.distribution}/${active.time_created}`,
-          () => query(active.time_created),
-        )
-        const previous = !newest || newest.time_created <= cutoff ? newest : await query(cutoff)
+        const previous = await db
+          .prepare(
+            `${select} WHERE channel = ? AND name = ? AND distribution = ? AND time_created < ? AND time_created <= ? ORDER BY time_created DESC, version DESC LIMIT 1`,
+          )
+          .bind(active.channel, active.name, active.distribution, active.time_created, cutoff)
+          .first<ArtifactRow>()
         // A rollout must not send an identified client back below its compatibility floor.
         if (current !== undefined && minimum) {
           const version = previous && releaseVersion(previous.version)

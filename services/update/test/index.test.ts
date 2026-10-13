@@ -125,36 +125,3 @@ test("selects the minimum and active artifacts from the partial indexes", async 
   const body = (await response.json()) as { artifacts: { version: string }[] }
   expect(body.artifacts.map((artifact) => artifact.version)).toEqual(["3.0.0"])
 })
-
-test("shares the newest rollout fallback and queries older fallbacks per caller", async () => {
-  const now = Date.parse("2026-10-13T00:00:00Z")
-  const hour = 3_600_000
-  setSystemTime(new Date(now))
-  const db = database()
-  db.sqlite.query("INSERT INTO channel_rollout (channel, duration_hours) VALUES ('rollout', 10)").run()
-  db.insert({ channel: "rollout", version: "1.0.0", time: now - 20 * hour })
-  db.insert({ channel: "rollout", version: "1.1.0", time: now - 2 * hour })
-  db.insert({ channel: "rollout", version: "1.2.0", time: now - hour, active: true })
-
-  // An IP's cutoff is now minus the 10-hour rollout scaled by its hash position.
-  const position = async (ip: string) =>
-    (new DataView(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`rollout:${ip}`))).getUint32(0) + 1) /
-    2 ** 32
-  const ips = await Promise.all(
-    Array.from({ length: 200 }, (_, index) => `10.0.0.${index}`).map(async (ip) => ({
-      ip,
-      position: await position(ip),
-    })),
-  )
-  const recent = ips.find((entry) => entry.position > 0.1 && entry.position < 0.2)!.ip
-  const later = ips.filter((entry) => entry.position > 0.2).map((entry) => entry.ip)
-
-  expect(await version(await lookup(db.env, "rollout/cli/opencode", { "CF-Connecting-IP": recent }))).toBe("1.1.0")
-  const reads = db.queries.length
-  expect(await version(await lookup(db.env, "rollout/cli/opencode", { "CF-Connecting-IP": recent }))).toBe("1.1.0")
-  expect(db.queries).toHaveLength(reads)
-
-  expect(await version(await lookup(db.env, "rollout/cli/opencode", { "CF-Connecting-IP": later[0] }))).toBe("1.0.0")
-  expect(await version(await lookup(db.env, "rollout/cli/opencode", { "CF-Connecting-IP": later[1] }))).toBe("1.0.0")
-  expect(db.queries).toHaveLength(reads + 2)
-})
