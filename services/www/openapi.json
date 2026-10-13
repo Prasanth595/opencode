@@ -16198,6 +16198,9 @@
           "directory": {
             "$ref": "#/components/schemas/AbsolutePath"
           },
+          "home": {
+            "type": "string"
+          },
           "project": {
             "type": "object",
             "properties": {
