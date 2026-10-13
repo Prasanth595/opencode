@@ -3,6 +3,8 @@ import type { ElectronAPI } from "../api-types"
 
 type DesktopNotifyAPI = Pick<ElectronAPI, "getWindowFocused" | "showWindow" | "setWindowFocus">
 
+const MAX_ACTIVE_NOTIFICATIONS = 40
+
 const activeNotifications = new Set<Notification>()
 
 export function createDesktopNotify(api: DesktopNotifyAPI): Platform["notify"] {
@@ -17,10 +19,19 @@ export function createDesktopNotify(api: DesktopNotifyAPI): Platform["notify"] {
       silent: true,
     })
 
+    if (activeNotifications.size >= MAX_ACTIVE_NOTIFICATIONS) {
+      const oldest = activeNotifications.values().next().value
+
+      if (oldest) activeNotifications.delete(oldest)
+    }
+
     activeNotifications.add(notification)
 
     const release = () => {
       activeNotifications.delete(notification)
+      notification.onclick = null
+      notification.onclose = null
+      notification.onerror = null
     }
 
     notification.onclose = release

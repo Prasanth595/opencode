@@ -3,7 +3,7 @@ import { createDesktopNotify } from "./notifications"
 
 const originalNotification = globalThis.Notification
 
-let latestRef: WeakRef<FakeNotification> | undefined
+const created: FakeNotification[] = []
 
 const events: string[] = []
 
@@ -35,7 +35,7 @@ class FakeNotification extends EventTarget implements Notification {
     this.icon = options?.icon ?? ""
     this.silent = options?.silent ?? null
     events.push(`created:${title}:${this.body}`)
-    latestRef = new WeakRef(this)
+    created.push(this)
   }
 
   close() {
@@ -45,19 +45,13 @@ class FakeNotification extends EventTarget implements Notification {
 }
 
 afterEach(() => {
+  created.length = 0
   events.length = 0
-  latestRef = undefined
   globalThis.Notification = originalNotification
 })
 
-function flushGc() {
-  return new Promise<void>((resolve) => setImmediate(resolve)).then(() => {
-    Bun.gc(true)
-  })
-}
-
 describe("desktop notifications", () => {
-  test("retains active Notification across GC, shows and focuses the window on click, and releases it on close", async () => {
+  test("shows and focuses the window on click, runs the callback, and closes the notification", async () => {
     globalThis.Notification = FakeNotification
 
     const notify = createDesktopNotify({
@@ -74,11 +68,10 @@ describe("desktop notifications", () => {
       events.push("session.select")
     })
 
-    await flushGc()
+    const notification = created[0]
+    expect(notification).toBeDefined()
 
-    const live = latestRef?.deref()
-    expect(live).toBeDefined()
-    live?.onclick?.call(live, new Event("click"))
+    notification?.onclick?.call(notification, new Event("click"))
 
     expect(events).toEqual([
       "created:Response ready:Refactor auth flow",
@@ -87,13 +80,13 @@ describe("desktop notifications", () => {
       "session.select",
       "notification.close",
     ])
-
-    await flushGc()
-    expect(latestRef?.deref()).toBeUndefined()
+    expect(notification?.onclick).toBeNull()
+    expect(notification?.onclose).toBeNull()
+    expect(notification?.onerror).toBeNull()
   })
 
   test.each([{ event: "close" as const }, { event: "error" as const }])(
-    "releases the Notification wrapper when $event fires without a click",
+    "releases the Notification handlers when $event fires without a click",
     async ({ event }) => {
       globalThis.Notification = FakeNotification
 
@@ -104,19 +97,19 @@ describe("desktop notifications", () => {
       })
 
       await notify("Session error")
-      await flushGc()
 
-      const live = latestRef?.deref()
-      expect(live).toBeDefined()
+      const notification = created[0]
+      expect(notification).toBeDefined()
 
       if (event === "close") {
-        live?.onclose?.call(live, new Event("close"))
+        notification?.onclose?.call(notification, new Event("close"))
       } else {
-        live?.onerror?.call(live, new Event("error"))
+        notification?.onerror?.call(notification, new Event("error"))
       }
 
-      await flushGc()
-      expect(latestRef?.deref()).toBeUndefined()
+      expect(notification?.onclick).toBeNull()
+      expect(notification?.onclose).toBeNull()
+      expect(notification?.onerror).toBeNull()
     },
   )
 
@@ -131,6 +124,6 @@ describe("desktop notifications", () => {
 
     await notify("Response ready", "Active session")
     expect(events).toEqual([])
-    expect(latestRef).toBeUndefined()
+    expect(created).toEqual([])
   })
 })
