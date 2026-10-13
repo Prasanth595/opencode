@@ -13,13 +13,14 @@ import { createEffect, createMemo, type Component, For, Show } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useServerSDK } from "@/runtime/server/client"
-import { useData } from "@/runtime/server/current"
+import { formatServerError } from "@/runtime/server/errors"
 import { CONSOLE_INTEGRATION, CONSOLE_PROVIDERS } from "@/providers/connect/controller"
 import { DialogConnectProvider, useProviderConnectController } from "@/providers/connect/dialog"
 import { ProviderModelIcon } from "@/providers/models/provider-group"
 import { SettingsList } from "@/settings/list"
 import { activeProviderAccount, providerAccounts, type ProviderAccount } from "./accounts"
 import { AccountNameInput } from "./account-name"
+import { useProviderAccountActions } from "./account-actions"
 import "@/settings/settings.css"
 
 type ProviderSource = "env" | "api" | "account" | "config" | "custom"
@@ -44,17 +45,20 @@ export const SettingsProviders: Component<{
   const dialog = useDialog()
   const language = useLanguage()
   const serverSdk = useServerSDK()
-  const data = useData()
   const providers = useProviders(() => props.directory)
   const integrations = useIntegrations(() => props.directory)
   const providerConnect = useProviderConnectController()
+  const accountActions = useProviderAccountActions(() => props.directory)
 
-  const [state, setState] = createStore({
-    disconnecting: {} as Record<string, "removing" | "removed" | "absent" | undefined>,
+  const [state, setState] = createStore<{
+    disconnecting: Record<string, "removing" | "removed" | "absent" | undefined>
+    consoleExpanded: boolean
+    credentialID?: string
+    renaming?: string
+    held?: ProviderItem[]
+  }>({
+    disconnecting: {},
     consoleExpanded: false,
-    credentialID: undefined as string | undefined,
-    renaming: undefined as string | undefined,
-    held: undefined as ProviderItem[] | undefined,
   })
 
   const updateDisconnecting = (ids: string[], status: "removing" | "removed" | "absent" | undefined) =>
@@ -93,7 +97,8 @@ export const SettingsProviders: Component<{
           }}
         />
       ),
-      () => void refreshAccounts()
+      () => void accountActions
+          .refresh()
           .catch(() => undefined)
           .finally(() => setState("held", undefined)),
     )
@@ -249,9 +254,9 @@ export const SettingsProviders: Component<{
           description: language.t("provider.disconnect.toast.disconnected.description", { provider: name }),
         })
       })
-      .catch((err: unknown) => {
+      .catch((err) => {
         updateDisconnecting(ids, undefined)
-        const message = err instanceof Error ? err.message : String(err)
+        const message = formatServerError(err, language.t)
         showToast({
           title: language.t("common.requestFailed"),
           description: language.tDynamic("provider.disconnect.toast.failed.description", message, { provider: name }),
@@ -259,100 +264,23 @@ export const SettingsProviders: Component<{
       })
   }
 
-  const refreshAccounts = async () => {
-    const location = props.directory ? { directory: props.directory } : undefined
-    data.location.integration.invalidate(location)
-    data.location.provider.invalidate(location)
-    data.location.model.invalidate(location)
-    await Promise.all([
-      data.location.integration.sync(location),
-      data.location.provider.sync(location),
-      data.location.model.sync(location),
-    ])
-  }
-
-  // The server loads a Console workspace's providers after the credential changes, so the first
-  // refresh can still show only the free catalog. Poll briefly before showing the new account.
-  const settleConsoleCatalog = async () => {
-    const location = props.directory ? { directory: props.directory } : undefined
-    const deadline = Date.now() + 10_000
-
-    while (!consoleProviderGroup(providers.connected()) && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 250))
-      data.location.provider.invalidate(location)
-      data.location.model.invalidate(location)
-      await Promise.all([data.location.provider.sync(location), data.location.model.sync(location)])
-    }
-  }
-
-  // A Zen API key shares the Console integration but has no workspace to wait for.
-  const settleAfterAccountChange = (provider: ProviderItem) =>
-    (provider.integrationID ?? provider.id) === CONSOLE_INTEGRATION &&
-    activeProviderAccount(integration(provider))?.method === "oauth"
-      ? settleConsoleCatalog()
-      : undefined
-
-  const accountError = (error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error)
-    showToast({ title: language.t("common.requestFailed"), description: message })
-  }
-
   const activate = async (provider: ProviderItem, providerName: string, account: ProviderAccount) => {
     if (activeProviderAccount(integration(provider))?.id === account.id) return
     setState({ credentialID: account.id, held: available() })
-    await serverSdk.api.credential
-      .activate({ credentialID: account.id })
-      .then(refreshAccounts)
-      .then(() => settleAfterAccountChange(provider))
-      .then(() =>
-        showToast({
-          variant: "success",
-          icon: "circle-check",
-          title: language.t("settings.providers.account.switched.title", { provider: providerName }),
-          description: language.t("settings.providers.account.switched.description", { account: account.label }),
-        }),
-      )
-      .catch(accountError)
-      .finally(() => setState({ credentialID: undefined, held: undefined }))
+    await accountActions.activate({ integrationID: provider.integrationID ?? provider.id, provider: providerName, account })
+    setState({ credentialID: undefined, held: undefined })
   }
 
   const remove = async (provider: ProviderItem, providerName: string, account: ProviderAccount) => {
-    const final = providerAccounts(integration(provider)).length === 1
     setState({ credentialID: account.id, held: available() })
-    await serverSdk.api.credential
-      .remove({ credentialID: account.id })
-      .then(refreshAccounts)
-      .then(() => (final ? undefined : settleAfterAccountChange(provider)))
-      .then(() =>
-        showToast({
-          variant: "success",
-          icon: "circle-check",
-          title: language.t(
-            final ? "provider.disconnect.toast.disconnected.title" : "settings.providers.account.removed.title",
-            final ? { provider: providerName } : { account: account.label },
-          ),
-          description: language.t(
-            final
-              ? "provider.disconnect.toast.disconnected.description"
-              : "settings.providers.account.removed.description",
-            { provider: providerName },
-          ),
-        }),
-      )
-      .catch(accountError)
-      .finally(() => setState({ credentialID: undefined, held: undefined }))
+    await accountActions.remove({
+      integrationID: provider.integrationID ?? provider.id,
+      provider: providerName,
+      account,
+      final: providerAccounts(integration(provider)).length === 1,
+    })
+    setState({ credentialID: undefined, held: undefined })
   }
-
-  const rename = (account: ProviderAccount, label: string) =>
-    serverSdk.api.credential
-      .update({ credentialID: account.id, label })
-      .then(refreshAccounts)
-      .then(() => true)
-      .catch((error: unknown) => {
-        accountError(error)
-
-        return false
-      })
 
   function AccountMenu(menuProps: { provider: ProviderItem; name?: string }) {
     const accounts = () => providerAccounts(integration(menuProps.provider))
@@ -371,7 +299,7 @@ export const SettingsProviders: Component<{
           <AccountNameInput
             value={account().label}
             class="settings-provider-account-input"
-            onSave={(label) => rename(account(), label)}
+            onSave={(label) => accountActions.rename(account(), label)}
             onClose={() => setState("renaming", undefined)}
           />
         )}

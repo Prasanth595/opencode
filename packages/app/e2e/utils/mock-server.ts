@@ -48,7 +48,7 @@ export interface MockServerConfig {
   // Runs on POST /api/credential/:id/activate; the fixture swaps its integrations and catalog to the new account.
   onCredentialActivate?: (credentialID: string) => void
   // Runs on PATCH /api/credential/:id with the request body; the fixture applies the new label.
-  onCredentialUpdate?: (credentialID: string, body: unknown) => void
+  onCredentialUpdate?: (credentialID: string, body: { label?: string }) => void
   onConnectKey?: (input: { integrationID: string; body: unknown }) => void
   // Terminal shells the settings offer (`/api/config/shell`).
   shells?: unknown[]

@@ -54,6 +54,7 @@ import { DialogChatGPTPlanWelcome } from "./chatgpt-welcome"
 import { authServerName, RemoteAuthNotice } from "./remote"
 import { providerAccounts, type ProviderAccount } from "@/settings/providers/accounts"
 import { AccountNameInput } from "@/settings/providers/account-name"
+import { useProviderAccountActions } from "@/settings/providers/account-actions"
 import { IconButton } from "@opencode/ui/icon-button"
 import { Menu } from "@opencode/ui/menu"
 import "./models.css"
@@ -429,6 +430,7 @@ function ProviderConnection(props: {
   const location = () => (initialDirectory ? { directory: initialDirectory } : undefined)
   const providers = useProviders(directory)
   const integrations = useIntegrations(directory)
+  const accountActions = useProviderAccountActions(directory)
   const integrationID = consoleIntegration(props.provider)
   const isConsole = CONSOLE_PROVIDERS.has(props.provider)
   const remote = isConsole && authServerName(sdk.server) !== undefined
@@ -1168,24 +1170,6 @@ function ProviderConnection(props: {
     )
   }
 
-  const refreshAccounts = async () => {
-    const ref = location()
-    data.location.integration.invalidate(ref)
-    data.location.provider.invalidate(ref)
-    data.location.model.invalidate(ref)
-    await Promise.all([
-      data.location.integration.sync(ref),
-      data.location.provider.sync(ref),
-      data.location.model.sync(ref),
-    ])
-  }
-
-  const accountError = (error: unknown) =>
-    showToast({
-      title: language.t("common.requestFailed"),
-      description: error instanceof Error ? error.message : String(error),
-    })
-
   const addAccount = () => {
     setState({ adding: true, direct: false, confirming: undefined })
 
@@ -1201,52 +1185,19 @@ function ProviderConnection(props: {
   const activateAccount = async (account: ProviderAccount) => {
     if (activeAccount() === account.id || state.switching) return
     setState({ switching: account.id, activating: account.id, confirming: undefined })
-    await sdk.api.credential
-      .activate({ credentialID: account.id })
-      .then(refreshAccounts)
-      .then(() =>
-        showToast({
-          variant: "success",
-          icon: "circle-check",
-          title: language.t("settings.providers.account.switched.title", { provider: provider().name }),
-          description: language.t("settings.providers.account.switched.description", { account: account.label }),
-        }),
-      )
-      .catch(accountError)
-      .finally(() => setState({ switching: undefined, activating: undefined }))
+    await accountActions.activate({ integrationID: props.provider, provider: provider().name, account })
+    setState({ switching: undefined, activating: undefined })
   }
 
-  const renameAccount = (account: ProviderAccount, label: string) =>
-    sdk.api.credential
-      .update({ credentialID: account.id, label })
-      .then(refreshAccounts)
-      .then(() => true)
-      .catch((error: unknown) => {
-        accountError(error)
-
-        return false
-      })
-
   const removeAccount = async (account: ProviderAccount) => {
-    const final = accounts().length === 1
     setState({ switching: account.id, confirming: undefined })
-    await sdk.api.credential
-      .remove({ credentialID: account.id })
-      .then(refreshAccounts)
-      .then(() =>
-        showToast({
-          variant: "success",
-          icon: "circle-check",
-          title: final
-            ? language.t("provider.disconnect.toast.disconnected.title", { provider: provider().name })
-            : language.t("settings.providers.account.removed.title", { account: account.label }),
-          description: final
-            ? language.t("provider.disconnect.toast.disconnected.description", { provider: provider().name })
-            : language.t("settings.providers.account.removed.description", { provider: provider().name }),
-        }),
-      )
-      .catch(accountError)
-      .finally(() => setState("switching", undefined))
+    await accountActions.remove({
+      integrationID: props.provider,
+      provider: provider().name,
+      account,
+      final: accounts().length === 1,
+    })
+    setState("switching", undefined)
   }
 
   function AccountsView() {
@@ -1283,7 +1234,7 @@ function ProviderConnection(props: {
                           <AccountNameInput
                             value={account.label}
                             class="-ms-1 max-w-full text-[13px] font-[440] leading-5 tracking-[-0.04px] text-v2-text-text-base"
-                            onSave={(label) => renameAccount(account, label)}
+                            onSave={(label) => accountActions.rename(account, label)}
                             onClose={() => setState("renaming", undefined)}
                           />
                         </div>

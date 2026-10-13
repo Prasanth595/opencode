@@ -832,7 +832,7 @@ test("providers: the connect dialog lists connected providers and manages their 
     onCredentialUpdate: (credentialID, body) => {
       const account = accounts.find((item) => item.id === credentialID)
 
-      if (account) account.label = String(Object(body).label)
+      if (account && body.label) account.label = body.label
     },
   })
 
@@ -954,7 +954,7 @@ test("providers: the account options rename and remove the active account", asyn
     onCredentialUpdate: (credentialID, body) => {
       const target = [account, other].find((item) => item.id === credentialID)
 
-      if (target) target.label = String(Object(body).label)
+      if (target && body.label) target.label = body.label
     },
   })
 

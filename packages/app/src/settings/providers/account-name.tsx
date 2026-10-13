@@ -10,7 +10,7 @@ export function AccountNameInput(props: {
   onClose: () => void
 }) {
   const language = useLanguage()
-  const [store, setStore] = createStore({ draft: props.value, saving: false })
+  const [store, setStore] = createStore({ draft: props.value, saving: false, cancelled: false })
   let input: HTMLInputElement | undefined
 
   // Waits a frame so a closing menu's focus restore cannot pull focus back out of the field.
@@ -57,10 +57,12 @@ export function AccountNameInput(props: {
 
         if (event.key !== "Escape") return
         event.preventDefault()
+        setStore("cancelled", true)
         props.onClose()
       }}
+      // Like session title editing, clicking away keeps the typed name.
       onBlur={() => {
-        if (!store.saving) props.onClose()
+        if (!store.saving && !store.cancelled) void save()
       }}
     />
   )
