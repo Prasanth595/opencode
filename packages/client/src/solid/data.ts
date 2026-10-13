@@ -1240,17 +1240,12 @@ export function createData(config: CreateDataInput) {
               }
             }),
           }))
-        const model = hasLocation("model", location)
-        const provider = hasLocation("provider", location)
+        const active =
+          hasLocation("integration", location) || hasLocation("model", location) || hasLocation("provider", location)
         result.location.model.invalidate(location)
         result.location.provider.invalidate(location)
-        if (model || provider)
-          refresh(() =>
-            Promise.all([
-              model ? result.location.model.sync(location) : undefined,
-              provider ? result.location.provider.sync(location) : undefined,
-            ]),
-          )
+        if (active)
+          refresh(() => Promise.all([result.location.model.sync(location), result.location.provider.sync(location)]))
       })
       return
     }
@@ -1310,18 +1305,17 @@ export function createData(config: CreateDataInput) {
         refreshLocation("reference", result.location.reference, location)
         break
       case "integration.updated": {
-        const integration = hasLocation("integration", location)
-        const model = hasLocation("model", location)
-        const provider = hasLocation("provider", location)
+        const active =
+          hasLocation("integration", location) || hasLocation("model", location) || hasLocation("provider", location)
         result.location.integration.invalidate(location)
         result.location.model.invalidate(location)
         result.location.provider.invalidate(location)
-        if (integration || model || provider)
+        if (active)
           refresh(() =>
             Promise.all([
-              integration ? result.location.integration.sync(location) : undefined,
-              model ? result.location.model.sync(location) : undefined,
-              provider ? result.location.provider.sync(location) : undefined,
+              result.location.integration.sync(location),
+              result.location.model.sync(location),
+              result.location.provider.sync(location),
             ]),
           )
         break
