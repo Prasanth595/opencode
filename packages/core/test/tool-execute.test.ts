@@ -73,6 +73,31 @@ test("execute denies a fetch the host guard refuses", async () => {
   expect(hits).toEqual([])
 })
 
+test("interrupting execute interrupts a fetch permission check that is still waiting", async () => {
+  let entered: () => void = () => {}
+  const waiting = new Promise<void>((resolve) => (entered = resolve))
+  const interrupted = Promise.withResolvers<void>()
+  const tool = createCodeMode(new Map(), () =>
+    Effect.gen(function* () {
+      entered()
+      yield* Effect.never
+    }).pipe(Effect.onInterrupt(() => Effect.sync(interrupted.resolve))),
+  )
+
+  const abort = new AbortController()
+  const executed = Effect.runPromise(
+    tool.execute({ code: 'return await fetch("https://example.com/probe")' }, context),
+    { signal: abort.signal },
+  )
+  await waiting
+  abort.abort()
+  await executed.then(
+    () => undefined,
+    () => undefined,
+  )
+  await interrupted.promise
+})
+
 test("execute reaches the network when the host guard allows the fetch", async () => {
   const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("secret") })
   const url = `http://127.0.0.1:${server.port}/probe`
