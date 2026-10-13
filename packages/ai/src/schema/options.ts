@@ -207,7 +207,7 @@ export type LanguageModelMaxTokensFieldCompatibility = Schema.Schema.Type<
   typeof LanguageModelMaxTokensFieldCompatibility
 >
 
-export const LanguageModelCacheFormatCompatibility = Schema.Literals(["anthropic", "alibaba"])
+export const LanguageModelCacheFormatCompatibility = Schema.Literals(["anthropic", "alibaba", "openai"])
 export type LanguageModelCacheFormatCompatibility = Schema.Schema.Type<typeof LanguageModelCacheFormatCompatibility>
 
 export class LanguageModelCompatibility extends Schema.Class<LanguageModelCompatibility>(
@@ -227,7 +227,10 @@ export class LanguageModelCompatibility extends Schema.Class<LanguageModelCompat
   // this is true; other protocols omit it only when this is false.
   // Session-affinity headers still flow regardless.
   supportsPromptCacheKey: Schema.optional(Schema.Boolean),
-  /** Prompt-cache marker syntax the endpoint accepts. Overrides the route default; both send `cache_control`, and `alibaba` skips tool definitions. */
+  /**
+   * Prompt-cache marker syntax the endpoint accepts. Overrides the route default. `anthropic` and `alibaba` send
+   * `cache_control` (`alibaba` skips tool definitions); `openai` sends `prompt_cache_breakpoint`.
+   */
   cacheFormat: Schema.optional(LanguageModelCacheFormatCompatibility),
   zaiToolStream: Schema.optional(Schema.Boolean),
   requireSignature: Schema.optional(Schema.Boolean),

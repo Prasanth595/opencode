@@ -189,7 +189,8 @@ const selectPolicy = (request: LLMRequest): CachePolicyObject => {
   const format = request.model.compatibility?.cacheFormat
   const route = request.model.route.id
   const auto = request.cache === undefined || request.cache === "auto"
-  if (format === "alibaba") return auto ? QWEN : { ...resolve(request.cache), tools: false }
+  // Alibaba ignores breakpoints on tools, and OpenAI does not accept them there.
+  if (format === "alibaba" || format === "openai") return auto ? QWEN : { ...resolve(request.cache), tools: false }
   if (format === "anthropic") return resolve(request.cache)
   if (!RESPECTS_INLINE_HINTS.has(route)) return NONE
   if (!auto) return resolve(request.cache)

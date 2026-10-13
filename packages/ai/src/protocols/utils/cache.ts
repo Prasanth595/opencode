@@ -21,3 +21,14 @@ export const cacheControl = () => {
     return { type: "ephemeral" as const, ttl: ttlBucket(cache.ttlSeconds) }
   }
 }
+
+// OpenAI GPT-5.6+ explicit breakpoints. Implicit mode keeps its own breakpoint, which takes one of the four cache
+// writes, so explicit breakpoints are capped at three.
+export const cacheBreakpoint = () => {
+  const breakpoints = newBreakpoints(3)
+  return (cache: CacheHint | undefined) => {
+    if (cache === undefined || breakpoints.remaining === 0) return undefined
+    breakpoints.remaining -= 1
+    return { mode: "explicit" as const }
+  }
+}
