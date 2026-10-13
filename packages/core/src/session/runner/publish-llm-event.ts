@@ -665,7 +665,7 @@ function inputExcerpt(value: string): InputExcerpt {
 
 function inputFailure(input: InputExcerpt | undefined, reason: InputFailureReason) {
   const failure = INPUT_FAILURES[reason]
-  if (!input) return failure
+  if (!input?.length) return failure
   const truncated = input.length > input.text.length ? "\n[truncated]" : ""
   return {
     ...failure,

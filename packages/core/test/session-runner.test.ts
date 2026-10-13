@@ -6129,6 +6129,7 @@ describe("SessionRunnerLLM", () => {
     yield* s.llm.push(
       TestLLM.complete(
         { reason: { normalized: "length" } },
+        LLMEvent.toolInputStart({ id: "call-empty", name: "echo" }),
         LLMEvent.toolInputStart({ id: "call-incomplete", name: "echo" }),
         LLMEvent.toolInputDelta({ id: "call-incomplete", name: "echo", text: '{"text":"partial' }),
       ),
@@ -6141,6 +6142,20 @@ describe("SessionRunnerLLM", () => {
     expect(s.executions).toEqual([])
     expect((yield* s.context).some((message) => message.type === "synthetic")).toBe(false)
     expect(requireAssistant(yield* s.context).content).toMatchObject([
+      {
+        type: "tool",
+        id: "call-empty",
+        executed: false,
+        state: {
+          status: "error",
+          input: {},
+          error: {
+            type: "tool.input-incomplete",
+            message:
+              "The tool call was not executed because the output token limit (stop reason: length) was reached before you could complete the arguments. Break large payloads into smaller tool calls and reissue the call with complete arguments.",
+          },
+        },
+      },
       {
         type: "tool",
         id: "call-incomplete",
