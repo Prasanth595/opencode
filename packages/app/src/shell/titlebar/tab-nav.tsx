@@ -84,7 +84,9 @@ export function TabNavItem(props: {
     if (!session) return
     const home = serverCtx()?.sync.data.path.home
 
-    return home ? session.location.directory.replace(home, "~") : session.location.directory
+    return home && session.location.directory.startsWith(home)
+      ? "~" + session.location.directory.slice(home.length)
+      : session.location.directory
   })
 
   // Only label the server when multiple servers are connected.
