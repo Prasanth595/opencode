@@ -656,6 +656,36 @@ describe("DatabaseMigration", () => {
     )
   })
 
+  test("skips a corrupt legacy MCP credential file instead of failing the migration", async () => {
+    await using tmp = await tmpdir()
+    const source = path.join(tmp.path, "mcp-auth.json")
+
+    await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        yield* DatabaseMigration.apply(db)
+        const now = Date.now()
+        yield* db.run(sql`
+          INSERT INTO credential (id, integration_id, label, value, time_created, time_updated)
+          VALUES ('kept', 'openai', 'OAuth', ${JSON.stringify({ type: "key", key: "secret" })}, ${now}, ${now})
+        `)
+
+        // Unparseable, and parseable but not an object: neither is a reason to hold the database shut, because
+        // the migration re-runs on every startup and the user cannot see this file.
+        for (const content of ["{ not json", '"a string"']) {
+          yield* Effect.promise(() => Bun.write(source, content))
+          yield* db.run(sql`DELETE FROM migration WHERE id = ${legacyMCPCredentialsMigration.id}`)
+          yield* DatabaseMigration.applyOnly(db, [legacyMCPCredentialsMigration])
+
+          expect(yield* db.all(sql`SELECT id FROM credential`)).toEqual([{ id: "kept" }])
+          // Left in place for the user to repair, exactly as a well-formed import leaves it.
+          expect(yield* Effect.promise(() => Bun.file(source).text())).toBe(content)
+        }
+      }),
+      Global.make({ data: tmp.path }),
+    )
+  })
+
   test("moves Azure CLI connections saved as OAuth credentials to external credentials", async () => {
     await run(
       Effect.gen(function* () {

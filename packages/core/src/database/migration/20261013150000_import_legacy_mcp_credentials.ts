@@ -46,9 +46,10 @@ export function importLegacyMCPCredentials(tx: Parameters<DatabaseMigration.Migr
     const content = yield* Effect.promise(() => readFile(filepath, "utf8").catch(() => undefined))
     if (content === undefined) return
     const input = Option.getOrUndefined(decodeJson(content))
-    if (typeof input !== "object" || input === null || Array.isArray(input)) {
-      return yield* Effect.fail(new Error("Legacy MCP auth file must contain an object"))
-    }
+    // A leftover V1 file that is corrupt, or holds something other than an object, is skipped rather than fatal:
+    // this migration runs on every startup, so failing here would leave the database unopenable until the user
+    // found and repaired a file they cannot see. Re-running `opencode mcp auth` rewrites it.
+    if (typeof input !== "object" || input === null || Array.isArray(input)) return
 
     for (const [name, raw] of Object.entries(input)) {
       const entry = Option.getOrUndefined(decodeEntry(raw))
