@@ -1,7 +1,11 @@
 import type { Platform } from "@opencode/app/desktop"
 import type { ElectronAPI } from "../api-types"
 
-export function createDesktopNotify(api: ElectronAPI): Platform["notify"] {
+type DesktopNotifyAPI = Pick<ElectronAPI, "getWindowFocused" | "showWindow" | "setWindowFocus">
+
+const activeNotifications = new Set<Notification>()
+
+export function createDesktopNotify(api: DesktopNotifyAPI): Platform["notify"] {
   return async (title, description, onClick) => {
     const focused = await api.getWindowFocused().catch(() => document.hasFocus())
 
@@ -13,9 +17,18 @@ export function createDesktopNotify(api: ElectronAPI): Platform["notify"] {
       silent: true,
     })
 
+    activeNotifications.add(notification)
+
+    const release = () => {
+      activeNotifications.delete(notification)
+    }
+
+    notification.onclose = release
+    notification.onerror = release
+
     notification.onclick = () => {
-      void api.showWindow()
-      void api.setWindowFocus()
+      release()
+      void Promise.all([api.showWindow(), api.setWindowFocus()])
       onClick?.()
       notification.close()
     }
