@@ -482,26 +482,35 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
                       ),
                     ),
                     Stream.flatMap(Stream.fromIterable),
-                    Stream.concat(Stream.suspend(continueResponse)),
                   )
                 }),
               ),
+            ).pipe(
+              Stream.catchIf(
+                (error) => error.reason._tag === "Transport",
+                (error) => {
+                  dropped = error
+                  return Stream.empty
+                },
+              ),
+              Stream.concat(Stream.suspend(continueResponse)),
             )
 
-          const continueResponse = (): Stream.Stream<LLMEvent, AIError> => {
-            const continueWith = protocol.continueResponse
-            if (!continueWith) return Stream.empty
-            return Stream.unwrap(
+          // A dropped request fails unless the protocol can resume it from a checkpoint.
+          let dropped: AIError | undefined
+          const continueResponse = (): Stream.Stream<LLMEvent, AIError> =>
+            Stream.unwrap(
               Effect.gen(function* () {
-                const next = yield* continueWith(state)
-                if (next === undefined) return Stream.empty
+                const failure = dropped
+                dropped = undefined
+                const next = protocol.continueResponse ? yield* protocol.continueResponse(state) : undefined
+                if (next === undefined) return failure ? Stream.fail(failure) : Stream.empty
                 state = next.state
                 current = undefined
                 const body = yield* protocol.body.from(request)
                 return respond(yield* prepareTransport({ ...body, ...next.body }, request, options))
               }),
             )
-          }
 
           const onHalt = protocol.stream.onHalt
           const stream = onHalt

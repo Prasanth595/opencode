@@ -1845,17 +1845,31 @@ describe("Gemini response continuation", () => {
     tools: [ToolDefinition.make({ name: "lookup", description: "Lookup data", inputSchema: { type: "object" } })],
   })
 
-  // Serves one scripted SSE body per request and records every sent body.
-  const scripted = (responses: ReadonlyArray<string>) => {
+  // Serves one scripted SSE body per request, or a body whose connection drops after it, and records every sent body.
+  const scripted = (responses: ReadonlyArray<string | { readonly dropped: string }>) => {
     const bodies: Array<Record<string, unknown>> = []
     const layer = dynamicResponse((input) =>
       Effect.sync(() => {
         bodies.push(JSON.parse(input.text))
-        return input.respond(responses[bodies.length - 1], { headers: { "content-type": "text/event-stream" } })
+        const response = responses[bodies.length - 1]
+        if (typeof response === "string")
+          return input.respond(response, { headers: { "content-type": "text/event-stream" } })
+        let sent = false
+        return input.respond(
+          new ReadableStream({
+            pull(controller) {
+              if (sent) return controller.error(new Error("connection reset"))
+              sent = true
+              controller.enqueue(new TextEncoder().encode(response.dropped))
+            },
+          }),
+          { headers: { "content-type": "text/event-stream" } },
+        )
       }),
     )
     return { bodies, layer }
   }
+  const chunks = (...values: ReadonlyArray<unknown>) => values.map((value) => sseRaw(`data: ${JSON.stringify(value)}`)).join("")
 
   const text = (value: string, extra: Record<string, unknown> = {}) => ({
     candidates: [{ content: { role: "model", parts: [{ text: value }] }, ...extra }],
@@ -1880,7 +1894,7 @@ describe("Gemini response continuation", () => {
         ),
         sseEvents(
           text(" HUNDRED SEVEN"),
-          // Checkpoint chunks resume a dropped stream; they must not continue the response.
+          // The finishing chunk's token supersedes an earlier checkpoint's.
           text("TY-TWO", { continuationToken: "checkpoint" }),
           continuation("token-2"),
         ),
@@ -1939,6 +1953,43 @@ describe("Gemini response continuation", () => {
         providerMetadata: { google: { thoughtSignature: "call_sig" } },
       })
       expect(response.finishReason).toEqual({ normalized: "tool-calls", raw: "STOP" })
+    }),
+  )
+
+  it.effect("resumes a dropped stream from its latest checkpoint", () =>
+    Effect.gen(function* () {
+      const server = scripted([
+        { dropped: chunks(text("THIRTEEN"), text(" THOUSAND", { continuationToken: "checkpoint-1" })) },
+        sseEvents(text(" TWO", { finishReason: "STOP" })),
+      ])
+      const response = yield* LLMClient.generate(continuedRequest).pipe(Effect.provide(server.layer))
+
+      expect(response.text).toBe("THIRTEEN THOUSAND TWO")
+      expect(response.finishReason).toEqual({ normalized: "stop", raw: "STOP" })
+      expect(server.bodies[1]).toEqual({ ...server.bodies[0], continuationToken: "checkpoint-1" })
+    }),
+  )
+
+  it.effect("continues a stream that ends at a checkpoint without finishing", () =>
+    Effect.gen(function* () {
+      const server = scripted([
+        sseEvents(text("THIRTEEN", { continuationToken: "checkpoint-1" })),
+        sseEvents(text(" THOUSAND", { finishReason: "STOP" })),
+      ])
+      const response = yield* LLMClient.generate(continuedRequest).pipe(Effect.provide(server.layer))
+
+      expect(response.text).toBe("THIRTEEN THOUSAND")
+      expect(server.bodies[1]).toEqual({ ...server.bodies[0], continuationToken: "checkpoint-1" })
+    }),
+  )
+
+  it.effect("fails a stream dropped before any checkpoint", () =>
+    Effect.gen(function* () {
+      const server = scripted([{ dropped: chunks(text("Partial")) }])
+      const error = yield* LLMClient.generate(continuedRequest).pipe(Effect.provide(server.layer), Effect.flip)
+
+      expect(error.reason._tag).toBe("Transport")
+      expect(server.bodies).toHaveLength(1)
     }),
   )
 

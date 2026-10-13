@@ -647,8 +647,9 @@ const step = (state: ParserState, event: GeminiEvent) => {
     promptFeedback: event.promptFeedback ?? state.promptFeedback,
     usage: event.usageMetadata ?? state.usage,
     finishReason: candidate?.finishReason ?? state.finishReason,
-    // Checkpoint chunks carry tokens for resuming a dropped stream; only the finishing chunk's token continues it.
-    continuationToken: candidate?.finishReason ? (candidate.continuationToken ?? undefined) : state.continuationToken,
+    // The latest token resumes the response from its last checkpoint; a final finish without one ends it.
+    continuationToken:
+      candidate?.continuationToken ?? (candidate?.finishReason ? undefined : state.continuationToken),
   }
   if (candidate?.finishReason && mapFinishReason(candidate.finishReason, state.hasToolCalls) === "error")
     return Effect.fail(
@@ -851,10 +852,13 @@ export const protocol = Protocol.make({
     step,
     onHalt: (state) => Effect.succeed(finish(state)),
   },
+  // Continues past a request's output cap, or a stream that ended or dropped before finishing, from the latest token.
   continueResponse: (state) => {
-    if (state.finishReason !== "CONTINUATION") return Effect.succeed(undefined)
+    if (state.finishReason !== undefined && state.finishReason !== "CONTINUATION") return Effect.succeed(undefined)
     if (state.continuationToken === undefined)
-      return Effect.fail(ProviderShared.eventError(state.route, "Gemini continued the response without a token"))
+      return state.finishReason === "CONTINUATION"
+        ? Effect.fail(ProviderShared.eventError(state.route, "Gemini continued the response without a token"))
+        : Effect.succeed(undefined)
     return Effect.succeed({
       body: { continuationToken: state.continuationToken },
       state: {
