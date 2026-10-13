@@ -21,6 +21,32 @@ test("clipboard helper failures bypass normal CLI startup and propagate to the c
   }
 }, 30_000)
 
+test("reuses a helper for ordered copies and replaces it when X authority changes", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "opencode-clipboard-reuse-"))
+  const file = path.join(dir, "request.json")
+  const clipboard = createClipboardProcess([
+    process.execPath,
+    path.join(import.meta.dir, "fixture/clipboard-process.ts"),
+  ])
+  const env = { ...process.env, OPENCODE_CLIPBOARD_FIXTURE: file, DISPLAY: "localhost:20.0", XAUTHORITY: "/first" }
+  try {
+    await clipboard.write("first", env)
+    const first = await Bun.file(file).json()
+    await Promise.all([clipboard.write("second", env), clipboard.write("third\n世界", env)])
+    const reused = await Bun.file(file).json()
+    expect(reused.pid).toBe(first.pid)
+    expect(reused.count).toBe(3)
+    expect(reused.text).toBe("third\n世界")
+    await clipboard.write("new authority", { ...env, XAUTHORITY: "/second" })
+    const replaced = await Bun.file(file).json()
+    expect(replaced.pid).not.toBe(first.pid)
+    expect(replaced.count).toBe(1)
+  } finally {
+    await clipboard.dispose()
+    await rm(dir, { recursive: true, force: true })
+  }
+}, 30_000)
+
 test.skipIf(process.platform !== "linux")(
   "replaces the clipboard owner and releases it when its tmux client exits",
   async () => {

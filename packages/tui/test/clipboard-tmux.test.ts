@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { createTmuxClipboard } from "../src/clipboard/tmux"
+import { createTmuxClipboard, tmuxClipboardTarget } from "../src/clipboard/tmux"
 
 test.skipIf(process.platform !== "linux" || !Bun.which("tmux") || !Bun.which("script"))(
   "copies to an attached tmux client with default passthrough settings",
@@ -20,7 +20,7 @@ test.skipIf(process.platform !== "linux" || !Bun.which("tmux") || !Bun.which("sc
       const proc = Bun.spawn(
         ["script", "-q", "-c", `tmux -S '${socket.replaceAll("'", "'\''")}' attach -t copy`, "/dev/null"],
         {
-          env: { ...process.env, TERM: term, TMUX: undefined, TMUX_PANE: undefined, ...env },
+          env: { ...process.env, SSH_CONNECTION: "fixture", TERM: term, TMUX: undefined, TMUX_PANE: undefined, ...env },
           stdin: "pipe",
           stdout: "pipe",
           stderr: "ignore",
@@ -106,6 +106,27 @@ test.skipIf(process.platform !== "linux" || !Bun.which("tmux") || !Bun.which("sc
       expect(await native.write("local desktop")).toBe("written")
       expect(writes.at(-1)).toEqual({ text: "local desktop", display: ":22", wayland: "wayland-local" })
 
+      // Even vt100 without a clipboard feature can use the unchanged local backend.
+      const local = createTmuxClipboard(
+        { read: async () => undefined, write: async () => "written" as const, dispose: async () => {} },
+        {
+          ...process.env,
+          TMUX: `${socket},0,0`,
+          TMUX_PANE: pane,
+          DISPLAY: ":22",
+          WAYLAND_DISPLAY: "wayland-local",
+          SSH_CONNECTION: undefined,
+          SSH_TTY: undefined,
+        },
+        {
+          write: async () => {
+            throw new Error("local copies must not start a helper")
+          },
+          dispose: async () => {},
+        },
+      )
+      expect(await local.write("native local fallback")).toBe("written")
+
       run(["detach-client", "-s", "copy"])
       clients.push(attach("xterm-256color", { SSH_CONNECTION: "fixture", DISPLAY: ":0", WAYLAND_DISPLAY: "stale" }))
       await connected()
@@ -163,3 +184,108 @@ test("uses an explicitly forwarded display outside tmux, without using the remot
   )
   await expect(failed.write("must not claim success")).rejects.toThrow("Forwarded display disconnected")
 })
+
+test.each([
+  {
+    name: "unavailable client environment preserves the original backend",
+    env: { DISPLAY: ":0" },
+    attached: undefined,
+    target: "original",
+  },
+  { name: "local macOS tmux preserves its native backend", env: {}, attached: undefined, target: "original" },
+  {
+    name: "remote startup without proc uses tmux OSC 52",
+    env: { SSH_CONNECTION: "fixture" },
+    attached: undefined,
+    target: "terminal",
+  },
+  {
+    name: "unchanged local desktop avoids a helper",
+    env: { DISPLAY: ":0" },
+    attached: { DISPLAY: ":0" },
+    target: "original",
+  },
+  {
+    name: "unchanged Wayland desktop avoids a helper",
+    env: { WAYLAND_DISPLAY: "wayland-0" },
+    attached: { WAYLAND_DISPLAY: "wayland-0" },
+    target: "original",
+  },
+  {
+    name: "another local desktop needs its own environment",
+    env: { DISPLAY: ":0" },
+    attached: { DISPLAY: ":1" },
+    target: "host",
+  },
+  {
+    name: "changed X authority needs its own environment",
+    env: { DISPLAY: ":0", XAUTHORITY: "/old" },
+    attached: { DISPLAY: ":0", XAUTHORITY: "/new" },
+    target: "host",
+  },
+  {
+    name: "forwarded X11 uses the helper",
+    env: { DISPLAY: ":0" },
+    attached: { SSH_CONNECTION: "fixture", DISPLAY: "localhost:10.0" },
+    target: "host",
+  },
+  {
+    name: "ordinary SSH must not write to the old desktop",
+    env: { DISPLAY: ":0" },
+    attached: { SSH_CONNECTION: "fixture", DISPLAY: ":0" },
+    target: "terminal",
+  },
+  {
+    name: "SSH without a display uses the terminal",
+    env: { DISPLAY: ":0" },
+    attached: { SSH_TTY: "/dev/pts/1" },
+    target: "terminal",
+  },
+])("$name", ({ env, attached, target }) => {
+  expect(tmuxClipboardTarget(env, attached)).toBe(target)
+})
+
+test.skipIf(process.platform !== "linux" || !Bun.which("tmux"))(
+  "a stopped tmux server cannot leave copy pending indefinitely",
+  async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "opencode-clipboard-timeout-"))
+    const socket = path.join(dir, "tmux.sock")
+    const server = Number(
+      new TextDecoder()
+        .decode(
+          Bun.spawnSync([
+            "tmux",
+            "-S",
+            socket,
+            "-f",
+            "/dev/null",
+            "new-session",
+            "-d",
+            "-P",
+            "-F",
+            "#{pid}",
+            "sleep 30",
+          ]).stdout,
+        )
+        .trim(),
+    )
+    expect(server).toBeGreaterThan(0)
+    try {
+      process.kill(server, "SIGSTOP")
+      const clipboard = createTmuxClipboard(
+        {
+          read: async () => undefined,
+          write: async () => "written" as const,
+          dispose: async () => {},
+        },
+        { ...process.env, TMUX: `${socket},${server},0`, TMUX_PANE: "%0" },
+      )
+      await expect(clipboard.write("stopped server")).rejects.toThrow("tmux clipboard command timed out")
+    } finally {
+      process.kill(server, "SIGCONT")
+      Bun.spawnSync(["tmux", "-S", socket, "kill-server"])
+      await rm(dir, { recursive: true, force: true })
+    }
+  },
+  15_000,
+)

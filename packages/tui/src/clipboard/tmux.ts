@@ -37,7 +37,7 @@ export function createTmuxClipboard(
       // tmux refreshes its session environment on attach, but that environment
       // is shared by clients. Read the selected client's own environment instead.
       const attached =
-        host && process.platform === "linux"
+        process.platform === "linux"
           ? await readFile(`/proc/${pid}/environ`, "utf8").then(
               (value) =>
                 Object.fromEntries(
@@ -49,11 +49,9 @@ export function createTmuxClipboard(
               () => undefined,
             )
           : undefined
-      if (
-        host &&
-        attached &&
-        (forwardedX11(attached) || (!ssh(attached) && (attached.DISPLAY || attached.WAYLAND_DISPLAY)))
-      ) {
+      const target = tmuxClipboardTarget(env, attached)
+      if (target === "original") return clipboard.write(text)
+      if (host && attached && target === "host") {
         await host.write(
           text.replaceAll("\0", ""),
           {
@@ -76,6 +74,23 @@ export function createTmuxClipboard(
   }
 }
 
+// Without client environment (including non-Linux hosts), preserve the local
+// backend or route a known SSH startup through tmux. Never use an old desktop
+// for a client we know is remote.
+export function tmuxClipboardTarget(env: NodeJS.ProcessEnv, attached?: NodeJS.ProcessEnv) {
+  if (!attached) return ssh(env) ? "terminal" : "original"
+  if (forwardedX11(attached)) return "host"
+  if (ssh(attached)) return "terminal"
+  if (
+    !ssh(env) &&
+    ["DISPLAY", "XAUTHORITY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "HOME"].every((key) => env[key] === attached[key])
+  ) {
+    return "original"
+  }
+  if (attached.DISPLAY || attached.WAYLAND_DISPLAY) return "host"
+  return "original"
+}
+
 function ssh(env: NodeJS.ProcessEnv) {
   return Boolean(env.SSH_TTY || env.SSH_CONNECTION)
 }
@@ -95,7 +110,24 @@ async function runTmux(args: string[], env: NodeJS.ProcessEnv, text?: string) {
   proc.stderr.setEncoding("utf8").on("data", (text: string) => stderr.push(text))
   proc.stdin.on("error", () => proc.kill())
   proc.stdin.end(text)
-  const [code] = await once(proc, "close")
-  if (code !== 0) throw new Error(stderr.join("").trim() || "tmux clipboard command failed")
-  return stdout.join("")
+  // Bound the request even if killing the client does not close its streams.
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const [code] = await Promise.race([
+      once(proc, "close"),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          proc.kill("SIGKILL")
+          proc.stdin.destroy()
+          proc.stdout.destroy()
+          proc.stderr.destroy()
+          reject(new Error("tmux clipboard command timed out"))
+        }, 5000)
+      }),
+    ])
+    if (code !== 0) throw new Error(stderr.join("").trim() || "tmux clipboard command failed")
+    return stdout.join("")
+  } finally {
+    clearTimeout(timer)
+  }
 }
