@@ -1,0 +1,204 @@
+---
+title: "Main Process & IPC"
+description: "Write Electron main-process entries, provide typed IPC contracts, add native menu items, and embed WebContentsViews."
+---
+
+On OpenCode Desktop, an extension can include a `main.ts` entry that runs in the Electron main process as an application-wide singleton. Main entries import from `@opencode/gui-extensions/sdk/main` and have full access to Node.js built-ins, `electron`, and the main host APIs. In a [plugin package](/build/extensions/plugins#main-setup), export it as `main` from the `./gui` bundle.
+
+```ts title="src/pairing/main.ts"
+import { powerSaveBlocker } from "electron"
+import type { MainSetup } from "@opencode/gui-extensions/sdk/main"
+import { Pairing } from "./contract"
+import type definition from "./index"
+
+const setup: MainSetup<typeof definition> = (ctx) => {
+  const stored = ctx.stores.keepScreenActive
+  let blockerId: number | undefined
+
+  const release = () => {
+    if (blockerId === undefined) return
+    powerSaveBlocker.stop(blockerId)
+    blockerId = undefined
+  }
+
+  const setActive = (enabled: boolean) => {
+    if (enabled && blockerId === undefined) blockerId = powerSaveBlocker.start("prevent-display-sleep")
+    if (!enabled) release()
+    stored.set(enabled)
+  }
+
+  if (stored.value) setActive(true)
+  ctx.scope.addFinalizer(release)
+
+  ctx.provide(Pairing, {
+    screenActive: () => blockerId !== undefined && powerSaveBlocker.isStarted(blockerId),
+    setScreenActive: (enabled) => setActive(enabled),
+  })
+}
+
+export default setup
+```
+
+## Main context (`MainContext`)
+
+`MainSetup<typeof definition>` receives a `MainContext` (and Unlike window setup, `MainSetup` **may be `async`**):
+
+| Property | Description |
+| --- | --- |
+| `ctx.stores` | Every store declared with `Store.main(schema, initial, from?)` in `index.ts`. Loaded synchronously before setup; each `set` or `update` commits to SQLite immediately. |
+| `ctx.storage` | Synchronous SQLite storage for runtime keys: `ctx.storage.store(key, { schema, initial, from? })` and `ctx.storage.remove(key)`. |
+| `ctx.scope` | The instance's lifetime (`signal`, `addFinalizer(fn)`, `fork(label)`, `close()`). Finalizers may return a `Promise`; the host waits up to 3 seconds during teardown. |
+| `ctx.provide` | Registers the implementation of an `Ipc` token declared in `provides`. Returns an `IpcProvider` (`changed(window?)`, `emit(name, data, window?)`, `dispose()`). |
+| `ctx.add` | Contributes items to main-process registries such as `MenubarItem`. |
+| `ctx.windows` | Inspect open desktop `BrowserWindow` instances (`get(id)`, `list()`, `focused()`) and listen to `on("open" \| "close", handler)`. |
+| `ctx.embeds` | `create(webContentsView, browserWindow)` to place an Electron `WebContentsView` into a window's layout. |
+| `ctx.serverEndpoints` | `get(serverId)` returns `{ id, url, headers, local, username?, password? }` (use `"sidecar"` for the desktop's built-in server). |
+| `ctx.cli` | Metadata for the OpenCode CLI binary the desktop app runs (`{ version, command, binary?, development }`). |
+| `ctx.lifecycle` | `restart(handoff?, { keep: ctx.scope })` disposes all other extensions and runs `handoff` (or relaunches the app) while keeping the caller alive until `handoff` settles. |
+| `ctx.log` | Writes structured entries to the desktop log file: `ctx.log.write("info" \| "warn" \| "error" \| "debug", message, data?)`. |
+| `ctx.build` | `{ version, channel, platform: "desktop", packaged }`. |
+
+## Define and provide an `Ipc`
+
+An `Ipc` spec can declare per-window `state`, callable `methods`, and server-pushed `events`. Every value that crosses the bridge is validated and encoded by Effect `Schema`.
+
+```ts title="src/counter/contract.ts"
+import { Schema } from "effect"
+import { Ipc } from "@opencode/gui-extensions/sdk"
+
+export const Counter = Ipc.define({
+  id: "counter",
+  state: Schema.Struct({ count: Schema.Number }),
+  methods: {
+    increment: {
+      input: Schema.Number,
+      output: Schema.Number,
+    },
+    reset: {},
+  },
+  events: {
+    overflow: Schema.Struct({ limit: Schema.Number }),
+  },
+})
+```
+
+### Implement the provider in `main.ts`
+
+Each method receives the decoded input and a `Caller` (`{ window: number, signal: AbortSignal }`). Call `provider.changed(window?)` whenever `state` changes to push the updated snapshot to subscribed windows, or `provider.emit(name, payload, window?)` to broadcast an event.
+
+```ts title="src/counter/main.ts"
+import type { MainSetup } from "@opencode/gui-extensions/sdk/main"
+import { Counter } from "./contract"
+import type definition from "./index"
+
+const setup: MainSetup<typeof definition> = (ctx) => {
+  const counts = new Map<number, number>()
+
+  const provider = ctx.provide(Counter, {
+    state: (window) => ({ count: counts.get(window) ?? 0 }),
+    increment: (step, caller) => {
+      const next = (counts.get(caller.window) ?? 0) + step
+      counts.set(caller.window, next)
+      provider.changed(caller.window)
+
+      if (next > 100) provider.emit("overflow", { limit: 100 }, caller.window)
+      return next
+    },
+    reset: (_input, caller) => {
+      counts.set(caller.window, 0)
+      provider.changed(caller.window)
+    },
+  })
+}
+
+export default setup
+```
+
+### Consume the `Ipc` in `renderer.tsx`
+
+In the window, `ctx.uses.counter()` resolves to a `Live<IpcClient<typeof Counter.spec>>`. Methods without an `input` schema take only optional `{ signal }` call options—never pass `undefined` as a first argument.
+
+```tsx title="src/counter/renderer.tsx"
+import { createKeyed, Command, type Setup } from "@opencode/gui-extensions/sdk"
+import type definition from "./index"
+
+const setup: Setup<typeof definition> = (ctx) => {
+  const counter = ctx.uses.counter
+
+  createKeyed(counter, (client) => {
+    // Listener is automatically removed when main restarts or the extension unloads
+    client.on("overflow", ({ limit }) => {
+      console.log(`Counter exceeded ${limit}`)
+    })
+  })
+
+  ctx.add(Command, {
+    id: "increment",
+    title: "Increment counter",
+    get enabled() {
+      return counter().status === "active"
+    },
+    run: async () => {
+      const live = counter()
+      if (live.status !== "active") return
+      await live.value.increment(1, { signal: ctx.signal })
+      await live.value.reset({ signal: ctx.signal })
+    },
+  })
+}
+
+export default setup
+```
+
+### Lazy-loading IPC schemas (`Ipc.ref`)
+
+If your `Ipc` has a large schema that should not be parsed on the window startup path, declare a schema-free reference with `Ipc.ref` in `index.ts` and load the full token later from a lazy chunk:
+
+```ts title="src/browser/index.ts"
+import { Extension, Ipc } from "@opencode/gui-extensions/sdk"
+import type { BrowserPane } from "./ipc"
+
+const Pane = Ipc.ref<typeof BrowserPane>("browser.pane")
+
+export default Extension.define({
+  id: "browser",
+  provides: { pane: Pane },
+})
+```
+
+```ts title="src/browser/model.ts"
+import { BrowserPane } from "./ipc"
+
+// Resolves the reference once this lazy module loads
+const pane = ctx.uses.pane.load(BrowserPane)
+```
+
+## Native application menu (`MenubarItem`)
+
+Main entries can add items to the native OS menubar (macOS app menu, File, Edit, View, Go, Window, Help) and the in-app menu on Windows and Linux:
+
+```ts
+import { MenubarItem } from "@opencode/gui-extensions/sdk/main"
+
+ctx.add(MenubarItem, {
+  menu: "help",
+  id: "diagnostics",
+  after: "about",
+  get label() {
+    return ctx.t("menu.diagnostics")
+  },
+  enabled: () => true,
+  run: (focusedWindow) => {
+    focusedWindow?.webContents.focus()
+  },
+})
+```
+
+## Embedded web views (`ctx.embeds`)
+
+To embed an isolated `WebContentsView` inside a panel (like the `browser` extension does):
+
+1. Create the view in `main.ts` with `const embed = ctx.embeds.create(view, win)` and pass `embed.id` to the window over your `Ipc`.
+2. Render `<ctx.embeds.View id={embedId} visible={ true } radius={8} />` in `renderer.tsx`.
+
+The host automatically synchronizes element bounds, DPI zoom, rounded-corner masking, dialog occlusion, and still-frame capture (`frozen={true}`) across the process boundary.

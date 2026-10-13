@@ -1,0 +1,128 @@
+---
+title: "Extensions"
+description: "Toggle, reload, and troubleshoot GUI extensions in OpenCode Desktop, and add new ones with plugins."
+---
+
+OpenCode Desktop includes an extension manager under **Settings > Extensions**. It lists the built-in extensions that ship with the app and the GUI extensions of your [plugins](/plugins#desktop-and-web).
+
+| Source | Where it comes from | Label | How to remove it |
+| --- | --- | --- | --- |
+| Built-in | Ships with the app | — | Cannot be removed; turn it off |
+| Plugin | A plugin in `opencode.json(c)` that exports `./gui` | **Plugin** | Remove the plugin from `opencode.json(c)` |
+
+Built-in extensions provide the app's workspace features, such as the [terminal](/desktop/terminal), [review](/desktop/review) panel, and [browser](/desktop/browser). They are enabled by default.
+
+## Open the extension manager
+
+Open **Settings** (**Cmd+,** on macOS or **Ctrl+,** on Windows and Linux) and select **Extensions** in the left navigation bar.
+
+```text
+/settings?tab=gui-extensions
+```
+
+You can also open the command palette (**Cmd+K** / **Ctrl+K**), search for `Extensions`, and jump directly to the page.
+
+<Callout type="note">
+The GUI **Extensions** tab in the bottom group of Settings manages desktop interface extensions. Each connected server also has its own **Extensions** tab for server-side [MCP servers](/mcp-servers), [plugins](/plugins), and [skills](/skills).
+</Callout>
+
+## Enable, disable, and reload
+
+Every row in **Settings > Extensions** shows the extension's ID, its current status, a **Reload** button, and an enable switch. Rows from plugins also carry a **Plugin** label.
+
+```text
+terminal          Active    Reload  [on]
+acme   Plugin     Active    Reload  [on]
+```
+
+| Control | Behavior |
+| --- | --- |
+| **Switch** | Enables or disables the extension across all desktop windows. The preference persists in the desktop database across restarts. |
+| **Reload** | Reloads both the window entry and the main-process entry and clears any recorded failure. If a main-process reload fails, the last working revision remains active. |
+
+When you disable an extension, the host immediately withdraws all of its commands, panels, slots, titlebar items, native menu items, and settings pages in a single frame.
+
+## Add extensions with plugins
+
+Third-party GUI extensions come from [plugins](/plugins). A plugin package that exports `./gui` adds its GUI extension to the app; there is no separate install step. Add the plugin to your global configuration:
+
+```jsonc title="~/.config/opencode/opencode.jsonc"
+{
+  "plugins": ["opencode-acme"],
+}
+```
+
+The extension appears in **Settings > Extensions** with a **Plugin** label. Configure the plugin globally to make its extension available in every window.
+
+### Where plugin extensions load
+
+The app loads GUI extensions only from plugins on the server that runs the app:
+
+| App | Plugins that add GUI extensions |
+| --- | --- |
+| Desktop | Plugins on the desktop app's own background server |
+| Web | Plugins on the server that served the web app |
+
+Plugins on other connected servers, such as [SSH](/desktop/ssh), [WSL](/desktop/wsl), and HTTP servers, run on that server but do not add GUI extensions to the app yet.
+
+### Remove a plugin extension
+
+Turn the extension off with its switch, or remove the plugin from `opencode.json(c)`. For a global package plugin, you can also use the CLI:
+
+```sh
+opencode plugin remove opencode-acme
+```
+
+<Callout type="note">
+A plugin's GUI extension uses the plugin's ID. If a built-in extension already uses that ID, the built-in extension loads and the plugin's GUI extension does not.
+</Callout>
+
+<CardGroup cols={1}>
+  <Card title="Build a GUI extension" href="/build/extensions/plugins">
+    Add a `./gui` export to your plugin package to ship panels, commands, settings pages, and main-process
+    integrations.
+  </Card>
+</CardGroup>
+
+## Extension statuses
+
+Each extension reports its live state in the current window:
+
+| Status | Meaning |
+| --- | --- |
+| **Active** | The extension's setup completed and its contributions are live. |
+| **Loading** | The extension is loading its bundle or waiting for its global stores or hard dependencies. |
+| **Disabled** | The extension is turned off in Settings. |
+| **Blocked** | A hard dependency (`requires`) that this extension depends on is disabled, failed, or itself blocked. Re-enabling the provider automatically resumes the extension. |
+| **Failed** | The extension's bundle failed to load, its setup threw an error, or one of its reactive effects crashed. |
+
+If an extension fails during setup or while rendering a contribution, the error stack is displayed in red directly below its status in **Settings > Extensions**. One broken extension never blocks the rest of the application.
+
+## Built-in extension IDs
+
+All 13 built-in extensions are enabled by default. `wsl` runs on Windows only; all other built-ins run on macOS, Windows, and Linux.
+
+| ID | Feature area | Dependencies (`uses`) |
+| --- | --- | --- |
+| `context` | Context usage ring, token breakdown tab, and session JSON export | — |
+| `btw` | `/btw` side-question slash command and answer tabs | — |
+| `debug` | Provider performance metrics bar (`TPS`, `TTFT`, `TTFA`, `E2E`) | — |
+| `terminal` | Dock terminal tabs powered by `ghostty-web` | — |
+| `file` | Workspace file tree, artifact viewers, link handler, and desktop **Open in** menu | `review.changes`, `browser` |
+| `review` | Uncommitted, branch, and last-turn diff viewer with line comments | `file.tree`, `file.openInApp` |
+| `details` | Session header summary popover, worktree mover, and server status popovers | `review.changes` |
+| `browser` | Native Chromium browser pane, element comment picker, and `browser.*` agent tools | `browser.pane` (main IPC) |
+| `pairing` | **Settings > Pairing** QR code, custom address, and display sleep blocker | `pairing` (main IPC) |
+| `updater` | Automatic desktop updates, titlebar pill, and What's New dialog | `updater` (main IPC) |
+| `ssh` | Remote SSH server connections and automatic remote CLI provisioning | `ssh` (main IPC) |
+| `wsl` | Windows Subsystem for Linux server management and distro installer (Windows only) | `wsl` (main IPC) |
+| `microsoft-office` | Read-only Word (`.docx`), Excel (`.xlsx`), and PowerPoint (`.pptx`) viewers | Contributes to `file.viewer` |
+
+## Customizing extension shortcuts
+
+Commands contributed by active extensions appear in **Settings > Shortcuts** alongside core commands.
+
+1. Open **Settings > Shortcuts** and use the **Search shortcuts** box to find the command.
+2. Click the shortcut button (or **Unassigned**) so it reads **Press keys**.
+3. Press the desired key combination to save it under the published command ID (such as `terminal.toggle` or `debug.toggle`).
+4. Press **Backspace** or **Delete** while recording to clear a binding, or **Escape** to cancel.

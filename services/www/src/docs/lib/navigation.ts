@@ -9,7 +9,7 @@ export interface DocsNavGroup {
 }
 
 export interface DocsSection {
-  key: "docs" | "cli" | "build" | "api" | "console"
+  key: "docs" | "cli" | "desktop" | "build" | "api" | "console"
   title: string
   landingSlug: string
   groups: DocsNavGroup[]
@@ -79,6 +79,37 @@ export const docsSections: DocsSection[] = [
     ],
   },
   {
+    key: "desktop",
+    title: "Desktop",
+    landingSlug: "desktop",
+    groups: [
+      {
+        items: [
+          { title: "Intro", slug: "desktop" },
+          { title: "Extensions", slug: "desktop/extensions" },
+        ],
+      },
+      {
+        title: "Workspace",
+        items: [
+          { title: "Review", slug: "desktop/review" },
+          { title: "Files & Office", slug: "desktop/files" },
+          { title: "Terminal", slug: "desktop/terminal" },
+          { title: "Browser", slug: "desktop/browser" },
+          { title: "Session & Context", slug: "desktop/session" },
+        ],
+      },
+      {
+        title: "Servers",
+        items: [
+          { title: "SSH", slug: "desktop/ssh" },
+          { title: "WSL", slug: "desktop/wsl" },
+          { title: "Pairing & Updates", slug: "desktop/pairing" },
+        ],
+      },
+    ],
+  },
+  {
     key: "build",
     title: "Build",
     landingSlug: "build",
@@ -93,6 +124,15 @@ export const docsSections: DocsSection[] = [
           { title: "RPC", slug: "build/plugins/rpc" },
           { title: "CLI", slug: "build/plugins/cli" },
           { title: "Migrate from V1", slug: "build/plugins/migrate-v1" },
+        ],
+      },
+      {
+        title: "GUI Extensions",
+        items: [
+          { title: "Overview", slug: "build/extensions" },
+          { title: "Plugin packages", slug: "build/extensions/plugins" },
+          { title: "Window SDK", slug: "build/extensions/window" },
+          { title: "Main Process & IPC", slug: "build/extensions/main" },
         ],
       },
       {

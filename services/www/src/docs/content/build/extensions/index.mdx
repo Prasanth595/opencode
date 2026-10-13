@@ -1,0 +1,225 @@
+---
+title: "Overview"
+description: "Build GUI extensions for OpenCode Desktop and Web using @opencode/gui-extensions."
+---
+
+Every feature of OpenCode Desktop and the web interface outside the core shell is a GUI extension built on `@opencode/gui-extensions`. Third-party extensions use the same SDK, registries, host APIs, and IPC bridge as built-in extensions.
+
+Ship a GUI extension in an OpenCode [plugin package](/build/extensions/plugins): add a `./gui` export beside your server entry, and optionally `./tui`. It loads on desktop and web wherever users configure the plugin.
+
+```json title="package.json"
+{
+  "exports": {
+    ".": "./dist/server.js",
+    "./tui": "./src/tui.tsx",
+    "./gui": "./dist/gui.cjs"
+  }
+}
+```
+
+```ts title="src/index.ts"
+import { Schema } from "effect"
+import { Extension, Store } from "@opencode/gui-extensions/sdk"
+import { Pairing } from "./contract"
+import en from "./i18n/en"
+
+export default Extension.define({
+  id: "pairing",
+  provides: { pairing: Pairing },
+  stores: {
+    keepScreenActive: Store.main(Schema.Boolean, false),
+    links: Store.global(Schema.Struct({ custom: Schema.String, selected: Schema.String }), {
+      custom: "",
+      selected: "",
+    }),
+  },
+  i18n: { en },
+})
+```
+
+An extension can run in two processes:
+
+- **Window SDK** (`@opencode/gui-extensions/sdk`): Runs in each desktop or web window. Contributes panels, commands, settings pages, slots, server sources, link handlers, and styles.
+- **Main-process SDK** (`@opencode/gui-extensions/sdk/main`): Runs once in the Electron main process on OpenCode Desktop. Provides typed `Ipc` contracts, native menubar items, `WebContentsView` embeds, and Node/Electron integrations.
+
+## Anatomy of an extension
+
+Separate your extension into a definition (`index.ts`), shared contract tokens (`contract.ts`), a synchronous window entry (`renderer.tsx`), and an optional main-process entry (`main.ts`). A bundle entry (`entry.tsx`) re-exports them for the plugin's `./gui` export.
+
+```text
+src/pairing/
+├── entry.tsx         ./gui bundle entry: exports definition, default (window setup), and main
+├── index.ts          Extension.define: id, provides, uses, requires, stores, i18n
+├── contract.ts       Tokens other code may import: Ipc, Contract, Registry
+├── renderer.tsx      Window entry: default export Setup<typeof definition>
+├── main.ts           Main entry: default export MainSetup<typeof definition> (desktop only)
+├── page.tsx          Heavy UI loaded behind lazy()
+└── i18n/en.ts        English copy; additional locales load on demand
+```
+
+Keep `renderer.tsx` small because it loads when the window boots. Put heavy components behind Solid's `lazy()` and preload them with `onIdle()`. See [Plugin packages](/build/extensions/plugins#one-bundle-two-processes) for the bundle entry.
+
+## Define the extension
+
+`Extension.define` declares the extension's ID, dependencies, persisted stores, and localization catalog before any entry module loads.
+
+```ts title="src/acme/index.ts"
+import { Schema } from "effect"
+import { Extension, Store } from "@opencode/gui-extensions/sdk"
+import { Changes } from "@opencode/gui-extensions/review"
+import { AcmeIpc } from "./contract"
+
+export default Extension.define({
+  id: "acme",
+  os: ["macos", "linux"],
+  provides: { acme: AcmeIpc },
+  uses: { changes: Changes },
+  stores: {
+    prefs: Store.global(Schema.Struct({ enabled: Schema.Boolean }), { enabled: true }),
+  },
+  i18n: {
+    en: {
+      title: "Acme",
+      "command.open": "Open Acme",
+    },
+  },
+})
+```
+
+| Field | Purpose | Context access |
+| --- | --- | --- |
+| `id` | Prefix for all command IDs (`<id>.<cmd>`), panel keys (`<id>:<tab>`), storage keys (`extension.<id>.<key>`), and contracts. In a plugin package, the server plugin's id replaces it. | `ctx.id` |
+| `legacy` | Earlier extension IDs (newest first) used to preserve desktop enable state after a rename. | — |
+| `os` | Restricts the extension to `"macos"`, `"windows"`, or `"linux"`. Omit to run everywhere, including the web. | — |
+| `provides` | `Contract` tokens provided by `renderer.tsx` and `Ipc` tokens provided by `main.ts`. | `ctx.provide(token, impl)` and `ctx.uses.<key>()` |
+| `uses` | Optional dependencies from other extensions. Setup still runs when a provider is disabled or unavailable. | `ctx.uses.<key>()` returns `Live<T>` |
+| `requires` | Hard dependencies. Setup runs only while every required token is active, and restarts when one restarts. | `ctx.requires.<key>` returns `T` |
+| `stores` | Declared persisted state (`Store.global`, `Store.session`, `Store.main`). | `ctx.stores.<key>` |
+| `i18n` | Localization catalog with inline `en` fallback and optional locale loaders. | `ctx.t(key, params)`, `ctx.plural(key, count)` |
+
+## Contracts and tokens
+
+Tokens let extensions communicate across processes or with each other without importing runtime code. Put all tokens in `contract.ts`.
+
+### In-process contracts (`Contract.define`)
+
+Use `Contract.define` when one window extension exposes an API or Solid component to other window extensions.
+
+```ts title="src/acme/contract.ts"
+import type { JSX } from "solid-js"
+import { Contract } from "@opencode/gui-extensions/sdk"
+
+export interface AcmeBadge {
+  Badge(props: { readonly label: string }): JSX.Element
+  count(): number
+}
+
+export const AcmeBadge = Contract.define<AcmeBadge, "acme.badge">("acme.badge")
+```
+
+When providing a component on a contract, wrap the component with `bindExtension` during setup so `useExtension()` inside it reads the provider's context rather than the consumer's:
+
+```tsx title="src/acme/renderer.tsx"
+import { bindExtension, type Setup } from "@opencode/gui-extensions/sdk"
+import { AcmeBadge } from "./contract"
+import type definition from "./index"
+
+const setup: Setup<typeof definition> = (ctx) => {
+  ctx.provide(AcmeBadge, {
+    Badge: bindExtension((props) => <span>{ctx.t("title")}: {props.label}</span>),
+    count: () => 42,
+  })
+}
+
+export default setup
+```
+
+### Main-to-window IPC (`Ipc.define`)
+
+Use `Ipc.define` with Effect `Schema` codecs to define a typed bridge between `main.ts` and `renderer.tsx`. Declare your own `Ipc` in `provides`—the main entry implements it with `ctx.provide`, and the window entry reads the client from `ctx.uses.<key>()`.
+
+```ts title="src/pairing/contract.ts"
+import { Schema } from "effect"
+import { Ipc } from "@opencode/gui-extensions/sdk"
+
+export const Pairing = Ipc.define({
+  id: "pairing",
+  methods: {
+    screenActive: { output: Schema.Boolean },
+    setScreenActive: { input: Schema.Boolean },
+  },
+})
+```
+
+### Custom registries (`Registry.define`)
+
+Use `Registry.define` when your extension owns an extensibility list that other extensions can contribute items to with `ctx.add`:
+
+```ts title="src/file/contract.ts"
+import { Registry } from "@opencode/gui-extensions/sdk"
+import type { FileViewer } from "./types"
+
+export const FileViewer = Registry.define<FileViewer>("file.viewer")
+```
+
+## Live dependencies and failure handling
+
+Every optional dependency in `ctx.uses.<name>()` returns a reactive `Live<T>` union. Your extension must handle non-active states gracefully—never leave a dead button or an endless spinner.
+
+```ts
+const live = ctx.uses.pairing()
+
+if (live.status === "active") {
+  await live.value.setScreenActive(true)
+}
+```
+
+| `Live<T>` state | When it happens | Required UI behavior |
+| --- | --- | --- |
+| `{ status: "pending" }` | The provider has not finished starting yet. | Show a loading state or hide optional controls. |
+| `{ status: "active", value, generation }` | The provider is running. `generation` increments on each restart. | Render the feature normally. |
+| `{ status: "inactive", reason: "restarting" }` | The provider was active and is reloading. | Keep existing UI state and resume when it returns. |
+| `{ status: "inactive", reason: "disabled" }` | Turned off, not composed, or unsupported on this platform (all `Ipc` tokens on the web). | Show an unavailable state or omit the control. |
+| `{ status: "inactive", reason: "failed" }` | The provider's setup threw an error. | Show an unavailable state or error toast. |
+| `{ status: "inactive", reason: "blocked" }` | A hard dependency of the provider is disabled or failed. | Show an unavailable state and resume if it returns. |
+
+## Lifetimes and cleanup
+
+Everything registered through `ctx` (`ctx.add`, `ctx.provide`, `ctx.dialogs.open`, `ctx.embeds.create`, and `Ipc` event listeners) is automatically withdrawn when its owning scope ends:
+
+- Inside a component or a `createKeyed` callback, registrations end when that component or `createKeyed` run disposes.
+- At the top level of `setup`, registrations end when the extension is disabled, reloaded, removed, or its window closes.
+
+Window `setup` **must be synchronous** and return `undefined`. Start asynchronous work inside `createKeyed` or `createLatest`, and use `onCleanup` (window) or `ctx.scope.addFinalizer` (main) for external resources like timers or sockets.
+
+```tsx
+import { createKeyed, Command, type Setup } from "@opencode/gui-extensions/sdk"
+import type definition from "./index"
+
+const setup: Setup<typeof definition> = (ctx) => {
+  // Re-runs once per active generation of `pairing`; listener is cleaned up automatically.
+  createKeyed(ctx.uses.pairing, (client) => {
+    ctx.add(Command, {
+      id: "wake",
+      title: ctx.t("command.open"),
+      run: () => void client.setScreenActive(true),
+    })
+  })
+}
+
+export default setup
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Plugin packages" href="/build/extensions/plugins">
+    Ship the GUI extension from the same npm package as your server and TUI plugin.
+  </Card>
+  <Card title="Window SDK" href="/build/extensions/window">
+    Contribute panels, commands, settings pages, menus, slots, and server sources in the renderer.
+  </Card>
+  <Card title="Main Process & IPC" href="/build/extensions/main">
+    Provide typed IPC state and methods, native menubar items, and embedded WebContentsViews.
+  </Card>
+</CardGroup>
