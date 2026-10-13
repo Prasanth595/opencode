@@ -45,6 +45,14 @@ export interface Protocol<Body, Frame, Event, State> {
   readonly supportsEffortUpdates?: (request: LLMRequest) => boolean
   /** Tool schema sanitizer for every model on this protocol unless the model's compatibility sets one; wrappers around another `body.from` must forward it. */
   readonly sanitizer?: LanguageModelSanitizerCompatibility
+  /**
+   * Continues a response the provider split across several requests. Called when each response ends; returns the
+   * fields to set on the route's original request body for the next request and the parser state to continue with,
+   * or `undefined` when the response is complete.
+   */
+  readonly continueResponse?: (
+    state: State,
+  ) => Effect.Effect<{ readonly body: Partial<Body>; readonly state: State } | undefined, AIError>
 }
 
 export interface ProtocolBody<Body> {

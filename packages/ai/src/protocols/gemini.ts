@@ -212,6 +212,7 @@ const GeminiBodyFields = {
   tools: optionalArray(GeminiTool),
   toolConfig: Schema.optional(GeminiToolConfig),
   generationConfig: Schema.optional(GeminiGenerationConfig),
+  continuationToken: Schema.optional(Schema.String),
 }
 const GeminiBody = Schema.Struct(GeminiBodyFields)
 export type GeminiBody = Schema.Schema.Type<typeof GeminiBody>
@@ -228,6 +229,7 @@ type GeminiUsage = Schema.Schema.Type<typeof GeminiUsage>
 const GeminiCandidate = Schema.Struct({
   content: optionalNull(GeminiResponseContent),
   finishReason: optionalNull(Schema.String),
+  continuationToken: optionalNull(Schema.String),
 })
 
 const GeminiPromptFeedback = Schema.StructWithRest(
@@ -252,9 +254,12 @@ interface ParserState {
   readonly route: string
   readonly providerMetadataKey: string
   readonly finishReason?: string
+  readonly continuationToken?: string
   readonly hasToolCalls: boolean
   readonly promptFeedback?: GeminiPromptFeedback
-  readonly usage?: Usage
+  readonly usage?: GeminiUsage
+  /** Usage of the earlier requests of a response Gemini continued across requests. */
+  readonly continuedUsage?: ReadonlyArray<GeminiUsage>
   readonly lifecycle: Lifecycle.State
   readonly reasoningSignature?: string
   readonly textSignature?: string
@@ -497,7 +502,11 @@ const fromRequest = Effect.fn("Gemini.fromRequest")(function* (request: LLMReque
 // `cachedContentTokenCount` subset. `candidatesTokenCount` is *exclusive*
 // of `thoughtsTokenCount` — visible-only, not a total — so we sum the two
 // to produce the inclusive `outputTokens` the rest of the contract expects.
-const mapUsage = (usage: GeminiUsage | undefined, metadataKey: string) => {
+const mapUsage = (
+  usage: GeminiUsage | undefined,
+  metadataKey: string,
+  metadata: Record<string, unknown> = usage ?? {},
+) => {
   if (!usage) return undefined
   // Explicit provider nulls decode as `null`; normalize to `undefined` so the
   // token arithmetic below treats them like absent counts.
@@ -518,8 +527,33 @@ const mapUsage = (usage: GeminiUsage | undefined, metadataKey: string) => {
     cacheReadInputTokens: cached,
     reasoningTokens: thoughts,
     totalTokens: ProviderShared.totalTokens(promptTokens, outputTokens, usage.totalTokenCount ?? undefined),
-    providerMetadata: providerMetadata(metadataKey, usage),
+    providerMetadata: providerMetadata(metadataKey, metadata),
   })
+}
+
+// Each continued request re-bills the output so far as input. Reporting the first request's input with all output keeps
+// input plus output equal to the response's final context size, under-reporting billed input; the summed billed counts
+// remain in provider metadata.
+const mapContinuedUsage = (requests: ReadonlyArray<GeminiUsage>, metadataKey: string) => {
+  const sum = (field: keyof GeminiUsage) =>
+    ProviderShared.sumTokens(...requests.map((usage) => usage[field] ?? undefined))
+  return mapUsage(
+    {
+      promptTokenCount: requests[0].promptTokenCount,
+      cachedContentTokenCount: requests[0].cachedContentTokenCount,
+      candidatesTokenCount: sum("candidatesTokenCount"),
+      thoughtsTokenCount: sum("thoughtsTokenCount"),
+    },
+    metadataKey,
+    {
+      promptTokenCount: sum("promptTokenCount"),
+      cachedContentTokenCount: sum("cachedContentTokenCount"),
+      candidatesTokenCount: sum("candidatesTokenCount"),
+      thoughtsTokenCount: sum("thoughtsTokenCount"),
+      totalTokenCount: sum("totalTokenCount"),
+      requests: requests.length,
+    },
+  )
 }
 
 const mapFinishReason = (finishReason: string | undefined, hasToolCalls: boolean): FinishReason => {
@@ -573,7 +607,10 @@ const finish = (state: ParserState): ReadonlyArray<LLMEvent> => {
         promptBlockReason === undefined ? mapFinishReason(finishReason, state.hasToolCalls) : "content-filter",
       raw: finishReason,
     },
-    usage: state.usage,
+    usage:
+      state.continuedUsage === undefined
+        ? mapUsage(state.usage, state.providerMetadataKey)
+        : mapContinuedUsage([...state.continuedUsage, state.usage ?? {}], state.providerMetadataKey),
     providerMetadata:
       state.promptFeedback === undefined
         ? undefined
@@ -604,14 +641,15 @@ const step = (state: ParserState, event: GeminiEvent) => {
     return Effect.fail(
       ProviderShared.eventError(state.route, `Invalid ${state.route} stream event`, ProviderShared.encodeJson(event)),
     )
+  const candidate = event.candidates?.[0]
   const nextState = {
     ...state,
     promptFeedback: event.promptFeedback ?? state.promptFeedback,
-    usage: event.usageMetadata
-      ? (mapUsage(event.usageMetadata, state.providerMetadataKey) ?? state.usage)
-      : state.usage,
+    usage: event.usageMetadata ?? state.usage,
+    finishReason: candidate?.finishReason ?? state.finishReason,
+    // Checkpoint chunks carry tokens for resuming a dropped stream; only the finishing chunk's token continues it.
+    continuationToken: candidate?.finishReason ? (candidate.continuationToken ?? undefined) : state.continuationToken,
   }
-  const candidate = event.candidates?.[0]
   if (candidate?.finishReason && mapFinishReason(candidate.finishReason, state.hasToolCalls) === "error")
     return Effect.fail(
       ProviderShared.eventError(
@@ -620,11 +658,7 @@ const step = (state: ParserState, event: GeminiEvent) => {
         ProviderShared.encodeJson(event),
       ),
     )
-  if (!candidate?.content)
-    return Effect.succeed([
-      { ...nextState, finishReason: candidate?.finishReason ?? nextState.finishReason },
-      [],
-    ] as const)
+  if (!candidate?.content) return Effect.succeed([nextState, []] as const)
 
   const events: LLMEvent[] = []
   let hasToolCalls = nextState.hasToolCalls
@@ -784,7 +818,6 @@ const step = (state: ParserState, event: GeminiEvent) => {
       nextReasoningId,
       nextTextId,
       seenCallIds,
-      finishReason: candidate.finishReason ?? nextState.finishReason,
     },
     events,
   ] as const)
@@ -807,7 +840,7 @@ export const protocol = Protocol.make({
   sanitizer: "gemini",
   stream: {
     event: Protocol.jsonEvent(GeminiEvent),
-    initial: (request) => ({
+    initial: (request): ParserState => ({
       route: `${request.model.provider}/${request.model.route.id}`,
       providerMetadataKey: request.model.route.providerMetadataKey ?? String(request.model.provider),
       hasToolCalls: false,
@@ -817,6 +850,21 @@ export const protocol = Protocol.make({
     }),
     step,
     onHalt: (state) => Effect.succeed(finish(state)),
+  },
+  continueResponse: (state) => {
+    if (state.finishReason !== "CONTINUATION") return Effect.succeed(undefined)
+    if (state.continuationToken === undefined)
+      return Effect.fail(ProviderShared.eventError(state.route, "Gemini continued the response without a token"))
+    return Effect.succeed({
+      body: { continuationToken: state.continuationToken },
+      state: {
+        ...state,
+        finishReason: undefined,
+        continuationToken: undefined,
+        usage: undefined,
+        continuedUsage: [...(state.continuedUsage ?? []), state.usage ?? {}],
+      },
+    })
   },
 })
 

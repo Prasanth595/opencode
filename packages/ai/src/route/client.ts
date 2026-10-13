@@ -4,7 +4,13 @@ import { Endpoint, type EndpointPatch } from "./endpoint.js"
 import { RequestExecutor } from "./executor.js"
 import { Framing } from "./framing.js"
 import { HttpTransport } from "./transport/index.js"
-import type { HttpMiddleware, Transport, TransportRuntime, WebSocketChannelExecutor } from "./transport/index.js"
+import type {
+  HttpMiddleware,
+  Transport,
+  TransportExecution,
+  TransportRuntime,
+  WebSocketChannelExecutor,
+} from "./transport/index.js"
 import type { Protocol } from "./protocol.js"
 import { applyCachePolicy } from "../cache-policy.js"
 import { applyEffortUpdates } from "../effort-updates.js"
@@ -376,6 +382,16 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
   }
 
   const build = (routeInput: BuiltRouteInput): Route<Body, Prepared> => {
+    const prepareTransport = (body: Body, request: LLMRequest, options?: StreamOptions) =>
+      routeInput.transport.prepare({
+        body,
+        request,
+        endpoint: routeInput.endpoint,
+        auth: routeInput.auth ?? Auth.none,
+        encodeBody: ProviderShared.encodeJson,
+        middleware: options?.http,
+        webSocket: options?.webSocket,
+      })
     const route: Route<Body, Prepared> = {
       compact: routeInput.compact,
       id: routeInput.id,
@@ -410,94 +426,106 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
       },
       model: <Options extends ProviderOptions = ProviderOptions>(input: RouteMappedLanguageModelInput) =>
         makeRouteLanguageModel<Options, CompactionOperations | undefined>(route, input),
-      prepareTransport: (body, request, options) =>
-        routeInput.transport.prepare({
-          body,
-          request,
-          endpoint: routeInput.endpoint,
-          auth: routeInput.auth ?? Auth.none,
-          encodeBody: ProviderShared.encodeJson,
-          middleware: options?.http,
-          webSocket: options?.webSocket,
-        }),
+      prepareTransport,
       streamPrepared: (prepared: Prepared, request: LLMRequest, runtime: TransportRuntime, options?: StreamOptions) => {
         const route = `${request.model.provider}/${request.model.route.id}`
-        return Stream.unwrap(
-          routeInput.transport.execute(prepared, request, runtime, options).pipe(
-            Effect.map((execution) => {
-              const terminal = protocol.stream.terminal
-              // Preserve assembled inputs; replace only serialized event fallbacks with their original wire data.
-              const frameError =
-                (frame: Frame, event: Frame | Event = frame) =>
-                (error: AIError) =>
-                  new AIError({
-                    reason: AIErrorReason.make({
-                      ...error.reason,
-                      message: error.reason.message,
-                      cause: error.reason.cause,
-                      body:
-                        error.reason.body !== undefined && error.reason.body !== ProviderShared.encodeJson(event)
-                          ? error.reason.body
-                          : (execution.body?.(frame) ??
-                            (typeof frame === "string" ? frame : ProviderShared.encodeJson(frame))),
-                    }),
-                  })
-              const events = execution.frames.pipe(
-                Stream.mapEffect((frame) =>
-                  decodeEvent(route)(frame).pipe(
-                    Effect.catchCause((cause) =>
-                      Effect.fail(streamError(route, `Failed to decode ${route} event`, cause)),
-                    ),
-                    Effect.map((event) => ({ event, frame })),
-                    Effect.mapError(frameError(frame)),
-                  ),
-                ),
-                terminal ? Stream.takeUntil(({ event }) => terminal(event)) : (stream) => stream,
-              )
-              const stream = Stream.suspend(() => {
-                let state = protocol.stream.initial(request)
-                const parsed = events.pipe(
-                  Stream.mapEffect(({ event, frame }) =>
-                    protocol.stream.step(state, event).pipe(
-                      Effect.catchCause((cause) =>
-                        Effect.fail(streamError(route, `Failed to parse ${route} event`, cause)),
+        const terminal = protocol.stream.terminal
+        return Stream.suspend(() => {
+          // One parser state spans every request of a response the protocol continues across requests.
+          let state = protocol.stream.initial(request)
+          let current: TransportExecution<Frame> | undefined
+          const completions: Array<Effect.Effect<void>> = []
+
+          const respond = (prepared: Prepared): Stream.Stream<LLMEvent, AIError> =>
+            Stream.unwrap(
+              routeInput.transport.execute(prepared, request, runtime, options).pipe(
+                Effect.map((execution) => {
+                  current = execution
+                  if (execution.complete) completions.push(execution.complete)
+                  // Preserve assembled inputs; replace only serialized event fallbacks with their original wire data.
+                  const frameError =
+                    (frame: Frame, event: Frame | Event = frame) =>
+                    (error: AIError) =>
+                      new AIError({
+                        reason: AIErrorReason.make({
+                          ...error.reason,
+                          message: error.reason.message,
+                          cause: error.reason.cause,
+                          body:
+                            error.reason.body !== undefined && error.reason.body !== ProviderShared.encodeJson(event)
+                              ? error.reason.body
+                              : (execution.body?.(frame) ??
+                                (typeof frame === "string" ? frame : ProviderShared.encodeJson(frame))),
+                        }),
+                      })
+                  return execution.frames.pipe(
+                    Stream.mapEffect((frame) =>
+                      decodeEvent(route)(frame).pipe(
+                        Effect.catchCause((cause) =>
+                          Effect.fail(streamError(route, `Failed to decode ${route} event`, cause)),
+                        ),
+                        Effect.map((event) => ({ event, frame })),
+                        Effect.mapError(frameError(frame)),
                       ),
-                      Effect.map(([next, output]) => {
-                        state = next
-                        return output
-                      }),
-                      Effect.mapError(frameError(frame, event)),
                     ),
-                  ),
-                  Stream.flatMap(Stream.fromIterable),
-                )
-                const onHalt = protocol.stream.onHalt
-                return onHalt
-                  ? parsed.pipe(
-                      Stream.concat(
-                        Stream.suspend(() => Stream.unwrap(onHalt(state).pipe(Effect.map(Stream.fromIterable)))),
+                    terminal ? Stream.takeUntil(({ event }) => terminal(event)) : (stream) => stream,
+                    Stream.mapEffect(({ event, frame }) =>
+                      protocol.stream.step(state, event).pipe(
+                        Effect.catchCause((cause) =>
+                          Effect.fail(streamError(route, `Failed to parse ${route} event`, cause)),
+                        ),
+                        Effect.map(([next, output]) => {
+                          state = next
+                          return output
+                        }),
+                        Effect.mapError(frameError(frame, event)),
                       ),
-                    )
-                  : parsed
-              }).pipe(
-                Stream.catchCause((cause) => Stream.fail(streamError(route, `Failed to read ${route} stream`, cause))),
-                requireTerminalEvent(route),
-                Stream.mapError(
-                  (error) =>
-                    new AIError({
-                      reason: AIErrorReason.make({
-                        ...error.reason,
-                        message: error.reason.message,
-                        cause: error.reason.cause,
-                        http: error.reason.http ?? execution.http,
-                      }),
-                    }),
-                ),
+                    ),
+                    Stream.flatMap(Stream.fromIterable),
+                    Stream.concat(Stream.suspend(continueResponse)),
+                  )
+                }),
+              ),
+            )
+
+          const continueResponse = (): Stream.Stream<LLMEvent, AIError> => {
+            const continueWith = protocol.continueResponse
+            if (!continueWith) return Stream.empty
+            return Stream.unwrap(
+              Effect.gen(function* () {
+                const next = yield* continueWith(state)
+                if (next === undefined) return Stream.empty
+                state = next.state
+                current = undefined
+                const body = yield* protocol.body.from(request)
+                return respond(yield* prepareTransport({ ...body, ...next.body }, request, options))
+              }),
+            )
+          }
+
+          const onHalt = protocol.stream.onHalt
+          const stream = onHalt
+            ? respond(prepared).pipe(
+                Stream.concat(Stream.suspend(() => Stream.unwrap(onHalt(state).pipe(Effect.map(Stream.fromIterable))))),
               )
-              return execution.complete ? stream.pipe(Stream.onEnd(execution.complete)) : stream
-            }),
-          ),
-        )
+            : respond(prepared)
+          return stream.pipe(
+            Stream.catchCause((cause) => Stream.fail(streamError(route, `Failed to read ${route} stream`, cause))),
+            requireTerminalEvent(route),
+            Stream.mapError(
+              (error) =>
+                new AIError({
+                  reason: AIErrorReason.make({
+                    ...error.reason,
+                    message: error.reason.message,
+                    cause: error.reason.cause,
+                    http: error.reason.http ?? current?.http,
+                  }),
+                }),
+            ),
+            Stream.onEnd(Effect.suspend(() => Effect.all(completions, { discard: true }))),
+          )
+        })
       },
     } satisfies Route<Body, Prepared>
     return route
