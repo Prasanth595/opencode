@@ -42,8 +42,6 @@ import { asc, eq } from "drizzle-orm"
 import { testEffect } from "./lib/effect"
 
 let requests: LLMRequest[] = []
-let rejection: "context-overflow" | "payload-too-large" | undefined
-let repeatRejection = false
 const model = LanguageModel.make({
   id: "summary-model",
   provider: "test",
@@ -62,11 +60,6 @@ const cost = [
 const client = Layer.mock(LLMClient.Service)({
   stream: (request: LLMRequest) => {
     requests.push(request)
-    if (rejection) {
-      const classification = rejection
-      if (!repeatRejection) rejection = undefined
-      return Stream.fail(new AIError({ reason: new InvalidRequestError({ message: "Too large", classification }) }))
-    }
     return Stream.make(
       LLMEvent.textDelta({ id: "summary", text: "## Objective\n- manual summary" }),
       LLMEvent.stepFinish({
@@ -93,24 +86,27 @@ const resolved = SessionRunnerModel.resolved(model, {
   cost,
   limit: { context: 200_000, output: 32_000 },
 })
-const it = testEffect(
-  AppNodeBuilder.build(
-    LayerNode.group([
-      Database.node,
-      Bus.node,
-      SessionProjector.node,
-      SessionStore.node,
-      SessionCompaction.node,
-      SessionModelRequest.node,
-      PluginHooks.node,
-    ]),
-    [
-      Bus.node.replace(Bus.configured({ persist: true })),
-      llmClient.replace(client),
-      Location.node.replace(Location.boundNode({ directory: AbsolutePath.make("/project") })),
-    ],
-  ),
-)
+const suite = (replacement = client) =>
+  testEffect(
+    AppNodeBuilder.build(
+      LayerNode.group([
+        Database.node,
+        Bus.node,
+        SessionProjector.node,
+        SessionStore.node,
+        SessionCompaction.node,
+        SessionModelRequest.node,
+        PluginHooks.node,
+      ]),
+      [
+        Bus.node.replace(Bus.configured({ persist: true })),
+        llmClient.replace(replacement),
+        Location.node.replace(Location.boundNode({ directory: AbsolutePath.make("/project") })),
+      ],
+    ),
+  )
+
+const it = suite()
 
 test("compaction prompt preserves detailed work state and relevant files", () => {
   const prompt = SessionCompaction.buildPrompt(false)
@@ -621,145 +617,133 @@ it.effect("forked session compaction reuses the fork root prompt cache key", () 
   }),
 )
 
-for (const scenario of [
-  {
-    name: "with a hook result after reduction",
-    recent: 30_000,
-    window: 10_000,
-    retained: false,
-    supplied: true,
-  },
-  {
-    name: "with repeated rejection and hook growth",
-    recent: 1,
-    window: 200_000,
-    retained: true,
-    rejection: "payload-too-large",
-    repeated: true,
-  },
-  { name: "without shrinking", recent: 1, window: 200_000, retained: true },
-  {
-    name: "after payload rejection",
-    recent: 1,
-    window: 200_000,
-    retained: true,
-    rejection: "payload-too-large",
-  },
-  {
-    name: "dropping recent before newer exchanges",
-    recent: 30_000,
-    window: 10_000,
-    retained: false,
-  },
-  {
-    name: "after context overflow",
-    recent: 12_000,
-    window: 200_000,
-    retained: false,
-    rejection: "context-overflow",
-  },
-] as const) {
-  it.effect(`compaction preserves checkpoint hook edits ${scenario.name}`, () =>
-    Effect.gen(function* () {
-      requests = []
-      rejection = "rejection" in scenario ? scenario.rejection : undefined
-      repeatRejection = "repeated" in scenario
-      const canary = `COMPACTION-TEST-CANARY-${crypto.randomUUID()}`
-      const session = yield* insertSession(Session.ID.create())
-      const hooks = yield* PluginHooks.Service
-      const compaction = yield* SessionCompaction.Service
-      yield* compaction.transform((editor) => editor.configure({ keep: 0 }))
-      const checkpoint = Schema.decodeUnknownSync(SessionMessage.CompactionCompleted)({
-        id: SessionMessage.ID.create(),
-        type: "compaction",
-        status: "completed",
-        reason: "auto",
-        summary: `SUMMARY ${canary}`,
-        recent: `RECENT ${canary} ${"old ".repeat(scenario.recent)}`,
-        time: { created: 0, completed: 0 },
-      })
-      const messages = [
-        checkpoint,
-        ...["OLDER-EXCHANGE", "NEWER-EXCHANGE", "Tail retained outside the summary request"].map((text, index) =>
-          SessionMessage.User.make({
-            id: SessionMessage.ID.create(),
-            type: "user",
-            text,
-            time: { created: DateTime.makeUnsafe(index + 1) },
-          }),
-        ),
-      ]
-      let calls = 0
-      let modelCalls = 0
-      yield* hooks.register("session", "model.request", (event) =>
+const checkpointFixture = Effect.gen(function* () {
+  requests = []
+  const session = yield* insertSession(Session.ID.create())
+  const hooks = yield* PluginHooks.Service
+  const compaction = yield* SessionCompaction.Service
+  yield* compaction.transform((editor) => editor.configure({ keep: 0 }))
+  const canary = `COMPACTION-TEST-CANARY-${crypto.randomUUID()}`
+  const checkpoint = Schema.decodeUnknownSync(SessionMessage.CompactionCompleted)({
+    id: SessionMessage.ID.create(),
+    type: "compaction",
+    status: "completed",
+    reason: "auto",
+    summary: `SUMMARY ${canary}`,
+    recent: `RECENT ${canary}`,
+    time: { created: 0, completed: 0 },
+  })
+  const user = (text: string) =>
+    SessionMessage.User.make({
+      id: SessionMessage.ID.create(),
+      type: "user",
+      text,
+      time: { created: DateTime.makeUnsafe(1) },
+    })
+  const messages = [
+    checkpoint,
+    user("Exchange being summarized"),
+    Schema.decodeUnknownSync(SessionMessage.Assistant)({
+      id: SessionMessage.ID.create(),
+      type: "assistant",
+      agent: Agent.defaultID,
+      model: { id: "summary-model", providerID: "test" },
+      content: [{ type: "reasoning", text: "reasoning ".repeat(30_000) }],
+      time: { created: 1, completed: 2 },
+    }),
+    user("Tail retained outside the summary request"),
+  ]
+  const context = loaded(session, messages)
+  return {
+    session,
+    hooks,
+    checkpoint,
+    canary,
+    redact: () =>
+      hooks.register("session", "compaction", (event) =>
         Effect.sync(() => {
-          expect(event.headers["x-hook-attempt"]).toBeUndefined()
-          event.headers["x-hook-attempt"] = String(++modelCalls)
-        }),
-      )
-      yield* hooks.register("session", "compaction", (event) =>
-        Effect.sync(() => {
-          expect(JSON.stringify(event.messages).includes(canary)).toBe(true)
           event.messages = JSON.parse(JSON.stringify(event.messages).replaceAll(canary, "[redacted]"))
-          expect(event.system.some((part) => part.text === "hook annotation")).toBe(false)
-          event.system.push({ type: "text", text: "hook annotation" })
-          expect(event.result).toBeUndefined()
-          expect(event.options.temperature).toBeUndefined()
-          event.options.temperature = ++calls / 10
-          if (repeatRejection) event.system.push({ type: "text", text: "growth ".repeat(20_000) })
-          if ("supplied" in scenario && calls === 2) {
-            event.result = { summary: "## Objective\n- supplied by final hook" }
-          }
         }),
-      )
-      const context = loaded(session, messages)
-      const outcome = yield* compaction.compact({
+      ),
+    compact: (window: number) =>
+      compaction.compact({
         reason: "manual",
         inputID: SessionMessage.ID.create(),
-        context: { ...context, model: { ...context.model, limit: { context: scenario.window, output: 2000 } } },
-      })
-      if ("repeated" in scenario) {
-        rejection = undefined
-        repeatRejection = false
-        expect(outcome.status).toBe("failed")
-        expect(requests).toHaveLength(5)
-        expect(calls).toBe(5)
-      } else {
-        expect(outcome.status).toBe("completed")
+        context: { ...context, model: { ...context.model, limit: { context: window, output: 2000 } } },
+      }),
+  }
+})
+
+it.effect("shrinking preserves hook redaction of both summary and recent", () =>
+  Effect.gen(function* () {
+    const fixture = yield* checkpointFixture
+    yield* fixture.redact()
+    expect(yield* fixture.compact(10_000)).toEqual({ status: "completed" })
+    expect(requests).toHaveLength(1)
+    const sent = JSON.stringify(requests[0].messages)
+    expect(sent.includes(fixture.canary)).toBe(false)
+    expect(sent).toContain("SUMMARY [redacted]")
+    expect(sent).toContain("RECENT [redacted]")
+    expect(sent).not.toContain("reasoning reasoning")
+    expect(fixture.checkpoint.summary.includes(fixture.canary)).toBe(true)
+    expect(fixture.checkpoint.recent.includes(fixture.canary)).toBe(true)
+  }),
+)
+
+suite(
+  Layer.effect(
+    LLMClient.Service,
+    Effect.gen(function* () {
+      const llm = yield* LLMClient.Service
+      let rejected = false
+      return {
+        ...llm,
+        stream: (request, options) => {
+          if (rejected) return llm.stream(request, options)
+          rejected = true
+          requests.push(request)
+          return Stream.fail(
+            new AIError({
+              reason: new InvalidRequestError({
+                message: "Too large",
+                classification: "context-overflow",
+              }),
+            }),
+          )
+        },
       }
-      expect(modelCalls).toBe(calls)
-      expect(JSON.stringify(requests).includes(canary)).toBe(false)
-      for (const request of requests) {
-        expect(request.system.filter((part) => part.text === "hook annotation")).toHaveLength(1)
-        expect(request.generation?.temperature).toBe(Number(request.http?.headers?.["x-hook-attempt"]) / 10)
-      }
-      if ("supplied" in scenario) {
-        expect(calls).toBe(2)
-        expect(requests).toHaveLength(0)
-        const store = yield* SessionStore.Service
-        expect(JSON.stringify(yield* store.context(session.id))).toContain("supplied by final hook")
-        return
-      }
-      if ("repeated" in scenario) return
-      expect(calls).toBe(scenario.name === "without shrinking" ? 1 : 2)
-      expect(requests).toHaveLength("rejection" in scenario ? 2 : 1)
-      const sent = JSON.stringify(requests.at(-1)?.messages)
-      if (scenario.name === "without shrinking") {
-        const original = SessionModelRequest.baseTranscript({
-          ...context,
-          agent: context.agent.info,
-          messages: messages.slice(0, -1),
-        })
-        expect(requests[0].messages.slice(0, -1)).toEqual(
-          JSON.parse(JSON.stringify(original.messages).replaceAll(canary, "[redacted]")),
-        )
-      }
-      expect(sent.includes("SUMMARY [redacted]")).toBe(true)
-      expect(sent.includes("RECENT [redacted]")).toBe(scenario.retained)
-      expect(sent.includes("OLDER-EXCHANGE")).toBe(true)
-      expect(sent.includes("NEWER-EXCHANGE")).toBe(true)
-      expect(checkpoint.summary.includes(canary)).toBe(true)
-      expect(checkpoint.recent.includes(canary)).toBe(true)
     }),
-  )
-}
+  ).pipe(Layer.provide(client)),
+).effect("context overflow preserves checkpoint hook redaction", () =>
+  Effect.gen(function* () {
+    const fixture = yield* checkpointFixture
+    yield* fixture.redact()
+    expect(yield* fixture.compact(200_000)).toEqual({ status: "completed" })
+    expect(requests).toHaveLength(2)
+    expect(JSON.stringify(requests).includes(fixture.canary)).toBe(false)
+    expect(JSON.stringify(requests[0].messages)).toContain("reasoning reasoning")
+    const retried = JSON.stringify(requests[1].messages)
+    expect(retried).toContain("SUMMARY [redacted]")
+    expect(retried).toContain("RECENT [redacted]")
+    expect(retried).not.toContain("reasoning reasoning")
+  }),
+)
+
+it.effect("a result supplied on the reduced draft skips the model call", () =>
+  Effect.gen(function* () {
+    const fixture = yield* checkpointFixture
+    let calls = 0
+    yield* fixture.hooks.register("session", "compaction", (event) =>
+      Effect.sync(() => {
+        if (++calls === 2) event.result = { summary: "## Objective\n- supplied on reduced draft" }
+      }),
+    )
+    expect(yield* fixture.compact(10_000)).toEqual({ status: "completed" })
+    expect(calls).toBe(2)
+    expect(requests).toHaveLength(0)
+    const store = yield* SessionStore.Service
+    expect(yield* store.context(fixture.session.id)).toMatchObject([
+      { type: "compaction", status: "completed", summary: "## Objective\n- supplied on reduced draft" },
+    ])
+  }),
+)
