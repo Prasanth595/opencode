@@ -1,21 +1,26 @@
 import { beforeAll, expect, mock, setSystemTime, test, vi } from "bun:test"
 import { createEffect, createRoot } from "solid-js"
 import { createStore } from "solid-js/store"
-import type { ServerSDK } from "@/runtime/server/client"
-import type { Data } from "@opencode/client/solid"
+import type { OpenCodeEvent } from "@opencode/client/promise"
 import type { ServerConnection } from "@/runtime/server/registry"
 import { ServerScope } from "@/runtime/server/scope"
 import type { Tab } from "@/shell/tabs/tabs"
 
+// SAFETY: this is the key format `ServerConnection.key` produces for a local server.
 const server = "local\nhttp://localhost:4096" as ServerConnection.Key
 
 const session = { id: "session-1", title: "Test session", location: { directory: "/project" } }
 
 const alerts: string[] = []
 
-const tabs: { store: Tab[] } = { store: [] }
+const tabs = { store: new Array<Tab>() }
 
 let createServerNotificationState: typeof import("@/shell/notifications/notification").createServerNotificationState
+
+// Each test fakes only the parts of the SDK, data store and coordinator that the notification state reads.
+const createState = (input: { sdk: object; data: object; coordinator: object }) =>
+  // SAFETY: the fakes cover every member the notification state reaches in that test.
+  createServerNotificationState({ key: server, ...input } as never)
 
 beforeAll(async () => {
   const { sessionIDHasOpenTab } = await import("@/shell/tabs/tabs")
@@ -47,45 +52,42 @@ test.each([
 ] as const)("system alert for %s requires an open session tab", async (type, title) => {
   alerts.length = 0
   tabs.store = [{ type: "session", server, sessionId: "another-session" }]
-  let listener: ((event: unknown) => void) | undefined
+  const listeners = new Array<(event: OpenCodeEvent) => void>()
+
+  const emit = (id: string) =>
+    listeners.forEach((listener) =>
+      // SAFETY: the notification state reads only the type, id and session of execution events.
+      listener({ type, id, data: { sessionID: session.id, error: { type: "api", message: "failed" } } } as never),
+    )
 
   const dispose = createRoot((dispose) => {
-    const state = createServerNotificationState({
-      key: server,
+    createState({
       sdk: {
         scope: ServerScope.local,
         event: {
-          listen: (fn: typeof listener) => {
-            listener = fn
+          listen: (listener: (event: OpenCodeEvent) => void) => {
+            listeners.push(listener)
 
             return () => {}
           },
         },
-      } as unknown as ServerSDK,
-      data: { session: { get: () => session } } as unknown as Data,
+      },
+      data: { session: { get: () => session } },
       coordinator: { system: async (_id: string, fn: () => Promise<void>) => fn() },
-    } as Parameters<typeof createServerNotificationState>[0])
+    })
 
-    return { dispose, state }
+    return dispose
   })
 
-  listener?.({
-    type,
-    id: "event-1",
-    data: { sessionID: session.id, error: { type: "api", message: "failed", status: 500 } },
-  })
+  emit("event-1")
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(alerts).toEqual([])
 
   tabs.store = [{ type: "session", server, sessionId: session.id }]
-  listener?.({
-    type,
-    id: "event-2",
-    data: { sessionID: session.id, error: { type: "api", message: "failed", status: 500 } },
-  })
+  emit("event-2")
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(alerts).toEqual([title])
-  dispose.dispose()
+  dispose()
 })
 
 test("unread state and viewing follow the server's idle and viewed watermarks", async () => {
@@ -110,8 +112,7 @@ test("unread state and viewing follow the server's idle and viewed watermarks", 
   })
 
   const dispose = createRoot((dispose) => {
-    const state = createServerNotificationState({
-      key: server,
+    const state = createState({
       sdk: {
         scope: ServerScope.local,
         event: { listen: () => () => {} },
@@ -124,16 +125,16 @@ test("unread state and viewing follow the server's idle and viewed watermarks", 
             },
           },
         },
-      } as unknown as ServerSDK,
+      },
       data: {
         session: {
           get: (id: string) => store.sessions[id],
           root: (id: string) => store.sessions[id]?.parentID ?? id,
           list: () => Object.values(store.sessions),
         },
-      } as unknown as Data,
+      },
       coordinator: {},
-    } as Parameters<typeof createServerNotificationState>[0])
+    })
 
     // Mirrors the session route, which re-runs markViewed whenever what it reads changes.
     createEffect(() => {
@@ -206,8 +207,7 @@ test("unread state honours the old local list until its viewed state is carried 
   const start = () =>
     createRoot((dispose) => ({
       dispose,
-      state: createServerNotificationState({
-        key: server,
+      state: createState({
         sdk: {
           scope: ServerScope.local,
           connection: { status: () => "connected" },
@@ -228,16 +228,18 @@ test("unread state honours the old local list until its viewed state is carried 
               },
             },
           },
-        } as unknown as ServerSDK,
-        data: { session: { get: () => undefined, root: (id: string) => id } } as unknown as Data,
+        },
+        data: { session: { get: () => undefined, root: (id: string) => id } },
         coordinator: {},
-      } as Parameters<typeof createServerNotificationState>[0]),
+      }),
     }))
 
   // Sessions come from fetched snapshots here, like home rows for sessions that aren't loaded.
   const unread = (state: ReturnType<typeof start>["state"]) =>
-    // SAFETY: the snapshots carry the id and time fields unread state reads.
-    sessions.filter((session) => state.session.unread(session.id, session as never)).map((session) => session.id)
+    sessions.flatMap((session) =>
+      // SAFETY: the snapshots carry the id and time fields unread state reads.
+      state.session.unread(session.id, session as never) ? [session.id] : [],
+    )
 
   // Advances fake time, then lets the mocked requests it started settle.
   const advance = async (ms: number) => {

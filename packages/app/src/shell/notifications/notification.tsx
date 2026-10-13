@@ -1,7 +1,6 @@
 import { createEffect, createMemo, onCleanup, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Schema } from "effect"
-import type { SessionError } from "@opencode/schema/session-error"
 import type { SessionInfo } from "@opencode/client/promise"
 import type { ServerSDK } from "@/runtime/server/client"
 import type { Data } from "@opencode/client/solid"
@@ -241,7 +240,7 @@ export function createServerNotificationState(input: {
     })
   }
 
-  const handleSessionError = (sessionID: string, error: SessionError.Error, eventID: string) => {
+  const handleSessionError = (sessionID: string, eventID: string) => {
     void lookup(sessionID).then((session) => {
       if (disposed.value) return
 
@@ -253,9 +252,7 @@ export function createServerNotificationState(input: {
         void input.coordinator.sound(`${input.key}\0${eventID}`, () => playSoundById(settings.sounds.errors()))
       }
 
-      const description =
-        session?.title ??
-        (typeof error === "string" ? error : language.t("notification.session.error.fallbackDescription"))
+      const description = session?.title ?? language.t("notification.session.error.fallbackDescription")
 
       if (hasOpenTab && settings.notifications.errors()) {
         void input.coordinator.system(`${input.key}\0${eventID}`, () =>
@@ -269,7 +266,7 @@ export function createServerNotificationState(input: {
 
   const unsub = input.sdk.event.listen((event) => {
     if (event.type === "session.execution.failed") {
-      handleSessionError(event.data.sessionID, event.data.error, event.id)
+      handleSessionError(event.data.sessionID, event.id)
 
       return
     }
