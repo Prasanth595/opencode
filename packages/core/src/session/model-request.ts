@@ -259,8 +259,8 @@ export const layer = Layer.effect(
           messages: input.messages,
           options:
             kind === "primary" || kind === "compaction"
-              ? { maxTokens: outputLimit(model.limit, kind, input.inputTokens), ...input.agentRequest?.body }
-              : { ...input.agentRequest?.body },
+              ? { maxTokens: outputLimit(model.limit, kind, input.inputTokens) }
+              : {},
         },
         Object.fromEntries(Array.from(given, ([d, t]) => [t.name, d])),
       )
@@ -280,8 +280,24 @@ export const layer = Layer.effect(
       const base = LLM.request({
         model: model.model,
         http: {
+          body: input.agentRequest?.body,
           headers: {
-            ...input.agentRequest?.headers,
+            ...Object.fromEntries(
+              Object.entries(input.agentRequest?.headers ?? {}).filter(
+                ([name]) =>
+                  ![
+                    "x-opencode-session-id",
+                    "x-opencode-parent-session-id",
+                    "x-session-affinity",
+                    "x-session-id",
+                    "x-parent-session-id",
+                    "user-agent",
+                    "x-opencode-project",
+                    "x-opencode-session",
+                    "x-opencode-client",
+                  ].includes(name.toLowerCase()),
+              ),
+            ),
             "x-opencode-session-id": session.id,
             ...(session.parentID ? { "x-opencode-parent-session-id": session.parentID } : {}),
             "x-session-affinity": affinity,
