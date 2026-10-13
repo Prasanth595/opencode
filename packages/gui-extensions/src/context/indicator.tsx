@@ -68,9 +68,10 @@ export function SessionContextUsage(props: {
       .toLocaleLowerCase(i18n.locale()),
   )
 
-  const cost = createMemo(() => {
-    return usd().format(info()?.cost ?? 0)
-  })
+  // A root session's cost includes its subagent sessions, as in the TUI.
+  const cost = createMemo(() =>
+    usd().format(props.session.id ? props.session.server.data.session.cost(props.session.id) : 0),
+  )
 
   const showCost = createMemo(() => {
     if ((info()?.cost ?? 0) > 0) return true

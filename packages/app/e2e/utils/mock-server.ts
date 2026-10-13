@@ -758,9 +758,15 @@ function mockHandlers(
         Effect.gen(function* () {
           const path = decodeURIComponent(new URL(ctx.request.url, "http://localhost").pathname.slice(13))
           const value = yield* Effect.promise(() => Promise.resolve(config.fileContent?.(path)))
-          const content = Predicate.isString(value) ? value : (value?.content ?? "")
 
-          return HttpServerResponse.uint8Array(new TextEncoder().encode(content))
+          if (Predicate.isString(value)) return HttpServerResponse.uint8Array(new TextEncoder().encode(value))
+
+          // Like the server, stream base64 content as the bytes it encodes.
+          return HttpServerResponse.uint8Array(
+            value?.encoding === "base64"
+              ? Buffer.from(value.content, "base64")
+              : new TextEncoder().encode(value?.content ?? ""),
+          )
         }),
       )
       // Raw, so a hook's answer can replace the status and body.
@@ -1471,7 +1477,7 @@ export function currentSession(session: MockSession, fallbackDirectory?: string)
     parentID: session.parentID,
     projectID: session.projectID ?? "project",
     agent: session.agent ?? "build",
-    model: session.model ?? { id: "mock-model", providerID: "mock-provider" },
+    model: session.model,
     cost: session.cost ?? 0,
     tokens: session.tokens ?? { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
     ...decodeSessionOutcome(session),
