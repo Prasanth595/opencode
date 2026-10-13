@@ -1,6 +1,7 @@
 import { Location } from "@opencode/core/location"
 import { LocationServiceMap } from "@opencode/core/location-service-map"
 import { ServiceUnavailableError } from "@opencode/protocol/errors"
+import { Global } from "@opencode/util/global"
 import { Cause, Effect } from "effect"
 import { HttpApiBuilder } from "effect/http-api"
 import { Api } from "../api"
@@ -8,6 +9,7 @@ import { Api } from "../api"
 export const LocationHandler = HttpApiBuilder.group(Api, "server.location", (handlers) =>
   Effect.gen(function* () {
     const locations = yield* LocationServiceMap.Service
+    const global = yield* Global.Service
     return handlers
       .handle(
         "location.get",
@@ -15,6 +17,7 @@ export const LocationHandler = HttpApiBuilder.group(Api, "server.location", (han
           const location = yield* Location.Service
           return new Location.Info({
             directory: location.directory,
+            home: global.home,
             project: location.project,
           })
         }),

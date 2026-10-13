@@ -4,6 +4,7 @@ import { Plugin } from "@opencode/core/plugin"
 import { LocationServiceMap } from "@opencode/core/location-services"
 import { AbsolutePath } from "@opencode/core/schema"
 import { Session } from "@opencode/core/session"
+import { Global } from "@opencode/util/global"
 import { LocationNotFoundError, InvalidRequestError, ServiceUnavailableError } from "@opencode/protocol/errors"
 import { Effect, Layer, Schema } from "effect"
 import { HttpServerRequest } from "effect/http"
@@ -52,6 +53,9 @@ export function response<A, E, R>(data: Effect.Effect<A, E, R>) {
     return {
       location: new Location.Info({
         directory: location.directory,
+        // Per-request helpers may only require middleware-provided services; read the
+        // process-global home directly like ServerProcess reads Global.Path.tmp.
+        home: Global.Path.home,
         project: location.project,
       }),
       data: yield* data,

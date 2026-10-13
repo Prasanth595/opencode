@@ -276,8 +276,10 @@ export function Prompt(props: PromptProps) {
           const session = sessionID ? data.session.get(sessionID) : undefined
           const sourceProjectID = session?.projectID ?? data.location.info()?.project.id
           const value = input.trim()
+          // Expand ~ against the server home when attached remotely; the location owns the filesystem.
+          const home = currentLocation.current?.home ?? data.location.info()?.home ?? paths.home
           const expanded =
-            value === "~" ? paths.home : value.startsWith("~/") ? path.join(paths.home, value.slice(2)) : value
+            value === "~" ? home : value.startsWith("~/") ? path.join(home, value.slice(2)) : value
           const directory = path.resolve(
             session?.location.directory ?? currentLocation.current?.directory ?? data.location.default().directory,
             expanded,

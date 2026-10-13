@@ -4,7 +4,9 @@ import { createServer } from "node:http"
 import path from "node:path"
 import { Agent } from "@opencode/schema/agent"
 import { Integration } from "@opencode/schema/integration"
+import { Location } from "@opencode/schema/location"
 import { ServerInfo } from "@opencode/protocol/groups/server"
+import { Global } from "@opencode/util/global"
 import { Effect, Schedule, Schema } from "effect"
 import { Session } from "@opencode/schema/session"
 import { tmpdir } from "../../core/test/fixture/tmpdir"
@@ -330,6 +332,16 @@ it.live("applies custom CORS origins to HTTP responses and PTY ticket checks", (
     )
     expect(replayed.status).toBe(403)
   }).pipe(Effect.scoped),
+)
+
+it.live("reports the server home directory on location.get", () =>
+  Effect.gen(function* () {
+    const handler = yield* ServerFetch.make(options)
+    const response = yield* Effect.promise(() => handler(new Request("http://opencode.local/api/location")))
+    expect(response.status).toBe(200)
+    const location = Schema.decodeUnknownSync(Location.PublicInfo)(yield* Effect.promise(() => response.json()))
+    expect(location.home).toBe(Global.Path.home)
+  }),
 )
 
 it.live("returns 404 when a previously readable file is deleted", () =>

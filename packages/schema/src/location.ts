@@ -19,6 +19,10 @@ export interface PublicRef extends Schema.Schema.Type<typeof PublicRef> {}
 export class Info extends Schema.Class<Info>("Location.Info")({
   directory: AbsolutePath,
   workspaceID: optional(WorkspaceID),
+  home: optional(Schema.String).annotate({
+    description:
+      "The server's home directory, so clients can expand ~ against the filesystem that owns the location instead of their own. Absent when the server does not report it.",
+  }),
   project: Schema.Struct({
     id: ProjectID,
     directory: AbsolutePath,

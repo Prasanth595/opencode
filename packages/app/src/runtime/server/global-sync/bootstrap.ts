@@ -120,7 +120,7 @@ export const loadPathQuery = (scope: ServerScope, directory: string | null, api:
         config: "",
         worktree: location.project.directory,
         directory: location.directory,
-        home: "",
+        home: location.home ?? "",
       })),
   })
 

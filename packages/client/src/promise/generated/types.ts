@@ -310,6 +310,7 @@ export type WorktreeInfo = { directory: AbsolutePath }
 
 export type LocationPublicInfo = {
   directory: AbsolutePath
+  home?: string
   project: { id: ProjectID; directory: AbsolutePath; canonical: AbsolutePath }
 }
 
