@@ -487,7 +487,8 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
               ),
             ).pipe(
               Stream.catchIf(
-                (error) => error.reason._tag === "Transport",
+                // A connection failure may resume; a timeout keeps its meaning and ends the response.
+                (error) => error.reason._tag === "Transport" && error.reason.code !== "Timeout",
                 (error) => {
                   dropped = error
                   return Stream.empty

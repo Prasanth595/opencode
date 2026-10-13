@@ -1,5 +1,6 @@
 import { describe, expect } from "bun:test"
-import { Effect } from "effect"
+import { Deferred, Effect, Fiber } from "effect"
+import * as TestClock from "effect/testing/TestClock"
 import { LLM, AIError, LLMRequest, Message, ToolCallPart, ToolDefinition, Usage, Media } from "../../src/index.js"
 import { Auth, LLMClient } from "../../src/route.js"
 import { compileRequest } from "../../src/route/client.js"
@@ -1846,13 +1847,13 @@ describe("Gemini response continuation", () => {
   })
 
   // Serves one scripted SSE body per request, or a body whose connection drops after it, and records every sent body.
-  const scripted = (responses: ReadonlyArray<string | { readonly dropped: string }>) => {
+  const scripted = (responses: ReadonlyArray<string | { readonly dropped: string } | ReadableStream<Uint8Array>>) => {
     const bodies: Array<Record<string, unknown>> = []
     const layer = dynamicResponse((input) =>
       Effect.sync(() => {
         bodies.push(JSON.parse(input.text))
         const response = responses[bodies.length - 1]
-        if (typeof response === "string")
+        if (typeof response === "string" || response instanceof ReadableStream)
           return input.respond(response, { headers: { "content-type": "text/event-stream" } })
         let sent = false
         return input.respond(
@@ -1989,6 +1990,31 @@ describe("Gemini response continuation", () => {
       const error = yield* LLMClient.generate(continuedRequest).pipe(Effect.provide(server.layer), Effect.flip)
 
       expect(error.reason._tag).toBe("Transport")
+      expect(server.bodies).toHaveLength(1)
+    }),
+  )
+
+  it.effect("does not resume a response cut off by its own timeout", () =>
+    Effect.gen(function* () {
+      const stalled = yield* Deferred.make<void>()
+      let sent = false
+      const server = scripted([
+        new ReadableStream({
+          pull(controller) {
+            if (sent) return new Promise<void>(() => Deferred.doneUnsafe(stalled, Effect.void))
+            sent = true
+            controller.enqueue(new TextEncoder().encode(chunks(text("THIRTEEN", { continuationToken: "checkpoint-1" }))))
+          },
+        }),
+      ])
+      const fiber = yield* LLMClient.generate(
+        LLMRequest.update(continuedRequest, { http: { timeout: 1_000 } }),
+      ).pipe(Effect.provide(server.layer), Effect.flip, Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(stalled)
+      yield* TestClock.adjust("1 second")
+      const error = yield* Fiber.join(fiber)
+
+      expect(error.reason).toMatchObject({ _tag: "Transport", code: "Timeout" })
       expect(server.bodies).toHaveLength(1)
     }),
   )
