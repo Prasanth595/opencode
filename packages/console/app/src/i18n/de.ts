@@ -306,6 +306,8 @@ export const dict = {
   "go.faq.a5.museRetention":
     "Stark vergünstigte Tokenpreise im Gegenzug für die Erlaubnis, deine Prompts und Vervollständigungen zum Trainieren zukünftiger Meta-Modelle zu verwenden.",
   "go.faq.a5.catJamRetention": "Während des kostenlosen Zeitraums können gesammelte Daten zur Verbesserung des Modells verwendet werden.",
+  "go.faq.a5.geminiRetention":
+    "Deine Prompts und Vervollständigungen können zum Trainieren zukünftiger Google-Modelle verwendet werden.",
   "go.faq.a5.learnMore": "Mehr erfahren",
   "go.faq.a5.deepseekRetention":
     "Die ZDR-Vereinbarung wird monatlich erneuert. Die aktuelle Vereinbarung gilt bis einschließlich 31. Oktober 2026.",

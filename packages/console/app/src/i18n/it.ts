@@ -302,6 +302,8 @@ export const dict = {
   "go.faq.a5.gptRetention":
     "I log di monitoraggio degli abusi vengono generati per l'utilizzo di tutte le funzionalità API e conservati per un massimo di 30 giorni.",
   "go.faq.a5.catJamRetention": "Durante il periodo gratuito, i dati raccolti possono essere utilizzati per migliorare il modello.",
+  "go.faq.a5.geminiRetention":
+    "I tuoi prompt e completamenti possono essere utilizzati per addestrare futuri modelli Google.",
   "go.faq.a5.learnMore": "Scopri di più",
   "go.faq.a5.deepseekRetention":
     "L'accordo ZDR viene rinnovato mensilmente. L'accordo attuale è valido fino al 31 ottobre 2026.",

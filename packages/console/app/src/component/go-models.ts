@@ -1,6 +1,14 @@
 // Requests are per 5 hours; allowances are monthly usage at official API prices.
 export const goModels = [
   { id: "kimi-k3", name: "Kimi K3", requests: 110, allowance: 15, featured: true },
+  {
+    id: "gemini-4-argon-contributor",
+    name: "Gemini 4 Argon Contributor",
+    requests: 110,
+    allowance: 60,
+    featured: true,
+    fresh: true,
+  },
   { id: "qwen3.8-max", name: "Qwen3.8 Max", requests: 160, allowance: 15 },
   { id: "grok-4.7", name: "Grok 4.7", requests: 169, allowance: 15 },
   { id: "grok-4.6", name: "Grok 4.6", requests: 169, allowance: 15 },
@@ -85,6 +93,7 @@ export const goModels = [
 // Go Plus limits are published per model in the Console, not a fixed multiplier of Go.
 const plusLimits: Record<string, [number, number]> = {
   "kimi-k3": [440, 60],
+  "gemini-4-argon-contributor": [440, 240],
   "qwen3.8-max": [640, 60],
   "grok-4.7": [676, 60],
   "grok-4.6": [676, 60],

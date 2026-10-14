@@ -302,6 +302,7 @@ export const dict = {
   "go.faq.a5.gptRetention":
     "Logger for overvåking av misbruk genereres for all bruk av API-funksjoner og oppbevares i opptil 30 dager.",
   "go.faq.a5.catJamRetention": "I gratisperioden kan innsamlede data brukes til å forbedre modellen.",
+  "go.faq.a5.geminiRetention": "Ledetekstene og fullføringene dine kan brukes til å trene fremtidige Google-modeller.",
   "go.faq.a5.learnMore": "Les mer",
   "go.faq.a5.deepseekRetention":
     "ZDR-avtalen fornyes månedlig. Den gjeldende avtalen er gyldig til og med 31. oktober 2026.",
