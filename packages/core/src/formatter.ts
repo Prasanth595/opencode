@@ -8,6 +8,7 @@ import { AppProcess } from "@opencode/util/process"
 import { Location } from "./location.js"
 import type { Info } from "./formatter/builtins.js"
 import { State } from "./state.js"
+import { literalReplace } from "./util/template.js"
 
 type Data = {
   formatters: Info[]
@@ -60,7 +61,7 @@ const layer = Layer.effect(
       for (const formatter of matching) {
         const enabled = yield* command(formatter)
         if (enabled === false) continue
-        const cmd = enabled.map((argument) => argument.replace("$FILE", filepath))
+        const cmd = enabled.map((argument) => literalReplace(argument, "$FILE", filepath))
         yield* Effect.logInfo("formatting file", { file: filepath, command: cmd })
         const result = yield* processes
           .run(
