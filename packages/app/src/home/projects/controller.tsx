@@ -86,10 +86,6 @@ export function createHomeProjectsController(home: HomeController) {
         const key = ServerConnection.key(conn)
         setState("collapsed", key, !state().collapsed[key])
       },
-      canDefault: serverManagement.defaults.available,
-      defaultKey: serverManagement.defaults.key,
-      setDefault: (conn: ServerConnection.Any | undefined) =>
-        serverManagement.defaults.set(conn ? ServerConnection.key(conn) : null),
       canRemove: (conn: ServerConnection.Any) => serverManagement.connection.canRemove(ServerConnection.key(conn)),
       remove: (conn: ServerConnection.Any) => serverManagement.connection.remove(ServerConnection.key(conn)),
       canHide: (conn: ServerConnection.Any) => serverManagement.connection.canHide(ServerConnection.key(conn)),
@@ -153,16 +149,14 @@ export function createHomeProjectsController(home: HomeController) {
           project: project.worktree,
         })
       },
-      unseenCount: (conn: ServerConnection.Any, project: LocalProject) => {
+      hasUnread: (conn: ServerConnection.Any, project: LocalProject) => {
         const notification = global.ensureServerCtx(conn).notification
 
-        return directories(project).reduce((total, directory) => total + notification.project.unseenCount(directory), 0)
+        return directories(project).some((directory) => notification.project.hasUnread(directory))
       },
       clearNotifications: (conn: ServerConnection.Any, project: LocalProject) => {
         const notification = global.ensureServerCtx(conn).notification
-        directories(project)
-          .filter((directory) => notification.project.unseenCount(directory) > 0)
-          .forEach((directory) => notification.project.markViewed(directory))
+        directories(project).forEach((directory) => notification.project.markViewed(directory))
       },
       choose: (conn: ServerConnection.Any) => {
         if (authenticate(conn, (next) => choose(next))) return
