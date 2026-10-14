@@ -290,7 +290,10 @@ download_with_progress() {
     local length=0
     local bytes=0
     while [ ! -f "$status" ]; do
-        if [ "$length" -eq 0 ] && [ -s "$headers" ]; then
+        # The header file holds every response in the `-L` chain, so the last
+        # `content-length` in it is the one that counts; re-read it on every poll
+        # rather than keeping the first non-zero value, which a redirect can set.
+        if [ -s "$headers" ]; then
             local total
             total=$(sed -n 's/^[Cc]ontent-[Ll]ength:[[:space:]]*\([0-9][0-9]*\).*$/\1/p' "$headers" | tail -n 1)
             [ -n "$total" ] && length="$total"
