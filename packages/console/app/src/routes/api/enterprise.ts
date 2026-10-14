@@ -1,5 +1,5 @@
 import type { APIEvent } from "@solidjs/start/server"
-import { AWS } from "@opencode/console-core/aws.js"
+import { sendEmail } from "~/lib/aws"
 import { Resource } from "@opencode/console-resource"
 import { i18n } from "~/i18n"
 import { localeFromRequest } from "~/lib/language"
@@ -129,7 +129,7 @@ ${body.phone ? `${body.phone}<br>` : ""}`.trim()
       }),
       options.notifications === false
         ? Promise.resolve(false)
-        : AWS.sendEmail({
+        : sendEmail({
             to: Resource.ENTERPRISE_SALES_INBOX_EMAIL.value,
             subject: `Enterprise Inquiry from ${body.name}`,
             body: emailContent,
