@@ -16,7 +16,7 @@ const session = {
   time: { created: 0, updated: 0 },
 }
 
-function render(state: string, config: Record<string, unknown>) {
+function render(state: string, config: Record<string, unknown>, configuredModel?: string) {
   return createAppFixture({
     state,
     args: { sessionID: session.id },
@@ -24,6 +24,8 @@ function render(state: string, config: Record<string, unknown>) {
     fetch: (url) => {
       if (url.pathname === "/api/fs/list") return json({ location, data: [] })
       if (url.pathname === "/api/location") return json(location)
+      if (url.pathname === "/api/config")
+        return json(configuredModel ? [{ type: "document", info: { model: configuredModel } }] : [])
       if (url.pathname === "/api/session") return json({ data: [session], cursor: {} })
       if (url.pathname === `/api/session/${session.id}`) return json({ data: session })
       if (/^\/api\/session\/[^/]+\/(message|inbox|permission)$/.test(url.pathname))
@@ -35,8 +37,8 @@ function render(state: string, config: Record<string, unknown>) {
         return json({
           location,
           data: [
-            { id: "other", providerID: "provider", name: "Other Model", variants: [] },
-            { id: "model", providerID: "provider", name: "Session Model", variants: [] },
+            { id: "other", providerID: "provider", name: "Other Model", variants: [], cost: [], time: { released: 0 } },
+            { id: "model", providerID: "provider", name: "Session Model", variants: [], cost: [], time: { released: 0 } },
           ],
         })
     },
@@ -69,4 +71,38 @@ test("/new uses the first available model when new_model is default", async () =
   const frame = await setup.waitForFrame((frame) => frame.includes("New session") && frame.includes("Other Model"))
 
   expect(frame).toContain("Other Model")
+})
+
+test("/new resets a picked home-screen model when new_model is default", async () => {
+  await using state = await tmpdir()
+  await using setup = await render(
+    state.path,
+    {
+      animations: false,
+      tabs: { mode: "on" },
+      session: { new_model: "default" },
+    },
+    "provider/other",
+  )
+
+  await setup.waitForFrame((frame) => frame.includes("Session with model"))
+  await setup.mockInput.typeText("/new")
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("New session"))
+
+  // Pick a different model on the home screen; it must not leak into the next /new.
+  await setup.mockInput.typeText("/models")
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("Select model"))
+  await setup.mockInput.typeText("Session Model")
+  await setup.renderOnce()
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => !frame.includes("Select model") && frame.includes("Session Model"))
+
+  await setup.mockInput.typeText("/new")
+  setup.mockInput.pressEnter()
+  const frame = await setup.waitForFrame((frame) => frame.includes("New session") && frame.includes("Other Model"))
+
+  expect(frame).toContain("Other Model")
+  expect(frame).not.toContain("Session Model")
 })
