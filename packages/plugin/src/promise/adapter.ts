@@ -513,13 +513,7 @@ export function fromPromise(plugin: Plugin) {
             hook: (name, callback) =>
               register(
                 host.tool.hook(name, (event) => {
-                  const result = Effect.tryPromise({
-                    try: () => Promise.resolve(callback(event)),
-                    catch: (error) =>
-                      error instanceof Tool.Error
-                        ? error
-                        : new Tool.Error({ message: error instanceof Error ? error.message : String(error), error }),
-                  })
+                  const result = Effect.tryPromise({ try: () => Promise.resolve(callback(event)), catch: toolError })
                   // Only execute.before may reject a call; it fails that call alone, like an Effect hook. The
                   // check cannot narrow the generic name, so the declared failure type is restated.
                   return (name === "execute.before" ? result : Effect.orDie(result)) as Effect.Effect<
@@ -642,6 +636,11 @@ function attempt<A>(evaluate: (signal: AbortSignal) => PromiseLike<A>) {
 
 type RuntimeSchema = Schema.Codec<unknown, unknown>
 
+const toolError = (error: unknown) =>
+  error instanceof Tool.Error
+    ? error
+    : new Tool.Error({ message: error instanceof Error ? error.message : String(error), error })
+
 const executePromiseTool = (tool: Info, input: any, context: Tool.Context) =>
   Effect.tryPromise({
     try: (signal) =>
@@ -650,8 +649,5 @@ const executePromiseTool = (tool: Info, input: any, context: Tool.Context) =>
         signal,
         progress: (update) => Effect.runPromise(context.progress(update), { signal }),
       }),
-    catch: (error) =>
-      error instanceof Tool.Error
-        ? error
-        : new Tool.Error({ message: error instanceof Error ? error.message : String(error), error }),
+    catch: toolError,
   })
