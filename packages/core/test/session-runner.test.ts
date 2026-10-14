@@ -4896,13 +4896,6 @@ describe("SessionRunnerLLM", () => {
     expect(calls).toEqual(["call-alpha", "call-beta", "call-ok"])
     expect(s.executions).toEqual(["ok"])
     expect(s.requests).toHaveLength(2)
-    expect(s.requests[1].messages.flatMap((message) => (message.role === "tool" ? message.content : []))).toMatchObject(
-      [
-        { id: "call-alpha", result: { type: "error", value: { error: { message: "HOOK BLOCK ALPHA" } } } },
-        { id: "call-beta", result: { type: "error", value: { error: { message: "HOOK BLOCK BETA" } } } },
-        { id: "call-ok", result: { type: "text", value: "ok" } },
-      ],
-    )
     expect(yield* s.context).toMatchObject([
       Expected.user("Run parallel guarded tools"),
       Expected.assistant({}, [

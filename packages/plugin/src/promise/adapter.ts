@@ -5,7 +5,7 @@ import { Effect, Schema, SchemaAST, Stream } from "effect"
 import type { Scope } from "effect"
 import { HttpApiEndpoint, HttpApiSchema } from "effect/http-api"
 import { define } from "../effect/plugin.js"
-import type { ToolFailures } from "../effect/tool.js"
+import type { ToolFailures, ToolHooks } from "../effect/tool.js"
 import type { Plugin } from "./plugin.js"
 import type { Info } from "./tool.js"
 import type { RpcDomain, RpcHandlers } from "./rpc.js"
@@ -511,17 +511,7 @@ export function fromPromise(plugin: Plugin) {
                 ),
               ),
             hook: (name, callback) =>
-              register(
-                host.tool.hook(name, (event) => {
-                  const result = Effect.tryPromise({ try: () => Promise.resolve(callback(event)), catch: toolError })
-                  // Only execute.before may reject a call; it fails that call alone, like an Effect hook. The
-                  // check cannot narrow the generic name, so the declared failure type is restated.
-                  return (name === "execute.before" ? result : Effect.orDie(result)) as Effect.Effect<
-                    void,
-                    ToolFailures[typeof name]
-                  >
-                }),
-              ),
+              register(host.tool.hook(name, (event) => toolHook[name](() => Promise.resolve(callback(event))))),
           },
           vcs: {
             get: adaptApiMethod(VcsEndpoints["vcs.get"], host.vcs.get),
@@ -640,6 +630,14 @@ const toolError = (error: unknown) =>
   error instanceof Tool.Error
     ? error
     : new Tool.Error({ message: error instanceof Error ? error.message : String(error), error })
+
+// Only execute.before may reject a call; a rejection fails that call alone, like an Effect hook.
+const toolHook: {
+  readonly [Name in keyof ToolHooks]: (run: () => Promise<void>) => Effect.Effect<void, ToolFailures[Name]>
+} = {
+  "execute.before": (run) => Effect.tryPromise({ try: run, catch: toolError }),
+  "execute.after": (run) => Effect.promise(run),
+}
 
 const executePromiseTool = (tool: Info, input: any, context: Tool.Context) =>
   Effect.tryPromise({
