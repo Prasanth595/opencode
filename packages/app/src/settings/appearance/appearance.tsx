@@ -132,7 +132,10 @@ export const SettingsAppearance: Component = () => {
             <FontSetting kind="terminal" fonts={appearance.fonts} />
             <SettingsRow
               title={language.t("settings.appearance.fontSize.title")}
-              description={language.t("settings.appearance.fontSize.description")}
+              description={language.t("settings.appearance.fontSize.description", {
+                min: fontSizeMinimum,
+                max: fontSizeMaximum,
+              })}
             >
               <div class="w-24">
                 <TextInput
@@ -154,7 +157,10 @@ export const SettingsAppearance: Component = () => {
             </SettingsRow>
             <SettingsRow
               title={language.t("settings.appearance.lineHeight.title")}
-              description={language.t("settings.appearance.lineHeight.description")}
+              description={language.t("settings.appearance.lineHeight.description", {
+                min: lineHeightMinimum,
+                max: lineHeightMaximum,
+              })}
             >
               <div class="w-24">
                 <TextInput
