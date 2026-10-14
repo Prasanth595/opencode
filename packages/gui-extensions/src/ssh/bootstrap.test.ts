@@ -30,7 +30,11 @@ test("rejects unsafe versions and platforms in remote installation paths", () =>
   expect(() => RemoteCli.archiveUrl("linux-x64;whoami", "2.0.0")).toThrow()
 })
 
-test("reports a remote service start that exits non-zero as a service failure", async () => {
+// The stand-in below is a `#!/bin/sh` script, which Windows cannot spawn, so the lookup would fall
+// through to the system `ssh.exe`; the classification these two tests cover is platform-independent.
+const posixOnly = test.skipIf(process.platform === "win32")
+
+posixOnly("reports a remote service start that exits non-zero as a service failure", async () => {
   const failure = await bootstrapAgainst(`#!/bin/sh
 script=$(cat)
 case "$script" in
@@ -47,7 +51,7 @@ esac
   expect(failure.detail).toContain("Managed service port 49374")
 })
 
-test("keeps a transport failure before the service starts a connection failure", async () => {
+posixOnly("keeps a transport failure before the service starts a connection failure", async () => {
   const failure = await bootstrapAgainst(`#!/bin/sh
 cat >/dev/null
 printf '%s\\n' "ssh: connect to host remote-host port 22: Connection refused" >&2
