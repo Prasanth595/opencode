@@ -333,7 +333,10 @@ export function Autocomplete(props: {
       }
       const width = props.anchor().width - 4
       if (input.visible === "directory") {
-        const home = await client.resolveServerHome().catch(() => null)
+        const home =
+          base === "~" || base.startsWith("~/")
+            ? await client.resolveServerHome().catch(() => null)
+            : client.serverHome()
         const result =
           home === null
             ? undefined
