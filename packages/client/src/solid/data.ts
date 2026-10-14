@@ -667,8 +667,10 @@ export function createData(config: CreateDataInput) {
           (sessionID) => store.session.form[sessionID]?.length,
         )
         if (formSessionIDs.length > 0) {
-          setStore("session", "form", {})
-          formSessionIDs.forEach((sessionID) => result.session.form.invalidate(sessionID))
+          formSessionIDs.forEach((sessionID) => {
+            setStore("session", "form", sessionID, undefined)
+            result.session.form.invalidate(sessionID)
+          })
         }
         return
       }
