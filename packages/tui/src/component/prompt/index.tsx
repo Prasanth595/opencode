@@ -1151,6 +1151,7 @@ export function Prompt(props: PromptProps) {
         directory,
         workspace: workspaceID,
         agent: agent.name,
+        temp: args.temp,
         model: {
           providerID: selectedModel.providerID,
           id: selectedModel.modelID,

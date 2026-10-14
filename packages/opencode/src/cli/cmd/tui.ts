@@ -103,6 +103,10 @@ export const TuiThreadCommand = cmd({
       .option("agent", {
         type: "string",
         describe: "agent to use",
+      })
+      .option("temp", {
+        type: "boolean",
+        describe: "mark new sessions as ephemeral; they are deleted when opencode shuts down",
       }),
   handler: async (args) => {
     const unguard = win32InstallCtrlCGuard()
@@ -207,6 +211,7 @@ export const TuiThreadCommand = cmd({
               model: args.model,
               prompt,
               fork: args.fork,
+              temp: args.temp,
             },
           }),
         )
