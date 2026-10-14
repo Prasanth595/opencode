@@ -1,5 +1,6 @@
 import type { PermissionApi } from "@opencode/client/promise/api"
 import type { Agent } from "@opencode/schema/agent"
+import type { AssertInput } from "../effect/permission.js"
 import type { Permission } from "@opencode/schema/permission"
 import type { Session } from "@opencode/schema/session"
 import type { Hooks } from "./registration.js"
@@ -27,5 +28,5 @@ export type PermissionDomain = Pick<PermissionApi, "list" | "get" | "reply"> & {
    * a `Tool.Error` carrying the reason. A plain rejection rejects with an error that ends the current
    * step; rethrow it rather than returning it as tool output.
    */
-  readonly assert: (input: Parameters<PermissionApi["create"]>[0]) => Promise<void>
+  readonly assert: (input: typeof AssertInput.Encoded) => Promise<void>
 }

@@ -4,6 +4,7 @@ import type { RpcCallOptions, RpcEventPayload } from "@opencode/client/promise/a
 import { Effect, Schema, SchemaAST, Stream } from "effect"
 import type { Scope } from "effect"
 import { HttpApiEndpoint, HttpApiSchema } from "effect/http-api"
+import { AssertInput } from "../effect/permission.js"
 import { define } from "../effect/plugin.js"
 import type { ToolFailures, ToolHooks } from "../effect/tool.js"
 import type { Plugin } from "./plugin.js"
@@ -261,16 +262,6 @@ export function fromPromise(plugin: Plugin) {
               { signal: context.signal },
             )
 
-        const decodeApiInput = (endpoint: HttpApiEndpoint.Top, input?: unknown) =>
-          Effect.gen(function* () {
-            // Match the generated Promise client, whose request body crosses JSON before endpoint decoding.
-            const normalized = yield* Schema.encodeUnknownEffect(JsonInput)(input ?? {}).pipe(
-              Effect.flatMap(Schema.decodeUnknownEffect(JsonInput)),
-            )
-            const decoded = yield* Effect.forEach(compileEndpoint(endpoint).decode, (decode) => decode(normalized))
-            return Object.assign({}, ...decoded) as never
-          })
-
         const adaptApiMethod = <PromiseMethod>(
           endpoint: HttpApiEndpoint.Top,
           method: (input: never) => Effect.Effect<unknown, unknown>,
@@ -278,7 +269,12 @@ export function fromPromise(plugin: Plugin) {
           const compiled = compileEndpoint(endpoint)
           return ((input?: unknown) =>
             Effect.gen(function* () {
-              const result = yield* method(yield* decodeApiInput(endpoint, input))
+              // Match the generated Promise client, whose request body crosses JSON before endpoint decoding.
+              const normalized = yield* Schema.encodeUnknownEffect(JsonInput)(input ?? {}).pipe(
+                Effect.flatMap(Schema.decodeUnknownEffect(JsonInput)),
+              )
+              const decoded = yield* Effect.forEach(compiled.decode, (decode) => decode(normalized))
+              const result = yield* method(Object.assign({}, ...decoded) as never)
               if (compiled.noContent) return undefined
               return yield* compiled.encode(result)
             }).pipe(Effect.runPromiseWith(runtime))) as PromiseMethod
@@ -455,13 +451,8 @@ export function fromPromise(plugin: Plugin) {
             list: adaptApiMethod(PermissionEndpoints["session.permission.list"], host.permission.list),
             get: adaptApiMethod(PermissionEndpoints["session.permission.get"], host.permission.get),
             reply: adaptApiMethod(PermissionEndpoints["session.permission.reply"], host.permission.reply),
-            // Decoded like the create endpoint, which takes the same input.
             assert: (input) =>
-              run(
-                decodeApiInput(PermissionEndpoints["session.permission.create"], input).pipe(
-                  Effect.flatMap(host.permission.assert),
-                ),
-              ),
+              run(Schema.decodeUnknownEffect(AssertInput)(input).pipe(Effect.flatMap(host.permission.assert))),
           },
           plugin: {
             list: adaptApiMethod(PluginEndpoints["plugin.list"], host.plugin.list),
