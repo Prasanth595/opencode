@@ -514,6 +514,14 @@ export function message(msgs: ModelMessage[], model: Provider.Model, options: Re
     })
   }
 
+  // Gemini rejects requests whose contents end with a model turn, so prime a final user turn.
+  if (
+    msgs.at(-1)?.role === "assistant" &&
+    (model.api.npm === "@ai-sdk/google" || model.api.npm === "@ai-sdk/google-vertex")
+  ) {
+    msgs = [...msgs, { role: "user", content: "Continue." }]
+  }
+
   return msgs
 }
 
