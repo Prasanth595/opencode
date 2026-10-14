@@ -287,6 +287,61 @@ describe("built-in web search providers", () => {
     }),
   )
 
+  it.effect("surfaces SerpApi MCP tool errors", () =>
+    Effect.gen(function* () {
+      resetWebSearchFixture(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          result: {
+            content: [{ type: "text", text: "Error: Invalid SerpApi API key" }],
+            structuredContent: { result: "Error: Invalid SerpApi API key" },
+            isError: true,
+          },
+        }),
+      )
+      const integrations = yield* Integration.Service
+      const websearch = yield* WebSearch.Service
+      yield* WebSearchSerpApi.Plugin.effect(
+        host({ integration: integrationHost(integrations), websearch: webSearchHost(websearch) }),
+      )
+
+      expect(
+        yield* websearch.query({ query: "effect layers", providerID: WebSearch.ID.make("serpapi") }).pipe(Effect.flip),
+      ).toMatchObject({
+        providerID: WebSearch.ID.make("serpapi"),
+        cause: { message: "Error: Invalid SerpApi API key" },
+      })
+    }),
+  )
+
+  it.effect("fails when SerpApi search result JSON cannot be decoded", () =>
+    Effect.gen(function* () {
+      resetWebSearchFixture(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          result: {
+            content: [{ type: "text", text: "invalid result" }],
+            structuredContent: { result: "not JSON" },
+          },
+        }),
+      )
+      const integrations = yield* Integration.Service
+      const websearch = yield* WebSearch.Service
+      yield* WebSearchSerpApi.Plugin.effect(
+        host({ integration: integrationHost(integrations), websearch: webSearchHost(websearch) }),
+      )
+
+      expect(
+        yield* websearch.query({ query: "effect layers", providerID: WebSearch.ID.make("serpapi") }).pipe(Effect.flip),
+      ).toMatchObject({
+        providerID: WebSearch.ID.make("serpapi"),
+        cause: { message: "SerpApi returned an invalid search response" },
+      })
+    }),
+  )
+
   it.effect("registers Tavily with keyless and keyed Search API access", () =>
     Effect.gen(function* () {
       resetWebSearchFixture(

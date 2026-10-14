@@ -31,6 +31,7 @@ const decodeSearchResponse = Schema.decodeUnknownOption(SearchResponse)
 const McpOutput = Schema.Struct({
   content: Schema.Array(Schema.Struct({ type: Schema.Literal("text"), text: Schema.String })),
   structuredContent: Schema.Struct({ result: Schema.String }),
+  isError: Schema.optional(Schema.Boolean),
 })
 
 export const Plugin = define<HttpClient.HttpClient | Scope.Scope>({
@@ -67,17 +68,16 @@ export const Plugin = define<HttpClient.HttpClient | Scope.Scope>({
                 ...(credential?.type === "key" ? { Authorization: `Bearer ${credential.key}` } : {}),
               },
             )
-            const response = result
-              ? Option.getOrUndefined(decodeSearchResponse(result.structuredContent.result))
-              : undefined
-            return (
-              response?.organic_results?.map((item) => ({
-                url: item.link,
-                ...(item.title ? { title: item.title } : {}),
-                ...(item.snippet ? { content: item.snippet } : {}),
-                time: {},
-              })) ?? []
-            )
+            if (!result) return yield* Effect.fail(new Error("SerpApi returned an invalid MCP response"))
+            if (result.isError) return yield* Effect.fail(new Error(result.structuredContent.result))
+            const response = decodeSearchResponse(result.structuredContent.result)
+            if (Option.isNone(response)) return yield* Effect.fail(new Error("SerpApi returned an invalid search response"))
+            return response.value.organic_results?.map((item) => ({
+              url: item.link,
+              ...(item.title ? { title: item.title } : {}),
+              ...(item.snippet ? { content: item.snippet } : {}),
+              time: {},
+            })) ?? []
           }),
       })
     })
