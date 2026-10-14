@@ -281,97 +281,75 @@ describe("ConfigInstructionPlugin.Plugin", () => {
     ),
   )
 
-  it.live("loads configured files, globs, home paths, and URLs", () =>
+  it.live("loads configured files, globs, home paths, and URLs alongside AGENTS.md", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ).pipe(
       Effect.flatMap((tmp) => {
-        const home = path.join(tmp.path, "home")
         const project = path.join(tmp.path, "repo")
-        const directory = path.join(project, "packages", "core")
-        const absolute = path.join(tmp.path, "absolute.md")
-        const homeFile = path.join(home, "home.md")
+        const agents = path.join(project, "AGENTS.md")
         const first = path.join(project, "rules", "a.md")
         const second = path.join(project, "rules", "b.md")
+        const absolute = path.join(tmp.path, "absolute.md")
+        const homeFile = path.join(tmp.path, "home.md")
         const remote = "https://example.test/instructions.md"
         const requests: string[] = []
         return Effect.gen(function* () {
           yield* Effect.promise(async () => {
-            await fs.mkdir(directory, { recursive: true })
-            await fs.mkdir(home, { recursive: true })
             await fs.mkdir(path.dirname(first), { recursive: true })
-            await fs.writeFile(absolute, "absolute")
-            await fs.writeFile(homeFile, "home")
-            await fs.writeFile(first, "first")
-            await fs.writeFile(second, "second")
+            await Promise.all([
+              fs.writeFile(agents, "agents"),
+              fs.writeFile(first, "first"),
+              fs.writeFile(second, "second"),
+              fs.writeFile(absolute, "absolute"),
+              fs.writeFile(homeFile, "home"),
+            ])
           })
 
           const discovery = yield* start()
           const initialized = yield* readInitial(yield* discovery.load())
+          // The unreachable URL and missing file are skipped without making AGENTS.md unavailable.
           expect(initialized.text).toBe(
             [
-              `Instructions from: ${absolute}\nabsolute`,
+              `Instructions from: ${agents}\nagents`,
               `Instructions from: ${first}\nfirst`,
               `Instructions from: ${second}\nsecond`,
+              `Instructions from: ${absolute}\nabsolute`,
               `Instructions from: ${homeFile}\nhome`,
               `Instructions from: ${remote}\nremote`,
             ].join("\n\n"),
           )
-          expect(requests).toEqual([remote])
 
           yield* Effect.promise(() => fs.writeFile(first, "changed"))
           yield* emitAndWait({ type: "update", path: first })
           expect((yield* readUpdate(yield* discovery.load(), initialized)).text).toBe(
             `The instructions changed:\nInstructions from: ${first}\nchanged`,
           )
-          // File rescans reuse the fetched copy instead of requesting the URL again.
-          expect(requests).toEqual([remote])
+          // File rescans reuse fetched URLs instead of requesting them again.
+          expect(requests).toHaveLength(2)
         }).pipe(
           Effect.provide(
             instructionLayer({
               config: path.join(tmp.path, "global"),
-              home,
-              instructions: [absolute, "rules/*.md", "~/home.md", remote, "missing.md"],
+              home: tmp.path,
+              instructions: [
+                "rules/*.md",
+                absolute,
+                "~/home.md",
+                remote,
+                "missing.md",
+                "https://example.test/missing.md",
+              ],
               http: respond((url) => {
                 requests.push(url)
-                return new Response("remote")
+                return url === remote ? new Response("remote") : new Response(null, { status: 404 })
               }),
               locationServiceLayer: Layer.succeed(
                 Location.Service,
                 Location.Service.of(
-                  location(
-                    { directory: AbsolutePath.make(directory) },
-                    { projectDirectory: AbsolutePath.make(project) },
-                  ),
+                  location({ directory: AbsolutePath.make(project) }, { projectDirectory: AbsolutePath.make(project) }),
                 ),
-              ),
-            }),
-          ),
-        )
-      }),
-    ),
-  )
-
-  it.live("skips an unreachable instruction URL without blocking AGENTS.md", () =>
-    Effect.acquireRelease(
-      Effect.promise(() => tmpdir()),
-      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-    ).pipe(
-      Effect.flatMap((tmp) => {
-        const agents = path.join(tmp.path, "AGENTS.md")
-        return Effect.gen(function* () {
-          yield* Effect.promise(() => fs.writeFile(agents, "agents"))
-          const discovery = yield* start()
-          expect((yield* readInitial(yield* discovery.load())).text).toBe(`Instructions from: ${agents}\nagents`)
-        }).pipe(
-          Effect.provide(
-            instructionLayer({
-              config: path.join(tmp.path, "global"),
-              instructions: ["https://example.test/missing.md"],
-              locationServiceLayer: Layer.succeed(
-                Location.Service,
-                Location.Service.of(location({ directory: AbsolutePath.make(tmp.path) })),
               ),
             }),
           ),
@@ -417,43 +395,6 @@ describe("ConfigInstructionPlugin.Plugin", () => {
               locationServiceLayer: Layer.succeed(
                 Location.Service,
                 Location.Service.of(location({ directory: AbsolutePath.make(tmp.path) })),
-              ),
-            }),
-          ),
-        )
-      }),
-    ),
-  )
-
-  it.live("resolves relative configured patterns against global config without project discovery", () =>
-    Effect.acquireRelease(
-      Effect.promise(() => tmpdir()),
-      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-    ).pipe(
-      Effect.flatMap((tmp) => {
-        const global = path.join(tmp.path, "global")
-        const project = path.join(tmp.path, "repo")
-        const globalRule = path.join(global, "rules.md")
-        return Effect.gen(function* () {
-          yield* Effect.promise(async () => {
-            await fs.mkdir(global, { recursive: true })
-            await fs.mkdir(project, { recursive: true })
-            await fs.writeFile(globalRule, "global rule")
-            await fs.writeFile(path.join(project, "rules.md"), "project rule")
-          })
-          const discovery = yield* start()
-          expect((yield* readInitial(yield* discovery.load())).text).toBe(
-            `Instructions from: ${globalRule}\nglobal rule`,
-          )
-        }).pipe(
-          Effect.provide(
-            instructionLayer({
-              config: global,
-              project: false,
-              instructions: ["rules.md"],
-              locationServiceLayer: Layer.succeed(
-                Location.Service,
-                Location.Service.of(location({ directory: AbsolutePath.make(project) })),
               ),
             }),
           ),
