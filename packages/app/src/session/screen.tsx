@@ -38,6 +38,7 @@ import { SessionReviewToggle } from "./header/session-header-actions"
 import { SessionRunningMenu } from "./header/session-running-menu"
 import { createAnimatedPresence } from "@/runtime/animated-presence"
 import { createTimelineCache } from "./timeline/cache"
+import { SessionOutline } from "./session-outline"
 
 export function SessionScreenView(props: { session: SessionModel }) {
   // The timeline cache captures its owner when created, so link handling must be provided above it.
@@ -95,6 +96,49 @@ function SessionScreenContent(props: {
   })
 
   const messagesReady = timeline.ready
+
+  // Conversation navigator data: one entry per visible user turn, with the
+  // prompt as the title and the assistant's first line as the subtitle.
+  const outlineItems = createMemo(() => {
+    const messages = session.history.messages()
+    const position = new Map(messages.map((message, index) => [message.id, index]))
+
+    const firstLine = (message: (typeof messages)[number]) => {
+      if (message.type !== "assistant") return ""
+
+      for (const part of message.content) {
+        if (part.type !== "text") continue
+
+        const line = part.text
+          .split("\n")
+          .map((value) => value.trim())
+          .find((value) => value.length > 0)
+
+        if (line) return line
+      }
+
+      return ""
+    }
+
+    return session.history.visibleUserMessages().map((message) => {
+      const title = message.text.replace(/\s+/g, " ").trim()
+      const start = position.get(message.id)
+      // A turn may hold several assistant messages, and the first one can be
+      // tool-only; take the first line of the first one that has prose.
+      let subtitle = ""
+
+      for (let index = (start ?? -1) + 1; start !== undefined && index < messages.length; index++) {
+        const next = messages[index]!
+
+        if (next.type === "user") break
+        subtitle = firstLine(next)
+
+        if (subtitle) break
+      }
+
+      return { id: message.id, title, subtitle }
+    })
+  })
 
   const [store, setStore] = createStore({
     bottomDockCached: false,
@@ -353,6 +397,17 @@ function SessionScreenContent(props: {
             <Show when={messagesReady() && session.identity.params.id}>{timelineView()}</Show>
           </Match>
         </Switch>
+        <Show when={isDesktop() && !!session.identity.params.id && messagesReady()}>
+          <SessionOutline
+            scroller={timeline.scroller}
+            items={outlineItems}
+            onJump={(id) => {
+              if (!session.history.visibleUserMessages().some((item) => item.id === id)) return
+              timeline.view.unpin()
+              timeline.actions.revealMessage(id)
+            }}
+          />
+        </Show>
       </div>
 
       <Show when={composer.active()} keyed>
