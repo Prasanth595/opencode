@@ -334,7 +334,7 @@ export const StreamItem = Schema.StructWithRest(
     id: Schema.optional(Schema.String),
     call_id: Schema.optional(Schema.String),
     name: Schema.optional(Schema.String),
-    namespace: Schema.optional(Schema.String),
+    namespace: optionalNull(Schema.String),
     arguments: Schema.optional(Schema.String),
     encrypted_content: optionalNull(Schema.String),
   }),
@@ -1107,7 +1107,7 @@ const onOutputItemAdded = (state: ParserState, event: NormalizedEvent): StepResu
       tools: ToolStream.start(state.tools, item.id, {
         id: item.call_id,
         name: item.name ?? "",
-        namespace: item.namespace,
+        namespace: item.namespace ?? undefined,
         input: item.arguments ?? "",
         providerMetadata: metadata,
       }),
@@ -1117,7 +1117,7 @@ const onOutputItemAdded = (state: ParserState, event: NormalizedEvent): StepResu
       LLMEvent.toolInputStart({
         id: item.call_id,
         name: item.name ?? "",
-        namespace: item.namespace,
+        namespace: item.namespace ?? undefined,
         providerMetadata: metadata,
       }),
     ],
@@ -1242,7 +1242,7 @@ const onOutputItemDone = Effect.fnUntraced(function* (
       : ToolStream.start(state.tools, item.id, {
           id: item.call_id,
           name: item.name,
-          namespace: item.namespace,
+          namespace: item.namespace ?? undefined,
           providerMetadata: metadata,
         })
     const result =
@@ -1259,7 +1259,7 @@ const onOutputItemDone = Effect.fnUntraced(function* (
             LLMEvent.toolInputStart({
               id: item.call_id,
               name: item.name,
-              namespace: item.namespace,
+              namespace: item.namespace ?? undefined,
               providerMetadata: metadata,
             }),
             ...finished,

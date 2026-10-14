@@ -377,6 +377,35 @@ describe("Open Responses basic-item lifecycles", () => {
     }),
   )
 
+  // Some Responses-compatible gateways serialize the optional `namespace` field as
+  // JSON `null` rather than omitting it. That must decode like an absent namespace.
+  it.effect("treats a null namespace on a function_call item as absent", () =>
+    Effect.gen(function* () {
+      const item = {
+        type: "function_call",
+        id: "fc_1",
+        call_id: "call_1",
+        name: "lookup",
+        namespace: null,
+        arguments: '{"query":"weather"}',
+      }
+      const events = yield* collect({ type: "response.output_item.done", item }, completed)
+      const providerMetadata = { "openai-compatible": { itemId: "fc_1" } }
+      expect(events.filter((event) => event.type.startsWith("tool-"))).toEqual([
+        { type: "tool-input-start", id: "call_1", name: "lookup", namespace: undefined, providerMetadata },
+        { type: "tool-input-end", id: "call_1", name: "lookup", namespace: undefined, providerMetadata },
+        {
+          type: "tool-call",
+          id: "call_1",
+          name: "lookup",
+          namespace: undefined,
+          input: { query: "weather" },
+          providerMetadata,
+        },
+      ])
+    }),
+  )
+
   it.effect("recovers pending calls without reconciling terminal reasoning", () =>
     Effect.gen(function* () {
       const events = yield* collect(
