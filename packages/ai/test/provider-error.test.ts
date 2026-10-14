@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { isContextOverflow } from "../src/index.js"
+import { AIError, isContextOverflow, isContextOverflowFailure, isPayloadTooLargeFailure } from "../src/index.js"
 import { classifyProviderFailure, providerErrorMessage } from "../src/provider-error.js"
 
 describe("provider error classification", () => {
@@ -41,6 +41,18 @@ describe("provider error classification", () => {
     expect(failures).toEqual(
       failures.map(() => expect.objectContaining({ _tag: "InvalidRequest", classification: "payload-too-large" })),
     )
+  })
+
+  test("leaves generic client rejections unclassified", () => {
+    const reason = classifyProviderFailure({
+      message: "The request contains invalid parameters. Check the request body for any errors or inconsistencies.",
+      status: 400,
+      rawBody:
+        '{"model":"example","error":{"code":null,"message":"The request contains invalid parameters.","param":null,"type":"invalid_request_error"}}',
+    })
+    // Recovery of these goes through the oversized-body gate in the runner, not classification.
+    expect(isPayloadTooLargeFailure(new AIError({ reason }))).toBe(false)
+    expect(isContextOverflowFailure(new AIError({ reason }))).toBe(false)
   })
 
   test("does not classify rate limits as context overflow", () => {
