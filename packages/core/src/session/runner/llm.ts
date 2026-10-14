@@ -134,8 +134,12 @@ const layer = Layer.effect(
                 step = 1
                 // Fresh input starts a new turn; an empty inbox is the
                 // would-be-idle observation just before a vote, which must
-                // keep the count of the turn that ran.
+                // keep the count of the turn that ran. Moves and compactions
+                // carry the count across the handoff, and granted steers never
+                // reach here (delivery "steer").
                 if (pending !== undefined) executedSteps = 0
+                if (pending !== undefined && pending.type !== "move" && pending.type !== "compaction")
+                  stoppingContinuations = 0
               }
               if (pending?.type === "move")
                 return DrainResult.Moved({ continuation: continuing ? { step, stoppingContinuations } : undefined })
@@ -189,10 +193,11 @@ const layer = Layer.effect(
                 continue
               }
               if (!force && !continuing && (!pending || (pending.delivery === "queue" && promotable === "steer"))) {
-                // Already inside advanceToStep's uninterruptible mask. Like the
-                // compaction precedent below, continue loops back to promotion.
-                // The increment funds exactly the steer just admitted.
-                if (yield* maybeContinueStopping(sessionID, executedSteps, stoppingContinuations)) {
+                // The vote runs interruptibly so untrusted voters can't stall
+                // abort/shutdown; only the drain-state mutation below stays masked.
+                // Like compaction, continue loops back to promotion, and the
+                // increment funds exactly the steer just admitted.
+                if (yield* restore(maybeContinueStopping(sessionID, executedSteps, stoppingContinuations))) {
                   stoppingContinuations++
                   continue
                 }
