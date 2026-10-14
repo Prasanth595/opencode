@@ -11,14 +11,26 @@ import { tmpdir } from "./fixture/fixture"
 import { createAppFixture } from "./fixture/app"
 import type { PluginInfo } from "@opencode/client"
 
-test.each([
-  { sessionID: undefined, input: "../review-target" },
-  { sessionID: "ses_cd_review", input: "../review-target" },
-  { sessionID: "ses_cd_review", input: "~/review-target" },
-])("changes directory without server metadata for %j", async ({ sessionID, input }) => {
-  const requested = Promise.withResolvers<{ method: string; value: string }>()
+test("relative directory completion does not depend on server metadata", async () => {
+  const requested = Promise.withResolvers<string>()
+  await using setup = await createAppFixture({
+    fetch: (url) => {
+      if (url.pathname === "/api/info") return new Response("Unavailable", { status: 503 })
+      if (url.pathname === "/api/fs/list" && url.searchParams.get("path") === path.resolve(directory, "..")) {
+        requested.resolve(url.searchParams.get("path")!)
+      }
+      return undefined
+    },
+  })
+  await setup.ready
+  await setup.waitForFrame((frame) => frame.includes("commands"))
+  await setup.mockInput.typeText("/cd ../review-target")
+  expect(await requested.promise).toBe(path.resolve(directory, ".."))
+})
+
+test("session tilde moves do not depend on server metadata", async () => {
+  const requested = Promise.withResolvers<string>()
   const metadata = Promise.withResolvers<void>()
-  const target = path.resolve(directory, input)
   const session = {
     id: "ses_cd_review",
     title: "Directory review session",
@@ -29,48 +41,30 @@ test.each([
     time: { created: 1, updated: 1 },
   }
   await using setup = await createAppFixture({
-    args: { sessionID },
+    args: { sessionID: session.id },
     fetch: async (url, request) => {
       if (url.pathname === "/api/info") {
         metadata.resolve()
         return new Response("Unavailable", { status: 503 })
       }
-      if (url.pathname === "/api/location") {
-        const current = url.searchParams.get("location[directory]") ?? directory
-        if (current === target) requested.resolve({ method: request.method, value: current })
-        return json({ directory: current, project: { id: "proj_test", directory: current, canonical: current } })
-      }
-      if (url.pathname === "/api/session/ses_cd_review/move") {
-        requested.resolve({ method: request.method, value: await request.text() })
+      if (url.pathname === `/api/session/${session.id}/move`) {
+        requested.resolve(await request.text())
         return new Response(null, { status: 204 })
       }
-      if (!sessionID) return undefined
       if (url.pathname === "/api/session") return json({ data: [session], cursor: {} })
-      if (url.pathname === "/api/session/ses_cd_review") return json({ data: session })
-      if (url.pathname === "/api/session/ses_cd_review/message") return json({ data: [], cursor: {} })
-      if (url.pathname === "/api/session/ses_cd_review/inbox") return json({ data: [] })
+      if (url.pathname === `/api/session/${session.id}`) return json({ data: session })
+      if (url.pathname === `/api/session/${session.id}/message`) return json({ data: [], cursor: {} })
+      if (url.pathname === `/api/session/${session.id}/inbox`) return json({ data: [] })
       return undefined
     },
   })
   await setup.ready
   await metadata.promise
-  await setup.waitForFrame((frame) => frame.includes(sessionID ? session.title : "commands"))
-  await setup.mockInput.typeText(`/cd ${input}`)
+  await setup.waitForFrame((frame) => frame.includes(session.title))
+  await setup.mockInput.typeText("/cd ~/review-target")
   setup.mockInput.pressEscape()
   setup.mockInput.pressEnter()
-  const request = await Promise.race([
-    requested.promise,
-    Bun.sleep(2_000).then(() => {
-      throw new Error("directory change was blocked by unavailable server metadata")
-    }),
-  ])
-  if (sessionID) {
-    expect(request.method).toBe("POST")
-    expect(JSON.parse(request.value)).toEqual({ directory: input })
-    return
-  }
-  expect(request.method).toBe("GET")
-  expect(request.value).toBe(target)
+  expect(JSON.parse(await requested.promise)).toEqual({ directory: "~/review-target" })
 })
 
 test.each([100, 44])("Ctrl-O is immediate, dismissible, and prunes cached deletions at width %s", async (width) => {
