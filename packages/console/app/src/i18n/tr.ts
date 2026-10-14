@@ -223,7 +223,7 @@ export const dict = {
     "Tüm Zen modelleri ABD'de barındırılmaktadır. Sağlayıcılar sıfır saklama politikası izler ve verilerinizi model eğitimi için kullanmaz; şu",
   "zen.privacy.exceptionsLink": "aşağıdaki istisnalar",
 
-  "go.promo.catJam": "Anonim model Cat Jam Free, sınırlı bir süre ücretsiz olarak kullanılabilir.",
+  "go.promo.gemini": "Gemini 4 Argon artık sınırlı bir süre için 2× kullanımla sunuluyor.",
   "go.title": "OpenCode Go | Herkes için düşük maliyetli kodlama modelleri",
   "go.meta.description":
     "Go ayda 10$'dır; cömert kullanım limitleri ve önde gelen kodlama modellerine güvenilir erişim sunar.",

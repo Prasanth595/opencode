@@ -102,7 +102,7 @@ export default function Home() {
             <div data-component="desktop-app-banner">
               <span data-slot="badge">{i18n.t("home.banner.badge")}</span>
               <div data-slot="content">
-                <span data-slot="text">{i18n.t("go.promo.catJam")}</span>
+                <span data-slot="text">{i18n.t("go.promo.gemini")}</span>
               </div>
             </div>
             <Show when={searchParams.ref}>

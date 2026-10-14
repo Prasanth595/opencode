@@ -223,7 +223,7 @@ export const dict = {
     "Alle Zen-Modelle werden in den USA gehostet. Anbieter folgen einer Zero-Retention-Policy und nutzen deine Daten nicht für Modelltraining, mit den",
   "zen.privacy.exceptionsLink": "folgenden Ausnahmen",
 
-  "go.promo.catJam": "Cat Jam Free, ein anonymes Modell, ist für begrenzte Zeit kostenlos verfügbar.",
+  "go.promo.gemini": "Gemini 4 Argon ist jetzt für begrenzte Zeit mit 2× Nutzung verfügbar.",
   "go.title": "OpenCode Go | Kostengünstige Coding-Modelle für alle",
   "go.meta.description":
     "Go kostet $10/Monat, mit großzügigen Nutzungslimits und zuverlässigem Zugang zu führenden Coding-Modellen.",

@@ -221,7 +221,7 @@ export const dict = {
     "Alle Zen-modeller er hostet i USA. Udbydere følger en nulopbevaringspolitik og bruger ikke dine data til modeltræning med",
   "zen.privacy.exceptionsLink": "følgende undtagelser",
 
-  "go.promo.catJam": "Den anonyme model Cat Jam Free er gratis i en begrænset periode.",
+  "go.promo.gemini": "Gemini 4 Argon er nu tilgængelig med 2× forbrug i en begrænset periode.",
   "go.title": "OpenCode Go | Kodningsmodeller til lav pris for alle",
   "go.meta.description":
     "Go koster $10/måned, med generøse brugsgrænser og pålidelig adgang til førende kodningsmodeller.",
