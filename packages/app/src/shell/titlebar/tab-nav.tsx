@@ -1,21 +1,21 @@
 import { createEffect, createMemo, createSignal, onCleanup, Show, type Ref } from "solid-js"
 import { createStore } from "solid-js/store"
+import { Predicate } from "effect"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { createMutation } from "@tanstack/solid-query"
 import { IconButton } from "@opencode/ui/icon-button"
 import { Icon } from "@opencode/ui/icon"
 import { Menu } from "@opencode/ui/menu"
-import { useGlobal, useServerCtx } from "@/runtime/server/runtime"
+import { useServerCtx } from "@/runtime/server/runtime"
 import { useLanguage } from "@/runtime/i18n/language"
 import { ServerConnection, serverName, useServers } from "@/runtime/server/registry"
-import { displayName, projectForSession } from "@/shell/layout/helpers"
-import { SessionTabAvatar } from "@/shell/layout/session-tab-avatar"
+import { displayName } from "@opencode/ui/project-avatar"
+import { SessionTabAvatarView } from "@/shell/layout/session-tab-avatar"
+import { useSessionTabAvatarState } from "@/shell/layout/project-avatar-state"
 import { SessionProgressIndicatorV2 } from "@opencode/session-ui/v2/session-progress-indicator-v2"
 import type { SessionInfo } from "@opencode/client/promise"
 import { sessionTabTitle } from "./tab-title"
-import { useSettings } from "@/settings/model"
-import { canOpenTabRename, forwardTabRef } from "./tab-gesture"
 import { TabPreviewPopover } from "./tab-popover"
 import "./tab-nav.css"
 
@@ -40,7 +40,6 @@ export function TabNavItem(props: {
   orientation?: "horizontal" | "vertical"
 }) {
   const language = useLanguage()
-  const settings = useSettings()
   const [menu, setMenu] = createStore({ open: false, rename: false })
   const [editing, setEditing] = createSignal(false)
   const [titleOverflowing, setTitleOverflowing] = createSignal(false)
@@ -54,34 +53,71 @@ export function TabNavItem(props: {
     event.stopPropagation()
     props.onClose()
   }
+
   const servers = useServers()
   const serverCtx = useServerCtx(() => servers.list.find((item) => ServerConnection.key(item) === props.server))
+
+  const avatar = useSessionTabAvatarState(
+    () => props.server,
+    () => props.session?.id ?? "",
+    () => true,
+  )
+
+  const unread = () => !!props.session && !props.active && avatar.unread() && !avatar.loading()
+
   const project = createMemo(() => {
     const session = props.session
+
     if (!session) return
-    return projectForSession(session, serverCtx()?.projects.list() ?? [])
+
+    return serverCtx()?.projects.forSession(session)
   })
+
   const title = createMemo(() => {
     const session = props.session
+
     return sessionTabTitle(session ? session.title : props.fallbackTitle, language.t("session.tab.session"))
   })
 
   const projectName = createMemo(() => {
     const session = props.session
+
     if (!session) return
+
     return displayName(project() ?? { worktree: session.location.directory })
   })
+
   const previewPath = createMemo(() => {
     const session = props.session
+
     if (!session) return
     const home = serverCtx()?.sync.data.path.home
+
     return home ? session.location.directory.replace(home, "~") : session.location.directory
   })
+
   // Only label the server when multiple servers are connected.
   const serverLabel = createMemo(() => {
     if (servers.list.length <= 1) return
     const conn = servers.list.find((item) => ServerConnection.key(item) === props.server)
+
     return conn ? serverName(conn) : undefined
+  })
+
+  // Like the TUI, a prompt sent to a background tab's session pulses the tab once.
+  const [promptPulse, setPromptPulse] = createSignal(0)
+  createEffect(() => {
+    const data = serverCtx()?.data
+    const sessionID = props.session?.id
+
+    if (!data || !sessionID) return
+    onCleanup(
+      data.on("session.inbox.enqueued", (event) => {
+        if (props.active || event.data.item.type !== "user" || data.session.root(event.data.sessionID) !== sessionID)
+          return
+        setPromptPulse((count) => count + 1)
+      }),
+    )
   })
 
   const [popoverOpen, setPopoverOpen] = createSignal(false)
@@ -90,8 +126,10 @@ export function TabNavItem(props: {
   const measureTitleOverflow = () => {
     if (!titleEl || editing()) {
       setTitleOverflowing(false)
+
       return
     }
+
     setTitleOverflowing(titleEl.scrollWidth > titleEl.clientWidth)
   }
 
@@ -143,8 +181,10 @@ export function TabNavItem(props: {
 
   createEffect(() => {
     if (editing()) return
+
     if (!titleEl) return
     const value = title()
+
     if (value === undefined) return
     titleEl.textContent = value
   })
@@ -152,8 +192,10 @@ export function TabNavItem(props: {
   const openRename = (event?: MouseEvent) => {
     event?.preventDefault()
     event?.stopPropagation()
-    if (!canOpenTabRename(props.dragging, editing(), rename.isPending)) return
+
+    if (props.dragging || editing() || rename.isPending) return
     const session = props.session
+
     if (!session) return
     titleEl.textContent = session.title ?? ""
     setEditing(true)
@@ -172,7 +214,9 @@ export function TabNavItem(props: {
       "pointerdown",
       (event) => {
         const target = event.target
+
         if (!(target instanceof Node)) return
+
         if (tabRoot.contains(target)) return
         void closeRename(true)
       },
@@ -186,7 +230,8 @@ export function TabNavItem(props: {
     <div
       ref={(el) => {
         tabRoot = el
-        forwardTabRef(props.ref, el)
+
+        if (Predicate.isFunction(props.ref)) props.ref(el)
       }}
       data-titlebar-tab
       data-slot="titlebar-tab-item"
@@ -196,6 +241,7 @@ export function TabNavItem(props: {
       class="group relative flex h-7 w-full min-w-0 select-none flex-row items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-[6px] px-1.5 [container-type:inline-size]"
       classList={{ invisible: props.hidden }}
       data-active={props.active}
+      data-unread={unread()}
       data-dragging={props.dragging}
       data-state={props.active || props.pressed ? "pressed" : undefined}
       onMouseDown={(event) => {
@@ -208,6 +254,9 @@ export function TabNavItem(props: {
         closeTab(event)
       }}
     >
+      <Show when={promptPulse()} keyed>
+        <span data-slot="tab-prompt-pulse" aria-hidden="true" onAnimationEnd={() => setPromptPulse(0)} />
+      </Show>
       <Menu.Context.Trigger
         as="a"
         disabled={editing() || props.dragging}
@@ -224,15 +273,20 @@ export function TabNavItem(props: {
         onMouseDown={(event) => {
           // Navigate on mousedown to shave the press-release delay off tab switches.
           if (event.button !== 0) return
+
           if (editing()) return
+
           if (props.suppressNavigation) return
           props.onNavigate()
         }}
         onClick={(event) => {
           event.preventDefault()
+
           // Mouse navigation already happened on mousedown; detail 0 means keyboard activation.
           if (event.detail > 0) return
+
           if (editing()) return
+
           if (props.suppressNavigation) return
           props.onNavigate()
         }}
@@ -254,13 +308,16 @@ export function TabNavItem(props: {
             }
           >
             {(session) => (
-              <SessionTabAvatar
+              <SessionTabAvatarView
                 project={project()}
                 directory={session.location.directory}
-                sessionId={session.id}
-                server={props.server}
+                unread={false}
+                loading={avatar.loading()}
               />
             )}
+          </Show>
+          <Show when={unread()}>
+            <span data-slot="tab-avatar-unread-dot" aria-hidden="true" />
           </Show>
         </span>
         <span
@@ -280,11 +337,14 @@ export function TabNavItem(props: {
           onDblClick={openRename}
           onKeyDown={(event) => {
             event.stopPropagation()
+
             if (event.key === "Enter") {
               event.preventDefault()
               void closeRename(true)
+
               return
             }
+
             if (event.key !== "Escape") return
             event.preventDefault()
             titleEl.textContent = props.session?.title ?? ""
@@ -300,20 +360,18 @@ export function TabNavItem(props: {
             event.preventDefault()
           }}
         />
-        <Show when={props.orientation === "vertical" && settings.appearance.showProjectName() && projectName()}>
-          {(name) => (
-            <span data-slot="tab-project" dir="auto">
-              {name()}
-            </span>
-          )}
-        </Show>
       </Menu.Context.Trigger>
 
       <div data-slot="tab-close">
+        <Show when={unread()}>
+          <span data-slot="tab-unread-slot" aria-hidden="true">
+            <span data-slot="tab-unread-dot" />
+          </span>
+        </Show>
         <IconButton
           size="small"
           variant="ghost-muted"
-          class="hover-reveal relative z-10 group-hover:opacity-100 group-data-[active=true]:opacity-100 group-data-[editing=true]:opacity-100"
+          class="hover-reveal relative z-10 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100 group-data-[active=true]:opacity-100 group-data-[editing=true]:opacity-100"
           onPointerDown={(event) => {
             event.preventDefault()
             event.stopPropagation()
@@ -331,6 +389,7 @@ export function TabNavItem(props: {
       modal={false}
       onOpenChange={(open) => {
         setMenu("open", open)
+
         if (open) setPopoverOpen(false)
       }}
     >
@@ -382,14 +441,18 @@ export function DraftTabItem(props: {
   orientation?: "horizontal" | "vertical"
 }) {
   const language = useLanguage()
+
   const closeTab = (event: MouseEvent) => {
     event.preventDefault()
     event.stopPropagation()
     props.onClose()
   }
+
   return (
     <div
-      ref={(el) => forwardTabRef(props.ref, el)}
+      ref={(el) => {
+        if (Predicate.isFunction(props.ref)) props.ref(el)
+      }}
       data-titlebar-tab
       data-slot="titlebar-tab-item"
       data-orientation={props.orientation ?? "horizontal"}
@@ -420,13 +483,16 @@ export function DraftTabItem(props: {
         onMouseDown={(event) => {
           // Navigate on mousedown to shave the press-release delay off tab switches.
           if (event.button !== 0) return
+
           if (props.suppressNavigation) return
           props.onNavigate()
         }}
         onClick={(event) => {
           event.preventDefault()
+
           // Mouse navigation already happened on mousedown; detail 0 means keyboard activation.
           if (event.detail > 0) return
+
           if (props.suppressNavigation) return
           props.onNavigate()
         }}

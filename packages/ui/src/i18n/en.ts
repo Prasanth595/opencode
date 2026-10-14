@@ -71,6 +71,9 @@ const source = {
   "ui.sessionTurn.retry.attemptLine": "{{line}} - attempt #{{attempt}}",
   "ui.sessionTurn.retry.attemptLabel": "Attempt {{attempt}}",
   "ui.sessionTurn.retry.attemptRetrying": "Attempt {{attempt}} - {{line}}",
+  "ui.sessionTurn.retry.attemptWaiting.one": "Attempt {{attempt}} - retrying in {{count}}s",
+  "ui.sessionTurn.retry.attemptWaiting.other": "Attempt {{attempt}} - retrying in {{count}}s",
+  "ui.sessionTurn.retry.attemptRetryingNow": "Attempt {{attempt}} - retrying",
   "ui.sessionTurn.retry.geminiHot": "gemini is way too hot right now",
   "ui.sessionTurn.error.freeUsageExceeded": "Free usage exceeded",
   "ui.sessionTurn.error.addCredits": "Add credits",
@@ -105,6 +108,7 @@ const source = {
   "ui.messagePart.questions.dismissed": "Questions dismissed",
   "ui.messagePart.compaction": "Session compacted",
   "ui.messagePart.compaction.started": "Session compaction started",
+  "ui.messagePart.compaction.queued": "Session compaction queued",
   "ui.messagePart.compaction.running": "Compacting",
   "ui.messagePart.compaction.failed": "Session compaction failed",
   "ui.messagePart.compaction.cancelled": "Session compaction cancelled",
@@ -210,6 +214,8 @@ const source = {
 
   "ui.common.file.one": "file",
   "ui.common.file.other": "files",
+  "ui.common.fileCount.one": "{{count}} file",
+  "ui.common.fileCount.other": "{{count}} files",
   "ui.common.question.one": "question",
   "ui.common.question.other": "questions",
 
@@ -237,14 +243,20 @@ const source = {
   "ui.message.copyMessage": "Copy message",
   "ui.message.forkMessage": "Fork to new session",
   "ui.message.revertMessage": "Revert message",
+  "ui.message.moveToQueue": "Move to queue",
+  "ui.message.pending": "Pending",
+  "ui.message.deletePending": "Delete",
   "ui.message.copyResponse": "Copy response",
   "ui.message.copied": "Copied",
   "ui.message.thought": "Thought",
   "ui.message.duration.seconds": "{{count}}s",
   "ui.message.duration.minutesSeconds": "{{minutes}}m {{seconds}}s",
   "ui.message.interrupted": "Interrupted",
+  "ui.message.modelVariant": "{{model}} ({{variant}})",
   "ui.sessionTimeline.notice.model": "Model",
   "ui.sessionTimeline.notice.modelSwitched": "Switched to {{model}}",
+  "ui.sessionTimeline.notice.variantSwitched": "Switched variant to {{variant}}",
+  "ui.sessionTimeline.notice.variantDefault": "Switched variant to Default",
   "ui.sessionTimeline.notice.agentChanged": "Agent changed",
   "ui.sessionTimeline.notice.movedTo": "Moved to",
   "ui.sessionTimeline.notice.movedTooltip": "Session working directory changed",
@@ -252,6 +264,7 @@ const source = {
   "ui.sessionTimeline.notice.cancelled": "{{actor}} cancelled",
   "ui.sessionTimeline.notice.finished": "{{actor}} finished",
   "ui.sessionTimeline.notice.instructionsUpdated": "Instructions updated",
+  "ui.sessionTimeline.notice.restart": "Continuing after restart",
   "ui.message.queued": "Queued",
   "ui.message.attachment.alt": "attachment",
 
@@ -266,13 +279,19 @@ const source = {
   "ui.question.multiHint": "Select all answers that apply",
   "ui.question.singleHint": "Select one answer",
   "ui.question.custom.placeholder": "Type your answer…",
+  "ui.question.custom.answerPlaceholder": "Type your own answer…",
 } satisfies Record<string, string>
 
 export type Key = keyof typeof source
+
 export type PluralCategory = "zero" | "one" | "two" | "few" | "many" | "other"
+
 export type PluralKey = {
   [Entry in Key]: Entry extends `${infer Base}.other` ? (`${Base}.one` extends Key ? Base : never) : never
 }[Key]
+
 export type PluralLookupKey = `${PluralKey}.${PluralCategory}`
+
 export type LocaleKey = Key | PluralLookupKey
+
 export const dict: typeof source & Record<string, string> = source
