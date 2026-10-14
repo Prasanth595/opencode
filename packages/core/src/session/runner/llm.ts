@@ -199,6 +199,9 @@ const layer = Layer.effect(
     })
 
     const prepareContext = Effect.fn("SessionRunner.prepareContext")(function* (sessionID: SessionSchema.ID) {
+      // A plugin reload closes config-provided agents and models until activation settles,
+      // so a Step that starts inside the reload would not find its agent.
+      yield* plugins.awaitActivation
       const selected = yield* context.select(sessionID)
       // A blocked initial instruction baseline must leave admitted input pending.
       yield* InstructionState.prepare(db, bus, selected.instructions, sessionID)

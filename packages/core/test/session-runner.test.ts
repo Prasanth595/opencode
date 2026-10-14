@@ -216,6 +216,7 @@ const makeRunnerState = (compaction?: SessionRunnerModel.Resolved["compaction"])
     systemRemoved: false,
     systemUnavailable: false,
     systemLoadHook: Effect.void,
+    activationHook: Effect.void as Effect.Effect<void>,
     skillBaselines: new Map<Agent.ID, string>(),
     authorizations: new Array<Tool.Context>(),
     executions: new Array<string>(),
@@ -423,7 +424,7 @@ const layer = Layer.unwrap(
       Permission.node.replace(permission),
       Config.node.replace(config),
       PluginSupervisor.node.replace(Layer.empty),
-      Plugin.node.replace(Layer.mock(Plugin.Service, { awaitActivation: Effect.void })),
+      Plugin.node.replace(Layer.mock(Plugin.Service, { awaitActivation: Effect.suspend(() => state.activationHook) })),
       SessionModelTransport.node.replace(modelTransport),
     ]
     const runnerLayer = AppNodeBuilder.build(SessionRunnerLLM.node, [
@@ -2201,6 +2202,44 @@ describe("SessionRunnerLLM", () => {
     expect(userTexts(s.requests[1]).at(-1)).toContain("Summarize only what the user and the assistant said and did")
     expect(s.requests[1].messages.some((message) => message.role === "tool")).toBe(true)
     expect(userTexts(s.requests[2]).slice(-2)).toEqual(["STEER_A", "STEER_B"])
+    expect(yield* s.inbox).toEqual([])
+  })
+
+  scenario("waits for plugin activation before selecting the agent for the next Step", function* (s) {
+    const agents = yield* Agent.Service
+    yield* agents.transform((editor) =>
+      editor.update(Agent.ID.make("reviewer"), (agent) => {
+        agent.mode = "primary"
+      }),
+    )
+    yield* s.db
+      .update(SessionTable)
+      .set({ agent: "reviewer" })
+      .where(eq(SessionTable.id, sessionID))
+      .run()
+      .pipe(Effect.orDie)
+    yield* s.admit("Echo then finish")
+    yield* s.llm.push(
+      TestLLM.tool("call-reload", "echo", { text: "reload" }),
+      TestLLM.text("Done", "text-after-reload"),
+    )
+    const tools = yield* s.blockTools()
+    const run = yield* s.resume.pipe(Effect.forkChild)
+    yield* tools.started
+
+    const parked = yield* Deferred.make<void>()
+    const reloaded = yield* Deferred.make<void>()
+    s.activationHook = Deferred.succeed(parked, undefined).pipe(Effect.andThen(Deferred.await(reloaded)))
+    const closed = yield* agents.transform((editor) => editor.remove(Agent.ID.make("reviewer")))
+    yield* tools.release
+    yield* Deferred.await(parked).pipe(Effect.raceFirst(Fiber.join(run)))
+
+    expect(s.requests).toHaveLength(1)
+    yield* closed.dispose
+    yield* Deferred.succeed(reloaded, undefined)
+    yield* Fiber.join(run)
+
+    expect(s.requests).toHaveLength(2)
     expect(yield* s.inbox).toEqual([])
   })
 
