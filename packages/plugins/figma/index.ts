@@ -11,8 +11,7 @@ export default Plugin.define({
       if (editor.get("figma")) return
       editor.set("figma", {
         type: "remote",
-        url: "https://mcp.figma.com/mcp/PwXDFV08bIgjRDqKkTVZYH",
-        oauth: { scope: "mcp:connect" },
+        url: "https://mcp.figma.com/mcp",
       })
     })
 
