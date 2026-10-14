@@ -91,6 +91,8 @@ function resourceServer(
   input: {
     /** Serve 2026-07-28 only through createMcpHandler; the default is a sessionful legacy transport. */
     modern?: boolean
+    tools?: boolean
+    prompts?: boolean
     resources?: boolean
     listChanged?: boolean
     emptyElicitation?: boolean
@@ -132,23 +134,25 @@ function resourceServer(
           { name: "mcp-resources", version: "1.0.0" },
           {
             capabilities: {
-              tools: {},
-              prompts: {},
+              ...(input.tools === false ? {} : { tools: {} }),
+              ...(input.prompts === false ? {} : { prompts: {} }),
               ...(input.resources === false ? {} : { resources: { listChanged: input.listChanged } }),
             },
             instructions: "Use the resources tools.",
           },
         )
-        protocol.setRequestHandler("tools/list", () => {
-          state.toolLists += 1
-          return Promise.resolve({
-            tools: input.emptyElicitation
-              ? [{ name: "empty-elicitation", inputSchema: { type: "object" as const, properties: {} } }]
-              : input.urlElicitation
-                ? [{ name: "url-elicitation", inputSchema: { type: "object" as const, properties: {} } }]
-                : [{ name: "echo", inputSchema: { type: "object" as const, properties: {} } }],
+        if (input.tools !== false) {
+          protocol.setRequestHandler("tools/list", () => {
+            state.toolLists += 1
+            return Promise.resolve({
+              tools: input.emptyElicitation
+                ? [{ name: "empty-elicitation", inputSchema: { type: "object" as const, properties: {} } }]
+                : input.urlElicitation
+                  ? [{ name: "url-elicitation", inputSchema: { type: "object" as const, properties: {} } }]
+                  : [{ name: "echo", inputSchema: { type: "object" as const, properties: {} } }],
+            })
           })
-        })
+        }
         if (input.emptyElicitation) {
           protocol.setRequestHandler("tools/call", async () => {
             const result = await protocol.elicitInput({
@@ -184,7 +188,7 @@ function resourceServer(
             }
           })
         }
-        if (!input.emptyElicitation && !input.urlElicitation) {
+        if (input.tools !== false && !input.emptyElicitation && !input.urlElicitation) {
           protocol.setRequestHandler("tools/call", (request) => {
             state.toolCalls.push({
               name: request.params.name,
@@ -195,12 +199,14 @@ function resourceServer(
             return Promise.resolve({ content: [] })
           })
         }
-        protocol.setRequestHandler("prompts/list", () => Promise.resolve({ prompts: [{ name: "greet" }] }))
-        protocol.setRequestHandler("prompts/get", (request) =>
-          Promise.resolve({
-            messages: [{ role: "user", content: { type: "text", text: `hi ${request.params.arguments?.name}` } }],
-          }),
-        )
+        if (input.prompts !== false) {
+          protocol.setRequestHandler("prompts/list", () => Promise.resolve({ prompts: [{ name: "greet" }] }))
+          protocol.setRequestHandler("prompts/get", (request) =>
+            Promise.resolve({
+              messages: [{ role: "user", content: { type: "text", text: `hi ${request.params.arguments?.name}` } }],
+            }),
+          )
+        }
         if (input.resources !== false) {
           protocol.setRequestHandler("resources/list", (request) => {
             state.resourceLists += 1
@@ -1294,6 +1300,82 @@ test("skips MCP resource requests when the capability is absent", async () => {
       }),
     ),
   )
+})
+
+/**
+ * The MCP SDK negotiates capabilities by printing to stdout, so a server that never advertised a
+ * capability turns every catalog refresh into terminal spam. Capture those lines around `run`.
+ */
+async function capabilityDebugLines(run: () => Promise<void>) {
+  const lines: string[] = []
+  const original = console.debug
+  console.debug = (...args: unknown[]) => {
+    lines.push(args.map((arg) => String(arg)).join(" "))
+  }
+  try {
+    await run()
+  } finally {
+    console.debug = original
+  }
+  return lines.filter((line) => line.includes("does not advertise"))
+}
+
+test("does not ask the MCP SDK to list resources the server never advertised", async () => {
+  const lines = await capabilityDebugLines(async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const server = yield* resourceServer({ resources: false })
+          const connection = yield* connect(
+            "resources",
+            new ConfigMCP.Remote({ type: "remote", url: server.url, oauth: false }),
+            import.meta.dir,
+          )
+          expect(yield* connection.resources()).toEqual([])
+          expect(yield* connection.resourceTemplates()).toEqual([])
+        }),
+      ),
+    )
+  })
+  expect(lines).toEqual([])
+})
+
+test("does not ask the MCP SDK to list prompts the server never advertised", async () => {
+  const lines = await capabilityDebugLines(async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const server = yield* resourceServer({ prompts: false })
+          const connection = yield* connect(
+            "resources",
+            new ConfigMCP.Remote({ type: "remote", url: server.url, oauth: false }),
+            import.meta.dir,
+          )
+          expect(yield* connection.prompts()).toEqual([])
+        }),
+      ),
+    )
+  })
+  expect(lines).toEqual([])
+})
+
+test("does not ask the MCP SDK to list tools the server never advertised", async () => {
+  const lines = await capabilityDebugLines(async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const server = yield* resourceServer({ tools: false })
+          const connection = yield* connect(
+            "resources",
+            new ConfigMCP.Remote({ type: "remote", url: server.url, oauth: false }),
+            import.meta.dir,
+          )
+          expect(yield* connection.tools()).toEqual([])
+        }),
+      ),
+    )
+  })
+  expect(lines).toEqual([])
 })
 
 test("accepts empty MCP elicitations without creating forms", async () => {
