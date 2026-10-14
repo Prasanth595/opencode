@@ -14,6 +14,7 @@
       "devDependencies": {
         "@actions/artifact": "5.0.1",
         "@ast-grep/cli": "0.44.0",
+        "@modelcontextprotocol/client": "2.3.0",
         "@opencode/client": "workspace:*",
         "@oxlint/plugins": "1.60.0",
         "@tsconfig/bun": "catalog:",
@@ -352,8 +353,8 @@
         "@ff-labs/fff-bun": "0.10.5",
         "@ff-labs/fff-node": "0.10.5",
         "@lydell/node-pty": "catalog:",
-        "@modelcontextprotocol/client": "2.0.0",
-        "@modelcontextprotocol/core": "2.0.0",
+        "@modelcontextprotocol/client": "2.3.0",
+        "@modelcontextprotocol/core": "2.3.0",
         "@opencode-ai/pty": "0.2.0",
         "@opencode/ai": "workspace:*",
         "@opencode/codemode": "workspace:*",
@@ -388,7 +389,7 @@
         "@ai-sdk/openai-compatible": "2.0.41",
         "@effect/platform-node": "catalog:",
         "@effect/sql-sqlite-bun": "catalog:",
-        "@modelcontextprotocol/server": "2.0.0",
+        "@modelcontextprotocol/server": "2.3.0",
         "@opencode/http-recorder": "workspace:*",
         "@parcel/watcher-darwin-arm64": "2.5.1",
         "@parcel/watcher-darwin-x64": "2.5.1",
@@ -577,7 +578,6 @@
       "name": "@opencode/httpapi-codegen",
       "version": "2.0.26",
       "dependencies": {
-        "@opencode/schema": "workspace:*",
         "effect": "catalog:",
         "prettier": "3.6.2",
       },
@@ -1124,8 +1124,8 @@
   "patchedDependencies": {
     "@pierre/trees@1.0.0-beta.4": "patches/@pierre%2Ftrees@1.0.0-beta.4.patch",
     "@tanstack/virtual-core@3.17.8": "patches/@tanstack%2Fvirtual-core@3.17.8.patch",
+    "@modelcontextprotocol/client@2.3.0": "patches/@modelcontextprotocol%2Fclient@2.3.0.patch",
     "ghostty-web@github:anomalyco/ghostty-web#83c0a07": "patches/ghostty-web@0.3.0.patch",
-    "@modelcontextprotocol/client@2.0.0": "patches/@modelcontextprotocol%2Fclient@2.0.0.patch",
     "pacote@21.5.1": "patches/pacote@21.5.1.patch",
     "@standard-community/standard-openapi@0.2.9": "patches/@standard-community%2Fstandard-openapi@0.2.9.patch",
     "@npmcli/agent@4.0.2": "patches/@npmcli%2Fagent@4.0.2.patch",
@@ -2057,11 +2057,11 @@
 
     "@mermaid-js/parser": ["@mermaid-js/parser@1.2.1", "", { "dependencies": { "@chevrotain/types": "~11.1.2" } }, "sha512-n12NohV3mrUyUL2o93IgG/ifeW9FTyeJn3zDxkhwa8MJ9Fxg3HQMlA3RiGmD/3UnJvheztkjjQAjA2T4LmUcpw=="],
 
-    "@modelcontextprotocol/client": ["@modelcontextprotocol/client@2.0.0", "", { "dependencies": { "@modelcontextprotocol/core": "2.0.0", "cross-spawn": "^7.0.5", "eventsource": "^3.0.2", "eventsource-parser": "^3.0.0", "jose": "^6.1.3", "pkce-challenge": "^5.0.0", "zod": "^4.2.0" } }, "sha512-8f1OghQ2rjzIOfqgUCP+8GiUWqRs89njoWLNqAe8kWmDePv3s1fZXseej+QXemssEuuOvLLmLO/kqM3IQHtISw=="],
+    "@modelcontextprotocol/client": ["@modelcontextprotocol/client@2.3.0", "", { "dependencies": { "@modelcontextprotocol/core": "2.3.0", "cross-spawn": "^7.0.5", "eventsource": "^3.0.2", "eventsource-parser": "^3.0.8", "jose": "^6.1.3", "pkce-challenge": "^5.0.0", "zod": "^4.2.0" } }, "sha512-pbHtGj6EeFCHngFE8gtNPaKrsj8Mb1IMw45BLcaPML/m2WTxI7pyYmeNQvaux88Lw8BSO5r7nyRbUyIkICmGrg=="],
 
-    "@modelcontextprotocol/core": ["@modelcontextprotocol/core@2.0.0", "", { "dependencies": { "zod": "^4.2.0" } }, "sha512-pJCEwGG7Lfr/+PQp9ZTwKXNeO5wzbfKL7H3MYpCorM4oFBoQrdjnBgEoqG+RjhsvS1FKrDbKux+M1HhlnGWqcA=="],
+    "@modelcontextprotocol/core": ["@modelcontextprotocol/core@2.3.0", "", { "dependencies": { "zod": "^4.2.0" } }, "sha512-09BHFaNVBe5pB2AhzCfLj0cqmsKLERvZQ4FblzP90UMGLaXVqdZPByFjURwsUYCmxonUW2yAwgTTvle+8O2/8w=="],
 
-    "@modelcontextprotocol/server": ["@modelcontextprotocol/server@2.0.0", "", { "dependencies": { "@modelcontextprotocol/core": "2.0.0", "zod": "^4.2.0" } }, "sha512-YhHWdHfpFMQfd0prsEnxKeS3Qz3ytIGmsS0sth4KDjnacIT7hxk6hXHkJ9KysxlkvTM+WZAtQbbcUhdoP4Hvtw=="],
+    "@modelcontextprotocol/server": ["@modelcontextprotocol/server@2.3.0", "", { "dependencies": { "@modelcontextprotocol/core": "2.3.0", "zod": "^4.2.0" } }, "sha512-+6b0LdsQLmHsvS7J6sQJ4weTpzUn61fU1JKS+321/+IyDYoHW5CR2Tgqcs6GgAAQvlesCo6yX3xttgmx+XGtJw=="],
 
     "@motionone/animation": ["@motionone/animation@10.18.0", "", { "dependencies": { "@motionone/easing": "^10.18.0", "@motionone/types": "^10.17.1", "@motionone/utils": "^10.18.0", "tslib": "^2.3.1" } }, "sha512-9z2p5GFGCm0gBsZbi8rVMOAJCtw1WqBTIPw3ozk06gDvZInBPIsQcHgYogEJ4yuHJ+akuW8g1SEIOpTOvYs8hw=="],
 
