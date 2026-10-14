@@ -33,6 +33,7 @@ describe("Host.resolve", () => {
       server: plugin.url("index.ts"),
       tui: plugin.url("tui.tsx"),
       rpc: plugin.url("rpc.ts"),
+      gui: undefined,
     })
   })
 
@@ -42,6 +43,7 @@ describe("Host.resolve", () => {
       server: undefined,
       tui: plugin.url("tui.tsx"),
       rpc: undefined,
+      gui: undefined,
     })
   })
 
@@ -60,6 +62,7 @@ describe("Host.resolve", () => {
         server: plugin.url(main ?? "index.js"),
         tui: plugin.url("tui.js"),
         rpc: plugin.url("rpc.js"),
+        gui: undefined,
       })
     })
   }
@@ -75,6 +78,7 @@ describe("Host.resolve", () => {
       server: plugin.url("index.js"),
       tui: plugin.url("tui.js"),
       rpc: plugin.url("rpc.js"),
+      gui: undefined,
     })
   })
 
@@ -101,6 +105,7 @@ describe("Host.resolve", () => {
       server: plugin.url("dist/backend.js"),
       tui: plugin.url("dist/terminal.js"),
       rpc: plugin.url("dist/contract.js"),
+      gui: undefined,
     })
   })
 
@@ -125,6 +130,7 @@ describe("Host.resolve", () => {
       server: plugin.url("dist/server.mjs"),
       tui: plugin.url("dist/tui.mjs"),
       rpc: undefined,
+      gui: undefined,
     })
   })
 
@@ -143,7 +149,57 @@ describe("Host.resolve", () => {
       server: undefined,
       tui: plugin.url("dist/terminal.js"),
       rpc: undefined,
+      gui: undefined,
     })
+  })
+
+  it("resolves the GUI entrypoint from exports beside the server and TUI entrypoints", async () => {
+    await using plugin = await fixture(
+      {
+        "package.json": JSON.stringify({
+          name,
+          exports: {
+            ".": "./dist/server.js",
+            "./tui": "./dist/tui.js",
+            "./gui": "./dist/gui.cjs",
+          },
+        }),
+        "dist/server.js": source,
+        "dist/tui.js": source,
+        "dist/gui.cjs": source,
+      },
+      true,
+    )
+    assert.deepEqual(Host.resolve(plugin.target), {
+      server: plugin.url("dist/server.js"),
+      tui: plugin.url("dist/tui.js"),
+      rpc: undefined,
+      gui: plugin.url("dist/gui.cjs"),
+    })
+  })
+
+  it("resolves the conventional GUI entrypoint in a local directory", async () => {
+    await using plugin = await fixture({ "index.ts": source, "gui.js": source })
+    assert.deepEqual(Host.resolve(plugin.target), {
+      server: plugin.url("index.ts"),
+      tui: undefined,
+      rpc: undefined,
+      gui: plugin.url("gui.js"),
+    })
+  })
+
+  it("does not treat TypeScript or ES module GUI sources as the CommonJS bundle", async () => {
+    await using local = await fixture({ "index.ts": source, "gui.tsx": source })
+    await using published = await fixture(
+      {
+        "package.json": JSON.stringify({ name, exports: { ".": "./dist/server.js", "./gui": "./dist/gui.mjs" } }),
+        "dist/server.js": source,
+        "dist/gui.mjs": source,
+      },
+      true,
+    )
+    assert.equal(Host.resolve(local.target).gui, undefined)
+    assert.equal(Host.resolve(published.target).gui, undefined)
   })
 
   it("does not return an exported entrypoint whose file is missing", async () => {
@@ -151,6 +207,11 @@ describe("Host.resolve", () => {
       { "package.json": JSON.stringify({ name, exports: { "./tui": "./missing.js" } }) },
       true,
     )
-    assert.deepEqual(Host.resolve(plugin.target), { server: undefined, tui: undefined, rpc: undefined })
+    assert.deepEqual(Host.resolve(plugin.target), {
+      server: undefined,
+      tui: undefined,
+      rpc: undefined,
+      gui: undefined,
+    })
   })
 })

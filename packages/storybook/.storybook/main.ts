@@ -8,7 +8,7 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const ui = path.resolve(here, "../../ui")
 const sessionUi = path.resolve(here, "../../session-ui")
 const app = path.resolve(here, "../../app/src")
-const extensions = path.resolve(here, "../../gui-extensions/src")
+const plugins = path.resolve(here, "../../gui-plugins/src")
 const mocks = path.resolve(here, "./mocks")
 
 export default defineMain({
@@ -28,7 +28,7 @@ export default defineMain({
     "../../ui/src/**/*.stories.@(js|jsx|mjs|ts|tsx)",
     "../../session-ui/src/**/*.stories.@(js|jsx|mjs|ts|tsx)",
     "../../app/src/**/*.stories.@(js|jsx|mjs|ts|tsx)",
-    "../../gui-extensions/src/**/*.stories.@(js|jsx|mjs|ts|tsx)",
+    "../../gui-plugins/src/**/*.stories.@(js|jsx|mjs|ts|tsx)",
   ],
   async viteFinal(config) {
     const { mergeConfig, searchForWorkspaceRoot } = await import("vite")
@@ -69,7 +69,7 @@ export default defineMain({
       },
       server: {
         fs: {
-          allow: [searchForWorkspaceRoot(process.cwd()), ui, sessionUi, app, extensions, mocks],
+          allow: [searchForWorkspaceRoot(process.cwd()), ui, sessionUi, app, plugins, mocks],
         },
       },
     })

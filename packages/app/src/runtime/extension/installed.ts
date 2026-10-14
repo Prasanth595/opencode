@@ -1,6 +1,6 @@
 import { createMemo, createResource, onCleanup } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
-import type { Bridge, Installed } from "@opencode/gui-extensions/sdk/bridge"
+import type { Bridge, Installed } from "@opencode/plugin/gui/host"
 
 /** Saved enable preferences and manager metadata; activation and blocked-dependency status belong to the host. */
 export function createInstalled(bridge: Bridge | undefined) {
@@ -29,7 +29,14 @@ export function createInstalled(bridge: Bridge | undefined) {
     )
 
   return {
-    enableState: createMemo(() => state.list ?? initial.latest),
+    // Main lists a plugin only once a window reports it, so until then the preload rows hold its saved setting.
+    enableState: createMemo(() => {
+      const list = state.list
+
+      if (!list) return initial.latest
+
+      return [...(initial.latest ?? []).filter((row) => !list.some((item) => item.id === row.id)), ...list]
+    }),
     list: () => state.list ?? [],
   }
 }

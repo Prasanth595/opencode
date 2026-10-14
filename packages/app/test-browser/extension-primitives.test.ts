@@ -5,12 +5,12 @@ import {
   createKeyed,
   createLatest,
   createVisitState,
-  ExtensionContext,
+  PluginContext,
   Live,
   type Context,
   type Persisted,
   type SessionRef,
-} from "@opencode/gui-extensions/sdk"
+} from "@opencode/plugin/gui"
 import type { Platform } from "@/runtime/platform/platform"
 import { flushPersisted } from "@/runtime/persistence/persist"
 import { Persist, persisted, removePersisted } from "@/runtime/persistence/storage"
@@ -223,7 +223,7 @@ describe("extension primitives", () => {
     const captured: ReturnType<typeof createVisitState<string>>[] = []
 
     const dispose = createRoot((dispose) => {
-      createComponent(ExtensionContext.Provider, {
+      createComponent(PluginContext.Provider, {
         value: context,
         get children() {
           captured.push(createVisitState("initial"))

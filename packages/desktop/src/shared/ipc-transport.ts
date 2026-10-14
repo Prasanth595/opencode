@@ -1,4 +1,4 @@
-import type { EnableState } from "@opencode/gui-extensions/sdk/bridge"
+import type { EnableState } from "@opencode/plugin/gui/host"
 
 export const IpcTransportPort = "desktop-rpc-port"
 

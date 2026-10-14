@@ -1,0 +1,83 @@
+---
+title: "Intro"
+description: "Use the OpenCode desktop and web application and its built-in plugins."
+---
+
+OpenCode Desktop and the web interface share the same GUI shell. Every workspace feature outside the core conversation shell ships as a built-in plugin that uses the GUI plugin SDK, `@opencode/plugin/gui`.
+
+## Install
+
+Download the latest OpenCode Desktop build for your platform from the [installation guide](/#desktop), or open the web interface from an existing CLI installation:
+
+```bash
+opencode pair
+```
+
+OpenCode Desktop manages its own local background server automatically and can also connect to remote servers over HTTP, [SSH](/desktop/ssh), or [WSL](/desktop/wsl).
+
+## Built-in plugins
+
+Every workspace tool, file previewer, and server connector in the GUI is a built-in plugin. You can inspect, reload, or disable any plugin from [**Settings > Plugins**](/desktop/plugins).
+
+<CardGroup cols={2}>
+  <Card title="Review" href="/desktop/review">
+    Inspect uncommitted, branch, and last-turn diffs in unified or split view and attach line comments to your next
+    prompt.
+  </Card>
+  <Card title="Files & Office" href="/desktop/files">
+    Browse the workspace tree, preview images, PDFs, audio, video, CSV tables, and Microsoft Office documents, or open
+    files in your editor.
+  </Card>
+  <Card title="Terminal" href="/desktop/terminal">
+    Run persistent workspace shells in the dock with 10,000-row scrollback, automatic reconnection, and tab management.
+  </Card>
+  <Card title="Browser" href="/desktop/browser">
+    Preview web pages and workspace HTML files in a native Chromium pane, pick elements to comment on, and give agents
+    browser tools.
+  </Card>
+  <Card title="Session & Context" href="/desktop/session">
+    Inspect token usage and costs, move sessions to Git worktrees, ask `/btw` side questions, and view live provider
+    latency metrics.
+  </Card>
+  <Card title="SSH" href="/desktop/ssh">
+    Connect to remote Linux and macOS hosts over OpenSSH with automatic remote CLI provisioning and port forwarding.
+  </Card>
+  <Card title="WSL" href="/desktop/wsl">
+    Run OpenCode servers inside Windows Subsystem for Linux distributions and install new distributions from the catalog.
+  </Card>
+  <Card title="Pairing & Updates" href="/desktop/pairing">
+    Pair mobile and browser clients with a one-time QR code, prevent display sleep, and manage automatic desktop updates.
+  </Card>
+</CardGroup>
+
+## Default shortcuts
+
+Built-in and installed plugins register commands in the command palette (**Cmd+K** / **Ctrl+K** or **Cmd+Shift+P** / **Ctrl+Shift+P**) and in **Settings > Shortcuts**.
+
+| Command ID | Action | Default shortcut | Slash command |
+| --- | --- | --- | --- |
+| `terminal.toggle` | Toggle terminal | `Ctrl+\`` | `/terminal` |
+| `terminal.new` | New terminal | `Ctrl+Alt+T` | — |
+| `terminal.close` | Close terminal (when focused) | `Cmd+W` / `Ctrl+W` | — |
+| `browser.open` | Open browser | `Cmd+Shift+B` / `Ctrl+Shift+B` | — |
+| `browser.reload` | Reload browser page | `F5` | — |
+| `browser.address` | Focus browser address | `Cmd+L` / `Ctrl+L` | — |
+| `details.toggle` | Toggle summary | `Cmd+Shift+Y` / `Ctrl+Shift+Y` | — |
+| `btw.ask` | Ask a side question | — | `/btw` |
+| `debug.toggle` | Toggle debug bar | — | — |
+| `ssh.add` | Add SSH server | — | — |
+| `pairing.open` | Pair device | — | — |
+| `updater.check` | Check for Updates… | — | — |
+
+## Build your own
+
+You can extend OpenCode Desktop with your own panels, commands, settings pages, server sources, and main-process integrations. Ship them in a plugin package with a `./gui` export, and users add them with `plugins` in `opencode.json(c)`.
+
+<CardGroup cols={2}>
+  <Card title="Manage plugins" href="/desktop/plugins">
+    Toggle and reload built-in and installed plugins, add plugins in `opencode.json(c)`, and inspect plugin status.
+  </Card>
+  <Card title="Author GUI plugins" href="/build/plugins/gui">
+    Learn how to package and build a GUI plugin, the Window SDK, and the Main Process & IPC bridge.
+  </Card>
+</CardGroup>

@@ -1,0 +1,49 @@
+---
+title: "Pairing & Updates"
+description: "Pair mobile and browser devices with your desktop server and manage automatic application updates."
+---
+
+The built-in `pairing` and `updater` plugins handle local network device pairing, display sleep prevention, automatic desktop updates, and release highlights.
+
+## Device pairing (`pairing`)
+
+Open **Settings > Pairing** or run **Pair device** (`pairing.open`) from the command palette to connect another computer, phone, or tablet to your desktop's built-in OpenCode server.
+
+### Show pairing QR code and link
+
+Click **Show details** next to **Local Network** to open the pairing dialog:
+
+- **Connect with**: Choose which network route the pairing link should use (**Custom address**, **Local network**, **VPN** for Tailscale/mesh addresses in `100.64.0.0/10` or `fd7a:115c:a1e0::/48`, or **Network address**).
+- **Pairing QR code**: Scan the QR code from the OpenCode mobile or web app.
+- **One-time link**: Copy `<route>/auth/connect/<code>`. Each pairing code is single-use, expires after 5 minutes, and automatically rotates when it expires.
+
+### Listen on your local network
+
+If your local server is bound only to `127.0.0.1`, **Settings > Pairing** displays a notice (**Only this computer can reach the OpenCode server**) with a one-click copyable command:
+
+```bash
+opencode service set hostname 0.0.0.0
+```
+
+Run that command in a terminal, restart the service (`opencode service start`), and reopen **Pairing** to see your LAN and VPN addresses.
+
+### Custom address and Keep screen active
+
+- **Custom address**: Configure an external `http://` or `https://` origin (such as a reverse proxy, Cloudflare Tunnel, or Tailscale Funnel URL) that reaches your computer.
+- **Keep screen active**: Toggle **Prevent this computer’s display from sleeping while OpenCode is running** to hold an OS display sleep blocker (`powerSaveBlocker`) while remote devices use your desktop server.
+
+## Automatic updates (`updater`)
+
+On packaged releases, the `updater` plugin checks for updates at launch and every 10 minutes in the background.
+
+### Update controls
+
+- **Titlebar pill**: When a new version has downloaded and is staged, an **Update** pill appears in the window titlebar. Click it (**Install and restart**) to relaunch into the new release.
+- **Settings > Preferences > Updates**:
+  - **Release notes**: Toggle **Show What's New popups after updates** (enabled by default).
+  - **Check for updates**: Click **Check now** (or **Install and restart** when an update is ready).
+- **Application menu**: Select **Check for Updates…** in the native application menu (or bind a shortcut to `updater.check` in **Settings > Shortcuts**).
+
+### What's New highlights
+
+After updating to a new release (on both Desktop and Web), OpenCode displays a **What's New** dialog with up to 5 visual release highlights. Use the **Left** and **Right** arrow keys or **Next** to page through highlights, or click **Don't show these in the future** to disable the popup.

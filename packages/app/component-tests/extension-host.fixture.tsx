@@ -2,7 +2,7 @@ import { DialogProvider } from "@opencode/ui/context/dialog"
 import {
   Panel,
   type Appearance,
-  type Build,
+  type App,
   type Definition,
   type Keybinds,
   type Layout,
@@ -15,7 +15,7 @@ import {
   type Storage,
   type StoreOptions,
   type Workspaces,
-} from "@opencode/gui-extensions/sdk"
+} from "@opencode/plugin/gui"
 import {
   createComponent,
   createMemo,
@@ -35,14 +35,14 @@ import { ServerScope } from "@/runtime/server/scope"
 import { ExtensionHostProvider, useExtensionHost, type HostApiFactories } from "../src/runtime/extension/host"
 import { createHostApis } from "../src/runtime/extension/host-apis"
 import { createInstalled } from "../src/runtime/extension/installed"
-import { extensionEnabled } from "@opencode/gui-extensions/sdk/bridge"
+import { extensionEnabled } from "@opencode/plugin/gui/host"
 import { createRegion, RegionContent } from "../src/runtime/extension/panels"
 import { ExtensionSlot } from "../src/runtime/extension/render"
 import { persistedHandle } from "../src/runtime/extension/stores"
 import { LanguageProvider } from "../src/runtime/i18n/language"
-import { GuiExtensionsSettings } from "../src/runtime/extension/settings-page-dev"
+import { PluginsSettings } from "../src/runtime/extension/settings-plugins"
 
-export { bindExtension, useExtension, Contract, createKeyed, Panel, Slot, Store } from "@opencode/gui-extensions/sdk"
+export { bindPlugin, usePlugin, Contract, createKeyed, Panel, Slot, Store } from "@opencode/plugin/gui"
 
 export { Schema }
 
@@ -75,7 +75,7 @@ const layout: Layout = {
   project() {},
 }
 
-const build: Build = { version: "", channel: "dev", platform: "desktop", packaged: false }
+const about: App = { name: "opencode", version: "", channel: "dev", platform: "desktop", packaged: false }
 
 const locale: Locale = { locale: () => "en", direction: () => "ltr", setDirection() {} }
 
@@ -92,7 +92,7 @@ const workspaces: Workspaces = { on: () => () => undefined }
 /** Every HostApi faked at its boundary, with the given storage. */
 function fakeApis(storage: (extension: string) => Storage): HostApiFactories {
   return {
-    build: () => build,
+    app: () => about,
     locale: () => locale,
     appearance: () => appearance,
     router: () => router,
@@ -150,7 +150,7 @@ export function mountExtensionHost() {
       <LanguageProvider locale="en">
         <DialogProvider>
           <ExtensionHostProvider
-            definitions={[
+            definitions={() => [
               {
                 id: "fixture",
                 renderer: () => {
@@ -208,6 +208,7 @@ export function mountExtensions(input: {
 }) {
   const held = Promise.withResolvers<void>()
   const [disabled, setDisabled] = createSignal<ReadonlySet<string>>(new Set(input.disabled ?? []))
+  const [definitions, setDefinitions] = createSignal(input.definitions)
   const hosts: ExtensionHost[] = []
   const container = document.createElement("div")
   document.body.appendChild(container)
@@ -255,13 +256,13 @@ export function mountExtensions(input: {
       if (!state) return undefined
 
       return new Set(
-        input.definitions.flatMap((definition) => (extensionEnabled(definition, state) ? [] : [definition.id])),
+        definitions().flatMap((definition) => (extensionEnabled(definition.id, state) ? [] : [definition.id])),
       )
     })
 
     return (
       <ExtensionHostProvider
-        definitions={input.definitions}
+        definitions={definitions}
         disabled={disabledState}
         apis={fakeApis(storage)}
         whenMounted={mounted}
@@ -278,7 +279,7 @@ export function mountExtensions(input: {
     return (
       <Show when={host.ready()}>
         <Show when={input.settings}>
-          <GuiExtensionsSettings />
+          <PluginsSettings />
         </Show>
         <ExtensionSlot at="window.bottom" input={{}} />
       </Show>
@@ -305,6 +306,8 @@ export function mountExtensions(input: {
     /** Lets the held storage reads answer. */
     release: () => held.resolve(),
     disable: (ids: readonly string[]) => setDisabled(new Set(ids)),
+    /** Replaces the definitions, as plugin GUIs join, reload and leave. */
+    define: (next: readonly Definition[]) => setDefinitions(next),
     reload: (id: string) => hosts[0]?.reload(id),
     ready: () => hosts[0]?.ready() ?? false,
     status: (id: string) => hosts[0]?.state.status[id],
@@ -362,7 +365,7 @@ function RealHost(props: ParentProps<{ definitions: readonly Definition[]; captu
 
   return (
     <ExtensionHostProvider
-      definitions={props.definitions}
+      definitions={() => props.definitions}
       disabled={() => new Set<string>()}
       apis={apis.apis}
       whenMounted={apis.whenMounted}

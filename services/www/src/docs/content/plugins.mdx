@@ -124,6 +124,19 @@ touch .opencode/plugins/concise/index.ts
 opencode service restart
 ```
 
+## Desktop
+
+A plugin that exports `./gui` is also a GUI plugin: it adds panels, commands, or settings to the desktop app.
+The app loads it from the server that runs the app, so configure the plugin in the global `opencode.json(c)` to make it
+available in every window. Turn it off in [**Settings > Plugins**](/desktop/plugins). See
+[GUI plugin packages](/build/plugins/gui/package).
+
+```jsonc title="~/.config/opencode/opencode.jsonc"
+{
+  "plugins": ["opencode-acme"],
+}
+```
+
 ## Terminal
 
 CLI-only plugins are configured separately and remain active when connected to a remote server.
@@ -134,6 +147,11 @@ CLI-only plugins are configured separately and remain active when connected to a
 }
 ```
 
-<Card title="Build a plugin" href="/build/plugins">
-  Create plugins that add tools, hooks, integrations, commands, agents, and other behavior.
-</Card>
+<CardGroup cols={2}>
+  <Card title="Build a plugin" href="/build/plugins">
+    Create plugins that add tools, hooks, integrations, commands, agents, and other behavior.
+  </Card>
+  <Card title="Desktop GUI plugins" href="/desktop/plugins">
+    Manage built-in and installed plugins in OpenCode Desktop, or build your own GUI plugin with the GUI plugin SDK.
+  </Card>
+</CardGroup>

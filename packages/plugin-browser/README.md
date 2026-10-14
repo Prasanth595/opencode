@@ -39,7 +39,7 @@ pure and does not load any of these runtime modules.
 
 Run `bun test` and `bun typecheck` from this package for its contract checks.
 The desktop implementation is the built-in `browser` GUI extension
-(`packages/gui-extensions/src/browser`); its URL policy tests live there, not in this package.
+(`packages/gui-plugins/src/browser`); its URL policy tests live there, not in this package.
 
 ## RPC
 

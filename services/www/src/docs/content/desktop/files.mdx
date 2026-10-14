@@ -1,0 +1,68 @@
+---
+title: "Files & Office"
+description: "Browse workspace files, preview media and Microsoft Office documents, and open files in external editors."
+---
+
+The built-in `file` and `microsoft-office` plugins power the workspace file tree, side-panel file tabs, rich artifact previews, local file link routing, and the desktop **Open in** menu.
+
+## Open files
+
+Open a file in the session side panel in any of these ways:
+
+- Press **Cmd+P** / **Ctrl+P** or run `/open` in the composer to search workspace files.
+- Click the **+** menu before the side panel tabs and select **Open file**.
+- Click a file in the side panel's inner sidebar (**Files Changed** or **All files**).
+- Click a file path or `path:line:col` reference in an assistant message.
+
+A single click in the file tree opens a replaceable **preview** tab (shown with an italicized tab label). Double-clicking a file or tab keeps the tab open permanently. You can also drag any file row from the tree into the composer to attach it as a `file:` reference.
+
+## Built-in file viewers
+
+The `file` plugin renders rich previews based on file type and shows the file size in the toolbar:
+
+| Category | Extensions | Viewer behavior |
+| --- | --- | --- |
+| **Code & text** | Source and plain text files | Syntax-highlighted code viewer with line selection, inline composer comments, and **Cmd+F** / **Ctrl+F** search. |
+| **Images** | `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.avif`, `.bmp`, `.ico`, `.tif`, `.tiff`, `.heic` | Fitted to the pane with `W × H` dimensions in the toolbar. Click to toggle 1:1 pixel zoom when the image is larger than the pane. |
+| **SVG** | `.svg` | Rendered image preview with a **Preview / Source** toggle. |
+| **Video** | `.mp4`, `.m4v`, `.webm`, `.mov`, `.ogv`, `.mkv` | Native video player with dimensions and duration in the toolbar. |
+| **Audio** | `.mp3`, `.wav`, `.ogg`, `.oga`, `.m4a`, `.aac`, `.flac`, `.opus`, `.weba` | Audio player card with duration. |
+| **PDF** | `.pdf` | Built-in PDF viewer fitted to pane width. |
+| **HTML** | `.html`, `.htm` | Sandboxed preview with a **Preview / Source** toggle and an **Open in browser** button when the [Browser pane](/desktop/browser) is available. |
+| **Markdown** | `.md`, `.markdown`, `.mdx` | Rendered Markdown with resolved relative links and images, plus a **Preview / Source** toggle. |
+| **Mermaid** | `.mmd`, `.mermaid` | Rendered diagram with a **Preview / Source** toggle. |
+| **Tables** | `.csv`, `.tsv` | Scrollable table with row numbers, row/column counts, and a 1,000-row preview cap. |
+| **Fonts** | `.ttf`, `.otf`, `.woff`, `.woff2` | Typeface specimen showing `A–Z`, `a–z`, `0–9`, and `Sphinx of black quartz, judge my vow.` from 12 px to 64 px. |
+
+Unrecognized binary files display `Binary file · <size>`.
+
+## Microsoft Office previews
+
+The `microsoft-office` plugin registers read-only viewers with the `file.viewer` registry for modern OpenXML Office documents. Each WebAssembly rendering engine loads on demand the first time you open a file of that format and runs in a background Web Worker.
+
+| Format | Extensions | Toolbar summary | Features |
+| --- | --- | --- | --- |
+| **Word** | `.docx` | `{{count}} page` / `pages` | Paginated layout fitted to pane width, selectable and searchable text, internal `#bookmark` jumps, and external `http:`, `https:`, and `mailto:` links. |
+| **Excel** | `.xlsx` | `{{count}} sheet` / `sheets` | Sheet tab strip, frozen panes, merged cells, keyboard cell navigation, internal sheet links, and **Cmd+C** / **Ctrl+C** tab-separated copy (up to 200,000 cells). |
+| **PowerPoint** | `.pptx` | `{{count}} slide` / `slides` | Full-width slide rendering, selectable speaker notes beneath each slide, and a **Hidden slide** badge on dimmed hidden slides. |
+
+Password-protected files or legacy binary Office formats (`.doc`, `.xls`, `.ppt`) show the binary placeholder with the message:
+
+```text
+This file is password-protected or saved in an older Office format.
+```
+
+## Open in external apps
+
+On OpenCode Desktop, when connected to a local server, an **Open in** split button appears at the end of the side panel tab strip (or in the Review toolbar) and in the right-click context menu of file tree rows.
+
+- Click the primary button to open the current file or workspace in your last selected application.
+- Open the dropdown menu to switch applications or click **Copy path**.
+
+OpenCode detects installed applications on your machine automatically:
+
+| Platform | Detected applications |
+| --- | --- |
+| **macOS** | Finder, VS Code, Cursor, Zed, TextMate, Antigravity, Terminal, iTerm2, Ghostty, Warp, Xcode, Android Studio, Sublime Text |
+| **Windows** | File Explorer, VS Code, Cursor, Zed, PowerShell, Sublime Text |
+| **Linux** | File Manager, VS Code, Cursor, Zed, Sublime Text |

@@ -1,0 +1,45 @@
+---
+title: "WSL"
+description: "Run OpenCode servers inside Windows Subsystem for Linux distributions on Windows."
+---
+
+On Windows, the built-in `wsl` plugin discovers your installed Windows Subsystem for Linux (WSL 2) distributions, installs or updates the Linux `opencode` CLI inside them, and manages a dedicated background sidecar server per distribution.
+
+## Add a WSL server
+
+1. Open **Settings > Servers**, click **Add server**, and select **Add WSL server**.
+2. Select a distribution under **Installed distros** (your default WSL distribution is preselected).
+3. Click the primary action button (**Add WSL server**, **Install OpenCode**, or **Update OpenCode**).
+
+Once added, the distribution appears in your server list with a **WSL** badge and starts automatically whenever OpenCode Desktop launches.
+
+## Distribution statuses
+
+The **Add WSL server** dialog probes each distribution (`wsl --list --verbose`) and reports its readiness:
+
+| Status | Meaning |
+| --- | --- |
+| **Ready** | WSL 2 distribution with `bash`, `curl`, and a matching `~/.opencode/bin/opencode` binary installed. |
+| **OpenCode not installed** | Clicking **Install OpenCode** runs the official Linux installer inside the distribution for the current desktop version. |
+| **Update OpenCode** | An older `opencode` binary is installed. Clicking **Update OpenCode** stops any running server, updates the binary, and restarts it. |
+| **Missing bash, curl** | The distribution needs `bash` and `curl` installed before OpenCode can provision it. |
+| **Unsupported · Use WSL 2** | WSL 1 distributions are not supported; convert the distribution to WSL 2 (`wsl --set-version <distro> 2`). |
+| **Open `<distro>` once to finish setup.** | The distribution was just installed and needs its initial Linux user setup completed. |
+
+## Install WSL or a new Linux distribution
+
+If WSL is not installed on your Windows machine, the dialog displays **WSL not installed** with an **Install WSL** button that runs an elevated `wsl.exe --install --no-distribution` and prompts you to restart Windows when finished.
+
+To install a new Linux distribution without leaving OpenCode:
+
+1. In the **Add WSL server** dialog, click **Need another distro? — Install a Linux distribution from the WSL catalog**.
+2. Search the catalog with **Search distros** (for example `Ubuntu`, `Debian`, or `Arch`).
+3. Select a distribution and click **Install distro** (`wsl.exe --install -d <name> --web-download --no-launch`).
+
+## How the WSL sidecar runs
+
+For each configured distribution, OpenCode Desktop starts `opencode serve --hostname 0.0.0.0 --port <free-port>` inside the Linux environment with:
+
+- A generated per-session HTTP basic password.
+- Windows `/mnt/*` paths stripped from the Linux `PATH` so native Linux toolchains and Node/Bun binaries take precedence.
+- Automatic shutdown when the plugin is disabled or the desktop app quits.

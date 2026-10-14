@@ -15,19 +15,19 @@ const originalText = await Bun.file("package.json").text()
 const pkg = JSON.parse(originalText) as {
   name: string
   version: string
-  exports: Record<string, string>
+  exports: Record<string, string | { import: string; types: string }>
   imports: Record<string, Record<string, string>>
 }
 if (await published(pkg.name, pkg.version)) {
   console.log(`already published ${pkg.name}@${pkg.version}`)
 } else {
-  for (const [key, value] of Object.entries(pkg.exports)) {
-    const file = value.replace("./src/", "./dist/").replace(".ts", "")
-    // @ts-ignore
-    pkg.exports[key] = {
-      import: file + ".js",
-      types: file + ".d.ts",
-    }
+  pkg.exports = {
+    ...Object.fromEntries(
+      Object.entries(pkg.exports).map(([key, value]) => {
+        const file = String(value).replace("./src/", "./dist/").replace(".ts", "")
+        return [key, { import: file + ".js", types: file + ".d.ts" }]
+      }),
+    ),
   }
   pkg.imports = Object.fromEntries(
     Object.entries(pkg.imports).map(([key, conditions]) => [

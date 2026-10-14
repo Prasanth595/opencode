@@ -25,4 +25,8 @@ export const migrations = [
       "CREATE TABLE `extension_file` (\n\t`extension_id` text NOT NULL,\n\t`path` text NOT NULL,\n\t`data` blob NOT NULL,\n\tCONSTRAINT `extension_file_pk` PRIMARY KEY(`extension_id`, `path`)\n);",
     ],
   },
+  {
+    id: "20261013231314_drop-extension-files",
+    statements: ["DROP TABLE `extension_file`;"],
+  },
 ]

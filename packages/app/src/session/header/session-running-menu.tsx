@@ -1,4 +1,4 @@
-import type { BackgroundTask } from "@opencode/gui-extensions/sdk"
+import type { BackgroundTask } from "@opencode/plugin/gui"
 import { SessionProgressIndicatorV2 } from "@opencode/session-ui/v2/session-progress-indicator-v2"
 import { Icon } from "@opencode/ui/icon"
 import { IconButton } from "@opencode/ui/icon-button"

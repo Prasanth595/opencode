@@ -2,9 +2,9 @@ import { createResource, onCleanup, type JSX } from "solid-js"
 import { pluralCategory } from "@opencode/ui/context/i18n"
 import { useLanguage } from "@/runtime/i18n/language"
 import {
-  ExtensionContext,
+  PluginContext,
+  type App,
   type Appearance,
-  type Build,
   type Catalog,
   type Context,
   type Definition,
@@ -15,28 +15,25 @@ import {
   type Router,
   type Servers,
   type Workspaces,
-} from "../../gui-extensions/src/sdk"
+} from "../../plugin/src/gui/index"
 
-const definitions = import.meta.glob<Definition>(
-  ["../../gui-extensions/src/*/index.ts", "!../../gui-extensions/src/sdk/index.ts"],
-  { eager: true, import: "default" },
-)
-const styles = import.meta.glob<string>("../../gui-extensions/src/*/*.css", {
+const definitions = import.meta.glob<Definition>("../../gui-plugins/src/*/index.ts", { eager: true, import: "default" })
+const styles = import.meta.glob<string>("../../gui-plugins/src/*/*.css", {
   eager: true,
   query: "?inline",
   import: "default",
 })
 
 /**
- * Renders a story from `gui-extensions/src/<id>/` the way the host renders that extension's contributions: inside its
+ * Renders a story from `gui-plugins/src/<id>/` the way the host renders that extension's contributions: inside its
  * extension context and with its stylesheets. The extension's setup does not run; stories render its components.
  */
 export function ExtensionStory(props: { file: unknown; children: JSX.Element }) {
-  const id = typeof props.file === "string" ? props.file.match(/gui-extensions\/src\/([^/]+)\//)?.[1] : undefined
-  const definition = id ? definitions[`../../gui-extensions/src/${id}/index.ts`] : undefined
+  const id = typeof props.file === "string" ? props.file.match(/gui-plugins\/src\/([^/]+)\//)?.[1] : undefined
+  const definition = id ? definitions[`../../gui-plugins/src/${id}/index.ts`] : undefined
   if (!definition) return props.children
   Object.entries(styles)
-    .filter(([file]) => file.startsWith(`../../gui-extensions/src/${definition.id}/`))
+    .filter(([file]) => file.startsWith(`../../gui-plugins/src/${definition.id}/`))
     .forEach(([, css]) => {
       const sheet = document.createElement("style")
       sheet.textContent = css
@@ -45,7 +42,7 @@ export function ExtensionStory(props: { file: unknown; children: JSX.Element }) 
     })
   // Storybook renders a story only during the first synchronous render, so the context cannot wait for the async
   // extension host. It follows the host's rules: the extension's catalog first, then the app's shared keys.
-  return <ExtensionContext.Provider value={createStoryContext(definition)}>{props.children}</ExtensionContext.Provider>
+  return <PluginContext.Provider value={createStoryContext(definition)}>{props.children}</PluginContext.Provider>
 }
 
 function createStoryContext(definition: Definition) {
@@ -66,8 +63,10 @@ function createStoryContext(definition: Definition) {
     list: () => [],
     provide: unavailable("ctx.provide"),
     ...Object.fromEntries(Object.entries(apis).map(([name, create]) => [name, create()])),
-    // Stories render on the web, outside any route.
+    // Stories render built-ins on the web, outside any route: no plugin options or plugin server client.
     desktop: undefined,
+    options: {},
+    client: undefined,
     t: (key: string, params?: Params) => {
       const template = catalog.latest[key]
       if (template !== undefined) return resolveTemplate(template, params)
@@ -87,10 +86,10 @@ function createStoryContext(definition: Definition) {
   return context as unknown as Context
 }
 
-/** The host's build, locale, appearance, router, keybind, server and workspace APIs for a story, by context property. */
-export function createStoryHostApis(platform: Build["platform"]) {
+/** The host's app, locale, appearance, router, keybind, server and workspace APIs for a story, by context property. */
+export function createStoryHostApis(platform: App["platform"]) {
   const language = useLanguage()
-  const build: Build = { version: "", channel: "dev", platform, packaged: false }
+  const app: App = { name: "opencode", version: "", channel: "dev", platform, packaged: false }
   const locale: Locale = { locale: language.intl, direction: language.direction, setDirection: language.setDirection }
   const appearance: Appearance = { font: () => "var(--font-family-mono)" }
   const router: Router = { routing: () => false, path: () => "/" }
@@ -98,7 +97,7 @@ export function createStoryHostApis(platform: Build["platform"]) {
   const servers: Servers = { list: () => [], get: () => undefined }
   const workspaces: Workspaces = { on: () => () => {} }
   return {
-    build: () => build,
+    app: () => app,
     locale: () => locale,
     appearance: () => appearance,
     router: () => router,

@@ -331,12 +331,14 @@ it.live("discovers exported specifiers from the resolved tree even when dist/ ex
             ".": "./src/promise/index.ts",
             "./effect": "./src/effect/index.ts",
             "./effect/*": "./src/effect/*.ts",
+            "./gui/*": "./src/gui/*.ts",
           },
         }),
         "consumer/node_modules/@opencode/plugin/src/promise/index.ts": "export const root = 'src'",
         "consumer/node_modules/@opencode/plugin/src/effect/index.ts": "export * as plugin from './plugin.ts'",
         "consumer/node_modules/@opencode/plugin/src/effect/plugin.ts": "export const leaf = 'src'",
         "consumer/node_modules/@opencode/plugin/src/unexported.ts": "export const secret = true",
+        "consumer/node_modules/@opencode/plugin/src/gui/sdk/index.ts": "export const window = true",
         "consumer/node_modules/@opencode/plugin/dist/promise/index.js": "export const root = 'dist'",
         "consumer/node_modules/@opencode/plugin/dist/effect/index.js": "export const index = 'dist'",
         "consumer/node_modules/@opencode/plugin/dist/effect/plugin.js": "export const leaf = 'dist'",
@@ -349,6 +351,8 @@ it.live("discovers exported specifiers from the resolved tree even when dist/ ex
     expect(discovered.get("@opencode/plugin/effect")?.replaceAll("\\", "/")).toEndWith("src/effect/index.ts")
     expect(discovered.get("@opencode/plugin/effect/plugin")?.replaceAll("\\", "/")).toEndWith("src/effect/plugin.ts")
     expect(discovered.has("@opencode/plugin/unexported")).toBe(false)
+    // The GUI SDK runs in the app; the server and TUI runtime never load it.
+    expect([...discovered.keys()].filter((specifier) => specifier.startsWith("@opencode/plugin/gui"))).toEqual([])
 
     const hostDiscovered = discoverPluginRuntimeSpecifiers()
     expect(hostDiscovered.has("effect/schema/SchemaJITCompiler")).toBe(true)

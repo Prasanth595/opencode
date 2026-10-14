@@ -20,7 +20,7 @@ import {
   type SessionScreen,
   type PanelSidebar,
   type SessionPanelMenuItem,
-} from "@opencode/gui-extensions/sdk"
+} from "@opencode/plugin/gui"
 import { useCommand } from "@/shell/commands/command"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useLayout } from "@/shell/state/layout"

@@ -1,0 +1,79 @@
+---
+title: "Review"
+description: "Inspect uncommitted, branch, and turn diffs and attach line comments in the Review panel."
+---
+
+The built-in `review` plugin adds a pinned **Review** tab to the session side panel on desktop-width windows and a **Changes** tab on narrow screens. It tracks working-tree, branch, and per-turn changes and lets you leave inline comments that attach directly to the composer.
+
+## Open the Review panel
+
+In any session associated with a project, open the side region to view the pinned **Review** tab. When the workspace has modified files, the tab label updates to show the count:
+
+```text
+Files Changed 4
+```
+
+On narrow windows (under 768 px), switch to the **Changes** tab in the top view switcher to see all modified files in a single scrolling unified diff accordion.
+
+If the project does not have a Git repository yet, the Review panel shows **No tracked changes** with a **Create Git repository** button that initializes Git in the workspace.
+
+## Review modes
+
+Use the mode picker in the Review toolbar to switch which set of changes is compared:
+
+| Mode | Label | When available | What it compares |
+| --- | --- | --- | --- |
+| `git` | **Git changes** | Whenever the project has a VCS repository | Uncommitted working-tree changes |
+| `branch` | **Branch changes** | When the current branch differs from the default branch | Changes on the current branch vs. the default branch |
+| `turn` | **Last turn changes** | Git projects | Files modified during the latest assistant turn |
+
+When only one mode is available, the mode name is shown as a static label; when multiple modes apply, it renders as a dropdown menu.
+
+## Diff view controls
+
+The Review toolbar provides controls for navigating and formatting patches:
+
+- **Previous file / Next file**: Step through changed files with the toolbar buttons or press the **Left** and **Right** arrow keys (while focus is outside a text input).
+- **Unified diff / Split diff**: Toggle between inline unified diffs and side-by-side split diffs. Split diff is the default (`diffStyle: "split"`) and requests a wider side panel automatically.
+- **Show all lines / Hide non-diff lines**: Expand the full file or collapse unchanged context lines (`expandMode: "collapse"` by default).
+- **Open in**: On OpenCode Desktop with a local server, open the active file or workspace in your external editor or file manager (provided by the [`file` plugin](/desktop/files#open-in-external-apps)).
+
+## File tree and filtering
+
+Click **Toggle file tree** in the Review toolbar to open the inner sidebar shared with the `file` plugin.
+
+```text
+Filter files
+├── src/auth.ts          +18 -4
+├── src/new-feature.ts   Added
+└── src/legacy.ts        Deleted
+```
+
+Type in the **Filter files** input to fuzzy-search changed paths. Use the **Up** and **Down** arrow keys to move the highlight through matches and press **Enter** to focus that file's diff.
+
+## Line comments
+
+You can leave review comments on specific lines or line ranges in a diff and send them with your next prompt.
+
+1. Click or drag across line numbers on either the deletions or additions side of a diff hunk to open a comment editor.
+2. Type your feedback and click **Save**.
+3. OpenCode attaches a file comment chip to the session composer with the selected path, line range, diff side, and preview.
+
+Click an attached review chip in the composer at any time to reopen the Review panel and scroll directly to the commented lines. Use the comment's **More options** menu to **Edit** or **Delete** it before sending the prompt.
+
+## Automatic refresh
+
+The Review panel refreshes its diffs automatically when:
+
+- Files change on disk (debounced by 100 ms).
+- The window regains focus (in **Git changes** and **Branch changes** modes).
+- You open the side region.
+- The session finishes a turn and becomes idle.
+
+## Settings
+
+Under **Settings > Preferences** in the **General** section, the `review` plugin adds:
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| **Wrap lines** | Enabled (`true`) | Wrap long lines in mobile diffs instead of scrolling horizontally. |

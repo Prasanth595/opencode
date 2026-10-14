@@ -11,8 +11,6 @@ const LEVELS = { debug: "Debug", info: "Info", warn: "Warn", error: "Error" } as
 import { DesktopCli } from "../service/desktop-cli"
 import { DesktopStorage } from "../storage"
 import { setAppQuitting } from "../windows"
-import { setExtensionAssets } from "../windows/protocol"
-import { extensionAsset } from "./assets"
 import type { ExtensionHost } from "./host"
 
 /** The host once it loaded, and its load while one is in flight. */
@@ -46,8 +44,6 @@ export const layer = Layer.effect(
     const subscriptions = new Map<string, Set<number>>()
     const servers = new Map<number, readonly ExtensionEndpoint[]>()
     const current: LoadedHost = {}
-
-    setExtensionAssets((request, url) => extensionAsset(storage.db, request, url))
 
     // Disposes every extension but the caller (the host keeps it), then hands off (e.g. quitAndInstall) or relaunches.
     const restart = async (handoff?: () => void | Promise<void>) => {

@@ -31,7 +31,7 @@ import { SessionProgressIndicatorV2 } from "@opencode/session-ui/v2/session-prog
 import { RecentlyClosedTabsMenu } from "./recently-closed-tabs-menu"
 import { useSettingsDialog } from "@/settings/command"
 import { rootSession } from "@/shell/routes/session"
-import { TitlebarItem } from "@opencode/gui-extensions/sdk"
+import { TitlebarItem } from "@opencode/plugin/gui"
 import { useExtensionHost } from "@/runtime/extension/host"
 import { TitlebarItems, useTitlebarItems } from "@/runtime/extension/titlebar-items"
 import devIcon from "../../../../desktop/icons/dev/64x64.png"

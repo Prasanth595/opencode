@@ -28,7 +28,7 @@ import {
   type PanelTab,
   type MountedSession,
   type SessionScreen,
-} from "@opencode/gui-extensions/sdk"
+} from "@opencode/plugin/gui"
 import { same } from "@/runtime/persistence/equality"
 import { Persist, persisted } from "@/runtime/persistence/storage"
 import { Persistence } from "@/runtime/persistence/schema"

@@ -5,9 +5,6 @@ export const rendererProtocol = "oc"
 
 export const rendererHost = "renderer"
 
-/** Files of installed GUI extensions: `oc://extensions/<id>/<path>`. */
-export const extensionHost = "extensions"
-
 export function loadWindow(win: BrowserWindow, html: string) {
   const devUrl = process.env.ELECTRON_RENDERER_URL
 

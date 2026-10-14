@@ -16,7 +16,7 @@ import { useDialog } from "@opencode/ui/context/dialog"
 import { base64Encode } from "@opencode/util/encode"
 import {
   Panel,
-  type Build,
+  type App,
   type Layout,
   type MountedSession,
   type OpenOptions,
@@ -29,7 +29,7 @@ import {
   type StorageScope,
   type StoreFrom,
   type StoreOptions,
-} from "@opencode/gui-extensions/sdk"
+} from "@opencode/plugin/gui"
 import { usePlatform } from "@/runtime/platform/platform"
 import { same } from "@/runtime/persistence/equality"
 import { Persist, persisted, removePersisted } from "@/runtime/persistence/storage"
@@ -247,10 +247,11 @@ export function createHostApis() {
             forceFocus: (enabled) => platform.setForceFocus?.(enabled) ?? Promise.resolve(),
           }
         : undefined,
-    build: () => ({
+    app: () => ({
+      name: "opencode",
       version: platform.version ?? "",
       // SAFETY: the build sets VITE_OPENCODE_CHANNEL to one of the release channels, or leaves it unset locally.
-      channel: (import.meta.env.VITE_OPENCODE_CHANNEL ?? "local") as Build["channel"],
+      channel: (import.meta.env.VITE_OPENCODE_CHANNEL ?? "local") as App["channel"],
       platform: platform.platform,
       packaged: platform.extensions?.packaged ?? false,
     }),

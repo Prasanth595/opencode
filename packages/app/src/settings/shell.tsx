@@ -50,11 +50,9 @@ import { revealSettingsSearch } from "./search-reveal"
 import { ExtensionSettingsPages } from "@/runtime/extension/settings-page-view"
 import "@/settings/settings.css"
 
-const GuiExtensionsSettings = import.meta.env.DEV
-  ? lazy(() =>
-      import("@/runtime/extension/settings-page-dev").then((module) => ({ default: module.GuiExtensionsSettings })),
-    )
-  : undefined
+const PluginsSettings = lazy(() =>
+  import("@/runtime/extension/settings-plugins").then((module) => ({ default: module.PluginsSettings })),
+)
 
 const rootClientTabs = [
   { value: "general", icon: pageIcons.general, label: "settings.tab.preferences" },
@@ -75,9 +73,7 @@ const experimentalTab = [
   { value: "experimental", icon: pageIcons.experimental, label: "settings.tab.experimental" },
 ] as const
 
-const guiExtensionsTab = [
-  { value: "gui-extensions", icon: pageIcons["gui-extensions"], label: "settings.guiExtensions.title" },
-] as const
+const pluginsTab = [{ value: "plugins", icon: pageIcons.plugins, label: "settings.plugins.title" }] as const
 
 const aboutTab = [{ value: "about", icon: pageIcons.about, label: "settings.tab.about" }] as const
 
@@ -266,8 +262,7 @@ function RootSettings() {
   })
 
   const sourceDirectory = useSettingsDirectory(sourceServer)
-  // Development builds list the built-in GUI extensions of this window.
-  const guiExtensions = !!GuiExtensionsSettings && platform.platform === "desktop"
+  const showPlugins = platform.platform === "desktop"
   createEffect(() => {
     const view = surface.view()
 
@@ -275,7 +270,7 @@ function RootSettings() {
 
     if (view.tab === "experimental" && !experimentalSettingsAvailable) surface.open("general")
 
-    if (view.tab === "gui-extensions" && !guiExtensions) surface.open("general")
+    if (view.tab === "plugins" && !showPlugins) surface.open("general")
   })
 
   const addServer = () =>
@@ -322,7 +317,7 @@ function RootSettings() {
     ...(experimentalSettingsAvailable
       ? [{ items: experimentalTab.map((item) => ({ ...item, label: language.t(item.label) })) }]
       : []),
-    ...(guiExtensions ? [{ items: guiExtensionsTab.map((item) => ({ ...item, label: language.t(item.label) })) }] : []),
+    ...(showPlugins ? [{ items: pluginsTab.map((item) => ({ ...item, label: language.t(item.label) })) }] : []),
     { items: aboutTab.map((item) => ({ ...item, label: language.t(item.label) })) },
   ])
 
@@ -371,10 +366,10 @@ function RootSettings() {
       <Tabs.Content value="experimental" class="settings-panel">
         <SettingsExperimental />
       </Tabs.Content>
-      {GuiExtensionsSettings && guiExtensions && (
-        <Tabs.Content value="gui-extensions" class="settings-panel">
+      {showPlugins && (
+        <Tabs.Content value="plugins" class="settings-panel">
           <Suspense>
-            <GuiExtensionsSettings />
+            <PluginsSettings />
           </Suspense>
         </Tabs.Content>
       )}

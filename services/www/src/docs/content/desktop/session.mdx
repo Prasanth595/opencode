@@ -1,0 +1,70 @@
+---
+title: "Session & Context"
+description: "Inspect context token usage, manage project worktrees and server extensions, ask side questions, and view provider latency metrics."
+---
+
+Four built-in plugins add session inspection, quick side questions, and live performance diagnostics to the conversation view: `context`, `details`, `btw`, and `debug`.
+
+## Context usage (`context`)
+
+The `context` plugin renders a live circular progress indicator in the session header showing how much of the model's context window is currently filled.
+
+- **Hover** over the progress ring to see a tooltip with **Cost** (USD), **Context** (%), and **Tokens**.
+- **Click** the ring (or open **More > Usage** on narrow screens) to toggle the **Context** tab in the side panel.
+
+### Context tab
+
+The **Context** tab displays a full breakdown of the session:
+
+- **Stats grid**: Session ID, Messages, Provider, Model, Context Limit, Total Tokens, Usage %, Input Tokens, Output Tokens, Reasoning Tokens, Cache Tokens (read/write), User Messages, Assistant Messages, Total Cost, Session Created, and Last Activity.
+- **System Prompt**: The latest assembled system instructions rendered as Markdown.
+- **Raw messages**: An expandable accordion containing the raw JSON payload of every message in the session.
+- **Export session**: Fetches the complete session transcript and saves it as `<title-slug>.json` (via a native save dialog on Desktop or a browser download on Web).
+
+## Session details (`details`)
+
+Press **Cmd+Shift+Y** / **Ctrl+Shift+Y** or click the **Summary** button in the session header to open the **Session details** popover (or **More > Session details** on narrow screens).
+
+### Project and worktree card
+
+The top card shows the session's repository, branch, and working-tree status:
+
+- **Workspace**: Shows **Local repository** or the active Git worktree name. Open the **Move session to** menu to move an idle session between **Local repository**, **New worktree**, or any existing worktree on disk.
+- **Branch**: Displays the current branch and its base branch.
+- **Changes**: Shows the uncommitted file count and `+`/`-` line counts. Clicking the row opens the [Review panel](/desktop/review).
+
+When you have uncommitted changes in a session running directly in the local repository, a banner offers a one-click **Move to worktree** action.
+
+### Server extensions card
+
+The second card lists the active server's runtime extensions for the session's workspace:
+
+- **MCP**: Lists configured [MCP servers](/mcp-servers) with live status (`Connecting…`, `Failed`, `Sign in required`) and an enable/disable switch per server.
+- **Plugins**: Lists active server [plugins](/plugins).
+- **Skills**: Lists discovered [skills](/skills).
+- **LSP**: Lists active Language Server Protocol clients.
+
+On OpenCode Desktop with a local server, the **Configuration file** link at the bottom of each popover reveals your `opencode.json` in the system file manager.
+
+## Side questions (`btw`)
+
+The `btw` plugin adds the `/btw` slash command to the composer so you can ask a one-shot question about the current session without adding messages to the conversation transcript.
+
+```text
+/btw why did we choose a WeakMap in host.tsx?
+```
+
+- Each `/btw <question>` opens a dedicated tab in the session side panel labeled with the question.
+- OpenCode calls `session.generate` against the current session context with tools disabled, so the model answers concisely in Markdown without mutating history or running tools.
+- Click the copy button in the tab header (**Copy answer**) to copy the Markdown response, or close the tab to discard the side question.
+
+## Provider performance bar (`debug`)
+
+Run **Toggle debug bar** (`debug.toggle`) from the command palette to show or hide a metrics strip at the bottom of the window. On development builds, you can also click the channel badge in the titlebar.
+
+| Metric | Description |
+| --- | --- |
+| **TPS** | Output tokens per second after the first model output. |
+| **TTFT** | Time from provider request dispatch to the first model output. |
+| **TTFA** | Time from provider request dispatch to the first answer text. |
+| **E2E** | Time from provider request dispatch until its response stream ended. |

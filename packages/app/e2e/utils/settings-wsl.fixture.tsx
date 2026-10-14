@@ -2,9 +2,9 @@ import { MemoryRouter, createMemoryHistory } from "@solidjs/router"
 import { createMemo, Show } from "solid-js"
 import { createStore, unwrap } from "solid-js/store"
 import { render } from "solid-js/web"
-import type { Bridge, BridgeMessage } from "@opencode/gui-extensions/sdk/bridge"
-import type { SshItem, SshState } from "../../../gui-extensions/src/ssh/contract"
-import type { WslServerRuntime, WslServersState } from "../../../gui-extensions/src/wsl/contract"
+import type { Bridge, BridgeMessage } from "@opencode/plugin/gui/host"
+import type { SshItem, SshState } from "../../../gui-plugins/src/ssh/contract"
+import type { WslServerRuntime, WslServersState } from "../../../gui-plugins/src/wsl/contract"
 import { AppBaseProviders, AppInterface } from "../../src/app"
 import { PlatformProvider, type Platform } from "../../src/runtime/platform/platform"
 import { ServerConnection } from "../../src/runtime/server/registry"
@@ -202,15 +202,12 @@ export function mount(input: {
       capture: async () => undefined,
       runMenubarItem: () => undefined,
       configure: () => undefined,
+      pluginsChanged: () => undefined,
       manager: {
         list: async () => [],
         enable: async () => undefined,
         disable: async () => undefined,
         reload: async () => undefined,
-        install: async () => undefined,
-        remove: async () => undefined,
-        source: async () => "",
-        asset: () => "",
       },
     }
 

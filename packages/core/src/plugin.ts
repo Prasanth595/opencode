@@ -1,6 +1,8 @@
 export * as Plugin from "./plugin.js"
-export { Event, ID, Info, Source, State } from "@opencode/schema/plugin"
+export { Event, GuiBundle, ID, Info, Source, State } from "@opencode/schema/plugin"
 
+import { readFile } from "node:fs/promises"
+import { fileURLToPath } from "node:url"
 import { Plugin } from "@opencode/schema/plugin"
 import { Node } from "@opencode/util/effect/app-node"
 import { LayerNode } from "@opencode/util/effect/layer-node"
@@ -42,6 +44,13 @@ const layer = Layer.effect(
     let inventory: Plugin.Info[] = []
     const list = Effect.fn("Plugin.list")(function* () {
       return inventory
+    })
+    const gui = Effect.fn("Plugin.gui")(function* (id: Plugin.ID) {
+      const gui = active.get(id)?.plugin.gui
+      if (!gui) return undefined
+      // A plugin that resolved a `./gui` file but cannot read it now is a server fault, not a missing bundle.
+      const code = yield* Effect.promise(() => readFile(fileURLToPath(gui.file), "utf8"))
+      return { code, revision: gui.revision, options: gui.options } satisfies Plugin.GuiBundle
     })
     const host = yield* PluginHost.make({ list })
     const load = Effect.fnUntraced(function* (plugin: Generation) {
@@ -105,6 +114,10 @@ const layer = Layer.effect(
               if (closed) return
               discovered = failures
               const current = Array.from(active.values())
+              // A changed `./gui` bundle alone restarts nothing here; the event tells the app to reload it.
+              const guiChanged = definitions.some(
+                (definition) => active.get(definition.id)?.plugin.gui?.revision !== definition.gui?.revision,
+              )
               const changed = definitions.findIndex((definition, index) => {
                 const entry = current[index]
                 return entry?.plugin.id !== definition.id || entry.plugin.revision !== definition.revision
@@ -116,7 +129,7 @@ const layer = Layer.effect(
               }
               if (prefix === definitions.length && active.size === definitions.length) {
                 const nextInventory = [...Array.from(active.values()).map(slotInfo), ...failures]
-                if (JSON.stringify(inventory) === JSON.stringify(nextInventory)) return
+                if (!guiChanged && JSON.stringify(inventory) === JSON.stringify(nextInventory)) return
                 inventory = nextInventory
                 yield* bus.publish(Plugin.Event.Updated, {})
                 return
@@ -253,6 +266,7 @@ const layer = Layer.effect(
       awaitActivation: ready.await,
       hold,
       list,
+      gui,
     })
   }),
 )

@@ -28,22 +28,12 @@ export const state = sqliteTable(
   (table) => [primaryKey({ columns: [table.name, table.key] })],
 )
 
-// GUI extensions. Installed archives carry their manifest and a revision that changes on every
-// install or reload; built-ins get a row only once their enable state changes.
+// GUI plugin enable state, for built-in and plugin GUIs alike. A plugin gets a row only once its
+// enable state changes. `manifest` and `revision` are unused; they stay because 2.0.24 to 2.0.27
+// still read them, so a downgraded app can open this database.
 export const extension = sqliteTable("extension", {
   id: text().primaryKey(),
   enabled: integer({ mode: "boolean" }).notNull().default(true),
   manifest: text(),
   revision: text(),
 })
-
-// Every file of an installed archive, keyed by its archive path.
-export const extensionFile = sqliteTable(
-  "extension_file",
-  {
-    extension_id: text().notNull(),
-    path: text().notNull(),
-    data: blob({ mode: "buffer" }).notNull(),
-  },
-  (table) => [primaryKey({ columns: [table.extension_id, table.path] })],
-)

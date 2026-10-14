@@ -1,4 +1,4 @@
-import type { SettingsPage } from "@opencode/gui-extensions/sdk"
+import type { SettingsPage } from "@opencode/plugin/gui"
 import type { useLanguage } from "@/runtime/i18n/language"
 import type { LocalProject } from "@/shell/state/layout"
 import { displayName } from "@opencode/ui/project-avatar"

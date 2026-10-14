@@ -4,5 +4,7 @@
   "compilerOptions": {
     "allowImportingTsExtensions": false,
     "noEmit": false
-  }
+  },
+  // Type-level contract files check the SDK's types; they are not part of the package.
+  "exclude": ["src/**/*.typecheck.ts"]
 }

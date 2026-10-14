@@ -8,8 +8,8 @@ import type {
   PanelTab,
   SessionRef,
   SessionScreen,
-} from "@opencode/gui-extensions/sdk"
-import type { Bridge, BridgeMessage, EnableState, Installed } from "@opencode/gui-extensions/sdk/bridge"
+} from "@opencode/plugin/gui"
+import type { Bridge, BridgeMessage, EnableState, Installed } from "@opencode/plugin/gui/host"
 import { expect, sourceURL, story } from "../../storybook/playwright/story"
 
 const fixture = sourceURL(new URL("./extension-host.fixture.tsx", import.meta.url))
@@ -573,6 +573,61 @@ story("a contribution that throws renders nothing and records the error; the oth
   })
 })
 
+story("plugin GUIs join, hot-reload in place, run their returned cleanup and leave, without holding startup", async ({ page }) => {
+  const result = await page.evaluate(async (fixture) => {
+    const { mountExtensions, until } = await import(fixture)
+    const builtinLoad = Promise.withResolvers<void>()
+    const log: string[] = []
+
+    // Each setup returns its cleanup, as a server or TUI plugin's setup does.
+    const entry = (name: string) => async () => ({
+      default: () => {
+        log.push(`setup ${name}`)
+
+        return () => void log.push(`cleanup ${name}`)
+      },
+    })
+
+    const builtin = {
+      id: "builtin",
+      renderer: async () => {
+        await builtinLoad.promise
+
+        return entry("builtin")()
+      },
+    }
+
+    const host = mountExtensions({ definitions: [builtin] })
+    // A plugin that joins before the built-ins settle, and never loads, must not hold the app's first render.
+    host.define([builtin, { id: "stuck", renderer: () => new Promise<never>(() => {}) }])
+    builtinLoad.resolve()
+    await until(() => host.ready())
+    const startup = { ready: host.ready(), stuck: host.status("stuck") }
+
+    host.define([builtin, { id: "acme", renderer: entry("acme 1") }])
+    await until(() => host.status("acme") === "active")
+    // A new revision of the plugin's bundle is a new definition under the same id.
+    host.define([builtin, { id: "acme", renderer: entry("acme 2") }])
+    await until(() => log.includes("setup acme 2"))
+    const reloaded = [...log]
+
+    host.define([builtin])
+    await until(() => log.includes("cleanup acme 2"))
+    const outcome = { startup, reloaded, log: [...log], gone: host.status("acme") ?? "none" }
+
+    host.unmount()
+
+    return outcome
+  }, fixture)
+
+  expect(result).toEqual({
+    startup: { ready: true, stuck: "loading" },
+    reloaded: ["setup builtin", "setup acme 1", "cleanup acme 1", "setup acme 2"],
+    log: ["setup builtin", "setup acme 1", "cleanup acme 1", "setup acme 2", "cleanup acme 2"],
+    gone: "none",
+  })
+})
+
 story("an extension that requires a contract starts once it is active and restarts with it", async ({ page }) => {
   const result = await page.evaluate(async (fixture) => {
     const { mountExtensions, until, Contract, onCleanup } = await import(fixture)
@@ -652,7 +707,7 @@ story("an extension that requires a contract starts once it is active and restar
 
 story("a contract component reads its provider context and preserves reactive props", async ({ page }) => {
   const result = await page.evaluate(async (fixture) => {
-    const { bindExtension, createComponent, createSignal, Contract, mountExtensions, Slot, until, useExtension } =
+    const { bindPlugin, createComponent, createSignal, Contract, mountExtensions, Slot, until, usePlugin } =
       await import(fixture)
 
     const View: Contract<{ View: Component<{ readonly label: string }> }, "provider.view"> =
@@ -668,8 +723,8 @@ story("a contract component reads its provider context and preserves reactive pr
           renderer: async () => ({
             default: (ctx: Context) => {
               ctx.provide(View, {
-                View: bindExtension((props: { readonly label: string }) => {
-                  observed.context = useExtension().id
+                View: bindPlugin((props: { readonly label: string }) => {
+                  observed.context = usePlugin().id
                   observed.read = () => props.label
                   observed.mounts++
 
@@ -729,7 +784,7 @@ story("developer settings show a blocked hard dependency instead of loading fore
 
     await until(() => !!host.container.textContent?.includes("consumer"))
   }, fixture)
-  const settings = page.getByRole("region", { name: "Extensions", exact: true })
+  const settings = page.getByRole("region", { name: "Plugins", exact: true })
   await settings.screenshot({ path: info.outputPath("requires-status.png") })
   await expect(settings.getByText("Blocked", { exact: true })).toBeVisible()
   await expect(settings.getByText("Loading", { exact: true })).toHaveCount(0)
@@ -930,22 +985,19 @@ story("startup enable state does not wait for the manager, and live updates beat
       capture: async () => undefined,
       runMenubarItem() {},
       configure() {},
+      pluginsChanged() {},
       manager: {
         initial: initial.promise,
         list: () => reply.promise,
         enable: async () => {},
         disable: async () => {},
         reload: async () => {},
-        install: async () => {},
-        remove: async () => {},
-        source: async () => "",
-        asset: () => "",
       },
     }
 
     const host = mountExtensions({
       bridge,
-      // The consumer comes first; the provider's old-id setting arrives asynchronously from the preload.
+      // The consumer comes first; the provider's setting arrives asynchronously from the preload.
       definitions: [
         {
           id: "dependent",
@@ -970,7 +1022,6 @@ story("startup enable state does not wait for the manager, and live updates beat
         },
         {
           id: "disabled",
-          legacy: ["previous"],
           provides: { value: Provider },
           renderer: async () => ({
             default: (ctx: Context) => {
@@ -984,7 +1035,7 @@ story("startup enable state does not wait for the manager, and live updates beat
 
     await new Promise((resolve) => setTimeout(resolve, 50))
     const before = [...setups]
-    initial.resolve([{ id: "previous", enabled: false }])
+    initial.resolve([{ id: "disabled", enabled: false }])
     await until(() => host.ready())
 
     const started = {

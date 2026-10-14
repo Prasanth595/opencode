@@ -2,11 +2,13 @@ export * as PluginModule from "./module.js"
 
 import type { Plugin } from "@opencode/plugin/effect/plugin"
 import { Host } from "@opencode/plugin/host"
+import { GuiBundle } from "@opencode/schema/plugin"
 import { createPluginSources } from "@opencode/plugin/source"
+import { Hash } from "@opencode/util/hash"
 import { Npm } from "@opencode/util/npm"
 import { Deferred, Effect, FiberSet, PubSub, Schema, Stream } from "effect"
 import path from "path"
-import { stat } from "node:fs/promises"
+import { readFile, stat } from "node:fs/promises"
 import { fileURLToPath, pathToFileURL } from "url"
 import type { ConfigPluginSource } from "../config/plugin/source.js"
 import type { Generation } from "../plugin.js"
@@ -57,7 +59,7 @@ export const make = Effect.fn("PluginModule.make")(function* () {
           ) === "deny"
         )
           return { blocked: true as const }
-        return yield* load(operation, sources, options)
+        return yield* load(operation, sources, watch, options)
       }),
     changes: () => Stream.fromPubSub(changes),
   }
@@ -74,6 +76,8 @@ function watchTarget(file: string): Promise<Watcher.WatchInput> {
     },
   )
 }
+
+const GuiOptions = GuiBundle.fields.options
 
 const Module = Schema.Struct({
   default: Schema.Union([
@@ -98,6 +102,7 @@ export class LoadError extends Schema.TaggedError<LoadError>()("PluginModule.Loa
 const load = Effect.fn("PluginModule.load")(function* (
   operation: Extract<ConfigPluginSource.Operation, { type: "add" }>,
   sources: ReturnType<typeof createPluginSources>,
+  watch: (file: string) => Effect.Effect<void>,
   options?: { readonly install?: boolean },
 ) {
   const local = path.isAbsolute(operation.target)
@@ -132,13 +137,30 @@ const load = Effect.fn("PluginModule.load")(function* (
     ),
   )).default
   const plugin = "effect" in value ? value : PluginPromise.fromPromise(value)
+  const revision = JSON.stringify([operation, loaded.version])
+  // A local plugin's `./gui` bundle is outside the server entry's import graph: watch it, and let its content change the
+  // GUI's revision, so an edit reloads the GUI like a server or TUI edit reloads theirs. A package's bundle changes only
+  // with its installed version. The GUI's revision is a hash: windows receive it, and the operation holds the options.
+  const gui = local && entrypoints.gui ? fileURLToPath(entrypoints.gui) : undefined
+  if (gui) yield* watch(gui)
+  const bundle = gui ? Hash.sha256(yield* Effect.promise(() => readFile(gui))) : undefined
+  // The GUI receives the same options as the server entry; they cross to the app, so they must be JSON.
+  const guiOptions = entrypoints.gui
+    ? yield* Schema.decodeUnknownEffect(GuiOptions)(operation.options).pipe(
+        Effect.mapError((cause) => new LoadError({ message: "Plugin options must be JSON to reach its ./gui", cause })),
+      )
+    : {}
   return {
     id: plugin.id,
     features: {
       ...(entrypoints.tui ? { tui: true as const } : {}),
       ...(entrypoints.rpc ? { rpc: true as const } : {}),
+      ...(entrypoints.gui ? { gui: true as const } : {}),
     },
-    revision: JSON.stringify([operation, loaded.version]),
+    gui: entrypoints.gui
+      ? { file: entrypoints.gui, revision: Hash.sha256(JSON.stringify([revision, bundle])), options: guiOptions }
+      : undefined,
+    revision,
     source: path.isAbsolute(operation.target)
       ? { type: "local" as const, path: fileURLToPath(entrypoint) }
       : {

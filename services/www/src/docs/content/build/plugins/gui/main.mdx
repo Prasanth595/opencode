@@ -1,0 +1,235 @@
+---
+title: "Main process & IPC"
+description: "Write a plugin's Electron main-process setup, provide typed IPC contracts, add native menu items, and embed WebContentsViews."
+---
+
+On OpenCode Desktop, a plugin's `main` setup runs once in the Electron main process as an application-wide singleton. It has full access to Node.js built-ins, `electron`, and the main host APIs. Pass it to `Plugin.define` in the plugin's [`./gui` file](/build/plugins/gui/package#define-the-gui), beside the window `setup` or on its own.
+
+```tsx title="src/gui.tsx"
+import { Schema } from "effect"
+import { powerSaveBlocker } from "electron"
+import { Plugin, Store } from "@opencode/plugin/gui"
+import { KeepAwake } from "./gui/contract"
+
+export default Plugin.define({
+  id: "acme",
+  provides: { awake: KeepAwake },
+  stores: { keepScreenActive: Store.main(Schema.Boolean, false) },
+  main(ctx) {
+    const stored = ctx.stores.keepScreenActive
+    let blockerId: number | undefined
+
+    const release = () => {
+      if (blockerId === undefined) return
+      powerSaveBlocker.stop(blockerId)
+      blockerId = undefined
+    }
+
+    const setActive = (enabled: boolean) => {
+      if (enabled && blockerId === undefined) blockerId = powerSaveBlocker.start("prevent-display-sleep")
+      if (!enabled) release()
+      stored.set(enabled)
+    }
+
+    if (stored.value) setActive(true)
+
+    ctx.provide(KeepAwake, {
+      screenActive: () => blockerId !== undefined && powerSaveBlocker.isStarted(blockerId),
+      setScreenActive: (enabled) => setActive(enabled),
+    })
+
+    return release
+  },
+})
+```
+
+In a window, `electron` is an inert placeholder, so the import is safe in the shared `./gui` file. See [One file, two processes](/build/plugins/gui/package#one-file-two-processes).
+
+## Main setup in its own file
+
+In a larger plugin, move `main` to its own file and type it from the plugin's declarations:
+
+```ts title="src/gui/main.ts"
+import type { Plugin } from "@opencode/plugin/gui"
+import type { definition } from "./definition"
+
+export const main: Plugin.MainSetup<typeof definition> = async (ctx) => {
+  const socket = await connect(ctx.options)
+  return () => socket.close()
+}
+```
+
+Then define the plugin with it: `Plugin.define({ ...definition, setup, main })`. See [Split across files](/build/plugins/gui/package#split-across-files).
+
+## Main context (`MainContext`)
+
+`main` receives a `MainContext`. Unlike window `setup`, `main` **may be `async`**, and it may return, or resolve to, a cleanup function.
+
+| Property | Description |
+| --- | --- |
+| `ctx.options` | The plugin's options from its `opencode.json(c)` entry, the same object the server half gets. Empty for built-in plugins. |
+| `ctx.client` | The OpenCode client of the desktop app's own server, which runs the plugin. Call your server half with `ctx.client?.rpc(AcmeRpc)`. `undefined` for built-in plugins; read it where you call it, because it changes after that server restarts. |
+| `ctx.stores` | Every store declared with `Store.main(schema, initial, from?)` in `Plugin.define`. Loaded synchronously before `main` runs; each `set` or `update` commits to SQLite immediately. |
+| `ctx.storage` | Synchronous SQLite storage for runtime keys: `ctx.storage.store(key, { schema, initial, from? })` and `ctx.storage.remove(key)`. |
+| `ctx.scope` | The instance's lifetime (`signal`, `addFinalizer(fn)`, `fork(label)`, `close()`). Finalizers may return a `Promise`; the host waits up to 3 seconds during teardown. |
+| `ctx.provide` | Registers the implementation of an `Ipc` token declared in `provides`. Returns an `IpcProvider` (`changed(window?)`, `emit(name, data, window?)`, `dispose()`). |
+| `ctx.add` | Contributes items to main-process registries such as `MenubarItem`. |
+| `ctx.windows` | Inspect open desktop `BrowserWindow` instances (`get(id)`, `list()`, `focused()`) and listen to `on("open" \| "close", handler)`. |
+| `ctx.embeds` | `create(webContentsView, browserWindow)` to place an Electron `WebContentsView` into a window's layout. |
+| `ctx.serverEndpoints` | `get(serverId)` returns `{ id, url, headers, local, username?, password? }` (use `"sidecar"` for the desktop's built-in server). |
+| `ctx.cli` | Metadata for the OpenCode CLI binary the desktop app runs (`{ version, command, binary?, development }`). |
+| `ctx.lifecycle` | `restart(handoff?, { keep: ctx.scope })` disposes all other plugins and runs `handoff` (or relaunches the app) while keeping the caller alive until `handoff` settles. |
+| `ctx.log` | Writes structured entries to the desktop log file: `ctx.log.write("info" \| "warn" \| "error" \| "debug", message, data?)`. |
+| `ctx.app` | `{ version, channel, platform: "desktop", packaged }`, like `ctx.app` in server and TUI plugins. |
+
+## Define and provide an `Ipc`
+
+An `Ipc` spec can declare per-window `state`, callable `methods`, and server-pushed `events`. Every value that crosses the bridge is validated and encoded by Effect `Schema`.
+
+```ts title="src/gui/contract.ts"
+import { Schema } from "effect"
+import { Ipc } from "@opencode/plugin/gui"
+
+export const Counter = Ipc.define({
+  id: "acme.counter",
+  state: Schema.Struct({ count: Schema.Number }),
+  methods: {
+    increment: {
+      input: Schema.Number,
+      output: Schema.Number,
+    },
+    reset: {},
+  },
+  events: {
+    overflow: Schema.Struct({ limit: Schema.Number }),
+  },
+})
+```
+
+Declare the `Ipc` in `provides`, so `main` can provide it and `setup` can use it:
+
+```ts title="src/gui/definition.ts"
+import { Plugin } from "@opencode/plugin/gui"
+import { Counter } from "./contract"
+
+export const definition = Plugin.define({ id: "acme", provides: { counter: Counter } })
+```
+
+### Implement the provider in `main`
+
+Each method receives the decoded input and a `Caller` (`{ window: number, signal: AbortSignal }`). Call `provider.changed(window?)` whenever `state` changes to push the updated snapshot to subscribed windows, or `provider.emit(name, payload, window?)` to broadcast an event.
+
+```ts title="src/gui/main.ts"
+import type { Plugin } from "@opencode/plugin/gui"
+import { Counter } from "./contract"
+import type { definition } from "./definition"
+
+export const main: Plugin.MainSetup<typeof definition> = (ctx) => {
+  const counts = new Map<number, number>()
+
+  const provider = ctx.provide(Counter, {
+    state: (window) => ({ count: counts.get(window) ?? 0 }),
+    increment: (step, caller) => {
+      const next = (counts.get(caller.window) ?? 0) + step
+      counts.set(caller.window, next)
+      provider.changed(caller.window)
+
+      if (next > 100) provider.emit("overflow", { limit: 100 }, caller.window)
+      return next
+    },
+    reset: (_input, caller) => {
+      counts.set(caller.window, 0)
+      provider.changed(caller.window)
+    },
+  })
+}
+```
+
+### Consume the `Ipc` in `setup`
+
+In the window, `ctx.uses.counter()` resolves to a `Live<IpcClient<typeof Counter.spec>>`. Methods without an `input` schema take only optional `{ signal }` call options—never pass `undefined` as a first argument.
+
+```tsx title="src/gui/renderer.tsx"
+import { createKeyed, Command, type Plugin } from "@opencode/plugin/gui"
+import type { definition } from "./definition"
+
+export const setup: Plugin.Setup<typeof definition> = (ctx) => {
+  const counter = ctx.uses.counter
+
+  createKeyed(counter, (client) => {
+    // Listener is automatically removed when main restarts or the plugin unloads
+    client.on("overflow", ({ limit }) => {
+      console.log(`Counter exceeded ${limit}`)
+    })
+  })
+
+  ctx.add(Command, {
+    id: "increment",
+    title: "Increment counter",
+    get enabled() {
+      return counter().status === "active"
+    },
+    run: async () => {
+      const live = counter()
+      if (live.status !== "active") return
+      await live.value.increment(1, { signal: ctx.signal })
+      await live.value.reset({ signal: ctx.signal })
+    },
+  })
+}
+```
+
+Define the plugin with both setups in `src/gui.tsx`: `Plugin.define({ ...definition, setup, main })`.
+
+### Lazy-loading IPC schemas (`Ipc.ref`)
+
+If your `Ipc` has a large schema that should not be parsed on the window startup path, declare a schema-free reference with `Ipc.ref` in the definition and load the full token later from a lazy chunk:
+
+```ts title="src/gui/definition.ts"
+import { Ipc, Plugin } from "@opencode/plugin/gui"
+import type { AcmePane } from "./ipc"
+
+const Pane = Ipc.ref<typeof AcmePane>("acme.pane")
+
+export const definition = Plugin.define({
+  id: "acme",
+  provides: { pane: Pane },
+})
+```
+
+```ts title="src/gui/model.ts"
+import { AcmePane } from "./ipc"
+
+// Resolves the reference once this lazy module loads
+const pane = ctx.uses.pane.load(AcmePane)
+```
+
+## Native application menu (`MenubarItem`)
+
+`main` can add items to the native OS menubar (macOS app menu, File, Edit, View, Go, Window, Help) and the in-app menu on Windows and Linux:
+
+```ts
+import { MenubarItem } from "@opencode/plugin/gui/main"
+
+ctx.add(MenubarItem, {
+  menu: "help",
+  id: "diagnostics",
+  after: "about",
+  get label() {
+    return ctx.t("menu.diagnostics")
+  },
+  enabled: () => true,
+  run: (focusedWindow) => {
+    focusedWindow?.webContents.focus()
+  },
+})
+```
+
+## Embedded web views (`ctx.embeds`)
+
+To embed an isolated `WebContentsView` inside a panel (like the built-in `browser` plugin does):
+
+1. Create the view in `main` with `const embed = ctx.embeds.create(view, win)` and pass `embed.id` to the window over your `Ipc`.
+2. Render `<ctx.embeds.View id={embedId} visible={ true } radius={8} />` from `setup`.
+
+The host automatically synchronizes element bounds, DPI zoom, rounded-corner masking, dialog occlusion, and still-frame capture (`frozen={true}`) across the process boundary.

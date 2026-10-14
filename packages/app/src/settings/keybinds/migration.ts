@@ -3,8 +3,8 @@ import { Predicate } from "effect"
 import type { useSettings } from "@/settings/model"
 
 /**
- * Stored custom keybinds of commands that built-in GUI extensions now publish under another id. Each old id maps to
- * the current one, and a newer old id comes first, so its override wins over an older one.
+ * Stored custom keybinds of app commands from before plugins that built-in GUI plugins now publish under another id.
+ * Each old id maps to the current one.
  */
 export const keybindRenames = {
   "app.checkForUpdates": "updater.check",
@@ -12,8 +12,6 @@ export const keybindRenames = {
   "server.ssh.add": "ssh.add",
   "debugBar.toggle": "debug.toggle",
   "session.btw": "btw.ask",
-  // The details extension's earlier id, then the command before extensions.
-  "summary.toggle": "details.toggle",
   "session.summary.toggle": "details.toggle",
 } satisfies Readonly<Record<string, string>>
 

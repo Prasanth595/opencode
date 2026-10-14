@@ -3,7 +3,7 @@ import { expect, sourceURL, story } from "../../storybook/playwright/story"
 const source = (path: string) => sourceURL(new URL(path, import.meta.url))
 
 const modules = {
-  fixture: source("../../gui-extensions/src/browser/panel.fixture.tsx"),
+  fixture: source("../../gui-plugins/src/browser/panel.fixture.tsx"),
   embeds: source("../src/runtime/extension/embeds.tsx"),
   language: source("../src/runtime/i18n/language.tsx"),
 }

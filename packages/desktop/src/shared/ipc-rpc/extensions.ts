@@ -20,15 +20,7 @@ export const ExtensionErrorCode = Schema.Literals([
   "failed",
   // The extension manager.
   "notFound",
-  "builtin",
-  "reserved",
-  "invalidArchive",
-  "invalidManifest",
-  "invalidPath",
   "invalidModule",
-  "tooLarge",
-  "download",
-  "url",
 ])
 
 export type ExtensionErrorCode = typeof ExtensionErrorCode.Type
@@ -67,11 +59,8 @@ export type ExtensionEndpoint = typeof ExtensionEndpoint.Type
 
 export const ExtensionInstalled = Schema.Struct({
   id: Schema.String,
-  name: Schema.String,
-  version: Schema.String,
   builtin: Schema.Boolean,
   enabled: Schema.Boolean,
-  revision: Schema.optionalKey(Schema.String),
   error: Schema.optionalKey(Schema.String),
 })
 
@@ -102,14 +91,10 @@ export const ExtensionRpcs = RpcGroup.make(
   Rpc.make("ExtensionMenubarItem", { payload: { id } }),
   Rpc.make("ExtensionMenubarItems", { success: Schema.Array(ExtensionMenubarItem) }),
   Rpc.make("ExtensionConfigure", { payload: { servers: Schema.Array(ExtensionEndpoint) } }),
+  // Plugins on the app's own server changed; main lists them from that server itself.
+  Rpc.make("ExtensionPluginsChanged"),
   Rpc.make("ExtensionList", { success: Schema.Array(ExtensionInstalled) }),
   Rpc.make("ExtensionEnable", { payload: { id }, error: ExtensionFailure }),
   Rpc.make("ExtensionDisable", { payload: { id }, error: ExtensionFailure }),
   Rpc.make("ExtensionReload", { payload: { id }, error: ExtensionFailure }),
-  Rpc.make("ExtensionInstall", {
-    payload: { source: Schema.Union([Transferable.Uint8Array, text(16_384)]) },
-    error: ExtensionFailure,
-  }),
-  Rpc.make("ExtensionRemove", { payload: { id }, error: ExtensionFailure }),
-  Rpc.make("ExtensionSource", { payload: { id }, success: Schema.String, error: ExtensionFailure }),
 )

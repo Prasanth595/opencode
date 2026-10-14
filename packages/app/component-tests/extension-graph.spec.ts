@@ -1,11 +1,11 @@
-import type { Definition } from "@opencode/gui-extensions/sdk"
+import type { Definition } from "@opencode/plugin/gui"
 import { expect, sourceURL, story } from "../../storybook/playwright/story"
 
 const source = (path: string) => sourceURL(new URL(path, import.meta.url))
 
 const modules = {
   fixture: source("./extension-host.fixture.tsx"),
-  builtins: source("../../gui-extensions/src/renderer.ts"),
+  builtins: source("../../gui-plugins/src/renderer.ts"),
 }
 
 story.beforeEach(async ({ mount }) => {

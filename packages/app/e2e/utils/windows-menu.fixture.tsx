@@ -1,7 +1,7 @@
 import { MemoryRouter, createMemoryHistory } from "@solidjs/router"
 import { createStore } from "solid-js/store"
 import { render } from "solid-js/web"
-import type { Bridge } from "@opencode/gui-extensions/sdk/bridge"
+import type { Bridge } from "@opencode/plugin/gui/host"
 import { AppBaseProviders, AppInterface } from "../../src/app"
 import { PlatformProvider, type Platform } from "../../src/runtime/platform/platform"
 
@@ -28,15 +28,12 @@ export function mount(input: { server: string }) {
       capture: async () => undefined,
       runMenubarItem: () => undefined,
       configure: () => undefined,
+      pluginsChanged: () => undefined,
       manager: {
         list: async () => [],
         enable: async () => undefined,
         disable: async () => undefined,
         reload: async () => undefined,
-        install: async () => undefined,
-        remove: async () => undefined,
-        source: async () => "",
-        asset: () => "",
       },
     }
 

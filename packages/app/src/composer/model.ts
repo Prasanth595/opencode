@@ -1,7 +1,7 @@
 import { ImagePreview } from "@opencode/ui/image-preview"
 import { useDialog } from "@opencode/ui/context/dialog"
 import type { ReferenceInfo } from "@opencode/client/promise"
-import type { Links, MountedSession } from "@opencode/gui-extensions/sdk"
+import type { Links, MountedSession } from "@opencode/plugin/gui"
 import { createComponent, createEffect, createMemo, on } from "solid-js"
 import { Predicate } from "effect"
 import type { ComposerSuggestion } from "./types"

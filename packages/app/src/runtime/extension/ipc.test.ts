@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
-import { Ipc } from "@opencode/gui-extensions/sdk"
+import { Ipc } from "@opencode/plugin/gui"
 import { Schema } from "effect"
-import type { Bridge, BridgeMessage } from "@opencode/gui-extensions/sdk/bridge"
+import type { Bridge, BridgeMessage } from "@opencode/plugin/gui/host"
 import { createIpcClients } from "./ipc"
 
 const token: Ipc = { kind: "ipc", id: "fixture", spec: { id: "fixture", methods: {} } }
@@ -91,15 +91,12 @@ function fakeBridge() {
     capture: async () => undefined,
     runMenubarItem: () => {},
     configure: () => {},
+    pluginsChanged: () => {},
     manager: {
       list: async () => [],
       enable: async () => {},
       disable: async () => {},
       reload: async () => {},
-      install: async () => {},
-      remove: async () => {},
-      source: async () => "",
-      asset: () => "",
     },
   }
 

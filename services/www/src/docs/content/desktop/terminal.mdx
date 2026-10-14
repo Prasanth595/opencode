@@ -1,0 +1,42 @@
+---
+title: "Terminal"
+description: "Run persistent workspace shells in the dock with tab management and automatic reconnection."
+---
+
+The built-in `terminal` plugin adds an integrated terminal dock powered by `ghostty-web`. Terminals are scoped to the workspace directory, so your open tabs and running processes remain intact as you switch between sessions in the same project.
+
+## Open and manage terminals
+
+Press **Ctrl+\`** or run `/terminal` in the composer to toggle the terminal dock. If the workspace has no open terminals yet, OpenCode creates `Terminal 1` automatically when the dock opens.
+
+| Command ID | Title | Default shortcut | Slash command |
+| --- | --- | --- | --- |
+| `terminal.toggle` | Toggle terminal | `Ctrl+\`` | `/terminal` |
+| `terminal.new` | New terminal | `Ctrl+Alt+T` | — |
+| `terminal.close` | Close terminal | `Cmd+W` / `Ctrl+W` (inside terminal) | — |
+
+You can place the dock either below or beside the session timeline under **Settings > Preferences > Terminal placement**. On narrow windows, open **More > Terminal** to switch to the full-screen terminal view.
+
+## Tabs
+
+The terminal header strip lists every shell in the current workspace directory:
+
+- **Create**: Click the **+** button (**New terminal**) or press **Ctrl+Alt+T**. New tabs take the lowest unused number (`Terminal 1`, `Terminal 2`, …).
+- **Reorder**: Drag tabs horizontally along the strip.
+- **Rename**: Double-click a tab title, or right-click the tab and select **Rename**. Press **Enter** to save or **Escape** to cancel.
+- **Close**: Click the tab's close button, middle-click the tab, right-click and select **Close**, or press **Cmd+W** / **Ctrl+W** while the terminal has focus.
+
+When the last terminal tab exits (for example after typing `exit` in the shell) or closes, the dock closes automatically.
+
+## Keyboard and mouse behavior
+
+- **Copy and paste**: Standard clipboard copy and paste work automatically, along with **Ctrl+Shift+C** to copy the current selection.
+- **Delete to line start**: On macOS, **Cmd+Backspace** sends `\x15` (`Ctrl+U`) to clear to the start of the line.
+- **Open links**: Hold **Cmd**, **Ctrl**, or **Shift** and click any URL in terminal output to open it in your system browser.
+- **Appearance**: The terminal automatically follows your active OpenCode light or dark theme and the monospace font configured in **Settings > Appearance**.
+
+## Persistence and reconnection
+
+Each terminal keeps 10,000 rows of live scrollback while mounted and persists the last 2,000 rows, cursor position, scroll offset, and dimensions across restarts.
+
+If the connection to the OpenCode server drops, the terminal retries automatically (starting at 250 ms and backing off up to 4 seconds). If the underlying PTY process exited while disconnected, OpenCode spawns a fresh shell under the same tab title when you return.

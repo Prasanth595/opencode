@@ -1,5 +1,5 @@
 import { createMemo } from "solid-js"
-import { Command } from "@opencode/gui-extensions/sdk"
+import { Command } from "@opencode/plugin/gui"
 import { useCommand } from "@/shell/commands/command"
 import { useSettings } from "@/settings/model"
 import { migrateKeybinds } from "@/settings/keybinds/migration"
@@ -32,13 +32,14 @@ export function ExtensionCommands() {
         disabled: item.value.enabled === false,
         hidden: item.value.hidden,
         editable: item.value.editable,
-        when: item.value.scope
-          ? (event: KeyboardEvent) =>
-              event.target instanceof Element && !!event.target.closest(item.value.scope as string)
-          : undefined,
-        onSelect: (_source: unknown, input?: string) => item.value.run(input),
+        when: whenScoped(item.value.scope),
+        onSelect: (_source: "palette" | "keybind" | "slash" | undefined, input?: string) => item.value.run(input),
       })),
   )
 
   return null
 }
+
+// A command scoped to a selector runs only while the event's target is inside it.
+const whenScoped = (scope: string | undefined) =>
+  scope ? (event: KeyboardEvent) => event.target instanceof Element && !!event.target.closest(scope) : undefined

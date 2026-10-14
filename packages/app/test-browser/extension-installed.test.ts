@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { createRoot } from "solid-js"
-import type { Bridge, BridgeMessage, Installed } from "@opencode/gui-extensions/sdk/bridge"
+import type { Bridge, BridgeMessage, Installed } from "@opencode/plugin/gui/host"
 import { createInstalled } from "../src/runtime/extension/installed"
 
 test("a list main pushes while the initial list is pending wins over the older reply", async () => {
@@ -22,15 +22,12 @@ test("a list main pushes while the initial list is pending wins over the older r
     capture: async () => undefined,
     runMenubarItem: () => {},
     configure: () => {},
+    pluginsChanged: () => {},
     manager: {
       list: () => reply.promise,
       enable: async () => {},
       disable: async () => {},
       reload: async () => {},
-      install: async () => {},
-      remove: async () => {},
-      source: async () => "",
-      asset: () => "",
     },
   }
 

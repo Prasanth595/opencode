@@ -1,7 +1,7 @@
 import { createMemo, ErrorBoundary, For, onMount, Show, untrack, type JSX, type ParentProps } from "solid-js"
 import { Portal } from "solid-js/web"
 import { MarkdownProvider, useMarkdown } from "@opencode/session-ui/context/markdown"
-import { ExtensionContext, Slot, Style, type MountedSession, type SlotMap } from "@opencode/gui-extensions/sdk"
+import { PluginContext, Slot, Style, type MountedSession, type SlotMap } from "@opencode/plugin/gui"
 import { useExtensionHost } from "./host"
 
 /**
@@ -23,7 +23,7 @@ export function Contribution(props: { extension: string; children: () => JSX.Ele
           }}
         >
           {/* Untracked: a contribution renders once; its own reactivity updates it in place. */}
-          <ExtensionContext.Provider value={context}>{untrack(props.children)}</ExtensionContext.Provider>
+          <PluginContext.Provider value={context}>{untrack(props.children)}</PluginContext.Provider>
         </ErrorBoundary>
       )}
     </Show>

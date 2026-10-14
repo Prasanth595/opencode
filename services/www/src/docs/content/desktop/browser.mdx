@@ -1,0 +1,62 @@
+---
+title: "Browser"
+description: "Preview web apps, pick page elements to comment on, and give agents native Chromium browser tools."
+---
+
+The built-in `browser` plugin embeds a native Chromium browser pane inside OpenCode Desktop. It lets you preview web pages and local workspace HTML files, attach visual element comments to your prompt, and give the agent 45+ browser automation, profiling, and auditing tools.
+
+<Callout type="note">
+The native browser pane requires OpenCode Desktop on a desktop-width window. On the web interface, the `browser` contract is inactive and HTML files open in the standard file viewer.
+</Callout>
+
+## Open the Browser pane
+
+Open a browser tab in the session side panel in any of these ways:
+
+- Press **Cmd+Shift+B** / **Ctrl+Shift+B** or run **Open browser** from the command palette.
+- Click the **+** button in the side panel tab strip and select **Browser**.
+- Click **Open in browser** in the toolbar of an `.html` file tab, or click an `.html` link in a message.
+
+| Command ID | Title | Default shortcut | Scope |
+| --- | --- | --- | --- |
+| `browser.open` | Open browser | `Cmd+Shift+B` / `Ctrl+Shift+B` | Global |
+| `browser.reload` | Reload browser page | `F5` | When a browser pane is mounted |
+| `browser.address` | Focus browser address | `Cmd+L` / `Ctrl+L` | Inside `#browser-panel` |
+| `browser.inspect` | Select an element in the browser page | `Cmd+Shift+C` / `Ctrl+Shift+C` | While the page has focus |
+
+## Navigation and toolbar
+
+The browser toolbar includes back, forward, reload/stop, an address bar with history autocomplete (up to 30 recent visits), and **Browser options** for zoom (`Cmd/Ctrl +`, `Cmd/Ctrl -`, `Cmd/Ctrl 0`), copying links, opening in the system browser, and clearing history.
+
+### Network routing and security
+
+- **Server-routed network**: All website traffic loads through the connected OpenCode server's network over an RPC tunnel. When connected to a remote [SSH](/desktop/ssh) or [WSL](/desktop/wsl) server, `http://localhost:3000` resolves on that server's machine.
+- **Workspace `file://` access**: Local `file://` URLs are allowed only for the desktop's built-in server and are restricted to files inside the current session's workspace directory.
+- **Isolated storage**: Each session gets its own private cookie and storage partition. Click the **Site information** sliders icon in the address bar to inspect connection security, view cookie counts, or **Clear** cookies and site data for the current origin.
+- **Blocked permissions**: Camera, microphone, geolocation, notifications, and display capture requests are always denied inside the browser pane.
+
+## Comment on page elements
+
+You can attach a specific DOM element—or the entire page—as structured context for your next prompt:
+
+1. Click the **Select an element to comment on** button in the browser toolbar (or press **Cmd+Shift+C** / **Ctrl+Shift+C** while the page has focus).
+2. Hover over the page and click the target element. The view freezes on a still frame and spotlights the element.
+3. Type your note (supporting `@` file mentions) and submit.
+
+OpenCode attaches a note chip to the composer containing the element's tag, accessible name, text snippet, CSS selector, and a live `@ref` that the agent can target directly until the page navigates. Click **Add page to session** in the toolbar to attach a comment about the page as a whole.
+
+## Agent browser tools
+
+When a session has an active desktop browser attachment, the built-in `opencode.browser` plugin grants the `browser` permission for that session and exposes the `browser.*` tool namespace to the model:
+
+| Category | Tools |
+| --- | --- |
+| **Tabs & preview** | `browser.tabs.list`, `browser.tabs.open`, `browser.tabs.focus`, `browser.tabs.close`, `browser.preview` |
+| **Navigation** | `browser.navigate`, `browser.back`, `browser.forward`, `browser.reload`, `browser.stop` |
+| **Inspection** | `browser.frames`, `browser.snapshot` (accessibility tree with `@ref` IDs), `browser.find`, `browser.evaluate` |
+| **Interaction** | `browser.click`, `browser.hover`, `browser.drag`, `browser.fill`, `browser.fill_form`, `browser.select`, `browser.check`, `browser.press`, `browser.scroll`, `browser.wait` |
+| **Capture & dialogs** | `browser.screenshot` (viewport, full page, or element), `browser.dialog` |
+| **File transfer** | `browser.files.upload`, `browser.files.drop`, `browser.files.list`, `browser.files.get` |
+| **Diagnostics** | `browser.console`, `browser.network.list`, `browser.network.get` |
+| **Performance & memory** | `browser.trace.start`, `browser.trace.stop`, `browser.trace.analyze`, `browser.cpu.start`, `browser.cpu.stop`, `browser.cpu.analyze`, `browser.heap.snapshot`, `browser.heap.summary`, `browser.heap.query`, `browser.heap.object`, `browser.heap.compare` |
+| **Auditing** | `browser.lighthouse` (accessibility, SEO, and best-practices snapshot audit) |

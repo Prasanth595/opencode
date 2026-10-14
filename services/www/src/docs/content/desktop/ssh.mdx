@@ -1,0 +1,48 @@
+---
+title: "SSH"
+description: "Connect OpenCode Desktop to remote Linux and macOS machines over OpenSSH with automatic CLI provisioning."
+---
+
+The built-in `ssh` plugin lets OpenCode Desktop connect to remote Linux and macOS hosts (`x64` or `arm64`) over your system's OpenSSH client. It provisions a matching OpenCode CLI on the remote machine automatically and forwards the remote server over a local SSH tunnel.
+
+## Add an SSH server
+
+Open the **Add SSH server** dialog in either of two ways:
+
+- Run **Add SSH server** (`ssh.add`) from the command palette.
+- Open **Settings > Servers**, click **Add server**, and select **Add SSH server**.
+
+Enter a hostname or a full `ssh` command in **Host or SSH command**, and optionally provide a display name in **Server name (optional)**:
+
+```bash
+ssh -p 2222 -i ~/.ssh/id_ed25519 dev@build-box.example.com
+```
+
+### Supported SSH flags and options
+
+OpenCode validates the SSH command and rejects remote command arguments or unsupported flags. The following flags and `-o` options are supported:
+
+- **Flags**: `-4`, `-6`, `-C`, `-A`, `-a`, `-p`, `-l`, `-i`, `-F`, `-J`, `-o`
+- **Options (`-o`)**: `HostName`, `User`, `Port`, `IdentityFile`, `IdentityAgent`, `IdentitiesOnly`, `ProxyJump`, `ProxyCommand`, `ConnectTimeout`, `AddressFamily`
+
+## Interactive authentication and host keys
+
+OpenCode Desktop routes SSH prompts (passwords, key passphrases, two-factor codes, and host-key fingerprint confirmations) directly into the connection dialog using an `SSH_ASKPASS` relay:
+
+- **Host-key verification**: When connecting to a new host, the dialog displays the fingerprint prompt and offers **Cancel** (focused by default) and **Trust and connect**.
+- **Password and OTP prompts**: The prompt text from the remote SSH server appears with a password input and a **Continue** button. Prompts time out after 5 minutes.
+
+## Automatic remote provisioning
+
+When you connect to a host, OpenCode Desktop bootstraps the remote environment in four steps:
+
+1. **Checking**: Probes the remote host for an existing `opencode` service matching the desktop version. If a matching service is already running, OpenCode reuses it immediately.
+2. **Version check**: If a running remote service has a different version, the dialog shows **Server update required** and lets you click **Update and reconnect**.
+3. **Downloading / Uploading**: Detects the remote OS and architecture (`linux` or `darwin`, `x64` or `arm64`, glibc or musl) and downloads the matching `@opencode/cli` package on the remote host with `curl` or `wget`. If the remote machine has no outbound internet access, OpenCode Desktop downloads the archive locally and streams it over the SSH connection.
+4. **Starting**: Installs the binary privately under `~/.opencode/desktop-ssh/<version>/opencode` (leaving the remote `PATH` untouched), starts `opencode service`, and opens a local port-forwarding tunnel (`127.0.0.1:<free-port>`).
+
+## Reconnection and persistence
+
+- **Preserved remote sessions**: The remote `opencode` background service continues running when you close the laptop or quit OpenCode Desktop.
+- **Automatic background reconnect**: Saved SSH servers reconnect automatically when you open a window. If the connection requires an interactive password or 2FA code, it pauses at **Authentication required** until you click **Authenticate**.
+- **Session cover**: If an SSH connection drops while you are viewing a remote session, an **SSH connection inactive** cover overlays the session with a **Reconnect** (or **Authenticate**) button while keeping your draft and view state mounted underneath.

@@ -1,22 +1,22 @@
 import { expect, sourceURL, story } from "../../storybook/playwright/story"
 import type { ParentProps } from "solid-js"
-import type { Command } from "@opencode/gui-extensions/sdk"
+import type { Command } from "@opencode/plugin/gui"
 import type { Item } from "../src/runtime/extension/host"
 
 const source = (path: string) => sourceURL(new URL(path, import.meta.url))
 
 const modules = {
-  fixture: source("../../gui-extensions/src/browser/panel.fixture.tsx"),
+  fixture: source("../../gui-plugins/src/browser/panel.fixture.tsx"),
   host: source("../src/runtime/extension/host.tsx"),
   panels: source("../src/runtime/extension/panels.tsx"),
   language: source("../src/runtime/i18n/language.tsx"),
-  browser: source("../../gui-extensions/src/browser/index.ts"),
-  browserRenderer: source("../../gui-extensions/src/browser/renderer.tsx"),
-  browserPanel: source("../../gui-extensions/src/browser/panel.tsx"),
-  file: source("../../gui-extensions/src/file/index.ts"),
-  fileRenderer: source("../../gui-extensions/src/file/renderer.tsx"),
+  browser: source("../../gui-plugins/src/browser/index.ts"),
+  browserRenderer: source("../../gui-plugins/src/browser/renderer.tsx"),
+  browserPanel: source("../../gui-plugins/src/browser/panel.tsx"),
+  file: source("../../gui-plugins/src/file/index.ts"),
+  fileRenderer: source("../../gui-plugins/src/file/renderer.tsx"),
   commands: source("../src/shell/commands/command.tsx"),
-  sdk: source("../../gui-extensions/src/sdk/index.ts"),
+  sdk: source("../../plugin/src/gui/index.ts"),
   render: source("../src/runtime/extension/render.tsx"),
   settings: source("../src/settings/model.tsx"),
   platform: source("../src/runtime/platform/platform.tsx"),

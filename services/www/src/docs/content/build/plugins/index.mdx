@@ -2,8 +2,19 @@
 title: "Overview"
 ---
 
-Plugins can modify OpenCode's behavior and add new features. To change the terminal UI, build a [CLI
-plugin](/build/plugins/cli).
+Plugins can modify OpenCode's behavior and add new features. One package can also change the terminal UI with a
+`./tui` export ([CLI plugins](/build/plugins/cli)) and the desktop app with a `./gui` export ([GUI
+plugins](/build/plugins/gui/package)).
+
+```json title="package.json"
+{
+  "exports": {
+    ".": "./dist/server.js",
+    "./tui": "./src/tui.tsx",
+    "./gui": "./dist/gui.cjs"
+  }
+}
+```
 
 Migrating an existing OpenCode 1 plugin? Follow the [V1 plugin migration guide](/build/plugins/migrate-v1).
 
@@ -1730,7 +1741,7 @@ interface ToolHookContext {
 ## Publish
 
 A package plugin uses the same default export as a local plugin. A minimal
-manifest is:
+`package.json` is:
 
 ```json title="package.json"
 {

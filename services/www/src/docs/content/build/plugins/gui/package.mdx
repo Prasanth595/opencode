@@ -1,0 +1,282 @@
+---
+title: "Package and build"
+description: "Ship a GUI plugin from the same npm package as your server and TUI plugin with one ./gui export."
+---
+
+A plugin package can ship server, TUI, and GUI code from one npm package. Add one `./gui` export beside `./tui`, and the
+desktop app loads it for everyone who configures the plugin.
+
+```json title="package.json"
+{
+  "name": "opencode-acme",
+  "type": "module",
+  "exports": {
+    ".": "./dist/server.js",
+    "./tui": "./src/tui.tsx",
+    "./gui": "./dist/gui.cjs"
+  },
+  "dependencies": {
+    "@opencode/plugin": "latest"
+  },
+  "devDependencies": {
+    "solid-js": "^1.9.0",
+    "vite": "^7.0.0",
+    "vite-plugin-solid": "^2.11.0"
+  }
+}
+```
+
+Users install it like any other plugin; there is no separate GUI install step.
+
+```jsonc title="opencode.jsonc"
+{
+  "plugins": ["opencode-acme"],
+}
+```
+
+## Entry points
+
+OpenCode resolves each entry point from `exports`, or from conventional file names in a local plugin directory.
+
+| Export | Conventional file | Runs in | SDK |
+| --- | --- | --- | --- |
+| `.` or `./server` | `server.ts` or `index.ts` | The OpenCode server | `@opencode/plugin` |
+| `./tui` | `tui.tsx` | The terminal interface | `@opencode/plugin/tui` |
+| `./rpc` | `rpc.ts` | Typed RPC contract for the server and clients | `@opencode/plugin/rpc` |
+| `./gui` | `gui.cjs` or `gui.js` | Every desktop app window, and the desktop app's Electron main process | `@opencode/plugin/gui` |
+
+Every SDK comes from the one `@opencode/plugin` dependency. Export any combination of entries; a package with only
+a server entry and `./gui` is as valid as one with all four.
+
+A package needs an active server entry for its GUI to load. The GUI's `id` must equal the server plugin's `id`:
+
+```ts title="src/server.ts"
+import { Plugin } from "@opencode/plugin"
+
+export default Plugin.define({
+  id: "acme",
+  setup() {},
+})
+```
+
+A GUI with a different `id` fails to load, and the error names both ids.
+
+## Define the GUI
+
+The `./gui` file has one default export, `Plugin.define` from `@opencode/plugin/gui`, like the server and TUI entries.
+
+```tsx title="src/gui.tsx"
+import { Command, Plugin } from "@opencode/plugin/gui"
+import { Acme } from "./gui/contract"
+import { AcmeRpc } from "./rpc"
+
+export default Plugin.define({
+  id: "acme",
+  provides: { acme: Acme },
+  i18n: { en: { "command.open": "Open Acme" } },
+  setup(ctx) {
+    // Runs in every desktop app window.
+    ctx.add(Command, {
+      id: "open",
+      title: ctx.t("command.open"),
+      run: () => void ctx.client?.rpc(AcmeRpc).open({}),
+    })
+  },
+  main(ctx) {
+    // Optional: runs once in the desktop app's Electron main process.
+    ctx.provide(Acme, { ping: () => "pong" })
+  },
+})
+```
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Must equal the server plugin's `id`. |
+| `os`, `provides`, `uses`, `requires`, `stores` | Platforms, tokens, and stored state. See [Define the GUI plugin](/build/plugins/gui#define-the-gui-plugin). |
+| `i18n` | Every locale inline, for example `{ en: { … }, fr: { … } }`. A plugin cannot load locales on demand. |
+| `setup` | Runs in every desktop app window. See the [Window SDK](/build/plugins/gui/window). |
+| `main` | Runs once in the desktop app's main process. See [Main process & IPC](/build/plugins/gui/main). |
+
+- Define `setup`, `main`, or both. A GUI without either fails to load.
+- `ctx.client?.rpc(AcmeRpc)` calls the plugin's server half. See [RPC](/build/plugins/rpc).
+
+### One file, two processes
+
+Each process evaluates the whole `./gui` file and reads its default export. Windows run `setup`, and the desktop app's
+main process runs `main`.
+
+```tsx title="src/gui.tsx"
+import { shell } from "electron"
+import { Plugin } from "@opencode/plugin/gui"
+
+export default Plugin.define({
+  id: "acme",
+  setup(ctx) {
+    // Window code: Solid components, ctx.layout, ctx.add(Command, …).
+  },
+  main(ctx) {
+    // Main code: electron, Node built-ins, ctx.windows.
+    ctx.windows.on("open", () => shell.beep())
+  },
+})
+```
+
+Because both processes evaluate the same file, each one stands in inert placeholders for the other process's modules:
+
+- **In a window,** `electron` and Node built-ins are inert placeholders.
+- **In the main process,** Solid and the window-only modules are inert placeholders.
+
+A placeholder accepts any property read, call, or construction at module scope, such as Solid's hoisted templates or a
+bundler's hoisted `require` calls. Keep each process's code inside its own setup: code that runs in the wrong process
+gets placeholders instead of working values.
+
+`Plugin.define` and the contract helpers come from one SDK in both processes. In the main process,
+`@opencode/plugin/gui` resolves to the main SDK, which exports the same `Plugin`, `Store`, `Ipc`, `Contract`, and
+`Registry`. One definition serves both processes.
+
+### Split across files
+
+For a larger plugin, declare the plugin first, type each setup from the declarations, then define the plugin with them.
+
+```ts title="src/gui/definition.ts"
+import { Plugin } from "@opencode/plugin/gui"
+import { Notes } from "./contract"
+
+export const definition = Plugin.define({ id: "acme", provides: { notes: Notes } })
+```
+
+```tsx title="src/gui/renderer.tsx"
+import type { Plugin } from "@opencode/plugin/gui"
+import { Notes } from "./contract"
+import type { definition } from "./definition"
+
+export const setup: Plugin.Setup<typeof definition> = (ctx) => {
+  ctx.provide(Notes, { count: () => 1 })
+}
+```
+
+```ts title="src/gui/main.ts"
+import type { Plugin } from "@opencode/plugin/gui"
+import type { definition } from "./definition"
+
+export const main: Plugin.MainSetup<typeof definition> = (ctx) => {
+  ctx.log.write("info", "acme started")
+}
+```
+
+```tsx title="src/gui.tsx"
+import { Plugin } from "@opencode/plugin/gui"
+import { definition } from "./gui/definition"
+import { main } from "./gui/main"
+import { setup } from "./gui/renderer"
+
+export default Plugin.define({ ...definition, setup, main })
+```
+
+- `Plugin.Setup`, `Plugin.MainSetup`, and `Plugin.Cleanup` are the types of a window setup, a main setup, and the
+  cleanup function either may return.
+- Import registries, tokens, and helpers such as `Command`, `SettingsPage`, `Panel`, `Slot`, `Contract`, `Ipc`,
+  `Registry`, `Store`, `createKeyed`, `usePlugin`, and `bindPlugin` from `@opencode/plugin/gui`.
+- Import main-only registries such as `MenubarItem` from `@opencode/plugin/gui/main`.
+
+## Build the bundle
+
+`./gui` must be one prebuilt **CommonJS** file. Build it with the Vite preset from `@opencode/plugin/gui/vite`:
+
+```ts title="vite.config.ts"
+import { defineConfig } from "vite"
+import { gui } from "@opencode/plugin/gui/vite"
+
+export default defineConfig({ plugins: [gui()] })
+```
+
+```bash
+vite build
+```
+
+The preset does the following:
+
+- Compiles Solid JSX with `vite-plugin-solid`.
+- Emits one CommonJS file and inlines every dynamic `import()`, because the app cannot load a second chunk.
+- Keeps the app's [shared modules](#shared-modules), Electron, and Node built-ins external, and bundles every other
+  dependency.
+- Fails the build on any other `effect/*`, `solid-js/*`, or `@opencode/*` module. The app does not provide it, and a
+  bundled copy would not share the app's instance.
+
+```text
+effect/Schema is not a module the OpenCode app provides to plugin GUIs: effect, @opencode/plugin/gui, …
+```
+
+Import from the shared entry instead, for example `import { Schema } from "effect"`.
+
+### Preset options
+
+Pass options to `gui()` to change the entry or the output file.
+
+```ts title="vite.config.ts"
+export default defineConfig({ plugins: [gui({ entry: "src/desktop.tsx", outFile: "dist/desktop.cjs" })] })
+```
+
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `entry` | `src/gui.tsx` | The file that default-exports `Plugin.define`. |
+| `outFile` | `dist/gui.cjs` | The bundle that the `./gui` export points to. |
+
+### Dependencies
+
+Add the build tools as devDependencies. The app provides `@opencode/plugin/gui` at runtime, so the bundle only needs its
+types from the `@opencode/plugin` dependency.
+
+```bash
+npm install --save-dev vite vite-plugin-solid solid-js
+```
+
+For the Electron and Node types in `main`, also add `electron` and `@types/node`:
+
+```bash
+npm install --save-dev electron @types/node
+```
+
+### Shared modules
+
+Each process provides these modules to the bundle. Requiring a module that neither process provides fails the plugin's
+GUI.
+
+| Module | In a window | In the main process |
+| --- | --- | --- |
+| `effect`, `@opencode/plugin/gui`, `@opencode/plugin/gui/main`, `@opencode/plugin/rpc`, `@opencode/schema/rpc`, `@opencode/client`, `@opencode/client/effect` | The app's module | The app's module |
+| `solid-js`, `solid-js/web`, `solid-js/store`, `@opencode/client/solid`, `@opencode/plugin/gui/file`, `@opencode/plugin/gui/review`, `@opencode/plugin/gui/browser`, `@opencode/plugin/gui/updater` | The app's module | Inert placeholder |
+| `electron`, Node built-ins such as `node:fs` | Inert placeholder | The real module |
+
+## Where GUI entries load
+
+OpenCode Desktop loads GUI entries only from its own background server, which already runs the plugins' server entries,
+so they never add a new source of code.
+
+- **Not yet:** the web app, and plugins on other connected servers such as [SSH](/desktop/ssh), [WSL](/desktop/wsl), and
+  HTTP servers. Those plugins run their server entries there, but load no GUI into your app.
+- **Global config:** configure the plugin in the global `opencode.json(c)` to make its GUI available in every window.
+
+The desktop app's main process reads the bundle from its own server with a credential that only it holds. A window
+cannot supply main-process code.
+
+## Reload and updates
+
+Run `vite build --watch` while you develop a local plugin:
+
+```bash
+vite build --watch
+```
+
+- Each rebuild of `dist/gui.cjs` reloads the plugin's GUI in every window and in the main process. The server entry does
+  not restart.
+- Changing the plugin's `options` in `opencode.json(c)` reloads the plugin.
+- `opencode plugin update` replaces a package's GUI once the update finishes.
+- [**Settings > Plugins**](/desktop/plugins) lists the plugin without a label; only built-in plugins carry the **Built-in**
+  label. Turn it off there, or remove the plugin from `opencode.json(c)` (or run `opencode plugin remove <package>`) to
+  remove it.
+
+<Callout type="note">
+Built-in plugins keep their ids. If your server plugin's id is a built-in plugin's id, nests under one with a `.`, or is in
+the `opencode` namespace, your plugin does not load its GUI.
+</Callout>
