@@ -838,7 +838,7 @@ export function DiffViewerContent(props: {
       <Show when={!showFileTree()}>
         <box
           id="diff-source-header"
-          paddingLeft={docked() ? 1 : 2}
+          paddingLeft={2}
           // Docked, the header lines up with the card text below it; the card edge row supplies the gap underneath.
           paddingRight={docked() ? 1 : 2}
           paddingTop={docked() ? 1 : 0}
@@ -1001,7 +1001,7 @@ export function DiffViewerContent(props: {
                               height={FILE_HEADER_HEIGHT}
                               zIndex={1}
                               backgroundColor={background()}
-                              paddingLeft={1}
+                              paddingLeft={docked() ? 2 : 1}
                               paddingRight={1}
                               paddingBottom={1}
                             >
@@ -1070,6 +1070,7 @@ export function DiffViewerContent(props: {
                                       filetype={filetype(entry.file.file)}
                                       syntaxStyle={currentSyntax()}
                                       showLineNumbers={true}
+                                      gutterPadding={docked() ? 1 : 0}
                                       width="100%"
                                       wrapMode="char"
                                       fg={theme.text.base}
@@ -1109,7 +1110,7 @@ export function DiffViewerContent(props: {
             backgroundColor={theme.background.base}
             customBorderChars={{ ...EmptyBorder, horizontal: "▀" }}
           />
-          <box height={1} flexShrink={0} flexDirection="row" paddingLeft={1} paddingRight={1}>
+          <box height={1} flexShrink={0} flexDirection="row" paddingLeft={2} paddingRight={1}>
             <text
               fg={props.panel?.focused ? theme.background.action.primary.focused : theme.text.action.primary.disabled}
               attributes={props.panel?.focused ? 0 : TextAttributes.DIM}
