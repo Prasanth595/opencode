@@ -20,6 +20,8 @@ export const register = Effect.fnUntraced(function* (options: {
 }) {
   const fs = yield* FileSystem.FileSystem
   const temp = options.file + "." + options.id + ".tmp"
+  const marker = options.file + ".port"
+  const markerTemp = marker + "." + options.id + ".tmp"
   yield* fs.makeDirectory(path.dirname(options.file), { recursive: true })
   const info = {
     id: options.id,
@@ -36,7 +38,10 @@ export const register = Effect.fnUntraced(function* (options: {
     found.url === info.url &&
     found.pid === info.pid &&
     found.password === info.password
-  yield* fs.writeFileString(temp, encoded, { mode: 0o600 }).pipe(Effect.andThen(fs.rename(temp, options.file)))
+  yield* fs
+    .writeFileString(temp, encoded, { mode: 0o600 })
+    .pipe(Effect.andThen(fs.rename(temp, options.file)))
+  yield* fs.writeFileString(markerTemp, encoded, { mode: 0o600 }).pipe(Effect.andThen(fs.rename(markerTemp, marker)))
   yield* current.pipe(
     Effect.catchCause((cause) =>
       Effect.logWarning("managed service registration check failed; shutting down", {
@@ -68,5 +73,13 @@ export const register = Effect.fnUntraced(function* (options: {
   return current.pipe(
     Effect.flatMap((found) => (owns(found) ? fs.remove(options.file) : Effect.void)),
     Effect.ignore,
+    Effect.andThen(
+      fs.readFileString(marker).pipe(
+        Effect.flatMap(decodeInfo),
+        Effect.filterOrFail(owns),
+        Effect.andThen(fs.remove(marker)),
+        Effect.ignore,
+      ),
+    ),
   )
 })

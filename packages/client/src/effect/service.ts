@@ -4,7 +4,7 @@ import { contenderPool, spawnServiceContender } from "../service-contender.js"
 import { defaultEnsureTiming, ensureTiming, type EnsureTiming } from "../service-timing.js"
 import { matchesVersion } from "../service-version.js"
 import { PtyHandoff } from "../pty-handoff.js"
-import { decide, fallback, headers, probeResult, same } from "../service-probe.js"
+import { decide, fallback, headers, marker, probeResult, same } from "../service-probe.js"
 
 export * from "../service.js"
 export { headers }
@@ -69,10 +69,12 @@ export const ensure = Effect.fn("service.ensure")(function* (options: EnsureOpti
     })
   })
   const found = yield* Effect.gen(function* () {
-    const registration = yield* registered(options.file, timing.requestTimeout)
+    const registrationFile = options.file ?? fallback()
+    const registrationPresent = (yield* read(registrationFile)) !== undefined
+    const registration = yield* registered(registrationFile, timing.requestTimeout, marker(options.file))
     const info = registration.info
     const service = registration.service
-    if (registration.timedOut && info !== undefined) {
+    if (registrationPresent && registration.timedOut && info !== undefined) {
       timeouts = {
         info,
         count: timeouts !== undefined && same(timeouts.info, info) ? timeouts.count + 1 : 1,
@@ -105,9 +107,10 @@ export const ensure = Effect.fn("service.ensure")(function* (options: EnsureOpti
       return Option.none()
     }
 
+    if (info !== undefined && processAlive(info.pid)) return Option.none()
     const failed = pool.reap()
     if (failed !== undefined) return yield* Effect.fail(failed)
-    if (pool.shouldRecruit(info !== undefined)) {
+    if (pool.shouldRecruit(info !== undefined && !processAlive(info.pid))) {
       yield* announce("missing")
       pool.add(yield* spawnContender)
     }
@@ -157,11 +160,24 @@ const read = Effect.fnUntraced(function* (file?: string) {
   return yield* decode(text.value).pipe(Effect.option, Effect.map(Option.getOrUndefined))
 })
 
-const registered = Effect.fnUntraced(function* (file?: string, timeout?: number) {
+const registered = Effect.fnUntraced(function* (file?: string, timeout?: number, markerFile?: string) {
   const info = yield* read(file)
+  if (info === undefined && markerFile !== undefined) {
+    const markerInfo = yield* read(markerFile)
+    if (markerInfo !== undefined) return { info: markerInfo, ...(yield* Effect.promise(() => probeResult(markerInfo, timeout))) }
+  }
   if (info === undefined) return { info: undefined, service: undefined, timedOut: false }
   return { info, ...(yield* Effect.promise(() => probeResult(info, timeout))) }
 })
+
+function processAlive(pid: number) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
 
 // 50ms cadence bounded at ~5s, shared by stop escalation and each ensure
 // discovery window.

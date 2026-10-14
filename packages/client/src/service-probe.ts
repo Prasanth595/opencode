@@ -40,6 +40,10 @@ export function fallback() {
   return join(process.env["XDG_STATE_HOME"] ?? join(homedir(), ".local", "state"), "opencode", "service.json")
 }
 
+export function marker(file?: string) {
+  return (file ?? fallback()) + ".port"
+}
+
 /** Whether two registrations describe the same service instance. */
 export function same(left: Info, right: Info) {
   return left.id === right.id && left.version === right.version && left.url === right.url && left.pid === right.pid

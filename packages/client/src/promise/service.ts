@@ -4,7 +4,7 @@ import { contenderPool, spawnServiceContender } from "../service-contender.js"
 import { defaultEnsureTiming, ensureTiming, type EnsureTiming } from "../service-timing.js"
 import { matchesVersion } from "../service-version.js"
 import { PtyHandoff } from "../pty-handoff.js"
-import { decide, fallback, headers, probeResult, same } from "../service-probe.js"
+import { decide, fallback, headers, marker, probeResult, same } from "../service-probe.js"
 
 export * from "../service.js"
 export { headers }
@@ -51,8 +51,10 @@ export async function ensure(options: EnsureOptions = {}): Promise<Endpoint> {
     while (true) {
       if (Date.now() >= deadline)
         throw pool.failure() ?? new Error("Timed out waiting for the background service to start")
-      const registration = await registered(options.file, timing.requestTimeout)
-      if (registration.timedOut && registration.info !== undefined) {
+      const registrationFile = options.file ?? fallback()
+      const registrationPresent = (await read(registrationFile)) !== undefined
+      const registration = await registered(registrationFile, timing.requestTimeout, marker(options.file))
+      if (registrationPresent && registration.timedOut && registration.info !== undefined) {
         timeouts = {
           info: registration.info,
           count: timeouts !== undefined && same(timeouts.info, registration.info) ? timeouts.count + 1 : 1,
@@ -84,7 +86,7 @@ export async function ensure(options: EnsureOptions = {}): Promise<Endpoint> {
           await stop({ file: options.file, pty: decision.pty }).catch(() => undefined)
           pool.evict(service.info.pid)
         }
-      } else {
+      } else if (registration.info === undefined || !processAlive(registration.info.pid)) {
         const failed = pool.reap()
         if (failed !== undefined) throw failed
         if (pool.shouldRecruit(registration.info !== undefined)) {
@@ -121,10 +123,20 @@ async function read(file?: string) {
   }
 }
 
-async function registered(file?: string, timeout?: number) {
+async function registered(file?: string, timeout?: number, markerFile?: string) {
   const info = await read(file)
+  if (info === undefined && markerFile !== undefined) return registered(markerFile, timeout)
   if (info === undefined) return { info: undefined, service: undefined, timedOut: false }
   return { info, ...(await probeResult(info, timeout)) }
+}
+
+function processAlive(pid: number) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function signal(pid: number, name: NodeJS.Signals) {
