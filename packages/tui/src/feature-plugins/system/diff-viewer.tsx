@@ -1109,7 +1109,7 @@ export function DiffViewerContent(props: {
             backgroundColor={theme.background.base}
             customBorderChars={{ ...EmptyBorder, horizontal: "▀" }}
           />
-          <box height={1} flexShrink={0} flexDirection="row" paddingLeft={2} paddingRight={2}>
+          <box height={1} flexShrink={0} flexDirection="row" paddingLeft={2} paddingRight={1}>
             <text
               fg={props.panel?.focused ? theme.background.action.primary.focused : theme.text.action.primary.disabled}
               attributes={props.panel?.focused ? 0 : TextAttributes.DIM}
