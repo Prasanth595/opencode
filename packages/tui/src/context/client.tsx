@@ -41,7 +41,7 @@ export const { use: useClient, provider: ClientProvider } = createSimpleContext(
     let home: { api: OpenCodeClient; value: Promise<string | undefined> } | undefined
     function resolveServerHome() {
       if (home?.api === api) return home.value
-      const value = api.server.info().then((info) => info.paths.home)
+      const value = api.server.info().then((info) => info.paths.home || undefined)
       home = { api, value }
       value.catch(() => {
         if (home?.value === value) home = undefined
