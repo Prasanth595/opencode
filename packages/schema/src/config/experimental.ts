@@ -16,6 +16,6 @@ export class Info extends Schema.Class<Info>("ConfigExperimental.Info")({
       "Transcribe image attachments the selected model cannot read with this model, as provider/model. Opt-in: nothing is transcribed unless this is set.",
   }),
   policies: ConfigPolicy.Info.pipe(Schema.Array, optional).annotate({
-    description: "Ordered policies controlling access to configured resources",
+    description: "Deprecated: use top-level policies. Ordered policies controlling access to configured resources",
   }),
 }) {}
