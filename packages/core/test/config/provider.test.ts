@@ -944,4 +944,115 @@ describe("ConfigProviderPlugin.Plugin", () => {
       }),
     ),
   )
+
+  it.effect("treats empty configured display names as omitted", () =>
+    Effect.gen(function* () {
+      const providers = yield* Provider.Service
+      const models = yield* Model.Service
+      const integrations = yield* Integration.Service
+      const providerID = Provider.ID.make("custom")
+      yield* providers.transform((editor) => {
+        editor.update(providerID, (provider) => {
+          provider.name = "Existing Provider"
+        })
+        editor.models.update(providerID, Model.ID.make("catalog"), (model) => {
+          model.name = "Readable Catalog"
+        })
+        editor.models.update(providerID, Model.ID.make("omitted-catalog"), (model) => {
+          model.name = "Readable Omitted"
+        })
+      })
+      yield* integrations.transform((editor) => {
+        editor.update(Integration.ID.make("custom"), (integration) => {
+          integration.name = "Existing Integration"
+        })
+      })
+      yield* addPlugin([
+        new Document({
+          type: "document",
+          info: decode({
+            providers: {
+              custom: {
+                name: "",
+                models: {
+                  "alpha-none": {},
+                  "beta-empty": { name: "" },
+                  "gamma-set": { name: "Gamma Display" },
+                  spaced: { name: " Gamma Display " },
+                  blank: { name: "   " },
+                  catalog: { name: "" },
+                  "omitted-catalog": {},
+                  alias: { modelID: "catalog" },
+                  "alias-empty": { modelID: "catalog", name: "" },
+                  layered: { name: "Earlier" },
+                  replaced: { name: "Earlier" },
+                },
+              },
+              omitted: {},
+              empty: { name: "" },
+              named: { name: "Named Provider" },
+              padded: { name: "  Padded Provider  " },
+              layered: { name: "Earlier Provider" },
+              replaced: { name: "Earlier Provider" },
+            },
+          }),
+        }),
+        new Document({
+          type: "document",
+          info: decode({
+            providers: {
+              custom: {
+                models: {
+                  layered: { name: "" },
+                  replaced: { name: "Later" },
+                },
+              },
+              layered: { name: "" },
+              replaced: { name: "Later Provider" },
+            },
+          }),
+        }),
+      ])
+
+      const modelName = (id: string) =>
+        models.get(providerID, Model.ID.make(id)).pipe(Effect.map((model) => required(model).name))
+      const providerName = (id: string) =>
+        providers.get(Provider.ID.make(id)).pipe(Effect.map((provider) => required(provider).name))
+      const integrationName = (id: string) =>
+        integrations.get(Integration.ID.make(id)).pipe(Effect.map((integration) => required(integration).name))
+
+      expect(yield* modelName("alpha-none")).toBe("alpha-none")
+      expect(yield* modelName("beta-empty")).toBe("beta-empty")
+      expect(yield* modelName("gamma-set")).toBe("Gamma Display")
+      expect(yield* modelName("spaced")).toBe(" Gamma Display ")
+      expect(yield* modelName("blank")).toBe("   ")
+      expect(yield* modelName("catalog")).toBe("Readable Catalog")
+      expect(yield* modelName("omitted-catalog")).toBe("Readable Omitted")
+      expect(yield* modelName("layered")).toBe("Earlier")
+      expect(yield* modelName("replaced")).toBe("Later")
+
+      const alias = required(yield* models.get(providerID, Model.ID.make("alias")))
+      const aliasEmpty = required(yield* models.get(providerID, Model.ID.make("alias-empty")))
+      expect(alias.name).toBe("Readable Catalog")
+      expect(alias.id).toBe(Model.ID.make("alias"))
+      expect(alias.modelID).toBe(Model.ID.make("catalog"))
+      expect(aliasEmpty.name).toBe("Readable Catalog")
+      expect(aliasEmpty.modelID).toBe(Model.ID.make("catalog"))
+
+      expect(yield* providerName("custom")).toBe("Existing Provider")
+      expect(yield* integrationName("custom")).toBe("Existing Integration")
+      expect(yield* providerName("omitted")).toBe("omitted")
+      expect(yield* integrationName("omitted")).toBe("omitted")
+      expect(yield* providerName("empty")).toBe("empty")
+      expect(yield* integrationName("empty")).toBe("empty")
+      expect(yield* providerName("named")).toBe("Named Provider")
+      expect(yield* integrationName("named")).toBe("Named Provider")
+      expect(yield* providerName("padded")).toBe("  Padded Provider  ")
+      expect(yield* integrationName("padded")).toBe("  Padded Provider  ")
+      expect(yield* providerName("layered")).toBe("Earlier Provider")
+      expect(yield* integrationName("layered")).toBe("Earlier Provider")
+      expect(yield* providerName("replaced")).toBe("Later Provider")
+      expect(yield* integrationName("replaced")).toBe("Later Provider")
+    }),
+  )
 })
