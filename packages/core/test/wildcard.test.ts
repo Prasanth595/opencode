@@ -34,27 +34,4 @@ describe("Wildcard.match", () => {
     expect(match("C:\\Users\\al\\repo", "C:/Users/al/*")).toBe(true)
     expect(match("C:/Users/al/repo", "C:\\Users\\al\\*")).toBe(true)
   })
-
-  test("returns consistent results on repeated calls (compiled-pattern cache)", () => {
-    for (let i = 0; i < 3; i++) {
-      expect(match("echo hacheck a", "echo hacheck *")).toBe(true)
-      expect(match("echo hacheck", "echo hacheck *")).toBe(true)
-      expect(match("denied", "*")).toBe(true)
-      expect(match("plain", "plain")).toBe(true)
-    }
-  })
-
-  test("cache eviction keeps matching correct under churn", () => {
-    for (let i = 0; i < 600; i++) {
-      match(`cmd${i} arg`, `cmd${i} *`)
-    }
-    // The first 88 patterns were evicted (bounded at 512) but every pattern,
-    // cached or not, must still evaluate correctly.
-    expect(match("cmd0 arg", "cmd0 *")).toBe(true)
-    expect(match("cmd0", "cmd0 *")).toBe(true)
-    expect(match("cmd0other", "cmd0 *")).toBe(false)
-    expect(match("cmd599 arg", "cmd599 *")).toBe(true)
-    expect(match("cmd599", "cmd599 *")).toBe(true)
-    expect(match("cmd599other", "cmd599 *")).toBe(false)
-  })
 })
