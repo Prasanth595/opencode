@@ -11,6 +11,7 @@ import { CommentCard } from "./comment-card"
 import { TimelineSeparator } from "../components/timeline-separator"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { IconButton } from "@opencode/ui/icon-button"
+import { Menu } from "@opencode/ui/menu"
 import { Icon } from "@opencode/ui/icon"
 import { Button } from "@opencode/ui/button"
 import { TextReveal } from "@opencode/ui/text-reveal"
@@ -74,7 +75,7 @@ function modelLabel(
 
 function MessageActionButton(
   props: Pick<ComponentProps<"button">, "disabled" | "onMouseDown" | "onClick" | "aria-label"> & {
-    icon: "check" | "copy" | "code-lines" | "reset" | "arrow-down-to-line" | "outline-trash"
+    icon: "check" | "copy" | "reset" | "arrow-down-to-line" | "outline-trash"
     label: JSX.Element
   },
 ) {
@@ -260,10 +261,7 @@ export function CurrentUserMessageDisplay(props: {
   const dialog = useDialog()
   const i18n = useI18n()
 
-  const [state, setState] = createStore<{ copied?: "text" | "full"; reverting: boolean; updating: boolean }>({
-    reverting: false,
-    updating: false,
-  })
+  const [state, setState] = createStore({ copied: false, reverting: false, updating: false })
 
   const status = createMemo(() => props.actions?.pending?.status(props.message.id))
   const pending = createMemo(() => status() !== undefined && status() !== "queued")
@@ -286,13 +284,10 @@ export function CurrentUserMessageDisplay(props: {
 
   const stamp = createMemo(() => timefmt().format(props.message.time.created))
 
-  // A Voice message shows the voice agent's framing; "full" copies the prompt the session received.
-  const copy = async (kind: "text" | "full") => {
-    const text = kind === "full" ? props.message.text : props.text
-
+  const copy = async (text: string) => {
     if (!text || !(await writeClipboard(text))) return
-    setState("copied", kind)
-    setTimeout(() => setState("copied", undefined), 2000)
+    setState("copied", true)
+    setTimeout(() => setState("copied", false), 2000)
   }
 
   const revert = async () => {
@@ -447,29 +442,48 @@ export function CurrentUserMessageDisplay(props: {
               aria-label={i18n.t("ui.message.revertMessage")}
             />
           </Show>
-          <Show when={props.text}>
-            <MessageActionButton
-              icon={state.copied === "text" ? "check" : "copy"}
-              label={state.copied === "text" ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyMessage")}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={(event) => {
-                event.stopPropagation()
-                void copy("text")
-              }}
-              aria-label={state.copied === "text" ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyMessage")}
-            />
-          </Show>
-          <Show when={props.voice}>
-            <MessageActionButton
-              icon={state.copied === "full" ? "check" : "code-lines"}
-              label={state.copied === "full" ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyFullMessage")}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={(event) => {
-                event.stopPropagation()
-                void copy("full")
-              }}
-              aria-label={state.copied === "full" ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyFullMessage")}
-            />
+          {/* Like the iOS app, a Voice message's copy offers the shown text or the full prompt the session received. */}
+          <Show
+            when={props.voice}
+            fallback={
+              <Show when={props.text}>
+                <MessageActionButton
+                  icon={state.copied ? "check" : "copy"}
+                  label={state.copied ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyMessage")}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void copy(props.text)
+                  }}
+                  aria-label={state.copied ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyMessage")}
+                />
+              </Show>
+            }
+          >
+            <Menu gutter={4} placement="bottom-end">
+              <Tooltip
+                appearance="compact"
+                value={state.copied ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
+                placement="top"
+                gutter={4}
+              >
+                <Menu.Trigger
+                  as={IconButton}
+                  icon={<Icon name={state.copied ? "check" : "outline-copy"} size="small" />}
+                  size="normal"
+                  variant="ghost-muted"
+                  aria-label={state.copied ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
+                />
+              </Tooltip>
+              <Menu.Portal>
+                <Menu.Content>
+                  <Menu.Item onSelect={() => void copy(props.text)}>{i18n.t("ui.message.copyMessage")}</Menu.Item>
+                  <Menu.Item onSelect={() => void copy(props.message.text)}>
+                    {i18n.t("ui.message.copyFullMessage")}
+                  </Menu.Item>
+                </Menu.Content>
+              </Menu.Portal>
+            </Menu>
           </Show>
         </div>
       </Show>

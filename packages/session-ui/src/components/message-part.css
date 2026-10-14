@@ -255,7 +255,8 @@
   }
 
   &:hover [data-slot="user-message-copy-wrapper"],
-  &:focus-within [data-slot="user-message-copy-wrapper"] {
+  &:focus-within [data-slot="user-message-copy-wrapper"],
+  [data-slot="user-message-copy-wrapper"]:has([data-expanded]) {
     opacity: 1;
     pointer-events: auto;
   }
