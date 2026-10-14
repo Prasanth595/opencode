@@ -12,6 +12,7 @@ import {
   mergeHomeSessionIndex,
   retainHomeSessions,
 } from "@/home/sessions/index"
+import { HOME_SESSION_INDEX_REFETCH } from "@/home/sessions/refetch"
 import type { LocalProject } from "@/shell/state/layout"
 import { useLanguage } from "@/runtime/i18n/language"
 import { ServerConnection } from "@/runtime/server/registry"
@@ -69,13 +70,7 @@ export function createHomeSessionsController(home: HomeController) {
         ? ({ signal }) => loadHomeSessionIndex((input, options) => ctx.sdk.api.session.list(input, options), signal)
         : skipToken,
       retry: false,
-      staleTime: 30_000,
-      refetchOnMount: true,
-      refetchOnReconnect: true,
-      // A second server on the same database publishes `session.created` on its own process's bus,
-      // so nothing on this stream ever announces the sessions it creates. Re-read the index on the
-      // staleness window rather than waiting for a remount or a reconnect to be the only way back.
-      refetchInterval: 30_000,
+      ...HOME_SESSION_INDEX_REFETCH,
       select: selectSessions,
     }
   })
