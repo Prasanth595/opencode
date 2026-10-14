@@ -8,6 +8,7 @@ export type PermissionPresentation = {
   title: string
   lines: string[]
   diff?: string
+  files?: { file: string; diff: string }[]
   patch?: string
   file?: string
 }
@@ -31,13 +32,18 @@ export function permissionPresentation(
 
   if (action === "edit") {
     const file = text(input.path) || resources[0] || ""
-    const first = dict(Array.isArray(metadata.files) ? metadata.files[0] : undefined)
-    const diff = text(first.patch) || text(first.diff) || text(metadata.diff) || undefined
+    const files = (Array.isArray(metadata.files) ? metadata.files : []).flatMap((item, index) => {
+      const entry = dict(item)
+      const diff = text(entry.patch) || text(entry.diff)
+      return diff ? [{ file: text(entry.filePath) || resources[index] || "", diff }] : []
+    })
+    const diff = files[0]?.diff || text(metadata.diff) || undefined
     return {
       icon: "→",
-      title: `Edit ${formatPath(file)}`,
+      title: files.length > 1 ? `Edit ${files.length} files` : `Edit ${formatPath(file)}`,
       lines: [],
       diff,
+      files: files.length > 1 ? files : undefined,
       patch: diff ? undefined : text(input.patchText) || undefined,
       file,
     }

@@ -128,6 +128,25 @@ describe("run permission shared", () => {
     })
   })
 
+  test("mono mode keeps every file diff of a multi-file edit", () => {
+    expect(
+      permissionInfo(
+        req({
+          action: "edit",
+          resources: ["a.ts", "b.ts"],
+          metadata: {
+            files: [
+              { filePath: "a.ts", patch: "a-diff" },
+              { filePath: "b.ts", patch: "b-diff" },
+            ],
+          },
+        }),
+        undefined,
+        true,
+      ),
+    ).toMatchObject({ title: "Edit 2 files", lines: ["a-diff", "b-diff"] })
+  })
+
   test("prefers canonical request metadata over source tool metadata", () => {
     expect(
       permissionInfo(

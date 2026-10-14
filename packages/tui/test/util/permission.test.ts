@@ -21,3 +21,19 @@ test("preserves permission roots and self-contained metadata", () => {
     },
   )
 })
+
+test("edit permission exposes every file in a multi-file patch", () => {
+  const result = permissionPresentation({
+    action: "edit",
+    resources: ["src/alpha.ts", "src/beta.ts", "src/gamma.ts"],
+    metadata: {
+      files: [
+        { filePath: "src/alpha.ts", patch: "alpha-diff" },
+        { filePath: "src/beta.ts", patch: "beta-diff" },
+        { filePath: "src/gamma.ts", patch: "gamma-diff" },
+      ],
+    },
+  })
+  expect(result.files?.map((item) => item.diff)).toEqual(["alpha-diff", "beta-diff", "gamma-diff"])
+  expect(result.title).toBe("Edit 3 files")
+})
