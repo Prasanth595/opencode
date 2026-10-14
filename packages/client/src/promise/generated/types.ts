@@ -24,6 +24,8 @@ export type ProviderCompaction = { type: "summary" } | { type: "native" }
 
 export type ProviderTransport = "http" | "websocket"
 
+export type ProviderEncoding = "zstd" | "gzip" | "none"
+
 export type AgentColor = string
 
 export type PermissionEffect = "allow" | "deny" | "ask"
@@ -164,6 +166,8 @@ export type ModelReasoningField = "reasoning" | "reasoning_content" | "reasoning
 
 export type ModelMaxTokensField = "max_completion_tokens" | "max_tokens"
 
+export type ModelCacheFormat = "anthropic" | "alibaba"
+
 export type ModelRequestDefaults = {
   outputTokenBudget?: number
   outputTokenBudgetByReasoningEffort?: { [x: string]: number }
@@ -246,7 +250,7 @@ export type ProjectIcon = { url?: string; override?: string; color?: string }
 
 export type ProjectCommands = { start?: string }
 
-export type ProjectTime = { created: number; updated: number; active: number }
+export type ProjectTime = { created: number; updated: number; active: number; archived?: number }
 
 export type PermissionID = string
 
@@ -343,12 +347,6 @@ export type SessionProviderContextProvenance = {
   endpoint: string
 }
 
-export type ModelSettings = { compaction?: ProviderCompaction; outputTokenBudget?: number } & { [x: string]: any }
-
-export type ConfigModelSettings = { compaction?: ProviderCompaction; outputTokenBudget?: number } & {
-  [x: string]: JsonValue | null
-}
-
 export type ProviderSettings = {
   timeout?: number | false
   headerTimeout?: number | false
@@ -357,6 +355,13 @@ export type ProviderSettings = {
   transport?: ProviderTransport
   modelDiscovery?: boolean
   outputTokenBudget?: number
+  encoding?: ProviderEncoding
+} & { [x: string]: any }
+
+export type ModelSettings = {
+  compaction?: ProviderCompaction
+  outputTokenBudget?: number
+  encoding?: ProviderEncoding
 } & { [x: string]: any }
 
 export type ConfigProviderSettings = {
@@ -367,6 +372,13 @@ export type ConfigProviderSettings = {
   transport?: ProviderTransport
   modelDiscovery?: boolean
   outputTokenBudget?: number
+  encoding?: ProviderEncoding
+} & { [x: string]: JsonValue | null }
+
+export type ConfigModelSettings = {
+  compaction?: ProviderCompaction
+  outputTokenBudget?: number
+  encoding?: ProviderEncoding
 } & { [x: string]: JsonValue | null }
 
 export type PermissionRule = { action: string; resource: string; effect: PermissionEffect }
@@ -651,8 +663,19 @@ export type ModelCompatibility = {
   requireFinishReason?: boolean
   requireAssistantAfterTool?: boolean
   supportsPromptCacheKey?: boolean
+  cacheFormat?: ModelCacheFormat
   supportsThinkingBlockBinding?: boolean
   supportsEffortUpdates?: boolean
+}
+
+export type ProviderCompatibility = {
+  reasoningField?: ModelReasoningField
+  requireReasoning?: boolean
+  maxTokensField?: ModelMaxTokensField
+  requireFinishReason?: boolean
+  requireAssistantAfterTool?: boolean
+  supportsPromptCacheKey?: boolean
+  cacheFormat?: ModelCacheFormat
 }
 
 export type ModelCost = {
@@ -899,27 +922,15 @@ export type SessionMessageModelSelected = {
 
 export type SessionProviderContext = { version: 1; provenance: SessionProviderContextProvenance; messages: JsonValue }
 
-export type ModelVariant = {
-  id: string
-  settings?: ModelSettings
-  headers?: { [x: string]: string }
-  body?: { [x: string]: any }
-}
-
 export type ProviderRequest = {
   settings: ProviderSettings
   headers: { [x: string]: string }
   body: { [x: string]: any }
 }
 
-export type ProviderInfo = {
-  id: ProviderID
-  canonical?: ProviderID
-  integrationID?: IntegrationID
-  name: string
-  activation: "auto" | "enabled" | "disabled"
-  package: string
-  settings?: ProviderSettings
+export type ModelVariant = {
+  id: string
+  settings?: ModelSettings
   headers?: { [x: string]: string }
   body?: { [x: string]: any }
 }
@@ -1937,6 +1948,19 @@ export type CredentialKey = {
   configuration?: FormAnswer
 }
 
+export type ProviderInfo = {
+  id: ProviderID
+  canonical?: ProviderID
+  integrationID?: IntegrationID
+  name: string
+  activation: "auto" | "enabled" | "disabled"
+  package: string
+  compatibility?: ProviderCompatibility
+  settings?: ProviderSettings
+  headers?: { [x: string]: string }
+  body?: { [x: string]: any }
+}
+
 export type ConnectionInfo = ConnectionCredentialInfo | ConnectionEnvInfo
 
 export type PtyCreated = {
@@ -2160,6 +2184,11 @@ export type ConfigEntry =
         enterprise?: { url?: string }
         username?: string
         permissions?: PermissionRuleset
+        policies?: Array<{
+          action: "provider.use" | "tool.use" | "integration.use"
+          resource: string
+          effect: "allow" | "deny"
+        }>
         agents?: {
           [x: string]: {
             model?: string | { providerID: string; model: string; variant?: string }
@@ -2267,6 +2296,7 @@ export type ConfigEntry =
             name?: string
             env?: Array<string>
             package?: string
+            compatibility?: ProviderCompatibility
             settings?: ConfigProviderSettings
             headers?: { [x: string]: string }
             body?: { [x: string]: JsonValue }
@@ -6153,6 +6183,8 @@ export type CredentialActivateOutput = void
 export type CredentialRemoveInput = { readonly credentialID: { readonly credentialID: string }["credentialID"] }
 
 export type CredentialRemoveOutput = void
+
+export type ProjectListInput = { readonly archived?: { readonly archived?: boolean | undefined }["archived"] }
 
 export type ProjectListOutput = Array<Project>
 

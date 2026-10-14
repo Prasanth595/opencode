@@ -497,14 +497,16 @@ describe("OpenAI-compatible model discovery", () => {
                 providers: {
                   gateway: {
                     settings: { baseURL: `${server.url.origin}/v1`, modelDiscovery: true },
-                    models: {
-                      [remote.id]: {
-                        package: "@opencode/ai/providers/openai-compatible",
-                        limit: { input: 400_000 },
-                        capabilities: { tools: false },
-                        settings: { reasoningEffort: "low" },
-                      },
-                    },
+                     models: {
+                       [remote.id]: {
+                         package: "@opencode/ai/providers/openai-compatible",
+                         limit: { input: 400_000 },
+                         capabilities: { tools: false },
+                         settings: { reasoningEffort: "low" },
+                         compatibility: { maxTokensField: "max_completion_tokens" },
+                       },
+                     },
+                     compatibility: { cacheFormat: "anthropic", maxTokensField: "max_tokens" },
                   },
                 },
               }),
@@ -526,8 +528,9 @@ describe("OpenAI-compatible model discovery", () => {
           expect(selected).toMatchObject({
             package: "@opencode/ai/providers/openai-compatible",
             limit: { context: 1_050_000, input: 400_000, output: 128_000 },
-            capabilities: { tools: false, reasoning: true },
-            settings: { reasoningEffort: "low" },
+             capabilities: { tools: false, reasoning: true },
+             settings: { reasoningEffort: "low" },
+             compatibility: { cacheFormat: "anthropic", maxTokensField: "max_completion_tokens" },
           })
           expect(selected?.variants.map((variant) => String(variant.id))).toEqual(["low", "high", "xhigh", "max"])
           expect(selected?.variants.every((variant) => variant.settings?.include === undefined)).toBe(true)
