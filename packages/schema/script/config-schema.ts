@@ -1,14 +1,9 @@
 import { Schema } from "effect"
 import { Config } from "../src/config.js"
 
-export const SchemaURL = "https://opencode.ai/config.json"
-
 interface JsonSchema {
   readonly [key: string]: unknown
-  readonly type?: unknown
-  readonly description?: unknown
   readonly properties?: Readonly<Record<string, JsonSchema>>
-  readonly additionalProperties?: unknown
 }
 
 // V1 and V2 read the same opencode.json, and V2 normalizes V1 fields at load time, so the published schema accepts
@@ -22,18 +17,34 @@ export async function generate() {
   const name = String(document.schema.$ref).replace("#/$defs/", "")
   const { [name]: current, ...definitions } = document.definitions as Record<string, JsonSchema>
   const { Config: previous, ...legacyDefinitions } = legacy.$defs
-  if (JSON.stringify(definitions).includes(`"#/$defs/${name}"`)) throw new Error(`${name} must not reference itself`)
+  const shared = Object.keys(legacyDefinitions).filter((key) => key in definitions)
+  if (shared.length) throw new Error(`V1 and V2 schema definitions share names: ${shared.join(", ")}`)
 
   return {
     $schema: "https://json-schema.org/draft/2020-12/schema",
-    $id: SchemaURL,
+    $id: "https://opencode.ai/config.json",
     type: "object",
-    properties: merge(current.properties ?? {}, previous.properties ?? {}),
+    properties: merge(describe(current.properties ?? {}), previous.properties ?? {}),
     additionalProperties: false,
-    $defs: mergeDefinitions(definitions, legacyDefinitions),
+    $defs: { ...legacyDefinitions, ...definitions },
     allowComments: true,
     allowTrailingCommas: true,
   }
+}
+
+// Optional fields annotate their decoded side, which the encoded JSON Schema omits, so copy top-level descriptions
+// from the type-side document.
+function describe(properties: Readonly<Record<string, JsonSchema>>) {
+  const document = Schema.toJsonSchemaDocument(Schema.toType(Config.Info))
+  const type = (document.definitions as Record<string, JsonSchema>)[
+    String(document.schema.$ref).replace("#/$defs/", "")
+  ]
+  return Object.fromEntries(
+    Object.entries(properties).map(([key, schema]) => [
+      key,
+      { ...schema, description: type.properties?.[key]?.description ?? schema.description },
+    ]),
+  )
 }
 
 function merge(current: Readonly<Record<string, JsonSchema>>, previous: Readonly<Record<string, JsonSchema>>) {
@@ -45,8 +56,8 @@ function merge(current: Readonly<Record<string, JsonSchema>>, previous: Readonly
   ])
 }
 
-// Shared keys keep the V2 shape. Objects whose V1 properties V2 still normalizes (mcp, compaction, experimental)
-// accept both property sets, and keys whose type changed (skills) accept either shape.
+// Shared keys keep the V2 shape. Shared objects also accept their V1 properties, and keys whose type changed accept
+// either shape.
 function combine(current: JsonSchema, previous: JsonSchema): JsonSchema {
   const description = current.description ?? previous.description
   if (current.type === "object" && previous.type === "object")
@@ -62,14 +73,6 @@ function combine(current: JsonSchema, previous: JsonSchema): JsonSchema {
   if (current.type !== undefined && previous.type !== undefined && current.type !== previous.type)
     return { description, anyOf: [current, { ...previous, deprecated: true }] }
   return { ...current, description }
-}
-
-function mergeDefinitions(current: Record<string, JsonSchema>, previous: Record<string, JsonSchema>) {
-  const conflicts = Object.keys(previous).filter(
-    (key) => current[key] && JSON.stringify(current[key]) !== JSON.stringify(previous[key]),
-  )
-  if (conflicts.length) throw new Error(`Conflicting V1 and V2 schema definitions: ${conflicts.join(", ")}`)
-  return { ...previous, ...current }
 }
 
 if (import.meta.main) {

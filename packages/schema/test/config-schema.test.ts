@@ -14,10 +14,12 @@ const valid = (config: unknown) => {
 }
 
 describe("published config schema", () => {
-  test("is a flat object schema so JSON language servers apply it", () => {
+  test("is a flat object schema with V2 descriptions", () => {
     expect(schema).not.toHaveProperty("$ref")
     expect(schema.type).toBe("object")
     expect(schema.$id).toBe("https://opencode.ai/config.json")
+    expect(schema.properties.update.description).toBeString()
+    expect(schema.properties.model.description).toBe("Default model to use when no session or agent model is selected")
   })
 
   test("accepts V2 configuration", () => {
@@ -69,6 +71,11 @@ describe("published config schema", () => {
         mcp: { playwright: { type: "local", command: ["bunx", "@playwright/mcp"], enabled: false } },
         compaction: { reserved: 20000 },
         experimental: { mcp_timeout: 10000 },
+        model: "anthropic/claude-sonnet-4-5",
+        small_model: "anthropic/claude-haiku-4-5",
+        formatter: { prettier: { command: ["prettier", "--write", "$FILE"], extensions: [".ts"] } },
+        lsp: { typescript: { disabled: true } },
+        reference: { docs: "../docs" },
       }),
     ).toBe(true)
     for (const key of ["autoupdate", "snapshot", "permission", "agent", "command", "plugin", "provider"])
