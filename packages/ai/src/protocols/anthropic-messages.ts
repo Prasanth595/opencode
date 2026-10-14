@@ -601,10 +601,19 @@ const serverToolResultType = (name: string): AnthropicServerToolResultType | und
   return undefined
 }
 
+// A history may start on a provider that executes its own tools natively
+// (e.g. claude-code's `read`) and continue on Anthropic Messages, which only
+// recognizes the three server tools above — the API rejects a `server_tool_use`
+// block for any other name. Degrade both the call and its result to plain text
+// instead of failing the request.
+const lowerUnknownServerToolCall = (part: ToolCallPart): AnthropicTextBlock => ({
+  type: "text",
+  text: `Called provider tool \`${part.name}\` with input ${ProviderShared.encodeJson(part.input)}`,
+})
+
 const lowerServerToolResult = Effect.fnUntraced(function* (part: ToolResultPart, providerMetadataKey: string) {
   const wireType = serverToolResultType(part.name)
-  if (!wireType)
-    return yield* invalid(`Anthropic Messages does not know how to round-trip server tool result for ${part.name}`)
+  if (!wireType) return { type: "text", text: ProviderShared.toolResultText(part) } satisfies AnthropicTextBlock
   // Prefer the provider-owned replay payload; fall back to the result value for
   // histories constructed directly from provider events.
   const payload = part.providerMetadata?.[providerMetadataKey]?.["result"] ?? part.result.value
@@ -959,7 +968,13 @@ const lowerMessages = Effect.fnUntraced(function* (request: LLMRequest, breakpoi
           continue
         }
         if (part.type === "tool-call") {
-          content.push(part.providerExecuted ? lowerServerToolCall(part) : lowerToolCall(part))
+          content.push(
+            part.providerExecuted
+              ? serverToolResultType(part.name)
+                ? lowerServerToolCall(part)
+                : lowerUnknownServerToolCall(part)
+              : lowerToolCall(part),
+          )
           continue
         }
         if (part.type === "tool-result" && part.providerExecuted) {
