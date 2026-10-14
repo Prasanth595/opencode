@@ -6,7 +6,7 @@ import { tmpdir } from "../../core/test/fixture/tmpdir"
 import { it } from "../../core/test/lib/effect"
 import { startServer } from "./fixture/server"
 
-it.live("lists configured models on the first request after plugin initialization", () =>
+it.live("waits for plugin initialization before listing models", () =>
   Effect.gen(function* () {
     const tmp = yield* Effect.acquireDisposable(Effect.promise(() => tmpdir("opencode-model-endpoint-")))
     yield* Effect.promise(() =>
@@ -26,14 +26,14 @@ it.live("lists configured models on the first request after plugin initializatio
     const server = yield* startServer(tmp.path)
     const url = new URL("/api/model", server.base)
     url.searchParams.set("location[directory]", tmp.path)
-    const request = Effect.fnUntraced(function* () {
-      const response = yield* Effect.promise(() => fetch(url, { headers: server.headers }))
-      expect(response.status).toBe(200)
-      const body: unknown = yield* Effect.promise(() => response.json())
-      if (!isRecord(body) || !Array.isArray(body["data"])) throw new Error("Expected a model list response")
-      return body["data"].some((model) => isRecord(model) && model["providerID"] === "custom" && model["id"] === "chat")
-    })
-    expect(yield* request()).toBe(true)
+    const response = yield* Effect.promise(() => fetch(url, { headers: server.headers }))
+
+    expect(response.status).toBe(200)
+    const body: unknown = yield* Effect.promise(() => response.json())
+    if (!isRecord(body) || !Array.isArray(body["data"])) throw new Error("Expected a model list response")
+    expect(
+      body["data"].some((model) => isRecord(model) && model["providerID"] === "custom" && model["id"] === "chat"),
+    ).toBeTrue()
   }),
 )
 

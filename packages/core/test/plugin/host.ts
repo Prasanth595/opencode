@@ -232,15 +232,13 @@ export function providerHost(providers: Provider.Interface): Plugin.Context["pro
   return {
     list: () => providers.available().pipe(Effect.map(located)),
     get: (input) =>
-      providers
-        .get(Provider.ID.make(input.providerID))
-        .pipe(
-          Effect.flatMap((provider) =>
-            provider === undefined
-              ? Effect.fail(new Error(`Provider not found: ${input.providerID}`))
-              : Effect.succeed(located(provider)),
-          ),
+      providers.get(Provider.ID.make(input.providerID)).pipe(
+        Effect.flatMap((provider) =>
+          provider === undefined
+            ? Effect.fail(new Error(`Provider not found: ${input.providerID}`))
+            : Effect.succeed(located(provider)),
         ),
+      ),
     reload: providers.reload,
     transform: (callback) =>
       providers.transform((editor) =>
