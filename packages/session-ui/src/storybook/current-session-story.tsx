@@ -62,7 +62,7 @@ export function CurrentSessionProviders(props: { document: SessionDocument; chil
         },
         session_diff: { [CURRENT_SESSION_ID]: props.document.diffs },
       }}
-      turnDiff={async () => props.document.diffs}
+      turnDiff={{ get: () => props.document.diffs, load: () => {} }}
     >
       <FileComponentProvider component={File}>{props.children}</FileComponentProvider>
     </DataProvider>

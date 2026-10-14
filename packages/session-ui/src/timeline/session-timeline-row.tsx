@@ -1,5 +1,4 @@
 import type {
-  FileDiffInfo,
   SessionMessageAssistant,
   SessionMessageInfo,
   SessionMessageUser,
@@ -8,7 +7,6 @@ import type {
 import { useI18n } from "@opencode/ui/context/i18n"
 import { Option, Predicate, Schema } from "effect"
 import { For, Show, createEffect, createMemo, type Accessor, type JSX } from "solid-js"
-import { createStore } from "solid-js/store"
 import { DiffChanges } from "@opencode/ui/diff-changes"
 import { Dynamic } from "solid-js/web"
 import type { SessionUserActions, SessionUserAttachmentReference, SessionUserComment } from "../actions"
@@ -84,22 +82,6 @@ export function createSessionTimelineRowRenderer(input: {
   // Cached timelines retain file-change subgroup identities alongside their disclosure choices.
   const patchGroupKeys = input.disclosure.patchGroupKeys ?? new Map<string, string>()
   const patchPartKeys = new WeakMap<SessionMessageAssistant["content"][number], string>()
-  // A finished turn's snapshots never change, so each turn's diff loads once per timeline.
-  const [turnDiffs, setTurnDiffs] = createStore<Record<string, readonly FileDiffInfo[] | undefined>>({})
-  const turnDiffRequests = new Set<string>()
-
-  const loadTurnDiff = (row: TimelineRow.TurnDiff) => {
-    const load = data.turnDiff
-    const key = row.messageID
-
-    if (!load || turnDiffRequests.has(key)) return
-    turnDiffRequests.add(key)
-    load({ sessionID: input.sessionID(), from: row.from }).then(
-      (diffs) => setTurnDiffs(key, diffs),
-      // A failed load shows nothing; the next mount retries.
-      () => turnDiffRequests.delete(key),
-    )
-  }
 
   const patchOwners = createMemo(() => {
     const owners = new Map<string, string>()
@@ -730,7 +712,8 @@ export function createSessionTimelineRowRenderer(input: {
   function TurnDiff(props: { row: TimelineRow.TurnDiff; onSizeChange?: () => void }) {
     const render = ToolRegistry.render("patch") ?? GenericTool
     // Until the diff loads, list the paths the turn's steps recorded, without change counts.
-    const diffs = () => turnDiffs[props.row.messageID]
+    const turn = () => ({ sessionID: input.sessionID(), from: props.row.from })
+    const diffs = () => data.turnDiff?.get(turn())
     const paths = () => diffs()?.map((diff) => diff.file) ?? props.row.files
     const showAllKey = () => `turn-diff:${props.row.messageID}`
     const showAll = () => input.disclosure.value(showAllKey()) === true
@@ -738,7 +721,7 @@ export function createSessionTimelineRowRenderer(input: {
     const overflow = () => paths().length > turnDiffFileLimit
     const fileKey = (path: string) => `turn-diff:${props.row.messageID}:file:${path}`
 
-    createEffect(() => loadTurnDiff(props.row))
+    createEffect(() => data.turnDiff?.load(turn()))
 
     return (
       <Show when={data.turnDiff && paths().length > 0}>
