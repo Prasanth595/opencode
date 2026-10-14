@@ -195,6 +195,10 @@ export const RunCommand = effectCmd({
         type: "string",
         describe: "title for the session (uses truncated prompt if no value provided)",
       })
+      .option("temp", {
+        type: "boolean",
+        describe: "mark the session as ephemeral; it is deleted when opencode shuts down",
+      })
       .option("attach", {
         type: "string",
         describe: "attach to a running opencode server (e.g., http://localhost:4096)",
@@ -477,6 +481,7 @@ export const RunCommand = effectCmd({
         const result = await sdk.session.create({
           title: name,
           permission: [...rules],
+          temp: args.temp,
         })
         const id = result.data?.id
         if (!id) {
@@ -520,6 +525,7 @@ export const RunCommand = effectCmd({
               }
             : undefined,
           permission: [...rules],
+          temp: args.temp,
         })
         const id = result.data?.id
         if (!id) {
