@@ -20,13 +20,16 @@ import { Money } from "@opencode/schema/money"
 const defaultServer = "https://opencode.ai/console"
 const clientID = "opencode-cli"
 const methodID = Integration.MethodID.make("device")
-// Filter only unsupported actions. Malformed supported statements still fail validation.
+// Drop statements whose action or effect is a value this version does not know, so a newer Console can
+// extend either enum. Malformed statements still fail validation.
 const RemotePolicies = Schema.Array(Schema.Unknown).pipe(
   Schema.decodeTo(Schema.Unknown, {
     decode: SchemaGetter.transform((policies) =>
       policies.filter((policy) => {
         const action = Schema.decodeUnknownOption(Schema.Struct({ action: Schema.String }))(policy)
-        return Option.isNone(action) || Schema.is(ConfigPolicy.Info.fields.action)(action.value.action)
+        if (Option.isSome(action) && !Schema.is(ConfigPolicy.Info.fields.action)(action.value.action)) return false
+        const effect = Schema.decodeUnknownOption(Schema.Struct({ effect: Schema.String }))(policy)
+        return Option.isNone(effect) || Schema.is(ConfigPolicy.Effect)(effect.value.effect)
       }),
     ),
     encode: SchemaGetter.passthrough({ strict: false }),
