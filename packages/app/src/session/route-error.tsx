@@ -75,6 +75,7 @@ export function SessionErrorFallback(props: {
   )
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Error boundaries receive arbitrary thrown values; the domain error guards below validate them.
 function isCurrentSessionNotFoundError(error: unknown, sessionID: string | undefined) {
   if (!sessionID) return false
 
