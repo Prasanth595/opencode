@@ -13,12 +13,13 @@ import {
   useContext,
 } from "solid-js"
 import { Dynamic } from "solid-js/web"
+import { createStore } from "solid-js/store"
 import path from "path"
 import { useRoute, useRouteData } from "@tui/context/route"
 import { useProject } from "@tui/context/project"
 import { useSync } from "@tui/context/sync"
 import { useEvent } from "@tui/context/event"
-import { SplitBorder } from "@tui/component/border"
+import { SplitBorder, EmptyBorder } from "@tui/component/border"
 import { Spinner } from "@tui/component/spinner"
 import { selectedForeground, useTheme } from "@tui/context/theme"
 import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
@@ -70,6 +71,7 @@ import parsers from "../../../../../../parsers-config.ts"
 import { Clipboard } from "../../util/clipboard"
 import { Toast, useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv.tsx"
+import * as Width from "../../util/sidebar"
 import { Editor } from "../../util/editor"
 import stripAnsi from "strip-ansi"
 import { usePromptRef } from "../../context/prompt"
@@ -154,6 +156,11 @@ export function Session() {
   const dimensions = useTerminalDimensions()
   const [sidebar, setSidebar] = kv.signal<"auto" | "hide">("sidebar", "auto")
   const [sidebarOpen, setSidebarOpen] = createSignal(false)
+  // Dragged width persists across restarts. Unset follows sidebar_width config.
+  const custom = (): number | undefined => kv.get("sidebar_width")
+  // Live override during drag so pixel updates skip the kv disk writes.
+  const [live, setLive] = createSignal<number | null>(null)
+  const [drag, setDrag] = createStore({ active: false, x: 0, start: 0, hover: false })
   const [conceal, setConceal] = createSignal(true)
   const [showThinking, setShowThinking] = kv.signal("thinking_visibility", true)
   const [timestamps, setTimestamps] = kv.signal<"hide" | "show">("timestamps", "hide")
@@ -172,7 +179,30 @@ export function Session() {
     return false
   })
   const showTimestamps = createMemo(() => timestamps() === "show")
-  const contentWidth = createMemo(() => dimensions().width - (sidebarVisible() ? 42 : 0) - 4)
+  const sidebarWidth = createMemo(() =>
+    Width.resolve(live() ?? custom() ?? tuiConfig.sidebar_width, dimensions().width),
+  )
+  // No rail to account for when mouse capture is off: dragging cannot start.
+  const rail = () => (tuiConfig.mouse === false ? 0 : Width.Rail)
+  const contentWidth = createMemo(
+    () => dimensions().width - (sidebarVisible() ? sidebarWidth() + rail() : 0) - 4,
+  )
+
+  function dragStart(x: number) {
+    setDrag({ active: true, x, start: sidebarWidth() })
+  }
+  function dragMove(x: number) {
+    if (!drag.active) return
+    // Sidebar sits on the right edge: dragging left (x decreases) widens it.
+    setLive(Width.clamp(drag.start + (drag.x - x), dimensions().width))
+  }
+  function dragEnd() {
+    if (!drag.active) return
+    const final = live()
+    if (final !== null) kv.set("sidebar_width", final)
+    setDrag("active", false)
+    setLive(null)
+  }
   const providers = createMemo(() => Model.index(sync.data.provider))
 
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
@@ -1055,7 +1085,13 @@ export function Session() {
         tui: tuiConfig,
       }}
     >
-      <box flexDirection="row">
+      <box
+        flexDirection="row"
+        onMouseDrag={(e) => dragMove(e.x)}
+        onMouseMove={(e) => dragMove(e.x)}
+        onMouseUp={dragEnd}
+        onMouseDragEnd={dragEnd}
+      >
         <box flexGrow={1} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
           <Show when={session()}>
             <scrollbox
@@ -1212,7 +1248,23 @@ export function Session() {
         <Show when={sidebarVisible()}>
           <Switch>
             <Match when={wide()}>
-              <Sidebar sessionID={route.sessionID} />
+              <Show when={tuiConfig.mouse !== false}>
+              <box
+                width={Width.Rail}
+                height="100%"
+                backgroundColor={theme.backgroundPanel}
+                border={["left"]}
+                customBorderChars={{ ...EmptyBorder, vertical: "▏" }}
+                borderColor={drag.active || drag.hover ? theme.warning : theme.backgroundPanel}
+                onMouseOver={() => setDrag("hover", true)}
+                onMouseOut={() => setDrag("hover", false)}
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  dragStart(e.x)
+                }}
+              />
+              </Show>
+              <Sidebar sessionID={route.sessionID} width={sidebarWidth()} />
             </Match>
             <Match when={!wide()}>
               <box
@@ -1224,7 +1276,7 @@ export function Session() {
                 alignItems="flex-end"
                 backgroundColor={RGBA.fromInts(0, 0, 0, 70)}
               >
-                <Sidebar sessionID={route.sessionID} />
+                <Sidebar sessionID={route.sessionID} width={sidebarWidth()} />
               </box>
             </Match>
           </Switch>

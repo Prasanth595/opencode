@@ -23,6 +23,12 @@ export const TuiOptions = z.object({
     .optional()
     .describe("Control diff rendering style: 'auto' adapts to terminal width, 'stacked' always shows single column"),
   mouse: z.boolean().optional().describe("Enable or disable mouse capture (default: true)"),
+  sidebar_width: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe("Session sidebar width in columns (default: 42)"),
 })
 
 export const TuiInfo = z

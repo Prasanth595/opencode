@@ -369,7 +369,8 @@ You can customize TUI behavior through `tui.json` (or `tui.jsonc`).
     "enabled": true
   },
   "diff_style": "auto",
-  "mouse": true
+  "mouse": true,
+  "sidebar_width": 42
 }
 ```
 
@@ -383,6 +384,7 @@ This is separate from `opencode.json`, which configures server/runtime behavior.
 - `scroll_speed` - Controls how fast the TUI scrolls when using scroll commands (minimum: `0.001`, supports decimal values). Defaults to `3`. **Note: This is ignored if `scroll_acceleration.enabled` is set to `true`.**
 - `diff_style` - Controls diff rendering. `"auto"` adapts to terminal width, `"stacked"` always shows a single-column layout.
 - `mouse` - Enable or disable mouse capture in the TUI (default: `true`). When disabled, the terminal's native mouse selection/scrolling behavior is preserved.
+- `sidebar_width` - Session sidebar width in columns (default: `42`, clamped to 20–100 while keeping 40 columns for chat). The sidebar can also be resized by dragging its left edge with the mouse; the dragged width persists across restarts.
 
 Use `OPENCODE_TUI_CONFIG` to load a custom TUI config path.
 
