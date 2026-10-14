@@ -839,10 +839,10 @@ export function DiffViewerContent(props: {
         <box
           id="diff-source-header"
           paddingLeft={2}
-          paddingRight={2}
+          // Docked, the header lines up with the card text below it; the card edge row supplies the gap underneath.
+          paddingRight={docked() ? 1 : 2}
           paddingTop={docked() ? 1 : 0}
-          paddingBottom={docked() ? 1 : 0}
-          height={docked() ? 3 : 1}
+          height={docked() ? 2 : 1}
           flexShrink={0}
           flexDirection="row"
           gap={1}
