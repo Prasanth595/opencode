@@ -91,6 +91,10 @@ function runningTool(input: {
   output?: string
   metadata?: Record<string, JsonValue>
 }): SessionMessageAssistantTool {
+  const metadata = { ...input.metadata }
+
+  if (input.output !== undefined) metadata.output = input.output
+
   return {
     type: "tool",
     id: input.id,
@@ -98,10 +102,7 @@ function runningTool(input: {
     state: {
       status: "running",
       input: input.args,
-      metadata: {
-        ...input.metadata,
-        ...(input.output === undefined ? {} : { output: input.output }),
-      },
+      metadata,
     },
     time: { created: STORY_TIME + input.offset, ran: STORY_TIME + input.offset + 100 },
   }
