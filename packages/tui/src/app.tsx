@@ -759,7 +759,7 @@ function App() {
             ),
           })
           if (agent) local.agent.set(agent.id)
-          if (model) local.model.set(model)
+          if (model && config.data.session.new_model === "last_used") local.model.set(model)
           dialog.clear()
         },
       },
@@ -786,7 +786,7 @@ function App() {
             ),
           })
           if (agent) local.agent.set(agent.id)
-          if (model) local.model.set(model)
+          if (model && config.data.session.new_model === "last_used") local.model.set(model)
           dialog.clear()
         },
       },
