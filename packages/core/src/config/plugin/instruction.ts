@@ -12,7 +12,6 @@ import { Watcher } from "../../filesystem/watcher.js"
 import { InstructionDiscovery } from "../../instruction-discovery.js"
 import { Instructions } from "../../instructions/index.js"
 import { Location } from "../../location.js"
-import { AbsolutePath } from "../../schema.js"
 
 type Loaded =
   | { readonly type: "available"; readonly files: InstructionDiscovery.File[] }
@@ -64,7 +63,7 @@ export const Plugin = define({
 
       const read = Effect.fn("ConfigInstructionPlugin.read")(function* (filepath: string) {
         const content = yield* fs.readFileStringSafe(filepath)
-        if (content !== undefined) return new InstructionDiscovery.File({ path: AbsolutePath.make(filepath), content })
+        if (content !== undefined) return new InstructionDiscovery.File({ path: filepath, content })
         yield* Effect.logDebug("instruction file skipped", { path: filepath, reason: "unavailable" })
       })
 
@@ -113,6 +112,7 @@ export const Plugin = define({
           }
           for (const item of (yield* match(source)).toSorted()) {
             const resolved = yield* fs.resolve(item)
+            if (watched.has(resolved)) continue
             watched.add(resolved)
             const file = yield* read(resolved)
             if (file) files.push(file)

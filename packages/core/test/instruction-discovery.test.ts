@@ -81,8 +81,7 @@ const configUpdated = () => ({ id: Event.ID.create(), created: Date.now(), type:
 const respond = (handler: (url: string) => Response) =>
   HttpClient.make((request) => Effect.succeed(HttpClientResponse.fromWeb(request, handler(request.url))))
 
-const file = (path: string, content: string) =>
-  new InstructionDiscovery.File({ path: AbsolutePath.make(path), content })
+const file = (path: string, content: string) => new InstructionDiscovery.File({ path, content })
 
 function emitAndWait(update: Watcher.Update) {
   return Effect.gen(function* () {
@@ -288,6 +287,7 @@ describe("ConfigInstructionPlugin.Plugin", () => {
     ).pipe(
       Effect.flatMap((tmp) => {
         const project = path.join(tmp.path, "repo")
+        const directory = path.join(project, "packages", "core")
         const agents = path.join(project, "AGENTS.md")
         const first = path.join(project, "rules", "a.md")
         const second = path.join(project, "rules", "b.md")
@@ -298,6 +298,7 @@ describe("ConfigInstructionPlugin.Plugin", () => {
         return Effect.gen(function* () {
           yield* Effect.promise(async () => {
             await fs.mkdir(path.dirname(first), { recursive: true })
+            await fs.mkdir(directory, { recursive: true })
             await Promise.all([
               fs.writeFile(agents, "agents"),
               fs.writeFile(first, "first"),
@@ -348,7 +349,10 @@ describe("ConfigInstructionPlugin.Plugin", () => {
               locationServiceLayer: Layer.succeed(
                 Location.Service,
                 Location.Service.of(
-                  location({ directory: AbsolutePath.make(project) }, { projectDirectory: AbsolutePath.make(project) }),
+                  location(
+                    { directory: AbsolutePath.make(directory) },
+                    { projectDirectory: AbsolutePath.make(project) },
+                  ),
                 ),
               ),
             }),
