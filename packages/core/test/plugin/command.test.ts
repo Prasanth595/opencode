@@ -20,7 +20,8 @@ import PROMPT_INITIALIZE from "../../src/plugin/command/initialize.txt"
 import PROMPT_REVIEW from "../../src/plugin/command/review.txt"
 
 const directory = AbsolutePath.make("/repo/packages/app")
-const project = AbsolutePath.make("/repo$&")
+// project directory exercises every $-sequence the bug applies to: $&, $', $` and $$
+const project = AbsolutePath.make("/repo$&$'$`$$")
 const locationLayer = Layer.succeed(
   Location.Service,
   Location.Service.of(location({ directory }, { projectDirectory: project })),
