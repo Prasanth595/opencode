@@ -85,6 +85,14 @@ export const settings: Setting[] = [
     keywords: ["transcript", "messages", "reads", "searches"],
   },
   {
+    title: "Verbosity",
+    category: "Session",
+    path: ["session", "verbosity"],
+    default: "medium",
+    values: ["low", "medium", "high"],
+    keywords: ["detail", "activity", "summary", "transcript"],
+  },
+  {
     title: "Transcript images",
     category: "Session",
     path: ["session", "image_preview"],
@@ -280,6 +288,15 @@ export const settings: Setting[] = [
     max: 1,
     format: (value) => `${Math.round(Number(value) * 100)}%`,
     keywords: ["sound volume", "audio volume"],
+  },
+  {
+    title: "Release highlights",
+    category: "Alerts",
+    path: ["highlights"],
+    default: true,
+    values: [false, true],
+    labels: ["off", "on"],
+    keywords: ["what's new", "changelog", "release notes"],
   },
   {
     title: "Window title",

@@ -1,5 +1,5 @@
 import { createMemo, createSignal, Match, Show, Switch } from "solid-js"
-import { RGBA, TextAttributes } from "@opentui/core"
+import { RGBA, TextAttributes, type MouseEvent } from "@opentui/core"
 import type { JSX } from "@opentui/solid"
 import type {
   SessionMessageAssistant,
@@ -14,8 +14,30 @@ import { SplitBorder } from "../../ui/border"
 import { Locale } from "../../util/locale"
 import { use } from "./render-context"
 import { generateThinkingSyntax } from "./thinking-syntax"
+import { canonicalToolName } from "../../util/tool-display"
 
 export const INLINE_TOOL_ICON_WIDTH = 2
+
+const toolDisplays = new Set([
+  "shell",
+  "glob",
+  "read",
+  "grep",
+  "webfetch",
+  "websearch",
+  "write",
+  "edit",
+  "subagent",
+  "execute",
+  "patch",
+  "question",
+  "skill",
+])
+
+export function toolDisplay(tool: string) {
+  const normalized = canonicalToolName(tool)
+  return toolDisplays.has(normalized) ? normalized : "generic"
+}
 
 export function ReasoningPart(props: {
   last: boolean
@@ -190,7 +212,7 @@ export function InlineToolRow(props: {
   children: JSX.Element
   onMouseOver?: () => void
   onMouseOut?: () => void
-  onMouseUp?: () => void
+  onMouseUp?: (event: MouseEvent) => void
 }) {
   return (
     <box paddingLeft={3} onMouseOver={props.onMouseOver} onMouseOut={props.onMouseOut} onMouseUp={props.onMouseUp}>

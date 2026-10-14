@@ -7,11 +7,13 @@ import { toSessionError } from "@opencode/core/session/to-session-error"
 import { Model } from "@opencode/core/model"
 import { Provider } from "@opencode/core/provider"
 import {
+  Media,
   LLM,
   AIError,
   CompactionPart,
   ProviderID,
   HttpContext,
+  InvalidRequestError,
   LLMEvent,
   Message,
   RateLimitError,
@@ -23,7 +25,7 @@ import { LLMClient, RequestExecutor } from "@opencode/ai/route"
 import { compileRequest } from "@opencode/ai/route/client"
 import { expect } from "bun:test"
 import { Effect, Layer } from "effect"
-import { HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { HttpClientRequest, HttpClientResponse } from "effect/http"
 import { testEffect } from "./lib/effect"
 
 const it = testEffect(AISDK.locationLayer)
@@ -373,6 +375,18 @@ it.effect("routes AI Gateway model options by upstream prefix", () =>
       bedrock: { reasoningConfig: { type: "enabled" } },
     })
 
+    const openai = yield* aisdk.model({
+      ...model("@ai-sdk/gateway", { gateway: { order: ["openai"] } }),
+      modelID: Model.ID.make("openai/gpt-5.5"),
+    })
+    const openaiPrepared = yield* compileRequest(
+      LLM.request({ model: openai, prompt: "Hello", providerOptions: { textVerbosity: "low" } }),
+    )
+    expect(openaiPrepared.body.providerOptions).toEqual({
+      gateway: { order: ["openai"] },
+      openai: { textVerbosity: "low" },
+    })
+
     const fallback = yield* aisdk.model({
       ...model("@ai-sdk/gateway", { reasoningEffort: "high" }),
       modelID: Model.ID.make("deepseek/deepseek-v4"),
@@ -381,6 +395,90 @@ it.effect("routes AI Gateway model options by upstream prefix", () =>
     expect(fallbackPrepared.body.providerOptions).toEqual({
       deepseek: { reasoningEffort: "high" },
     })
+  }),
+)
+
+it.effect("closes the open AI SDK reasoning part when the next one starts", () =>
+  Effect.gen(function* () {
+    // AI SDK OpenAI Responses can start summary part 1 before part 0 ends, then end both at item completion (#50662).
+    const aisdk = yield* AISDK.Service
+    yield* aisdk.hook.sdk((event) => {
+      event.sdk = {
+        languageModel: () =>
+          streamModel([
+            { type: "reasoning-start", id: "rs_1:0", providerMetadata: { gateway: { generationId: "gen_1" } } },
+            { type: "reasoning-start", id: "rs_1:1" },
+            { type: "reasoning-delta", id: "rs_1:1", delta: "Second summary" },
+            { type: "reasoning-end", id: "rs_1:0", providerMetadata: { gateway: { encrypted: "late" } } },
+            { type: "reasoning-end", id: "rs_1:1", providerMetadata: { gateway: { encrypted: "final" } } },
+            { type: "finish", finishReason: { unified: "stop", raw: "stop" }, usage },
+          ]),
+      }
+    })
+
+    const resolved = yield* aisdk.model(model("@ai-sdk/gateway"))
+    const response = yield* LLMClient.generate(LLM.request({ model: resolved, prompt: "Think" })).pipe(
+      Effect.provide(client),
+    )
+
+    expect(response.events.filter((event) => event.type.startsWith("reasoning-"))).toEqual([
+      { type: "reasoning-start", id: "rs_1:0", providerMetadata: { gateway: { generationId: "gen_1" } } },
+      { type: "reasoning-end", id: "rs_1:0" },
+      { type: "reasoning-start", id: "rs_1:1", providerMetadata: undefined },
+      { type: "reasoning-delta", id: "rs_1:1", text: "Second summary", providerMetadata: undefined },
+      { type: "reasoning-end", id: "rs_1:1", providerMetadata: { gateway: { encrypted: "final" } } },
+    ])
+  }),
+)
+
+it.effect("normalizes repeated, reopened, and overlapping AI SDK fragment boundaries", () =>
+  Effect.gen(function* () {
+    const aisdk = yield* AISDK.Service
+    yield* aisdk.hook.sdk((event) => {
+      event.sdk = {
+        languageModel: () =>
+          streamModel([
+            // Older xAI Responses repeat the start for every summary part.
+            { type: "reasoning-start", id: "rs_1" },
+            { type: "reasoning-start", id: "rs_1" },
+            { type: "reasoning-delta", id: "rs_1", delta: "First" },
+            { type: "reasoning-end", id: "rs_1" },
+            // xAI Chat keeps streaming an ended reasoning id after an empty tool_calls chunk.
+            { type: "reasoning-delta", id: "rs_1", delta: "Second" },
+            { type: "reasoning-end", id: "rs_1" },
+            // xAI Responses ends every message item only when the stream flushes.
+            { type: "text-start", id: "msg_1" },
+            { type: "text-delta", id: "msg_1", delta: "One" },
+            { type: "text-start", id: "msg_2" },
+            { type: "text-delta", id: "msg_2", delta: "Two" },
+            { type: "text-end", id: "msg_1" },
+            { type: "text-end", id: "msg_2" },
+            { type: "finish", finishReason: { unified: "stop", raw: "stop" }, usage },
+          ]),
+      }
+    })
+
+    const resolved = yield* aisdk.model(model("@ai-sdk/gateway"))
+    const response = yield* LLMClient.generate(LLM.request({ model: resolved, prompt: "Think" })).pipe(
+      Effect.provide(client),
+    )
+
+    expect(
+      response.events.filter((event) => event.type.startsWith("reasoning-") || event.type.startsWith("text-")),
+    ).toMatchObject([
+      { type: "reasoning-start", id: "rs_1" },
+      { type: "reasoning-delta", id: "rs_1", text: "First" },
+      { type: "reasoning-end", id: "rs_1" },
+      { type: "reasoning-start", id: "rs_1" },
+      { type: "reasoning-delta", id: "rs_1", text: "Second" },
+      { type: "reasoning-end", id: "rs_1" },
+      { type: "text-start", id: "msg_1" },
+      { type: "text-delta", id: "msg_1", text: "One" },
+      { type: "text-end", id: "msg_1" },
+      { type: "text-start", id: "msg_2" },
+      { type: "text-delta", id: "msg_2", text: "Two" },
+      { type: "text-end", id: "msg_2" },
+    ])
   }),
 )
 
@@ -461,23 +559,13 @@ it.effect("normalizes file data across AI SDK prompt parts", () =>
         model: resolved,
         messages: [
           Message.user([
-            { type: "media", mediaType: "image/png", data: bytes, filename: "bytes.png" },
-            { type: "media", mediaType: "image/png", data: "AAAA", filename: "base64.png" },
-            {
-              type: "media",
-              mediaType: "image/png",
-              data: "data:image/png;charset=utf-8;base64,AQID",
-              filename: "inline.png",
-            },
-            { type: "media", mediaType: "image/png", data: "https://example.com/image.png" },
-            { type: "media", mediaType: "image/png", data: "s3://bucket/image.png" },
+            { type: "media", media: Media.bytes(bytes, "image/png"), filename: "bytes.png" },
+            { type: "media", media: Media.base64("AAAA", "image/png"), filename: "base64.png" },
+            { type: "media", media: Media.fromDataUrl("data:image/png;charset=utf-8;base64,AQID"), filename: "inline.png" },
+            { type: "media", media: Media.url("https://example.com/image.png", { mediaType: "image/png" }) },
+            { type: "media", media: Media.base64("s3://bucket/image.png", "image/png") },
           ]),
-          Message.assistant({
-            type: "media",
-            mediaType: "application/pdf",
-            data: "http://example.com/document.pdf",
-            filename: "document.pdf",
-          }),
+          Message.assistant({ type: "media", media: Media.url("http://example.com/document.pdf", { mediaType: "application/pdf" }), filename: "document.pdf" }),
           Message.tool({
             id: "call_1",
             name: "screenshot",
@@ -691,6 +779,45 @@ it.effect("sends AI SDK requests directly when no HTTP hook middleware is attach
   }),
 )
 
+it.effect("fails with a retryable transport error when response headers time out", () =>
+  Effect.gen(function* () {
+    const aisdk = yield* AISDK.Service
+    const customFetch = Object.assign(
+      (_input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+        new Promise<Response>((_, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true })
+        }),
+      { preconnect: fetch.preconnect },
+    )
+    yield* aisdk.hook.sdk((event) => {
+      event.sdk = createOpenAICompatible({
+        ...event.options,
+        name: String(event.options.name),
+        baseURL: String(event.options.baseURL),
+      })
+    })
+    const resolved = yield* aisdk.model(
+      model("@ai-sdk/openai-compatible", {
+        apiKey: "test",
+        baseURL: "https://example.test/v1",
+        headerTimeout: 25,
+        fetch: customFetch,
+      }),
+    )
+    const error = yield* LLMClient.generate(LLM.request({ model: resolved, prompt: "Hello" })).pipe(
+      Effect.provide(client),
+      Effect.flip,
+    )
+
+    expect(error.reason).toMatchObject({
+      _tag: "Transport",
+      operation: "request",
+      message: "Response headers timed out",
+    })
+    expect(SessionRunnerRetry.isRetryable(error)).toBeTrue()
+  }),
+)
+
 it.effect("emits malformed AI SDK tool input without executing it", () =>
   Effect.gen(function* () {
     const aisdk = yield* AISDK.Service
@@ -807,6 +934,23 @@ Object.values({
     }),
   )
 })
+
+// Shapes the Vercel AI Gateway streams when the upstream rejects a request.
+Object.entries({
+  "type validation": {
+    name: "AI_TypeValidationError",
+    value: { error: { type: "invalid_request_error", message: "Bad max_tokens" } },
+  },
+  invalid_request: { code: "invalid_request", message: "Bad max_tokens" },
+}).forEach(([shape, failure]) =>
+  it.effect(`reads gateway ${shape} stream errors as invalid requests`, () =>
+    Effect.gen(function* () {
+      const error = yield* streamFailure(failure, true)
+      expect(error.message).toBe("Bad max_tokens")
+      expect(error.reason).toBeInstanceOf(InvalidRequestError)
+    }),
+  ),
+)
 
 it.effect("does not copy Error request internals into the provider body", () =>
   Effect.gen(function* () {
