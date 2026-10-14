@@ -151,12 +151,14 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
       )
       const server = yield* launch.pipe(
         Effect.catch((error) => {
-          if (findIncumbent === undefined || !addressInUse(error)) return Effect.fail(error)
+          if (!addressInUse(error)) return Effect.fail(error)
           return Effect.gen(function* () {
             const deadline = Date.now() + 15_000
             while (Date.now() < deadline) {
-              const found = yield* findIncumbent.pipe(Effect.timeoutOption(deadline - Date.now()))
-              if (Option.isSome(found) && found.value !== undefined) return
+              if (findIncumbent !== undefined) {
+                const found = yield* findIncumbent.pipe(Effect.timeoutOption(deadline - Date.now()))
+                if (Option.isSome(found) && found.value !== undefined) return
+              }
               yield* Effect.sleep("100 millis")
               if (Date.now() >= deadline) break
               // Failed binds close their scope; a successful bind may take longer than this window to boot.

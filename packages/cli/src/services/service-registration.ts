@@ -5,6 +5,7 @@ import path from "node:path"
 import { Effect, FileSystem, Schedule, Schema } from "effect"
 import { HttpServer } from "effect/http"
 import { NetAddress } from "effect/net"
+import net from "node:net"
 import { OPENCODE_VERSION } from "../version"
 
 const infoJson = Schema.fromJsonString(Service.Info)
@@ -66,7 +67,31 @@ export const register = Effect.fnUntraced(function* (options: {
     Effect.forkScoped,
   )
   return current.pipe(
-    Effect.flatMap((found) => (owns(found) ? fs.remove(options.file) : Effect.void)),
+    Effect.flatMap((found) =>
+      owns(found)
+        ? Effect.promise(() => waitForPortRelease(options.address)).pipe(Effect.andThen(fs.remove(options.file)))
+        : Effect.void,
+    ),
     Effect.ignore,
   )
 })
+
+function waitForPortRelease(address: NetAddress.SocketAddress) {
+  if (!NetAddress.isInetAddress(address)) return Promise.resolve()
+  const host = NetAddress.formatIp(address.address)
+  const port = address.port
+  return new Promise<void>((resolve) => {
+    let attempts = 0
+    const check = () => {
+      const socket = net.createConnection({ host, port })
+      const release = (available: boolean) => {
+        socket.destroy()
+        if (available || ++attempts >= 150) resolve()
+        else setTimeout(check, 100)
+      }
+      socket.once("error", () => release(true))
+      socket.once("connect", () => release(false))
+    }
+    check()
+  })
+}
