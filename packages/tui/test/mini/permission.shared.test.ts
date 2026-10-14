@@ -136,8 +136,8 @@ describe("run permission shared", () => {
           resources: ["a.ts", "b.ts"],
           metadata: {
             files: [
-              { filePath: "a.ts", patch: "a-diff" },
-              { filePath: "b.ts", patch: "b-diff" },
+              { file: "a.ts", patch: "a-diff", additions: 1, deletions: 0, status: "modified" },
+              { file: "b.ts", patch: "b-diff", additions: 1, deletions: 0, status: "modified" },
             ],
           },
         }),
