@@ -72,6 +72,10 @@ export function createHomeSessionsController(home: HomeController) {
       staleTime: 30_000,
       refetchOnMount: true,
       refetchOnReconnect: true,
+      // A second server on the same database publishes `session.created` on its own process's bus,
+      // so nothing on this stream ever announces the sessions it creates. Re-read the index on the
+      // staleness window rather than waiting for a remount or a reconnect to be the only way back.
+      refetchInterval: 30_000,
       select: selectSessions,
     }
   })
