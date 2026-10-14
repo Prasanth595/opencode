@@ -442,7 +442,7 @@ export function CurrentUserMessageDisplay(props: {
               aria-label={i18n.t("ui.message.revertMessage")}
             />
           </Show>
-          {/* Like the iOS app, a Voice message's copy offers the shown text or the full prompt the session received. */}
+          {/* Like the iOS app, a Voice message's copy also offers the full prompt the session received, on right click. */}
           <Show
             when={props.voice}
             fallback={
@@ -460,30 +460,35 @@ export function CurrentUserMessageDisplay(props: {
               </Show>
             }
           >
-            <Menu gutter={4} placement="bottom-end">
+            <Menu.Context modal={false}>
               <Tooltip
                 appearance="compact"
-                value={state.copied ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
+                value={state.copied ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyMessage")}
                 placement="top"
                 gutter={4}
               >
-                <Menu.Trigger
+                <Menu.Context.Trigger
                   as={IconButton}
                   icon={<Icon name={state.copied ? "check" : "outline-copy"} size="small" />}
                   size="normal"
                   variant="ghost-muted"
-                  aria-label={state.copied ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void copy(props.text)
+                  }}
+                  aria-label={state.copied ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyMessage")}
                 />
               </Tooltip>
-              <Menu.Portal>
-                <Menu.Content>
+              <Menu.Context.Portal>
+                <Menu.Context.Content>
                   <Menu.Item onSelect={() => void copy(props.text)}>{i18n.t("ui.message.copyMessage")}</Menu.Item>
                   <Menu.Item onSelect={() => void copy(props.message.text)}>
                     {i18n.t("ui.message.copyFullMessage")}
                   </Menu.Item>
-                </Menu.Content>
-              </Menu.Portal>
-            </Menu>
+                </Menu.Context.Content>
+              </Menu.Context.Portal>
+            </Menu.Context>
           </Show>
         </div>
       </Show>
