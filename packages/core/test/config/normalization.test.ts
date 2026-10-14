@@ -420,6 +420,90 @@ describe("ConfigNormalize", () => {
     ).toBe(true)
   })
 
+  test("accepts snake_case oauth keys in flat MCP entries", () => {
+    const result = normalized({
+      mcp: {
+        linear: {
+          type: "remote",
+          url: "https://linear.example.com/mcp",
+          oauth: { client_id: "abc123", callback_port: 3118 },
+        },
+      },
+    })
+    expect((result.encoded.mcp as { servers: Record<string, unknown> }).servers.linear).toEqual({
+      type: "remote",
+      url: "https://linear.example.com/mcp",
+      oauth: { client_id: "abc123", callback_port: 3118 },
+    })
+    expect(result.diagnostics).toEqual([])
+  })
+
+  test("keeps camelCase oauth keys working in flat MCP entries", () => {
+    const result = normalized({
+      mcp: {
+        linear: {
+          type: "remote",
+          url: "https://linear.example.com/mcp",
+          oauth: { clientId: "abc123", callbackPort: 3118 },
+        },
+      },
+    })
+    expect((result.encoded.mcp as { servers: Record<string, unknown> }).servers.linear).toEqual({
+      type: "remote",
+      url: "https://linear.example.com/mcp",
+      oauth: { client_id: "abc123", callback_port: 3118 },
+    })
+    expect(result.diagnostics).toEqual([])
+  })
+
+  test("prefers camelCase oauth values when both spellings differ in flat MCP entries", () => {
+    const result = normalized({
+      mcp: {
+        linear: {
+          type: "remote",
+          url: "https://linear.example.com/mcp",
+          oauth: { clientId: "camel", client_id: "snake", callback_port: 3118 },
+        },
+      },
+    })
+    expect((result.encoded.mcp as { servers: Record<string, unknown> }).servers.linear).toEqual({
+      type: "remote",
+      url: "https://linear.example.com/mcp",
+      oauth: { client_id: "camel", callback_port: 3118 },
+    })
+    expect(result.diagnostics).toEqual([
+      {
+        kind: "conflict",
+        path: ["mcp", "linear", "oauth", "client_id"],
+        message: "retained camelCase value over snake_case value",
+      },
+    ])
+  })
+
+  test("reports unknown oauth keys in flat MCP entries", () => {
+    const result = normalized({
+      mcp: {
+        linear: {
+          type: "remote",
+          url: "https://linear.example.com/mcp",
+          oauth: { clientId: "abc123", clientid_typo: "oops" },
+        },
+      },
+    })
+    expect((result.encoded.mcp as { servers: Record<string, unknown> }).servers.linear).toEqual({
+      type: "remote",
+      url: "https://linear.example.com/mcp",
+      oauth: { client_id: "abc123" },
+    })
+    expect(result.diagnostics).toEqual([
+      {
+        kind: "unsupported",
+        path: ["mcp", "linear", "oauth", "clientid_typo"],
+        message: "omitted unsupported legacy oauth setting",
+      },
+    ])
+  })
+
   test("uses raw MCP discriminators for reserved server names", () => {
     const result = normalized({
       mcp: {

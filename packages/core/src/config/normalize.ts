@@ -281,7 +281,7 @@ function normalizeMcp(input: Record<string, unknown>, encoded: Record<string, un
           normalizeMcpTimeout(value, timeout, path, diagnostics)
           return
         }
-        const server = decodeValue(ConfigMCPV1.Info, value, path, diagnostics)
+        const server = decodeValue(ConfigMCPV1.Info, reconcileFlatOAuth(value, path, diagnostics), path, diagnostics)
         if (server !== undefined)
           setOwn(legacyServers, name, canonical(ConfigMCP.Server, ConfigMigrateV1.migrateMcp(server)))
       })
@@ -296,6 +296,47 @@ function normalizeMcp(input: Record<string, unknown>, encoded: Record<string, un
     ...(Object.keys(timeout).length ? { timeout } : {}),
     ...(Object.keys(servers).length ? { servers } : {}),
   }
+}
+
+// Flat MCP entries decode with the V1 camelCase OAuth schema, so the snake_case names the V2
+// schema and docs use would be dropped without a diagnostic. Copy snake_case aliases onto their
+// camelCase counterparts (camelCase wins conflicts) and report keys the flat form cannot express.
+function reconcileFlatOAuth(value: unknown, path: string[], diagnostics: Diagnostic[]) {
+  if (!isRecord(value) || value.type !== "remote" || !isPlainRecord(value.oauth)) return value
+  const oauth = value.oauth
+  const aliases: Record<string, string> = {
+    client_id: "clientId",
+    client_secret: "clientSecret",
+    callback_port: "callbackPort",
+    redirect_uri: "redirectUri",
+  }
+  const keys = Object.keys(ConfigMCPV1.OAuth.fields)
+  const decoded: Record<string, unknown> = {}
+  keys.forEach((key) => {
+    if (own(oauth, key)) decoded[key] = oauth[key]
+  })
+  Object.entries(aliases).forEach(([snake, camel]) => {
+    if (!own(oauth, snake)) return
+    if (own(oauth, camel)) {
+      if (!isDeepStrictEqual(oauth[camel], oauth[snake]))
+        diagnostics.push({
+          kind: "conflict",
+          path: [...path, "oauth", snake],
+          message: "retained camelCase value over snake_case value",
+        })
+      return
+    }
+    decoded[camel] = oauth[snake]
+  })
+  Object.keys(oauth).forEach((key) => {
+    if (keys.includes(key) || own(aliases, key)) return
+    diagnostics.push({
+      kind: "unsupported",
+      path: [...path, "oauth", key],
+      message: "omitted unsupported legacy oauth setting",
+    })
+  })
+  return { ...value, oauth: decoded }
 }
 
 function normalizeMcpTimeout(
