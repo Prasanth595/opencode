@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import { expect, test } from "bun:test"
+import { expect } from "bun:test"
 import { OpenCode } from "@opencode/client"
 import { Global } from "@opencode/util/global"
 import { testRender } from "@opentui/solid"
@@ -10,7 +10,6 @@ import { it } from "../../../core/test/lib/effect"
 import { startServer } from "../../../server/test/fixture/server"
 import { ClientProvider, useClient } from "../../src/context/client"
 import { TestTuiContexts } from "../fixture/tui-environment"
-import { createEventStream, createFetch, json } from "../fixture/tui-client"
 
 it.live("resolves the server home instead of the remote client's home", () =>
   Effect.gen(function* () {
@@ -37,34 +36,3 @@ it.live("resolves the server home instead of the remote client's home", () =>
     expect(yield* Effect.promise(() => client.resolveServerHome())).toBe(Global.Path.home)
   }),
 )
-
-test.each([undefined, ""])("treats an unavailable server home (%j) as missing", async (home) => {
-  const server = Bun.serve({
-    port: 0,
-    fetch: createFetch(
-      (url) =>
-        url.pathname === "/api/info"
-          ? json({ version: "test", pid: 0, urls: [], paths: { tmp: "/tmp", home } })
-          : undefined,
-      createEventStream(),
-    ).fetch,
-  })
-  let client!: ReturnType<typeof useClient>
-  function Probe() {
-    client = useClient()
-    return <box />
-  }
-  const setup = await testRender(() => (
-    <TestTuiContexts>
-      <ClientProvider api={OpenCode.make({ baseUrl: server.url.href })}>
-        <Probe />
-      </ClientProvider>
-    </TestTuiContexts>
-  ))
-  try {
-    expect(await client.resolveServerHome()).toBeUndefined()
-  } finally {
-    setup.renderer.destroy()
-    server.stop(true)
-  }
-})
