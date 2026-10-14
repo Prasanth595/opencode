@@ -881,12 +881,12 @@ export function DiffViewerContent(props: {
       <box flexGrow={1} minHeight={0}>
         <Switch>
           <Match when={props.loading}>
-            <box flexGrow={1} padding={2}>
+            <box flexGrow={1} padding={2} paddingTop={docked() ? 1 : 2}>
               <text fg={theme.text.muted}>Loading diff…</text>
             </box>
           </Match>
           <Match when={!props.loading && props.error}>
-            <box flexGrow={1} padding={2}>
+            <box flexGrow={1} padding={2} paddingTop={docked() ? 1 : 2}>
               <text fg={theme.text.feedback.error.base}>
                 {!props.sourceBase && needsBase(mode())
                   ? "Could not load diff. Choose a base branch from Diff source, or select Uncommitted."
@@ -895,14 +895,14 @@ export function DiffViewerContent(props: {
             </box>
           </Match>
           <Match when={!props.loading && props.unavailable}>
-            <box flexGrow={1} padding={2}>
+            <box flexGrow={1} padding={2} paddingTop={docked() ? 1 : 2}>
               <text fg={theme.text.muted}>
                 Committed comparison unavailable without base metadata. Choose a base branch from Diff source.
               </text>
             </box>
           </Match>
           <Match when={!props.loading && files().length === 0}>
-            <box flexGrow={1} padding={2}>
+            <box flexGrow={1} padding={2} paddingTop={docked() ? 1 : 2}>
               <text fg={theme.text.muted}>No changes to show</text>
             </box>
           </Match>
@@ -1110,7 +1110,7 @@ export function DiffViewerContent(props: {
             backgroundColor={theme.background.base}
             customBorderChars={{ ...EmptyBorder, horizontal: "▀" }}
           />
-          <box height={1} flexShrink={0} flexDirection="row" paddingLeft={2} paddingRight={1}>
+          <box height={1} flexShrink={0} flexDirection="row" paddingRight={1}>
             <text
               fg={props.panel?.focused ? theme.background.action.primary.focused : theme.text.action.primary.disabled}
               attributes={props.panel?.focused ? 0 : TextAttributes.DIM}
