@@ -860,7 +860,10 @@ export const recentUserMessages = (
     .filter((message) => message.type === "user")
     .map((message) => ({ ...message, skills: undefined }))
   const sendable = SessionModelRequest.boundImages(
-    SessionModelRequest.unsupportedParts(toLLMMessages(users, model.ref), model.capabilities),
+    SessionModelRequest.unsupportedParts(
+      SessionModelRequest.sanitizeControlTokens(toLLMMessages(users, model.ref)),
+      model.capabilities,
+    ),
   )
   return sendable.slice(oldestToDrop(sendable, estimateMessage, keep))
 }
@@ -879,7 +882,10 @@ export const estimatePrompt = (context: SessionContext.Loaded) => {
   // runner's unsupported-media and image-budget passes; here the image budget only sees images since the anchor,
   // so image-heavy sessions can estimate high.
   const sent = SessionModelRequest.boundImages(
-    SessionModelRequest.unsupportedParts(base.messages, context.model.capabilities),
+    SessionModelRequest.unsupportedParts(
+      SessionModelRequest.sanitizeControlTokens(base.messages),
+      context.model.capabilities,
+    ),
   )
   // The anchor's usage covers its own output, but not its local tool results, which the provider never saw.
   const unmeasured = sent.filter((message) => message.role !== "assistant" || message.id !== anchor?.id)
