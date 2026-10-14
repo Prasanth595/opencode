@@ -104,6 +104,7 @@ export function fromRow(row: SessionRow): Info {
     metadata: row.metadata ?? undefined,
     revert,
     permission: row.permission ? [...row.permission] : undefined,
+    temp: row.temp,
     time: {
       created: row.time_created,
       updated: row.time_updated,
@@ -230,6 +231,7 @@ export const Info = Schema.Struct({
   time: Time,
   permission: optionalOmitUndefined(PermissionV1.Ruleset),
   revert: optionalOmitUndefined(Revert),
+  temp: Schema.Boolean,
 }).annotate({ identifier: "Session" })
 export type Info = Types.DeepMutable<Schema.Schema.Type<typeof Info>>
 
@@ -255,6 +257,7 @@ export const CreateInput = Schema.optional(
     metadata: Schema.optional(Metadata),
     permission: Schema.optional(PermissionV1.Ruleset),
     workspaceID: Schema.optional(WorkspaceV2.ID),
+    temp: Schema.optional(Schema.Boolean),
   }),
 )
 export type CreateInput = Types.DeepMutable<Schema.Schema.Type<typeof CreateInput>>
@@ -475,9 +478,14 @@ export interface Interface {
      * override it to record that the session ran somewhere else (e.g. a workflow
      * subagent isolated inside a git worktree), so the dashboard reflects where
      * the work happened. Purely a metadata override; it does NOT change where
-     * tools resolve their cwd (that follows the effective `InstanceRef`).
-     */
+      * tools resolve their cwd (that follows the effective `InstanceRef`).
+      */
     directory?: string
+    /**
+     * Mark the session ephemeral. Temp sessions are deleted on app shutdown
+     * (`InstanceStore.disposeAll` -> `removeTemp`), not persisted as durable chats.
+     */
+    temp?: boolean
   }) => Effect.Effect<Info>
   readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound>
   readonly touch: (sessionID: SessionID) => Effect.Effect<void>
@@ -499,6 +507,7 @@ export interface Interface {
   readonly messages: (input: { sessionID: SessionID; limit?: number }) => Effect.Effect<SessionV1.WithParts[], NotFound>
   readonly children: (parentID: SessionID) => Effect.Effect<Info[]>
   readonly remove: (sessionID: SessionID) => Effect.Effect<void, NotFound>
+  readonly removeTemp: (projectID?: ProjectV2.ID) => Effect.Effect<void>
   readonly updateMessage: <T extends SessionV1.Info>(msg: T) => Effect.Effect<T>
   readonly removeMessage: (input: { sessionID: SessionID; messageID: MessageID }) => Effect.Effect<MessageID>
   readonly removePart: (input: { sessionID: SessionID; messageID: MessageID; partID: PartID }) => Effect.Effect<PartID>
@@ -558,6 +567,7 @@ export const layer: Layer.Layer<
       path?: string
       metadata?: typeof Metadata.Type
       permission?: PermissionV1.Ruleset
+      temp?: boolean
     }) {
       const ctx = yield* InstanceState.context
       const result: Info = {
@@ -573,8 +583,9 @@ export const layer: Layer.Layer<
         agent: input.agent,
         model: input.model,
         metadata: input.metadata,
-        permission: input.permission ? [...input.permission] : undefined,
-        cost: 0,
+      permission: input.permission ? [...input.permission] : undefined,
+      cost: 0,
+      temp: input.temp ?? false,
         tokens: EmptyTokens,
         time: {
           created: Date.now(),
@@ -677,6 +688,23 @@ export const layer: Layer.Layer<
       }
     })
 
+    const removeTemp: Interface["removeTemp"] = Effect.fnUntraced(function* (projectID?: ProjectV2.ID) {
+      const rows = yield* db
+        .select({ id: SessionTable.id })
+        .from(SessionTable)
+        .where(
+          projectID
+            ? and(eq(SessionTable.temp, true), eq(SessionTable.project_id, projectID))
+            : eq(SessionTable.temp, true),
+        )
+        .all()
+        .pipe(Effect.orDie)
+      for (const row of rows) {
+        // remove cascades to children, which may already have been removed
+        yield* remove(row.id as SessionID).pipe(Effect.ignore)
+      }
+    })
+
     const updateMessage = <T extends SessionV1.Info>(msg: T): Effect.Effect<T> =>
       Effect.gen(function* () {
         yield* events.publish(SessionV1.Event.MessageUpdated, { sessionID: msg.sessionID, info: msg })
@@ -724,6 +752,7 @@ export const layer: Layer.Layer<
       permission?: PermissionV1.Ruleset
       workspaceID?: WorkspaceV2.ID
       directory?: string
+      temp?: boolean
     }) {
       const ctx = yield* InstanceState.context
       const workspace = yield* InstanceState.workspaceID
@@ -737,6 +766,7 @@ export const layer: Layer.Layer<
         metadata: input?.metadata,
         permission: input?.permission,
         workspaceID: input?.workspaceID ?? workspace,
+        temp: input?.temp,
       })
     })
 
@@ -794,6 +824,7 @@ export const layer: Layer.Layer<
           summary: info.summary === null ? undefined : (info.summary ?? current.summary),
           revert: info.revert === null ? undefined : (info.revert ?? current.revert),
           permission: info.permission === null ? undefined : (info.permission ?? current.permission),
+          temp: info.temp ?? current.temp,
         } as Info
         yield* events.publish(SessionV1.Event.Updated, { sessionID, info: next })
       })
@@ -962,6 +993,7 @@ export const layer: Layer.Layer<
       messages,
       children,
       remove,
+      removeTemp,
       updateMessage,
       removeMessage,
       removePart,

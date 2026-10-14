@@ -218,6 +218,7 @@ export type Session = {
     snapshot?: string
     diff?: string
   }
+  temp: boolean
 }
 
 export type OutputFormatText = {
@@ -2311,6 +2312,7 @@ export type GlobalSession = {
     snapshot?: string
     diff?: string
   }
+  temp: boolean
   project: ProjectSummary | null
 }
 
@@ -3892,6 +3894,7 @@ export type SessionV2Info = {
   title: string
   location: LocationRef
   subpath?: string
+  temp: boolean
 }
 
 export type SessionInputAdmitted = {
@@ -7769,6 +7772,7 @@ export type SessionCreateData = {
     }
     permission?: PermissionRuleset
     workspaceID?: string
+    temp?: boolean
   }
   path?: never
   query?: {

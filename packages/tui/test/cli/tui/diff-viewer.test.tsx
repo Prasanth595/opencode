@@ -195,6 +195,7 @@ const session = {
   directory: "/repo/session",
   title: "Session",
   version: "1",
+  temp: false,
   time: {
     created: 0,
     updated: 0,

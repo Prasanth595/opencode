@@ -9,6 +9,7 @@ import { Context, Deferred, Duration, Effect, Exit, Layer, Scope } from "effect"
 import { type InstanceContext } from "./instance-context"
 import { InstanceBootstrap } from "./bootstrap-service"
 import { InstanceBootstrap as InstanceBootstrapGraph } from "./bootstrap"
+import { Session } from "@/session/session"
 import * as Project from "./project"
 
 export interface LoadInput {
@@ -34,11 +35,11 @@ interface Entry {
   readonly deferred: Deferred.Deferred<InstanceContext>
 }
 
-export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Service> = Layer.effect(
-  Service,
-  Effect.gen(function* () {
+export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Service | Session.Service> =
+  Layer.effect(Service, Effect.gen(function* () {
     const project = yield* Project.Service
     const bootstrap = yield* InstanceBootstrap.Service
+    const session = yield* Session.Service
     const scope = yield* Scope.Scope
     const cache = new Map<string, Entry>()
 
@@ -179,6 +180,10 @@ export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootst
           }),
         { discard: true },
       )
+      // app shutdown: wipe ephemeral sessions. `Effect.exit` (not `Effect.ignore`)
+      // also swallows defects: the database may already be closed when disposeAll
+      // runs in test teardowns, and a die must not abort the teardown fiber.
+      yield* Effect.exit(session.removeTemp()).pipe(Effect.asVoid)
     })
 
     const cachedDisposeAll = yield* Effect.cachedWithTTL(disposeAllOnce(), Duration.zero)
@@ -202,8 +207,8 @@ export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootst
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(Project.defaultLayer))
+export const defaultLayer = layer.pipe(Layer.provide(Project.defaultLayer), Layer.provide(Session.defaultLayer))
 
-export const node = LayerNode.make(layer, [Project.node, InstanceBootstrapGraph.node])
+export const node = LayerNode.make(layer, [Project.node, InstanceBootstrapGraph.node, Session.node])
 
 export * as InstanceStore from "./instance-store"

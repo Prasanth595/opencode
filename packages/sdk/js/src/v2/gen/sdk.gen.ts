@@ -3389,6 +3389,7 @@ export class Session2 extends HeyApiClient {
       }
       permission?: PermissionRuleset
       workspaceID?: string
+      temp?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3406,6 +3407,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "metadata" },
             { in: "body", key: "permission" },
             { in: "body", key: "workspaceID" },
+            { in: "body", key: "temp" },
           ],
         },
       ],

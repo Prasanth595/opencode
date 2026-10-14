@@ -42,6 +42,7 @@ describe("Session.Info", () => {
       title: "First session",
       version: "0.1.0",
       time: { created: 1, updated: 2 },
+      temp: false,
     }
     expect(decode(input)).toEqual(input)
   })
@@ -64,6 +65,7 @@ describe("Session.Info", () => {
       share: { url: "https://share.example.com/s/1" },
       title: "Full session",
       version: "1.0.0",
+      temp: false,
       metadata: { source: "test" },
       time: { created: 100, updated: 200, compacting: 150, archived: 300 },
       permission: [{ action: "allow" as const, pattern: "*", permission: "read" }],
@@ -85,6 +87,7 @@ describe("Session.Info", () => {
       directory: "/tmp/proj",
       title: "Legacy diff",
       version: "0.1.0",
+      temp: false,
       summary: {
         additions: 1,
         deletions: 0,
@@ -130,6 +133,7 @@ describe("Session.GlobalInfo", () => {
       title: "global",
       version: "0",
       time: { created: 0, updated: 0 },
+      temp: false,
       project: null,
     }
     expect(decode(input)).toEqual(input)
@@ -144,6 +148,7 @@ describe("Session.GlobalInfo", () => {
       title: "global",
       version: "0",
       time: { created: 0, updated: 0 },
+      temp: false,
       project: { id: projectID, worktree: "/tmp/wt", name: "alpha" },
     }
     expect(decode(input)).toEqual(input)

@@ -245,4 +245,33 @@ describe("Session", () => {
       expect(saved.metadata).toBeUndefined()
     }),
   )
+
+  it.instance("temp flag is persisted on create", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const temp = yield* session.create({ title: "ephemeral", temp: true })
+      const normal = yield* session.create({ title: "regular" })
+
+      const tempInfo = yield* session.get(temp.id)
+      expect(tempInfo.temp).toBe(true)
+      const normalInfo = yield* session.get(normal.id)
+      expect(normalInfo.temp).toBe(false)
+    }).pipe(Effect.scoped),
+  )
+
+  it.instance("removeTemp deletes temp sessions and keeps regular ones", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const temp = yield* session.create({ title: "ephemeral", temp: true })
+      const normal = yield* session.create({ title: "regular" })
+
+      yield* session.removeTemp()
+
+      expect(Exit.isFailure(yield* session.get(temp.id).pipe(Effect.exit))).toBe(true)
+      const normalInfo = yield* session.get(normal.id)
+      expect(normalInfo.temp).toBe(false)
+
+      yield* session.remove(normal.id)
+    }),
+  )
 })

@@ -75,6 +75,7 @@ type CreateInput = {
   agent?: AgentV2.ID
   model?: ModelV2.Ref
   location: Location.Ref
+  temp?: boolean
 }
 
 type CompactInput = {
@@ -229,6 +230,7 @@ export const layer = Layer.effect(
           cost: 0,
           tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
           time: { created: now, updated: now },
+          temp: input.temp ?? false,
         })
         const projected = yield* events
           .publish(SessionV1.Event.Created, { sessionID, info }, { location: input.location })

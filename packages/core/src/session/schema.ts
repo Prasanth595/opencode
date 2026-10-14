@@ -46,4 +46,5 @@ export class Info extends Schema.Class<Info>("SessionV2.Info")({
   title: Schema.String,
   location: Location.Ref,
   subpath: RelativePath.pipe(Schema.optional),
+  temp: Schema.Boolean,
 }) {}

@@ -38,6 +38,7 @@ export function fromRow(row: typeof SessionTable.$inferSelect): SessionSchema.In
       workspaceID: row.workspace_id ? WorkspaceV2.ID.make(row.workspace_id) : undefined,
     }),
     subpath: row.path ? RelativePath.make(row.path) : undefined,
+    temp: row.temp,
     time: {
       created: DateTime.makeUnsafe(row.time_created),
       updated: DateTime.makeUnsafe(row.time_updated),

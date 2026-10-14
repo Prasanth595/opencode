@@ -167,10 +167,11 @@ describe("SessionV2.create", () => {
       yield* events.publish(SessionV1.Event.Updated, {
         sessionID: id,
         info: SessionV1.SessionInfo.make({
-          id,
-          slug: "updated",
-          version: "test",
-          projectID: created.projectID,
+            id,
+            slug: "updated",
+            version: "test",
+            projectID: created.projectID,
+            temp: false,
           directory: created.location.directory,
           title: "updated",
           agent: "build",
