@@ -1800,18 +1800,8 @@ export type RpcCallInput = {
 export type RpcCallOutput = { readonly output?: unknown }
 export type RpcCallOperation<E = never> = (input: RpcCallInput) => Effect.Effect<RpcCallOutput, E>
 
-export type RpcConnectInput = {
-  readonly rpcID: string
-  readonly method: string
-  readonly location?: { readonly directory?: string | undefined } | undefined
-  readonly input: string
-}
-export type RpcConnectOutput = void
-export type RpcConnectOperation<E = never> = (input: RpcConnectInput) => Effect.Effect<RpcConnectOutput, E>
-
 export interface RpcApi<E = never> {
   readonly call: RpcCallOperation<E>
-  readonly connect: RpcConnectOperation<E>
 }
 
 export type EventSubscribeOutput = OpenCodeEvent
