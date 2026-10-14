@@ -244,6 +244,7 @@ export const dict = {
   "go.graph.requests": "الطلبات المقدّرة / ٥ ساعات",
   "go.graph.allowance": "الاستخدام الشهري",
   "go.graph.new": "جديد",
+  "go.graph.bonus": "استخدام مضاعف {{count}} مرات",
   "go.graph.scale": "مقياس غير خطي لعدد الطلبات",
   "go.graph.showAll": "عرض جميع النماذج ({{count}})",
   "go.graph.showLess": "عرض نماذج أقل",

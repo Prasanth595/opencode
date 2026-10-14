@@ -247,6 +247,7 @@ export const dict = {
   "go.graph.requests": "推定リクエスト数 / 5時間",
   "go.graph.allowance": "月間利用枠",
   "go.graph.new": "新着",
+  "go.graph.bonus": "利用枠{{count}}倍",
   "go.graph.scale": "リクエスト数は非線形目盛りで表示",
   "go.graph.showAll": "全{{count}}モデルを表示",
   "go.graph.showLess": "折りたたむ",

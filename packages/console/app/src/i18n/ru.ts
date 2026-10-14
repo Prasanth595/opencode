@@ -252,6 +252,7 @@ export const dict = {
   "go.graph.requests": "Примерное число запросов / 5 ч",
   "go.graph.allowance": "Использование за месяц",
   "go.graph.new": "Новое",
+  "go.graph.bonus": "Лимит ×{{count}}",
   "go.graph.scale": "Нелинейная шкала числа запросов",
   "go.graph.showAll": "Показать все модели ({{count}})",
   "go.graph.showLess": "Показать меньше моделей",

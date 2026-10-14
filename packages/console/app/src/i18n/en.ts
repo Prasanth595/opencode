@@ -246,6 +246,7 @@ export const dict = {
   "go.graph.requests": "Est. requests / 5h",
   "go.graph.allowance": "Monthly usage",
   "go.graph.new": "New",
+  "go.graph.bonus": "{{count}}× usage",
   "go.graph.scale": "Nonlinear request scale",
   "go.graph.showAll": "View all {{count}} models",
   "go.graph.showLess": "Show fewer models",

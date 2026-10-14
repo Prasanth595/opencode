@@ -250,6 +250,7 @@ export const dict = {
   "go.graph.requests": "Geschätzte Anfragen / 5 Std.",
   "go.graph.allowance": "Monatliche Nutzung",
   "go.graph.new": "Neu",
+  "go.graph.bonus": "{{count}}× Nutzung",
   "go.graph.scale": "Nichtlineare Skala für Anfragen",
   "go.graph.showAll": "Alle {{count}} Modelle anzeigen",
   "go.graph.showLess": "Weniger Modelle anzeigen",

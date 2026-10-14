@@ -243,6 +243,7 @@ export const dict = {
   "go.graph.requests": "예상 요청 횟수 / 5시간",
   "go.graph.allowance": "월간 사용량",
   "go.graph.new": "신규",
+  "go.graph.bonus": "사용량 {{count}}배",
   "go.graph.scale": "요청 수는 비선형 눈금으로 표시됩니다",
   "go.graph.showAll": "전체 {{count}}개 모델 보기",
   "go.graph.showLess": "접기",

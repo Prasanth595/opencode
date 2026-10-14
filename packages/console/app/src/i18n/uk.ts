@@ -248,6 +248,7 @@ export const dict = {
   "go.graph.requests": "Оцінка запитів / 5 год",
   "go.graph.allowance": "Використання за місяць",
   "go.graph.new": "Нове",
+  "go.graph.bonus": "Ліміт ×{{count}}",
   "go.graph.scale": "Нелінійна шкала кількості запитів",
   "go.graph.showAll": "Показати всі моделі ({{count}})",
   "go.graph.showLess": "Показати менше моделей",

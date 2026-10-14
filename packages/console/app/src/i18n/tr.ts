@@ -250,6 +250,7 @@ export const dict = {
   "go.graph.requests": "Tahmini istek / 5 saat",
   "go.graph.allowance": "Aylık kullanım",
   "go.graph.new": "Yeni",
+  "go.graph.bonus": "{{count}}× kullanım",
   "go.graph.scale": "Doğrusal olmayan istek ölçeği",
   "go.graph.showAll": "{{count}} modelin tümünü göster",
   "go.graph.showLess": "Daha az model göster",

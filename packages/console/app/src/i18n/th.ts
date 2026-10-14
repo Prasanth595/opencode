@@ -246,6 +246,7 @@ export const dict = {
   "go.graph.requests": "requests โดยประมาณ / 5 ชม.",
   "go.graph.allowance": "ปริมาณการใช้งานรายเดือน",
   "go.graph.new": "ใหม่",
+  "go.graph.bonus": "ใช้งาน {{count}} เท่า",
   "go.graph.scale": "มาตราส่วนจำนวนคำขอแบบไม่เป็นเชิงเส้น",
   "go.graph.showAll": "ดูโมเดลทั้งหมด {{count}} โมเดล",
   "go.graph.showLess": "แสดงโมเดลน้อยลง",

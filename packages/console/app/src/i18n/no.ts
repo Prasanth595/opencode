@@ -248,6 +248,7 @@ export const dict = {
   "go.graph.requests": "Estimerte forespørsler / 5 timer",
   "go.graph.allowance": "Månedlig bruk",
   "go.graph.new": "Ny",
+  "go.graph.bonus": "{{count}}× bruk",
   "go.graph.scale": "Ikke-lineær skala for forespørsler",
   "go.graph.showAll": "Vis alle {{count}} modeller",
   "go.graph.showLess": "Vis færre modeller",

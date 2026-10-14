@@ -250,6 +250,7 @@ export const dict = {
   "go.graph.requests": "Requisições estimadas / 5 h",
   "go.graph.allowance": "Uso mensal",
   "go.graph.new": "Novo",
+  "go.graph.bonus": "{{count}}× mais uso",
   "go.graph.scale": "Escala não linear de requisições",
   "go.graph.showAll": "Ver todos os {{count}} modelos",
   "go.graph.showLess": "Mostrar menos modelos",

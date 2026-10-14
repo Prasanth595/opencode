@@ -235,6 +235,7 @@ export const dict = {
   "go.graph.requests": "預估請求次數 / 5 小時",
   "go.graph.allowance": "每月使用額度",
   "go.graph.new": "新",
+  "go.graph.bonus": "{{count}} 倍用量",
   "go.graph.scale": "請求數採用非線性刻度",
   "go.graph.showAll": "查看全部 {{count}} 個模型",
   "go.graph.showLess": "收起模型",
