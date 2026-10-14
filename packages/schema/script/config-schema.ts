@@ -13,9 +13,7 @@ export async function generate() {
   const legacy: { $defs: Record<string, JsonSchema> } = await Bun.file(
     new URL("./config-v1.json", import.meta.url),
   ).json()
-  const document = Schema.toJsonSchemaDocument(Config.Info, { onExcessProperty: "error" })
-  const name = String(document.schema.$ref).replace("#/$defs/", "")
-  const { [name]: current, ...definitions } = document.definitions as Record<string, JsonSchema>
+  const { root: current, definitions } = document(Config.Info)
   const { Config: previous, ...legacyDefinitions } = legacy.$defs
   const shared = Object.keys(legacyDefinitions).filter((key) => key in definitions)
   if (shared.length) throw new Error(`V1 and V2 schema definitions share names: ${shared.join(", ")}`)
@@ -35,16 +33,22 @@ export async function generate() {
 // Optional fields annotate their decoded side, which the encoded JSON Schema omits, so copy top-level descriptions
 // from the type-side document.
 function describe(properties: Readonly<Record<string, JsonSchema>>) {
-  const document = Schema.toJsonSchemaDocument(Schema.toType(Config.Info))
-  const type = (document.definitions as Record<string, JsonSchema>)[
-    String(document.schema.$ref).replace("#/$defs/", "")
-  ]
+  const type = document(Schema.toType(Config.Info)).root
   return Object.fromEntries(
     Object.entries(properties).map(([key, schema]) => [
       key,
       { ...schema, description: type.properties?.[key]?.description ?? schema.description },
     ]),
   )
+}
+
+// Classes generate a root reference to their definition; plain structs generate the object inline.
+function document(schema: Schema.Top) {
+  const result = Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" })
+  const all = result.definitions as Record<string, JsonSchema>
+  if (typeof result.schema.$ref !== "string") return { root: result.schema as JsonSchema, definitions: all }
+  const { [result.schema.$ref.replace("#/$defs/", "")]: root, ...definitions } = all
+  return { root, definitions }
 }
 
 function merge(current: Readonly<Record<string, JsonSchema>>, previous: Readonly<Record<string, JsonSchema>>) {
