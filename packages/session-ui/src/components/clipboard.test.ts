@@ -61,33 +61,71 @@ test("copies via execCommand when navigator.clipboard is missing", async () => {
   expect(execCommandCalls).toEqual([{ command: "copy", selected: "hello insecure origin" }])
 })
 
-test("code-block copy button works without navigator.clipboard", async () => {
-  hideClipboard()
-  expect(navigator.clipboard).toBeUndefined()
-  stubExecCommand(true)
+for (const legacy of ["missing", "throws", "false", "success"] as const) {
+  for (const modern of ["missing", "rejected", "success"] as const) {
+    test(`clipboard: execCommand ${legacy}, navigator ${modern}`, async () => {
+      hideClipboard()
+      const writes: string[] = []
+      if (modern !== "missing") {
+        Object.defineProperty(navigator, "clipboard", {
+          configurable: true,
+          value: {
+            writeText: async (text: string) => {
+              writes.push(text)
+              if (modern === "rejected") throw new Error("Clipboard denied")
+            },
+          },
+        })
+      }
+      stubExecCommand(legacy === "success")
+      if (legacy === "missing") {
+        Object.defineProperty(document, "execCommand", { configurable: true, value: undefined })
+      }
+      if (legacy === "throws") {
+        document.execCommand = () => {
+          throw new Error("Legacy copy denied")
+        }
+      }
 
-  const root = document.createElement("div")
-  const wrapper = document.createElement("div")
-  wrapper.setAttribute("data-component", "markdown-code")
-  const pre = document.createElement("pre")
-  const code = document.createElement("code")
-  code.textContent = "const x = 1"
-  pre.appendChild(code)
-  const host = document.createElement("div")
-  host.setAttribute("data-slot", "markdown-copy-button")
-  const inner = document.createElement("button")
-  inner.type = "button"
-  host.appendChild(inner)
-  wrapper.appendChild(pre)
-  wrapper.appendChild(host)
-  root.appendChild(wrapper)
-  document.body.appendChild(root)
+      try {
+        expect(await writeClipboard("copy me")).toBe(legacy === "success" || modern === "success")
+        expect(writes).toEqual(legacy === "success" || modern === "missing" ? [] : ["copy me"])
+      } finally {
+        expect(document.querySelectorAll("textarea").length).toBe(0)
+      }
+    })
+  }
+}
 
-  const cleanup = setupCodeCopy(root, () => ({ copy: "Copy", copied: "Copied" }))
-  inner.dispatchEvent(new MouseEvent("click", { bubbles: true }))
-  await new Promise((resolve) => setTimeout(resolve, 10))
-  cleanup()
+for (const succeeds of [true, false]) {
+  test(`code-block copy button without navigator.clipboard: ${succeeds}`, async () => {
+    hideClipboard()
+    expect(navigator.clipboard).toBeUndefined()
+    stubExecCommand(succeeds)
 
-  expect(execCommandCalls).toEqual([{ command: "copy", selected: "const x = 1" }])
-  expect(host.getAttribute("data-copied")).toBe("true")
-})
+    const root = document.createElement("div")
+    const wrapper = document.createElement("div")
+    wrapper.setAttribute("data-component", "markdown-code")
+    const pre = document.createElement("pre")
+    const code = document.createElement("code")
+    code.textContent = "const x = 1"
+    pre.appendChild(code)
+    const host = document.createElement("div")
+    host.setAttribute("data-slot", "markdown-copy-button")
+    const inner = document.createElement("button")
+    inner.type = "button"
+    host.appendChild(inner)
+    wrapper.appendChild(pre)
+    wrapper.appendChild(host)
+    root.appendChild(wrapper)
+    document.body.appendChild(root)
+
+    const cleanup = setupCodeCopy(root, () => ({ copy: "Copy", copied: "Copied" }))
+    inner.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    cleanup()
+
+    expect(execCommandCalls).toEqual([{ command: "copy", selected: "const x = 1" }])
+    expect(host.getAttribute("data-copied")).toBe(succeeds ? "true" : null)
+  })
+}

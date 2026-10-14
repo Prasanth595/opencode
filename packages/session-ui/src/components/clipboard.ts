@@ -1,6 +1,6 @@
 export async function writeClipboard(text: string): Promise<boolean> {
   const body = typeof document === "undefined" ? undefined : document.body
-  if (body) {
+  if (body && typeof document.execCommand === "function") {
     const textarea = document.createElement("textarea")
     textarea.value = text
     textarea.setAttribute("readonly", "")
@@ -8,10 +8,14 @@ export async function writeClipboard(text: string): Promise<boolean> {
     textarea.style.opacity = "0"
     textarea.style.pointerEvents = "none"
     body.appendChild(textarea)
-    textarea.select()
-    const copied = document.execCommand("copy")
-    body.removeChild(textarea)
-    if (copied) return true
+    try {
+      textarea.select()
+      if (document.execCommand("copy")) return true
+    } catch {
+      // Legacy copying can be unavailable even when execCommand exists.
+    } finally {
+      textarea.remove()
+    }
   }
 
   const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
