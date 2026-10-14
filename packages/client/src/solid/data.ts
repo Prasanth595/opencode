@@ -663,6 +663,13 @@ export function createData(config: CreateDataInput) {
         )
         refresh(() => result.location.vcs.sync())
         refresh(() => result.project.sync())
+        const formSessionIDs = Object.keys(store.session.form).filter(
+          (sessionID) => store.session.form[sessionID]?.length,
+        )
+        if (formSessionIDs.length > 0) {
+          setStore("session", "form", {})
+          formSessionIDs.forEach((sessionID) => result.session.form.invalidate(sessionID))
+        }
         return
       }
       case "project.updated":
