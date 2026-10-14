@@ -298,6 +298,8 @@ export const delimiterTable: Readonly<Record<string, string>> = {
 }
 
 export const spacingCommands: Readonly<Record<string, number>> = {
+  // "\ " is the LaTeX control space: a backslash followed by a literal space.
+  " ": 1,
   ",": 0,
   ":": 1,
   ";": 1,
