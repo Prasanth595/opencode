@@ -582,7 +582,33 @@ function diagnoseAgentUnsupported(value: unknown, path: string[], diagnostics: D
   Object.entries(value).forEach(([name, agent]) => {
     if (!isRecord(agent)) return
     unsupportedIfPresent(agent, "name", [...path, name, "name"], diagnostics)
+    diagnoseLegacyAgentFields(agent, [...path, name], diagnostics)
     diagnoseSelection(agent, [...path, name], diagnostics)
+  })
+}
+
+// A legacy agent section decodes through the V1 schema, which routes unknown keys into
+// agent options and ultimately `request.body`. Native-only keys are never rejected, so a
+// near-miss like `disabled` (native) instead of `disable` (V1) silently disables nothing.
+// Report those keys so the no-op is visible instead of only observable at runtime.
+const nativeOnlyAgentKeys = ["request", "system", "disabled", "permissions"] as const
+const legacyAgentAliases: Readonly<Record<string, string>> = {
+  disabled: "disable",
+  system: "prompt",
+  permissions: "permission",
+}
+
+function diagnoseLegacyAgentFields(value: Record<string, unknown>, path: string[], diagnostics: Diagnostic[]) {
+  nativeOnlyAgentKeys.forEach((key) => {
+    if (!own(value, key)) return
+    const alias = legacyAgentAliases[key]
+    diagnostics.push({
+      kind: "unsupported",
+      path: [...path, key],
+      message: alias
+        ? `omitted native agent field in legacy agent section; use '${alias}' instead`
+        : "omitted native agent field in legacy agent section",
+    })
   })
 }
 
