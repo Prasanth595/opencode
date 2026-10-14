@@ -7,6 +7,7 @@ import {
   MouseButton,
   TextAttributes,
   type BoxRenderable,
+  type RGBA,
   type MouseEvent,
   type ScrollBoxRenderable,
 } from "@opentui/core"
@@ -15,7 +16,6 @@ import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { createEffect, createMemo, createResource, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
 import { DiffViewerFileTree } from "./diff-viewer-file-tree"
 import { DiffFileMenu } from "./diff-viewer-file-menu"
-import { DiffViewerFooter } from "./diff-viewer-footer"
 import { DiffViewerImage, isDiffImageFile } from "./diff-viewer-image"
 import { DialogSelect } from "../../ui/dialog-select"
 import { EmptyBorder } from "../../ui/border"
@@ -323,6 +323,10 @@ export function DiffViewerContent(props: {
   const currentSyntax = useThemes().currentSyntax
   const files = () => props.files
   const docked = () => props.panel?.presentation === "panel"
+  // The side panel sits on the slot's raised surface; full screen keeps the base background.
+  const surface = () => (docked() ? theme.background.raised.base : theme.background.base)
+  // Cards are inset from the pane edges; the gaps between them run edge to edge.
+  const inset = () => (docked() ? 1 : 2)
   const width = () => props.panel?.width ?? dimensions().width
   const mode = () => props.mode
   const [fileTreeEnabled, setFileTreeEnabled] = createSignal(props.preferences?.tree ?? true)
@@ -800,12 +804,13 @@ export function DiffViewerContent(props: {
     dialog.set({ size: "medium", centered: true })
   }
 
-  const HelpShortcut = (props: { compact?: boolean }) => (
+  const HelpShortcut = (props: { compact?: boolean; label?: string; muted?: boolean }) => (
     <Show when={helpShortcut()}>
       {(shortcut) => (
         <text
           id="diff-help-shortcut"
-          fg={theme.text.base}
+          fg={props.muted ? theme.text.formfield.disabled : theme.text.base}
+          attributes={props.muted ? TextAttributes.DIM : 0}
           selectable={false}
           flexShrink={0}
           wrapMode="none"
@@ -817,7 +822,7 @@ export function DiffViewerContent(props: {
         >
           {props.compact ? "?" : shortcut()}
           <Show when={!props.compact}>
-            <span style={{ fg: theme.text.muted }}> help</span>
+            <span style={props.muted ? {} : { fg: theme.text.muted }}> {props.label ?? "help"}</span>
           </Show>
         </text>
       )}
@@ -829,7 +834,7 @@ export function DiffViewerContent(props: {
   }))
 
   return (
-    <box width="100%" height="100%" backgroundColor={theme.background.base}>
+    <box width="100%" height="100%" backgroundColor={surface()}>
       <Show when={!showFileTree()}>
         <box
           id="diff-source-header"
@@ -923,15 +928,11 @@ export function DiffViewerContent(props: {
                 />
               </Show>
 
-              <box
-                flexGrow={1}
-                minWidth={0}
-                minHeight={0}
-                paddingLeft={docked() ? 1 : 2}
-                paddingRight={docked() ? 1 : 2}
-              >
+              <box flexGrow={1} minWidth={0} minHeight={0}>
                 <box
                   id="diff-patch-top-edge"
+                  marginLeft={inset()}
+                  marginRight={inset()}
                   ref={(edge: BoxRenderable) => {
                     // The fixed edge belongs to the visible card, not the tree selection.
                     edge.onLifecyclePass = () => {
@@ -973,16 +974,9 @@ export function DiffViewerContent(props: {
                       return (
                         <box ref={(element: BoxRenderable) => registerPatchNode(entry.fileIndex, element)}>
                           <Show when={index() > 0}>
-                            <box
-                              height={1}
-                              flexShrink={0}
-                              border={["top"]}
-                              borderColor={background()}
-                              backgroundColor={theme.background.base}
-                              customBorderChars={{ ...EmptyBorder, horizontal: "▄" }}
-                            />
+                            <CardGap glyph="▄" card={background()} surface={surface()} inset={inset()} />
                           </Show>
-                          <box backgroundColor={background()}>
+                          <box backgroundColor={background()} marginLeft={inset()} marginRight={inset()}>
                             <box
                               id={`diff-file-header-${entry.fileIndex}`}
                               onMouseDown={(event) => openFileMenu(entry.fileIndex, event)}
@@ -1033,17 +1027,9 @@ export function DiffViewerContent(props: {
                                 </text>
                               </Show>
                               <Show when={reviewed()}>
-                                <box
-                                  position="absolute"
-                                  left={0}
-                                  bottom={0}
-                                  width="100%"
-                                  height={1}
-                                  border={["bottom"]}
-                                  borderColor={background()}
-                                  backgroundColor={theme.background.base}
-                                  customBorderChars={{ ...EmptyBorder, horizontal: "▀" }}
-                                />
+                                <box position="absolute" left={-inset()} right={-inset()} bottom={0} height={1}>
+                                  <CardGap glyph="▀" card={background()} surface={surface()} inset={inset()} />
+                                </box>
                               </Show>
                             </box>
                             <Show when={!reviewed()}>
@@ -1112,8 +1098,40 @@ export function DiffViewerContent(props: {
           </Match>
         </Switch>
       </box>
-      <Show when={docked() ? props.panel : undefined}>
-        {(panel) => <DiffViewerFooter context={props.context} panel={panel()} onHelp={openHelpDialog} />}
+      <Show when={docked()}>
+        {/* The footer sits on the terminal background, eased in by a half-cell like the prompt. */}
+        <box id="diff-footer" flexShrink={0} backgroundColor={theme.background.base}>
+          <box
+            height={1}
+            flexShrink={0}
+            border={["bottom"]}
+            borderColor={surface()}
+            backgroundColor={theme.background.base}
+            customBorderChars={{ ...EmptyBorder, horizontal: "▀" }}
+          />
+          <box height={1} flexShrink={0} flexDirection="row" paddingLeft={2} paddingRight={2}>
+            <text
+              fg={props.panel?.focused ? theme.background.action.primary.focused : theme.text.formfield.disabled}
+              attributes={props.panel?.focused ? 0 : TextAttributes.DIM}
+              flexGrow={1}
+              minWidth={0}
+              wrapMode="none"
+              truncate
+              selectable={false}
+              onMouseUp={(event) => {
+                if (event.button !== MouseButton.LEFT) return
+                if (!props.panel?.focused) props.panel?.focus()
+              }}
+            >
+              <span>{props.context.keymap.shortcuts("pane.focus.left")[0] ?? ""}</span>
+              <span style={props.panel?.focused ? { fg: theme.text.muted } : {}}> focus prompt</span>
+            </text>
+            <box flexShrink={0}>
+              <HelpShortcut label="see all" muted={!props.panel?.focused} />
+            </box>
+          </box>
+          <box height={1} flexShrink={0} />
+        </box>
       </Show>
       <Show when={!showFileTree() && !docked()}>
         <box position="absolute" top={1} right={0} width={1} height={1}>
@@ -1131,6 +1149,29 @@ export function DiffViewerContent(props: {
           />
         )}
       </Show>
+    </box>
+  )
+}
+
+/** A half-row of base background between cards: the card's color over its width, the pane surface in the insets. */
+function CardGap(props: { glyph: "▄" | "▀"; card: RGBA; surface: RGBA; inset: number }) {
+  const theme = useTheme()
+  const half = (color: RGBA, width?: number) => (
+    <box
+      height={1}
+      flexShrink={0}
+      {...(width === undefined ? { flexGrow: 1 } : { width })}
+      border={[props.glyph === "▄" ? "top" : "bottom"]}
+      borderColor={color}
+      backgroundColor={theme.background.base}
+      customBorderChars={{ ...EmptyBorder, horizontal: props.glyph }}
+    />
+  )
+  return (
+    <box height={1} flexShrink={0} flexDirection="row">
+      {half(props.surface, props.inset)}
+      {half(props.card)}
+      {half(props.surface, props.inset)}
     </box>
   )
 }

@@ -46,7 +46,6 @@ test("/diff focuses the production session panel without sending typing to the p
   expect(panel.width).toBeLessThan(setup.renderer.width)
   expect(patches.scrollTop).toBe(0)
   expect(text(setup, "diff-review-count")).toBe("0/4")
-  expect(text(setup, "diff-footer")).toContain("focus diff")
 
   focus(setup, "right")
   await setup.waitFor(() => setup.renderer.currentFocusedRenderable === panel)
@@ -235,7 +234,7 @@ test("split eligibility uses the columns remaining beside vertical session tabs"
   expect(setup.requests.diff).toHaveLength(1)
 })
 
-test("panel focus, scrolling, and fullscreen use customized keys and footer hints", async () => {
+test("panel focus, scrolling, and fullscreen use customized keys", async () => {
   await using state = await tmpdir()
   await using setup = await createSessionFixture(state.path, {
     width: 240,
@@ -255,9 +254,8 @@ test("panel focus, scrolling, and fullscreen use customized keys and footer hint
   const panel = node(setup, "session-panel")
   const patches = scroll(setup)
   const splitWidth = panel.width
-  expect(text(setup, "diff-footer")).toContain("ctrl+space h")
-  expect(text(setup, "diff-footer")).toContain("f7")
-  expect(text(setup, "diff-footer")).not.toContain("ctrl+x")
+  expect(text(setup, "diff-footer")).toContain("ctrl+space h focus prompt")
+  expect(text(setup, "diff-footer")).toContain("? see all")
   setup.mockInput.pressKey("f")
   setup.mockInput.pressKey("j")
   focus(setup, "left")
@@ -275,7 +273,6 @@ test("panel focus, scrolling, and fullscreen use customized keys and footer hint
   setup.mockInput.pressKey(" ", { ctrl: true })
   setup.mockInput.pressKey("h")
   await setup.waitFor(() => setup.renderer.currentFocusedEditor === prompt)
-  await setup.waitForFrame(() => text(setup, "diff-footer").includes("ctrl+space l"))
   setup.mockInput.pressKey(" ", { ctrl: true })
   setup.mockInput.pressKey("l")
   await setup.waitFor(() => setup.renderer.currentFocusedRenderable === panel)
@@ -283,7 +280,7 @@ test("panel focus, scrolling, and fullscreen use customized keys and footer hint
 })
 
 test.each(["none", false] as const)(
-  "disabled panel keys (%s) have no behavioral or footer fallbacks",
+  "disabled panel keys (%s) have no behavioral or hint fallbacks",
   async (binding) => {
     await using state = await tmpdir()
     await using setup = await createSessionFixture(state.path, {
@@ -318,12 +315,12 @@ test.each(["none", false] as const)(
     expect(patches.scrollTop).toBe(0)
     expect(text(setup, "diff-review-count")).toBe("0/4")
     expect(prompt.plainText).toBe("")
-    expect(text(setup, "diff-footer")).not.toMatch(/ctrl\+x|full screen|j\/k|n\/p|hunks|q close|\? see all/)
+    expect(setup.renderer.root.findDescendantById("diff-help-shortcut")).toBeUndefined()
+    expect(text(setup, "diff-footer")).not.toMatch(/ctrl\+x|see all/)
 
     await setup.mockMouse.click(prompt.x + 1, prompt.y)
     await setup.waitFor(() => setup.renderer.currentFocusedEditor === prompt)
     await setup.flush()
-    expect(text(setup, "diff-footer")).not.toContain("ctrl+x")
     focus(setup, "right")
     await setup.flush()
     expect(setup.renderer.currentFocusedEditor).toBe(prompt)
