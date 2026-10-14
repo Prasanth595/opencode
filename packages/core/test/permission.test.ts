@@ -7,6 +7,7 @@ import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Bus } from "@opencode/core/bus"
 import { Location } from "@opencode/core/location"
 import { Permission } from "@opencode/core/permission"
+import { Tool } from "@opencode/schema/tool"
 import { PermissionTable } from "@opencode/core/permission/sql"
 import { PermissionSaved } from "@opencode/core/permission/saved"
 import { Project } from "@opencode/core/project"
@@ -714,4 +715,26 @@ describe("shell scanner permission impact", () => {
       )
     }
   }
+})
+
+describe("Permission.correction", () => {
+  test("finds a decline's feedback beneath a leaf's generic failure", () => {
+    const corrected = new Permission.CorrectedError({ feedback: "Declined by the person." })
+    expect(Permission.correction(corrected)).toBe("Declined by the person.")
+    const wrapped = new Tool.Error({ message: "Unable to write notes.txt", error: corrected })
+    expect(Permission.correction(wrapped)).toBe("Declined by the person.")
+    expect(Permission.correction(new Tool.Error({ message: "outer", error: wrapped }))).toBe("Declined by the person.")
+  })
+
+  test("caps long feedback, since any client can send it", () => {
+    const long = "x".repeat(Permission.maxFeedback + 50)
+    const feedback = Permission.correction(new Tool.Error({ message: "m", error: new Permission.CorrectedError({ feedback: long }) }))
+    expect(feedback).toBe("x".repeat(Permission.maxFeedback) + "…")
+  })
+
+  test("leaves every other failure alone", () => {
+    expect(Permission.correction(new Tool.Error({ message: "Unable to write notes.txt", error: new Error("EACCES") }))).toBeUndefined()
+    expect(Permission.correction(new Permission.DeclinedError())).toBeUndefined()
+    expect(Permission.correction(undefined)).toBeUndefined()
+  })
 })

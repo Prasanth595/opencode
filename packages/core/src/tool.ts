@@ -118,7 +118,10 @@ const layer = Layer.effect(
     ) {
       const execution = yield* execute(tool, input, context).pipe(
         Effect.map((value) => ({ value })),
-        Effect.catchTag("Tool.Error", (failure) => Effect.succeed({ failure })),
+        Effect.catchTag("Tool.Error", (failure) => {
+          const feedback = Permission.correction(failure)
+          return Effect.succeed({ failure: feedback === undefined ? failure : new Tool.Error({ message: feedback }) })
+        }),
       )
       const base = {
         tool: name,

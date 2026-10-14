@@ -67,6 +67,25 @@ export class CorrectedError extends Schema.TaggedError<CorrectedError>()("Permis
   feedback: Schema.String,
 }) {}
 
+/** Longest decline feedback the model is shown: it lands in context on every decline, and any client can send it. */
+export const maxFeedback = 300
+
+/**
+ * The feedback of a decline beneath a leaf's failure. Leaves wrap every typed failure in a generic one
+ * ("Unable to write …"), so the model read a decline as a fault and retried it another way.
+ */
+export function correction(error: unknown): string | undefined {
+  let current = error
+  for (let depth = 0; depth < 4 && current !== undefined && current !== null; depth++) {
+    if (current instanceof CorrectedError) {
+      const feedback = current.feedback
+      return feedback.length > maxFeedback ? feedback.slice(0, maxFeedback) + "…" : feedback
+    }
+    current = (current as { error?: unknown }).error
+  }
+  return undefined
+}
+
 export class BlockedError extends Schema.TaggedError<BlockedError>()("Permission.BlockedError", {
   rules: Permission.Ruleset,
   permission: Schema.String,
