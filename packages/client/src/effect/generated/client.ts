@@ -194,6 +194,8 @@ import type {
   SkillListOutput,
   RpcCallInput,
   RpcCallOutput,
+  RpcConnectInput,
+  RpcConnectOutput,
   EventSubscribeOutput,
   PtyListInput,
   PtyListOutput,
@@ -1237,7 +1239,18 @@ const EndpointRpcCall = (raw: RawClient["server.rpc"]) => (input: RpcCallInput) 
     }).pipe(Effect.mapError(mapClientError)),
   )
 
-const adaptGroupRpc = (raw: RawClient["server.rpc"]) => ({ call: EndpointRpcCall(raw) })
+const EndpointRpcConnect = (raw: RawClient["server.rpc"]) => (input: RpcConnectInput) =>
+  preserveEffect<RpcConnectOutput>()(
+    raw["rpc.connect"]({
+      params: { rpcID: input["rpcID"], method: input["method"] },
+      query: { location: input["location"], input: input["input"] },
+    }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const adaptGroupRpc = (raw: RawClient["server.rpc"]) => ({
+  call: EndpointRpcCall(raw),
+  connect: EndpointRpcConnect(raw),
+})
 
 const EndpointEventSubscribe = (raw: RawClient["server.event"]) => () =>
   preserveStream<EventSubscribeOutput>()(

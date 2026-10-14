@@ -6386,6 +6386,21 @@ export type RpcCallInput = {
 
 export type RpcCallOutput = RpcOutput
 
+export type RpcConnectInput = {
+  readonly rpcID: { readonly rpcID: string; readonly method: string }["rpcID"]
+  readonly method: { readonly rpcID: string; readonly method: string }["method"]
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined } | undefined
+    readonly input: string
+  }["location"]
+  readonly input: {
+    readonly location?: { readonly directory?: string | undefined } | undefined
+    readonly input: string
+  }["input"]
+}
+
+export type RpcConnectOutput = void
+
 export type EventSubscribeOutput = V2Event
 
 export type PtyListInput = {
