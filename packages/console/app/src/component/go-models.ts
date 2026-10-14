@@ -13,6 +13,7 @@ export const goModels = [
     bonus: 2,
     featured: true,
     fresh: true,
+    limitedTime: true,
   },
   { id: "glm-5.2", name: "GLM-5.2", requests: 880, allowance: 60 },
   { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", requests: 1050, allowance: 15 },
