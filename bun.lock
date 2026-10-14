@@ -654,7 +654,6 @@
         "@tsconfig/bun": "catalog:",
         "@types/bun": "catalog:",
         "@typescript/native-preview": "catalog:",
-        "ajv": "8.20.0",
         "typescript": "catalog:",
       },
     },
