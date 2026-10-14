@@ -43,10 +43,28 @@ export function filename(channel = OPENCODE_CHANNEL) {
   return `service-${channel.replace(/[^a-zA-Z0-9._-]/g, "-")}.json`
 }
 
-export function defaultPort(channel = OPENCODE_CHANNEL) {
+export function defaultPort(
+  channel = OPENCODE_CHANNEL,
+  distro = process.env.WSL_DISTRO_NAME,
+  platform = process.platform,
+) {
+  const port = channelPort(channel, distro)
+  // Windows hands out 0xC000-0xFFFF for outgoing connections and Hyper-V reserves blocks of it. XOR with 0x4096, a nod
+  // to the v1 port, clears bit 14 and steps out of that range: 0xC0DE becomes 0x8048.
+  if (platform === "win32" && port >= 0xc000) return port ^ 0x4096
+  return port
+}
+
+function channelPort(channel: string, distro: string | undefined) {
+  // WSL distros share localhost with Windows and with each other, so each distro gets its own port.
+  if (distro) return hashedPort(`${filename(channel)}:${distro}`)
   if (channel === "latest" || channel === "dev" || channel === "beta" || channel === "next") return 0xc0de
   if (channel === "local") return 0xc0df
-  return 10_000 + (Number.parseInt(Hash.fast(channel).slice(0, 8), 16) % 50_000)
+  return hashedPort(channel)
+}
+
+function hashedPort(key: string) {
+  return 10_000 + (Number.parseInt(Hash.fast(key).slice(0, 8), 16) % 50_000)
 }
 
 export function legacyFilename(channel = OPENCODE_CHANNEL) {

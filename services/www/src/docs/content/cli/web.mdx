@@ -35,6 +35,20 @@ $ ssh -L 49374:127.0.0.1:49374 my-server
 By default the server runs on port 49374 and listens only on localhost. You can
 change this config with the `opencode service` command.
 
+Two platforms use a different default port:
+
+- On Windows, the server uses port 32840, outside the range Windows reserves
+  for Hyper-V and outgoing connections.
+- In WSL, each distro gets its own port, so distros and Windows don't compete
+  for one port.
+
+Print the current address with `opencode service status`:
+
+```bash
+$ opencode service status
+http://127.0.0.1:49374
+```
+
 ### Remote access
 
 To connect from anywhere, pair through an [OpenTunnel](https://github.com/anomalyco/opentunnel)
