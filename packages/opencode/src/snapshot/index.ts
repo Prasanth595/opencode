@@ -6,6 +6,7 @@ import path from "path"
 import { AppProcess } from "@opencode-ai/core/process"
 import { InstanceState } from "@/effect/instance-state"
 import { FSUtil } from "@opencode-ai/core/fs-util"
+import { EffectFlock } from "@opencode-ai/core/util/effect-flock"
 import { Hash } from "@opencode-ai/core/util/hash"
 import { Config } from "@/config/config"
 import { Global } from "@opencode-ai/core/global"
@@ -46,12 +47,17 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Snapshot") {}
 
-const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | Config.Service> = Layer.effect(
+const layer: Layer.Layer<
+  Service,
+  never,
+  FSUtil.Service | AppProcess.Service | Config.Service | EffectFlock.Service
+> = Layer.effect(
   Service,
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
     const appProcess = yield* AppProcess.Service
     const config = yield* Config.Service
+    const flock = yield* EffectFlock.Service
     const locks = new Map<string, Semaphore.Semaphore>()
 
     const lock = (key: string) => {
@@ -162,7 +168,13 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
         const exists = (file: string) => fs.exists(file).pipe(Effect.orDie)
         const read = (file: string) => fs.readFileString(file).pipe(Effect.catch(() => Effect.succeed("")))
         const remove = (file: string) => fs.remove(file).pipe(Effect.catch(() => Effect.void))
-        const locked = <A, E, R>(fx: Effect.Effect<A, E, R>) => lock(state.gitdir).withPermits(1)(fx)
+        // The in-process semaphore serializes snapshot work within one OpenCode
+        // process. The git directory is keyed by project + worktree, so several
+        // OpenCode instances open on the same project share it; the cross-process
+        // flock serializes them too, otherwise concurrent instances race on the
+        // shared git index (index.lock) and can wedge a session's snapshotting.
+        const locked = <A, E, R>(fx: Effect.Effect<A, E, R>) =>
+          lock(state.gitdir).withPermits(1)(flock.withLock(fx, `snapshot:${state.gitdir}`).pipe(Effect.orDie))
 
         const enabled = Effect.fnUntraced(function* () {
           if (state.vcs !== "git") return false
@@ -801,7 +813,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [FSUtil.node, AppProcess.node, Config.node],
+  deps: [FSUtil.node, AppProcess.node, Config.node, EffectFlock.node],
 })
 
 export * as Snapshot from "."
