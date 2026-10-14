@@ -29,6 +29,12 @@ describe("resolveOpenTarget", () => {
     expect(resolveOpenTarget(file)).toBe(file)
   })
 
+  test("keeps Windows drive-qualified paths in either slash style", () => {
+    expect(resolveOpenTarget("C:\\Users\\foo\\file.md")).toBe("C:\\Users\\foo\\file.md")
+    expect(resolveOpenTarget("C:/Users/foo/file.md")).toBe("C:/Users/foo/file.md")
+    expect(resolveOpenTarget("d:\\repo\\plan.md")).toBe("d:\\repo\\plan.md")
+  })
+
   test("resolves relative paths against a session directory base", () => {
     const base = path.resolve("/repo")
     expect(resolveOpenTarget("plan/example.md", base)).toBe(path.join(base, "plan/example.md"))

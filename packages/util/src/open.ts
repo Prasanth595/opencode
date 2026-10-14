@@ -22,6 +22,8 @@ export function openHref(input: string, base?: string) {
 
 /** @internal */
 export function resolveOpenTarget(input: string, base?: string) {
+  // Absolute paths before URL parsing: URL.canParse treats "C:\..." / "C:/..." as scheme "c:".
+  if (path.isAbsolute(input) || /^[A-Za-z]:[\\/]/.test(input)) return input
   if (URL.canParse(input)) {
     const url = new URL(input)
     if (url.protocol === "http:" || url.protocol === "https:") return url.href
@@ -35,7 +37,6 @@ export function resolveOpenTarget(input: string, base?: string) {
     }
     return undefined
   }
-  if (path.isAbsolute(input)) return input
   // Resolve project-relative Markdown links such as plan/example.md against the session directory.
   if (base !== undefined && input.length > 0 && !input.startsWith("#")) return path.resolve(base, input)
 }
