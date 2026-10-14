@@ -33,6 +33,7 @@ import { asc, eq } from "drizzle-orm"
 import { testEffect } from "./lib/effect"
 
 let requests: LLMRequest[] = []
+let requestOptions: Array<{ webSocket?: unknown; http?: unknown }> = []
 const model = LanguageModel.make({
   id: "summary-model",
   provider: "test",
@@ -49,8 +50,9 @@ const cost = [
   },
 ]
 const client = Layer.mock(LLMClient.Service)({
-  stream: (request: LLMRequest) => {
+  stream: (request: LLMRequest, options?: { webSocket?: unknown; http?: unknown }) => {
     requests.push(request)
+    requestOptions.push({ webSocket: options?.webSocket, http: options?.http })
     return Stream.make(
       LLMEvent.textDelta({ id: "summary", text: "## Objective\n- manual summary" }),
       LLMEvent.stepFinish({
@@ -495,6 +497,37 @@ it.effect("manual compaction summarizes short context instead of no-op", () =>
       { type: Bus.versionedType(SessionEvent.UsageRecorded.type, 1) },
       { type: Bus.versionedType(SessionEvent.Compaction.Ended.type, 1) },
     ])
+  }),
+)
+
+it.effect("manual compaction summary uses the session's WebSocket transport", () =>
+  Effect.gen(function* () {
+    requests = []
+    requestOptions = []
+    const sessionID = Session.ID.make("ses_compaction_websocket")
+    const session = yield* insertSession(sessionID)
+    const websocketModel = SessionRunnerModel.resolved(model, {
+      capabilities: { tools: true, input: ["text"], output: ["text"] },
+      cost,
+      limit: { context: 200_000, output: 32_000 },
+      transport: "websocket",
+    })
+    const messages = [
+      SessionMessage.User.make({
+        id: SessionMessage.ID.create(),
+        text: "Summarize over WebSocket.",
+        time: { created: DateTime.makeUnsafe(0) },
+      }),
+    ]
+    const compaction = yield* SessionCompaction.Service
+    yield* compaction.compact({
+      reason: "manual",
+      context: { ...loaded(session, messages), model: websocketModel },
+      inputID: SessionMessage.ID.create(),
+    })
+    expect(requestOptions).toHaveLength(1)
+    expect(requestOptions[0]?.webSocket).toBeDefined()
+    expect(requestOptions[0]?.http).toBeUndefined()
   }),
 )
 
