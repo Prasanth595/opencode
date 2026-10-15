@@ -300,7 +300,8 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
         })),
         ...serverTuiPlugins().map((plugin) => ({
           entry: plugin.source.type === "package" ? plugin.source.target : path.dirname(plugin.source.path),
-          install: false,
+          // A remote server or different environment may not share this TUI cache.
+          install: plugin.source.type === "package",
           optional: true,
         })),
         ...(config.data.plugins ?? []).map((entry) => ({ entry, install: true, optional: false })),
