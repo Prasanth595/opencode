@@ -3,7 +3,7 @@ import { Slug } from "@opencode/core/util/slug"
 import { createSignal, onMount } from "solid-js"
 import { Keymap } from "../context/keymap"
 import { useTheme } from "../context/theme"
-import { DIALOG_INSET, DialogFooter, DialogHeader, useDialog, type DialogContext } from "../ui/dialog"
+import { DialogFooter, DialogHeader, DialogLayout, useDialog, type DialogContext } from "../ui/dialog"
 import { useConfig } from "../config"
 
 export function DialogWorktreeName(props: { onConfirm: (name: string) => void }) {
@@ -46,8 +46,19 @@ export function DialogWorktreeName(props: { onConfirm: (name: string) => void })
   })
 
   return (
-    <box paddingLeft={DIALOG_INSET} paddingRight={DIALOG_INSET} gap={1}>
-      <DialogHeader title="Name worktree" />
+    <DialogLayout
+      header={<DialogHeader title="Name worktree" />}
+      footer={
+        <box flexDirection="row">
+          <DialogFooter
+            actions={[
+              { title: "submit", key: "enter", onTrigger: confirm },
+              { title: "generate one", command: "dialog.worktree.generate", onTrigger: generate },
+            ]}
+          />
+        </box>
+      }
+    >
       <input
         cursorStyle={config.cursor}
         ref={(value: InputRenderable) => {
@@ -61,15 +72,7 @@ export function DialogWorktreeName(props: { onConfirm: (name: string) => void })
         focusedTextColor={theme.text.formfield.base}
         cursorColor={theme.text.formfield.base}
       />
-      <box paddingBottom={1} flexDirection="row">
-        <DialogFooter
-          actions={[
-            { title: "submit", key: "enter", onTrigger: confirm },
-            { title: "generate one", command: "dialog.worktree.generate", onTrigger: generate },
-          ]}
-        />
-      </box>
-    </box>
+    </DialogLayout>
   )
 }
 

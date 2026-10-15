@@ -810,26 +810,31 @@ function OAuthView(props: {
 }) {
   const theme = useTheme().surface("dialog")
   return (
-    <box paddingLeft={DIALOG_INSET} paddingRight={DIALOG_INSET} gap={1} paddingBottom={1}>
-      <DialogHeader title={props.title} />
-      <Show when={props.url}>
-        {(url) => (
-          <box gap={1}>
-            <Link href={url()} fg={theme.markdown.link} />
-            <Show when={props.instructions}>
-              {(instructions) => <text fg={theme.text.muted}>{instructions()}</text>}
-            </Show>
-          </box>
-        )}
-      </Show>
-      <text fg={theme.text.muted}>{props.message}</text>
-      <DialogFooter
-        actions={[
-          ...(props.open ? [{ title: "open", key: "o" }] : []),
-          ...(props.copy ? [{ title: "copy", key: "c" }] : []),
-        ]}
-      />
-    </box>
+    <DialogLayout
+      header={<DialogHeader title={props.title} />}
+      footer={
+        <DialogFooter
+          actions={[
+            ...(props.open ? [{ title: "open", key: "o" }] : []),
+            ...(props.copy ? [{ title: "copy", key: "c" }] : []),
+          ]}
+        />
+      }
+    >
+      <box gap={1}>
+        <Show when={props.url}>
+          {(url) => (
+            <box gap={1}>
+              <Link href={url()} fg={theme.markdown.link} />
+              <Show when={props.instructions}>
+                {(instructions) => <text fg={theme.text.muted}>{instructions()}</text>}
+              </Show>
+            </box>
+          )}
+        </Show>
+        <text fg={theme.text.muted}>{props.message}</text>
+      </box>
+    </DialogLayout>
   )
 }
 
