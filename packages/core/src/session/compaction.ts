@@ -97,8 +97,6 @@ const SHRINK_STEPS = [0.7, 0.5, 0.35]
 const RESERVE_MIN = 16_000
 /** A common window size, assumed for the compaction request when the model's window is unknown. */
 const UNKNOWN_WINDOW = 200_000
-/** The least output a summary request asks for, even when its prompt leaves no room in the window. */
-const SUMMARY_OUTPUT_MIN = 1_024
 const TOOL_OUTPUT_MAX_CHARS = 1_250
 const IMAGE_TOKEN_ESTIMATE = 1_500
 const PDF_TOKEN_ESTIMATE = 2_000
@@ -292,14 +290,14 @@ export const layer = Layer.effect(
         Effect.gen(function* () {
           const prompted = fitOutput(
             LLMRequest.update(request, { messages: [...request.messages, Message.user(prompt)] }),
-            context.model.limit.context,
+            context.model.limit,
           )
           const reply = yield* stream(context, prompted, prepared.options)
           if (filled(reply.text)) return { ...reply, recent: split.recent }
 
           const nudged = fitOutput(
             LLMRequest.update(prompted, { messages: [...prompted.messages, Message.user(NUDGE)] }),
-            context.model.limit.context,
+            context.model.limit,
           )
           const retry = yield* stream(context, nudged, prepared.options)
           if (filled(retry.text)) return { ...retry, recent: split.recent }
@@ -934,12 +932,18 @@ const hasMeasuredPrompt = (message: SessionMessage.Info, model: SessionContext.L
  * `prepare` sizes the output limit for a request of `budget` tokens, but `deliver` can send a larger one when it
  * cannot shrink the conversation further. Lower the limit to the room the request being sent leaves in the window,
  * so the input and the requested output never exceed the window by our own estimate.
+ *
+ * Like `budget` in `prepare`, the estimate counts as measured, without the margin primary requests add for estimates:
+ * `deliver` aims at about 90% of the window, so that margin would cut every summary near its target to the minimum.
  */
-const fitOutput = (request: LLMRequest, window: number) => {
-  const limit = request.generation?.maxTokens
-  if (limit === undefined || window <= 0) return request
-  const maxTokens = Math.min(limit, Math.max(SUMMARY_OUTPUT_MIN, window - estimateRequest(request)))
-  if (maxTokens === limit) return request
+const fitOutput = (request: LLMRequest, limit: SessionContext.Loaded["model"]["limit"]) => {
+  const current = request.generation?.maxTokens
+  if (current === undefined) return request
+  const maxTokens = Math.min(
+    current,
+    SessionModelRequest.outputLimit(limit, "compaction", { measured: estimateRequest(request), estimated: 0 }),
+  )
+  if (maxTokens === current) return request
   return LLMRequest.update(request, { generation: { ...request.generation, maxTokens } })
 }
 
