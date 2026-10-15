@@ -290,7 +290,7 @@ download_with_progress() {
             bytes=$(( $(wc -c < "$output") ))
             print_progress "$bytes" "${length:-0}"
         fi
-        sleep 0.1
+        sleep 0.1 2>/dev/null || sleep 1
     done
 
     local ret=0
