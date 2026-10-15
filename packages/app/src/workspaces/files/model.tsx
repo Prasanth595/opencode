@@ -226,7 +226,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       return entry.promise
     }
 
-    // Lists the parent directory instead of reading the file, so checking a path a message names transfers no content.
+    // Lists the parent directory instead of reading file contents, so checking a path a message names transfers no content.
     const exists = (input: string) => {
       const file = path.normalize(input)
 
