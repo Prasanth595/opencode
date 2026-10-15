@@ -637,7 +637,8 @@ const setup: Setup<typeof File> = (ctx) => {
             .find((entry) => entry.path.replaceAll("\\", "/") === expected)?.type === "directory"
 
         if (!stillCurrent()) return
-        // Directories have no file tab; show workspace folders in the tree or launch external folders.\n        if (directory) return openResolvedDirectory(targetPath)
+        // Directories have no file tab; show workspace folders in the tree or launch external folders.
+        if (directory) return openResolvedDirectory(targetPath)
 
         await openResolvedFile(targetPath, selection)
       }
