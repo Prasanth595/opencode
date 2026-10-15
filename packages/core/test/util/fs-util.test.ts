@@ -1,3 +1,4 @@
+import path from "path"
 import { describe, expect } from "bun:test"
 import { Effect, FileSystem, Layer, PlatformError } from "effect"
 import { FSUtil } from "@opencode/util/fs-util"
@@ -33,7 +34,7 @@ describe("FSUtil", () => {
     it.effect(`treats ${input.code} as an unresolvable, unreadable path`, () =>
       Effect.gen(function* () {
         const fs = yield* FSUtil.Service
-        expect(yield* fs.resolve("/denied/.agents")).toBe("/denied/.agents")
+        expect(yield* fs.resolve("/denied/.agents")).toBe(path.resolve("/denied/.agents"))
         expect(yield* fs.readFileStringSafe("/denied/AGENTS.md")).toBeUndefined()
       }).pipe(Effect.provide(denied(input.tag, input.code))),
     )
