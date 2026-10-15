@@ -240,7 +240,10 @@ function normalizeCache(input: unknown, encoded: Record<string, unknown>, diagno
   }
   encoded.cache = Object.fromEntries(
     Object.entries(input).map(([provider, raw]) => {
-      const decoded = Schema.decodeUnknownResult(ConfigCache.Info.value, options)(raw)
+      const decoded = Schema.decodeUnknownResult(ConfigCache.Info.value, {
+        errors: "all",
+        onExcessProperty: "error",
+      })(raw)
       const issue = Result.isFailure(decoded) ? decoded.failure.message : validate(decoded.success)
       if (issue)
         diagnostics.push({
