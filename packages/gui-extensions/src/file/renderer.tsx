@@ -521,7 +521,7 @@ const setup: Setup<typeof File> = (ctx) => {
       .catch(() => false)
   }
 
-  // Opens files the agent references as side panel tabs, inside or outside the workspace, or as
+  // Opens file and directory paths the agent references, inside or outside the workspace, or as
   // a browser tab for HTML when the desktop can load the file directly.
   ctx.add(LinkHandler, {
     match: () => true,
@@ -637,7 +637,7 @@ const setup: Setup<typeof File> = (ctx) => {
             .find((entry) => entry.path.replaceAll("\\", "/") === expected)?.type === "directory"
 
         if (!stillCurrent()) return
-        if (directory) return openResolvedDirectory(targetPath)
+        // Directories have no file tab; show workspace folders in the tree or launch external folders.\n        if (directory) return openResolvedDirectory(targetPath)
 
         await openResolvedFile(targetPath, selection)
       }
