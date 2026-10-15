@@ -73,9 +73,17 @@ export function createComposerModelSelection(input: {
   const recent = () => models.recent.list().find(valid)
 
   const fallback = () => {
-    const model = ModelDefault.pick(providers.connected().flatMap((provider) => Object.values(provider.models)))
+    const free = ModelDefault.freeOnly(
+      providers.connected().flatMap((provider) => Object.values(provider.models)),
+      (model) => model.cost.input === 0,
+    )
+    if (free) return { providerID: free.providerID, modelID: free.id }
 
-    return model ? { providerID: model.providerID, modelID: model.id } : undefined
+    return providers.connected().flatMap((provider) => {
+      const modelID = Object.values(provider.models)[0]?.id
+
+      return modelID ? [{ providerID: provider.id, modelID }] : []
+    })[0]
   }
 
   const current = () => {

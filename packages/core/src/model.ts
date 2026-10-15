@@ -266,7 +266,11 @@ const layer = Layer.effect(
         const value = yield* read()
         const requested = value.data.defaultModel
         const model = requested && value.byProvider.get(requested.providerID)?.get(requested.modelID)
-        return model?.enabled ? model : ModelDefault.pick(value.available.filter(supportsText))
+        if (model?.enabled) return model
+        const candidates = value.available.filter(supportsText)
+        return (
+          ModelDefault.freeOnly(candidates, (item) => !item.cost.some((cost) => cost.input > 0)) ?? candidates[0]
+        )
       }),
       small: Effect.fn("Model.small")(function* (providerID) {
         const value = yield* read()

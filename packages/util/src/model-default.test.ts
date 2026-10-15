@@ -1,23 +1,25 @@
 import { describe, expect, test } from "bun:test"
 import { ModelDefault } from "./model-default.js"
 
-describe("ModelDefault.pick", () => {
-  test("prefers a priority model over earlier unranked models", () => {
-    expect(ModelDefault.pick([{ id: "nemotron-free" }, { id: "big-pickle" }])?.id).toBe("big-pickle")
+const model = (providerID: string, id: string, free = true) => ({ providerID, id, free })
+const pick = (models: ReturnType<typeof model>[]) => ModelDefault.freeOnly(models, (item) => item.free)?.id
+
+describe("ModelDefault.freeOnly", () => {
+  test("picks big-pickle when only free OpenCode models are available", () => {
+    expect(pick([model("opencode", "nemotron-free"), model("opencode", "big-pickle")])).toBe("big-pickle")
   })
 
-  test("prefers later priority entries", () => {
-    expect(ModelDefault.pick([{ id: "gpt-5.5" }, { id: "claude-sonnet-4-6" }, { id: "big-pickle" }])?.id).toBe(
-      "big-pickle",
-    )
+  test("leaves the default alone when a paid OpenCode model is available", () => {
+    expect(pick([model("opencode", "gpt-5.5", false), model("opencode", "big-pickle")])).toBeUndefined()
   })
 
-  test("keeps the caller's order among equally ranked models", () => {
-    expect(ModelDefault.pick([{ id: "gpt-5.6-sol" }, { id: "gpt-5.5" }])?.id).toBe("gpt-5.6-sol")
-    expect(ModelDefault.pick([{ id: "kimi-k3" }, { id: "glm-6" }])?.id).toBe("kimi-k3")
+  test("leaves the default alone when another provider is available", () => {
+    expect(pick([model("anthropic", "claude-sonnet-4-6", false), model("opencode", "big-pickle")])).toBeUndefined()
+    expect(pick([model("custom", "free-local"), model("opencode", "big-pickle")])).toBeUndefined()
   })
 
-  test("returns undefined for an empty list", () => {
-    expect(ModelDefault.pick([])).toBeUndefined()
+  test("leaves the default alone when big-pickle is unavailable", () => {
+    expect(pick([model("opencode", "nemotron-free")])).toBeUndefined()
+    expect(pick([])).toBeUndefined()
   })
 })

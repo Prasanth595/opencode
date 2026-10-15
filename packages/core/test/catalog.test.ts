@@ -12,6 +12,7 @@ import { Model } from "@opencode/core/model"
 import { ModelResolver } from "@opencode/core/model-resolver"
 import { Provider } from "@opencode/core/provider"
 import { AbsolutePath } from "@opencode/core/schema"
+import { Money } from "@opencode/schema/money"
 import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
 
@@ -569,22 +570,46 @@ describe("Provider and Model", () => {
     }),
   )
 
-  it.effect("prefers the internal priority over a newer model when no default is configured", () =>
+  it.effect("defaults to big-pickle when only free OpenCode models are available", () =>
     Effect.gen(function* () {
       const providers = yield* Provider.Service
       const models = yield* Model.Service
-      const providerID = Provider.ID.make("opencode")
       yield* providers.transform((editor) => {
-        editor.update(providerID, () => {})
-        editor.models.update(providerID, Model.ID.make("big-pickle"), (model) => {
+        editor.update(Provider.ID.opencode, () => {})
+        editor.models.update(Provider.ID.opencode, Model.ID.make("big-pickle"), (model) => {
           model.time.released = 1000
         })
-        editor.models.update(providerID, Model.ID.make("new-free"), (model) => {
+        editor.models.update(Provider.ID.opencode, Model.ID.make("new-free"), (model) => {
           model.time.released = 2000
         })
       })
 
       expect((yield* models.default())?.id).toBe(Model.ID.make("big-pickle"))
+    }),
+  )
+
+  it.effect("keeps the newest default when a paid model is available", () =>
+    Effect.gen(function* () {
+      const providers = yield* Provider.Service
+      const models = yield* Model.Service
+      yield* providers.transform((editor) => {
+        editor.update(Provider.ID.opencode, () => {})
+        editor.models.update(Provider.ID.opencode, Model.ID.make("big-pickle"), (model) => {
+          model.time.released = 1000
+        })
+        editor.models.update(Provider.ID.opencode, Model.ID.make("paid"), (model) => {
+          model.time.released = 2000
+          model.cost = [
+            {
+              input: Money.USDPerMillionTokens.make(1),
+              output: Money.USDPerMillionTokens.make(1),
+              cache: { read: Money.USDPerMillionTokens.zero, write: Money.USDPerMillionTokens.zero },
+            },
+          ]
+        })
+      })
+
+      expect((yield* models.default())?.id).toBe(Model.ID.make("paid"))
     }),
   )
 

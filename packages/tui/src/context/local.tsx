@@ -199,7 +199,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           }
         }
 
-        const model = ModelDefault.pick(models() ?? [])
+        const list = models() ?? []
+        const model = ModelDefault.freeOnly(list, (item) => !item.cost.some((cost) => cost.input > 0)) ?? list[0]
         if (!model) return undefined
         return {
           providerID: model.providerID,
