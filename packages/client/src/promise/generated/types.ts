@@ -693,6 +693,7 @@ export type IntegrationAttempt = {
   url: string
   instructions: string
   mode: "auto" | "code"
+  device?: boolean
   time: { created: number; expires: number }
 }
 
