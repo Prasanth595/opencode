@@ -56,6 +56,25 @@ const itRace = testEffect(AppNodeBuilder.build(
   ],
 ))
 
+// Execution stub whose wake marks the session active synchronously, as RunCoordinator.wake does.
+const stubActive = new Set<Session.ID>()
+let stubSettled: Deferred.Deferred<void>
+const itActive = testEffect(AppNodeBuilder.build(
+  LayerNode.group([Database.node, Bus.node, SessionProjector.node, Session.node, LocationServiceMap.node]),
+  [Global.node.replace(tempGlobalLayer), offlineModels,
+    Watcher.node.replace(Watcher.configured({ enabled: false })),
+    SessionExecution.node.replace(Layer.succeed(SessionExecution.Service, {
+      active: Effect.sync(() => new Set(stubActive)),
+      isActive: (sessionID: Session.ID) => Effect.sync(() => stubActive.has(sessionID)),
+      resume: () => Effect.void,
+      wake: (sessionID: Session.ID) => Effect.sync(() => { stubActive.add(sessionID) }),
+      interrupt: () => Effect.succeed(false),
+      awaitIdle: (sessionID: Session.ID) =>
+        Effect.suspend(() => (stubActive.has(sessionID) ? Deferred.await(stubSettled) : Effect.void)),
+    })),
+  ],
+))
+
 const project = Effect.gen(function* () {
   const tmp = yield* tmpdirScoped()
   yield* Effect.promise(() =>
@@ -103,6 +122,33 @@ describe("Session waits for plugin activation", () => {
       yield* Fiber.join(first)
       yield* Fiber.join(second)
       expect(states).toEqual(["busy", "idle", "busy", "idle"])
+    }),
+  )
+  itActive.live("publishes idle once the woken execution settles", () =>
+    Effect.gen(function* () {
+      stubActive.clear()
+      stubSettled = yield* Deferred.make<void>()
+      const tmp = yield* tmpdirScoped()
+      const sessions = yield* Session.Service
+      const bus = yield* Bus.Service
+      const session = yield* sessions.create({ location: { directory: AbsolutePath.make(tmp.path) } })
+      const states: string[] = []
+      const idle = yield* Deferred.make<void>()
+      const unsubscribe = yield* bus.listen((event) => Effect.gen(function* () {
+        if (event.type !== SessionStatusEvent.Status.type) return
+        const data = Schema.decodeUnknownSync(SessionStatusEvent.Status.data)(event.data)
+        if (data.sessionID !== session.id) return
+        states.push(data.status.type)
+        if (data.status.type === "idle") yield* Deferred.succeed(idle, undefined)
+      }))
+      yield* Effect.addFinalizer(() => unsubscribe)
+      yield* sessions.prompt({ sessionID: session.id, text: "Run" })
+      // Preparation handed off to the woken execution: busy stands until settlement.
+      expect(states).toEqual(["busy"])
+      yield* Effect.sync(() => stubActive.clear())
+      yield* Deferred.succeed(stubSettled, undefined)
+      yield* Deferred.await(idle)
+      expect(states).toEqual(["busy", "idle"])
     }),
   )
   it.live("publishes busy before cold plugin setup, then clears preparation-only status", () =>

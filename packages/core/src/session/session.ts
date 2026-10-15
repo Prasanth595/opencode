@@ -51,6 +51,8 @@ export const make = Effect.fn("Session.make")(function* () {
   const fs = yield* FSUtil.Service
   const scope = yield* Scope.Scope
   const preparing = new Map<SessionSchema.ID, number>()
+  // Sessions with a settlement waiter already in flight: at most one per busy period.
+  const settling = new Set<SessionSchema.ID>()
   // Serialize only status bookkeeping/publication, never location boot or preparation.
   const statusLock = Semaphore.makeUnsafe(1)
 
@@ -194,7 +196,23 @@ export const make = Effect.fn("Session.make")(function* () {
           return
         }
         preparing.delete(sessionID)
-        if (yield* execution.isActive(sessionID)) return
+        if (yield* execution.isActive(sessionID)) {
+          // A woken execution owns the busy period now; clear the status once it settles.
+          if (settling.has(sessionID)) return
+          settling.add(sessionID)
+          const location = accepted.location
+          yield* Effect.gen(function* () {
+            yield* execution.awaitIdle(sessionID)
+            yield* statusLock.withPermit(Effect.gen(function* () {
+              settling.delete(sessionID)
+              // A newer preparation or execution owns the busy period; its own cleanup publishes idle.
+              if (preparing.has(sessionID)) return
+              if (yield* execution.isActive(sessionID)) return
+              yield* bus.publish(SessionStatusEvent.Status, { sessionID, status: { type: "idle" } }, { location })
+            }))
+          }).pipe(Effect.forkIn(scope, { startImmediately: true }))
+          return
+        }
         yield* bus.publish(SessionStatusEvent.Status, { sessionID, status: { type: "idle" } }, { location: accepted.location })
       }))))
     }),
