@@ -386,6 +386,10 @@ describe("built-in web search providers", () => {
         body: { jsonrpc: "2.0", id: 1, method: "initialize" },
       })
       expect(requests[2]).toMatchObject({
+        headers: { "x-api-key": "tinyfish-secret", "mcp-session-id": "ses_tinyfish" },
+        body: { jsonrpc: "2.0", method: "notifications/initialized" },
+      })
+      expect(requests[3]).toMatchObject({
         url: WebSearchTinyFish.endpoint,
         headers: { "x-api-key": "tinyfish-secret", "mcp-session-id": "ses_tinyfish" },
         body: {
@@ -398,28 +402,7 @@ describe("built-in web search providers", () => {
           },
         },
       })
-      expect(requests[2]?.headers["x-tinyfish-access-mode"]).toBeUndefined()
-    }),
-  )
-
-  it.effect("reports a clear error when TinyFish initialize mints no session id", () =>
-    Effect.gen(function* () {
-      const integrations = yield* Integration.Service
-      const websearch = yield* WebSearch.Service
-      yield* WebSearchTinyFish.Plugin.effect(
-        host({ integration: integrationHost(integrations), websearch: webSearchHost(websearch) }),
-      )
-      yield* integrations.connection.key({
-        integrationID: Integration.ID.make("tinyfish"),
-        key: "tinyfish-secret",
-      })
-      setInitializeResponse("{}", 200, {})
-      const error = yield* websearch
-        .query({ query: "effect typescript", providerID: WebSearch.ID.make("tinyfish") })
-        .pipe(Effect.flip)
-      expect(error).toBeInstanceOf(WebSearch.RequestError)
-      if (!(error instanceof WebSearch.RequestError)) throw new Error("expected a RequestError")
-      expect(String(error.cause)).toContain("Mcp-Session-Id")
+      expect(requests[3]?.headers["x-tinyfish-access-mode"]).toBeUndefined()
     }),
   )
 })

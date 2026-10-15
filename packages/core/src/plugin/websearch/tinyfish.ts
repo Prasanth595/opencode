@@ -1,9 +1,10 @@
 export * as WebSearchTinyFish from "./tinyfish.js"
 
 import { define } from "@opencode/plugin/effect/plugin"
-import { Effect, Option, Schema, Scope } from "effect"
-import { HttpClient } from "effect/http"
+import { Duration, Effect, Option, Schema, Scope } from "effect"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import { App } from "../../app.js"
+import { collectBoundedResponseBody } from "../../tool/http-body.js"
 import { WebSearchMcp } from "./mcp.js"
 
 export const endpoint = "https://agent.tinyfish.ai/mcp"
@@ -61,8 +62,7 @@ export const Plugin = define<HttpClient.HttpClient | Scope.Scope>({
             // Authenticated MCP mode mints an `Mcp-Session-Id` on `initialize` and rejects every
             // post-initialize request without it (HTTP 400 "Missing required Mcp-Session-Id header").
             // Keyless mode is stateless and answers a bare `tools/call`.
-            const session =
-              credential?.type === "key" ? yield* WebSearchMcp.initialize(http, endpoint, headers) : undefined
+            const session = credential?.type === "key" ? yield* initialize(http, headers) : undefined
             if (credential?.type === "key" && session === undefined)
               return yield* Effect.fail(
                 new Error("TinyFish MCP initialize did not return an Mcp-Session-Id header"),
@@ -90,3 +90,45 @@ export const Plugin = define<HttpClient.HttpClient | Scope.Scope>({
     })
   }),
 })
+
+const initialize = (http: HttpClient.HttpClient, headers: Record<string, string>) =>
+  Effect.gen(function* () {
+    const client = HttpClient.withScope(HttpClient.filterStatusOk(http))
+    const response = yield* client.execute(
+      HttpClientRequest.post(endpoint).pipe(
+        HttpClientRequest.accept("application/json, text/event-stream"),
+        HttpClientRequest.setHeaders(headers),
+        HttpClientRequest.bodyJsonUnsafe({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: {
+            protocolVersion: "2025-06-18",
+            capabilities: {},
+            clientInfo: { name: "opencode", version: "1.0" },
+          },
+        }),
+      ),
+    )
+    yield* collectBoundedResponseBody(
+      response,
+      WebSearchMcp.MAX_RESPONSE_BYTES,
+      () => new Error(`initialize response exceeded ${WebSearchMcp.MAX_RESPONSE_BYTES} bytes`),
+    )
+    const session = response.headers["mcp-session-id"]
+    if (session === undefined) return undefined
+    yield* client.execute(
+      HttpClientRequest.post(endpoint).pipe(
+        HttpClientRequest.accept("application/json, text/event-stream"),
+        HttpClientRequest.setHeaders({ ...headers, "Mcp-Session-Id": session }),
+        HttpClientRequest.bodyJsonUnsafe({ jsonrpc: "2.0", method: "notifications/initialized" }),
+      ),
+    )
+    return session
+  }).pipe(
+    Effect.scoped,
+    Effect.timeoutOrElse({
+      duration: Duration.seconds(25),
+      orElse: () => Effect.fail(new Error("TinyFish initialize request timed out")),
+    }),
+  )
