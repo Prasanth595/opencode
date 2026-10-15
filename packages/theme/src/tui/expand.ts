@@ -11,15 +11,15 @@ export function expandTheme<Definition extends ModeDefinition>(definition: Defin
   return {
     ...definition,
     ...expandTokens(definition),
-    ...(definition["@dialog"] ? { "@dialog": expandTokens(definition["@dialog"]) } : {}),
+    ...(definition["@dialog"] ? { "@dialog": expandTokens(definition["@dialog"], true) } : {}),
   }
 }
 
-export function expandTokens(definition: ThemeTokensDefinition): ThemeTokensDefinition {
+export function expandTokens(definition: ThemeTokensDefinition, contextual = false): ThemeTokensDefinition {
   return {
     ...definition,
     text: expandText(definition.text),
-    background: expandBackground(definition.background),
+    background: expandBackground(definition.background, contextual),
   }
 }
 
@@ -59,10 +59,16 @@ function expandText(definition: TextDefinition | undefined): TextDefinition | un
   }
 }
 
-function expandBackground(definition: BackgroundDefinition | undefined): BackgroundDefinition | undefined {
+function expandBackground(
+  definition: BackgroundDefinition | undefined,
+  contextual = false,
+): BackgroundDefinition | undefined {
   if (!definition) return
+  // Base level only: an absolute default here would clobber the base during the @dialog merge.
+  const backdrop = contextual ? definition.backdrop : (definition.backdrop ?? "#00000096")
   return {
     ...definition,
+    ...(backdrop === undefined ? { backdrop: undefined } : { backdrop }),
     action: expandActions(definition.action, "background.action"),
     formfield: expandFormfield(definition.formfield, "background.formfield"),
   }

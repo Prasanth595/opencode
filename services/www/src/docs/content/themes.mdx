@@ -222,7 +222,7 @@ palette:
 | Group        | Purpose                                                       |
 | ------------ | ------------------------------------------------------------- |
 | `text`       | Base, muted, action, form-field, and feedback text         |
-| `background` | Base, surfaces, actions, form fields, and feedback fills    |
+| `background` | Base, backdrop scrim, surfaces, actions, form fields, and feedback fills |
 | `border`     | Borders                                                       |
 | `scrollbar`  | Scrollbars                                                    |
 | `diff`       | Added, removed, context, highlight, and line-number colors     |
@@ -261,3 +261,39 @@ contextual `@dialog` surface. The TUI re-resolves the palette after applying `@d
 
 `@dialog` accepts the same token groups as the base mode. An action's contextual `base` also becomes the fallback
 for its unspecified states; an explicit state override still wins.
+
+## Dialog backdrop
+
+Modal dialogs draw a full-screen scrim behind the dialog card. `background.backdrop` sets its color and alpha; the
+default `#00000096` matches the built-in look:
+
+```json title="themes/ocean.json"
+{
+  "base": {
+    "background": {
+      "base": "#071521",
+      "backdrop": "#00000096"
+    }
+  }
+}
+```
+
+Set `backdrop` to `"transparent"` to keep the terminal's own translucent background visible while a dialog is open:
+
+```json title="themes/ocean.json"
+{
+  "base": {
+    "background": {
+      "base": "transparent",
+      "raised": {
+        "base": "transparent",
+        "high": "#102a3c",
+        "max": "#16364b"
+      },
+      "backdrop": "transparent"
+    }
+  }
+}
+```
+
+A `@dialog` block can override the backdrop for dialogs only.

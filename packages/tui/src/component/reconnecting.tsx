@@ -1,4 +1,3 @@
-import { RGBA } from "@opentui/core"
 import { useTheme } from "../context/theme"
 import { Spinner } from "./spinner"
 
@@ -13,7 +12,7 @@ export function Reconnecting(props: { managed?: boolean }) {
       right={0}
       bottom={0}
       left={0}
-      backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
+      backgroundColor={theme.background.backdrop}
       alignItems="center"
       justifyContent="center"
     >

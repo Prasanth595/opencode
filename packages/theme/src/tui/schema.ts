@@ -104,6 +104,7 @@ export type TextDefinition = Schema.Schema.Type<typeof TextDefinition>
 
 const BackgroundDefinition = Schema.Struct({
   base: Schema.optional(ColorValue),
+  backdrop: Schema.optional(ColorValue),
   raised: Schema.optional(
     Schema.Struct({
       base: Schema.optional(ColorValue),
@@ -233,6 +234,7 @@ const CompleteThemeTokensDefinition = Schema.Struct({
   }),
   background: Schema.Struct({
     base: ColorValue,
+    backdrop: Schema.optional(ColorValue),
     raised: Schema.Struct({ base: ColorValue, high: ColorValue, max: ColorValue }),
     action: CompleteActionColorDefinition,
     formfield: CompleteStatefulColorDefinition,

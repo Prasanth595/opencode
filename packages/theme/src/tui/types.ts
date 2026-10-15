@@ -37,6 +37,8 @@ export type ResolvedThemeTokens = {
   }
   readonly background: {
     readonly base: RGBA
+    /** Full-screen scrim behind modal dialogs. Resolution defaults it to legacy black @ 150/255 alpha. */
+    readonly backdrop: RGBA
     readonly raised: {
       readonly base: RGBA
       readonly high: RGBA
