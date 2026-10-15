@@ -39,7 +39,8 @@ describe("public import boundaries", () => {
     const effectService = await bundleInputs("@opencode/client/effect/service", "bun")
 
     expect(within(effectService.eager, effect).length).toBeGreaterThan(0)
-    expect(within(effectService.eager, protocol).length).toBeGreaterThan(0)
+    // Service discovery uses the readiness wire without loading the Effect HTTP API.
+    expect(within(effectService.eager, protocol)).toEqual([])
     expect(within(effectService.all, core)).toEqual([])
     expect(within(effectService.all, server)).toEqual([])
   })
