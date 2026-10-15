@@ -280,6 +280,7 @@ download_with_progress() {
     trap "trap - RETURN; rm -f \"$headers\"; printf '\033[?25h' >&4; exec 4>&-" RETURN
 
     # Poll the file size on a timer so rendering cost stays fixed no matter how many bytes arrive.
+    # Read the size with ls because busybox wc -c reads the whole file.
     curl -fsL -D "$headers" -o "$output" "$url" &
     local curl_pid=$!
 
@@ -287,7 +288,7 @@ download_with_progress() {
     while kill -0 "$curl_pid" 2>/dev/null; do
         if [ -f "$output" ]; then
             length=$(grep -i '^content-length:' "$headers" 2>/dev/null | tail -n 1 | tr -dc '0-9' || true)
-            bytes=$(( $(wc -c < "$output") ))
+            bytes=$(ls -ln "$output" | awk '{print $5}')
             print_progress "$bytes" "${length:-0}"
         fi
         sleep 0.1 2>/dev/null || sleep 1
@@ -296,7 +297,7 @@ download_with_progress() {
     local ret=0
     wait "$curl_pid" || ret=$?
     if [ "$ret" -eq 0 ]; then
-        bytes=$(( $(wc -c < "$output") ))
+        bytes=$(ls -ln "$output" | awk '{print $5}')
         print_progress "$bytes" "$bytes"
     fi
     echo "" >&4
