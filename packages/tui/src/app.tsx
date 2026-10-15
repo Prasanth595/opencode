@@ -245,6 +245,10 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
         autoFocus: false,
         openConsoleOnError: false,
         useMouse: config.mouse,
+        // Keep the rendered region on shutdown. The default clears it with `\x1b[H\x1b[J`,
+        // which on Windows ConPTY takes down the host console instead of handing it back.
+        // Terminal mode restoration is unaffected by this flag.
+        clearOnShutdown: false,
         consoleOptions: {
           keyBindings: [{ name: "y", ctrl: true, action: "copy-selection" }],
         },
