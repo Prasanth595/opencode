@@ -604,7 +604,7 @@ const setup: Setup<typeof File> = (ctx) => {
           return
         }
 
-        const segments = targetPath.replaceAll("\\\\", "/").split("/").filter(Boolean)
+        const segments = targetPath.replaceAll("\\", "/").split("/").filter(Boolean)
 
         if (segments.length === 0) return
 
@@ -630,11 +630,11 @@ const setup: Setup<typeof File> = (ctx) => {
       const openResolvedPath = async (targetPath: string, selection?: LineRange) => {
         const parent = getDirectory(targetPath)
         await files.tree.sync(parent, { force: true })
-        const expected = targetPath.replaceAll("\\\\", "/")
+        const expected = targetPath.replaceAll("\\", "/")
         const directory =
           files.tree
             .list(parent)
-            .find((entry) => entry.path.replaceAll("\\\\", "/") === expected)?.type === "directory"
+            .find((entry) => entry.path.replaceAll("\\", "/") === expected)?.type === "directory"
 
         if (!stillCurrent()) return
         if (directory) return openResolvedDirectory(targetPath)
