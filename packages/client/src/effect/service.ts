@@ -197,6 +197,10 @@ const terminate = Effect.fnUntraced(function* (
     Effect.flatMap((value) => (value === undefined && markerFile !== undefined ? read(markerFile) : Effect.succeed(value))),
   )
   if (current === undefined || !same(current, info)) return
+  if (markerFile !== undefined) {
+    const owner = yield* Effect.promise(() => probeResult(info, timing.requestTimeout))
+    if (owner.service === undefined && !owner.timedOut) return
+  }
   yield* signal(info.pid, "SIGTERM")
   const done = yield* stopped(info.pid).pipe(Effect.retry(poll(timing)), Effect.option)
   // The registration can disappear or change hands before this process exits. Only the PID we

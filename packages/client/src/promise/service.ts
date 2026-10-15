@@ -163,6 +163,10 @@ async function waitUntilStopped(pid: number, timing: EnsureTiming) {
 async function terminate(info: Info, options: { readonly file?: string }, timing: EnsureTiming, markerFile?: string) {
   const current = (await read(options.file)) ?? (markerFile === undefined ? undefined : await read(markerFile))
   if (current === undefined || !same(current, info)) return
+  if (markerFile !== undefined) {
+    const owner = await probeResult(info, timing.requestTimeout)
+    if (owner.service === undefined && !owner.timedOut) return
+  }
   signal(info.pid, "SIGTERM")
   // The registration can disappear or change hands before this process exits. Only the PID we
   // signalled can tell us whether it has stopped, so escalate based on that process.

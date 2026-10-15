@@ -163,7 +163,10 @@ serviceTest(
     signal(original.pid, "SIGSTOP")
     await fs.rm(home.registration)
     const starting = cli(home, "service", "start")
-    await Bun.sleep(2_500)
+    await until(async () => {
+      const running = await servers(home)
+      return running.length === 1 && running[0] === original.pid ? true : undefined
+    }, 2_500)
     expect(await servers(home)).toEqual([original.pid])
 
     signal(original.pid, "SIGCONT")

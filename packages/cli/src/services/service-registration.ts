@@ -70,8 +70,13 @@ export const register = Effect.fnUntraced(function* (options: {
     Effect.andThen(options.shutdown),
     Effect.forkScoped,
   )
-  return current.pipe(
-    Effect.flatMap((found) => (owns(found) ? fs.remove(options.file) : Effect.void)),
-    Effect.ignore,
-  )
+  const removeIfOwned = (file: string) =>
+    fs
+      .readFileString(file)
+      .pipe(
+        Effect.flatMap(decodeInfo),
+        Effect.flatMap((found) => (owns(found) ? fs.remove(file) : Effect.void)),
+        Effect.ignore,
+      )
+  return removeIfOwned(options.file).pipe(Effect.andThen(removeIfOwned(marker)))
 })

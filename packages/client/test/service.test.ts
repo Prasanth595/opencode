@@ -173,8 +173,11 @@ test("waits for a live service marker after registration disappears", async () =
       command: fixture.command("delayed", "10"),
     }),
   )
-  await Bun.sleep(250)
-  expect(await Bun.file(registration + ".starts").exists()).toBe(false)
+  const deadline = Date.now() + 250
+  while (Date.now() < deadline) {
+    expect(await Bun.file(registration + ".starts").exists()).toBe(false)
+    await Bun.sleep(5)
+  }
   expect(existing.exitCode).toBe(null)
 
   existing.kill("SIGKILL")
