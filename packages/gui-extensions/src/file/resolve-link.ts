@@ -7,9 +7,9 @@ export type ParsedFileLink = {
   readonly selection?: LineRange
 }
 
-/** What a relative path names in the workspace: one file, or several to pick from. */
+/** What a relative path names in the workspace: one path, or several to pick from. */
 export type FileLinkTarget =
-  | { readonly kind: "file"; readonly path: string }
+  | { readonly kind: "path"; readonly path: string }
   | { readonly kind: "picker"; readonly query: string }
 
 /**
@@ -41,13 +41,13 @@ export async function findFileLink(input: {
 
   if (!query) return
 
-  const results = await input.files.search(query, { limit: 200, signal: input.signal }).catch(() => [])
+  const results = await input.files.search(query, { kind: "any", limit: 200, signal: input.signal }).catch(() => [])
   const matches = [...new Set(results)].filter((file) => file === query || file.endsWith(`/${query}`))
   const literal = matches.find((file) => file === query)
 
-  if (literal) return { kind: "file", path: literal }
+  if (literal) return { kind: "path", path: literal }
 
-  if (matches.length === 1 && matches[0]) return { kind: "file", path: matches[0] }
+  if (matches.length === 1 && matches[0]) return { kind: "path", path: matches[0] }
 
   if (matches.length > 1) return { kind: "picker", query }
 }
