@@ -29,8 +29,8 @@ export function isAbsoluteLink(path: string) {
 }
 
 /**
- * The workspace files a relative path names: the literal path when it exists, else every file whose path ends with
- * it. One file opens; several open the picker.
+ * The workspace paths a relative path names: the literal path when it exists, else every file or directory whose path ends with
+ * it. One path opens; several open the picker.
  */
 export async function findFileLink(input: {
   readonly files: Pick<Files, "search">
@@ -53,7 +53,7 @@ export async function findFileLink(input: {
 }
 
 /**
- * Whether a path named in a message is a file, without reading it: absolute paths by listing their directory,
+ * Whether a path named in a message exists, without reading it: absolute paths by listing their parent,
  * workspace paths by the search index.
  */
 export async function checkFileLinkExists(input: {
