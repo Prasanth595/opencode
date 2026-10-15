@@ -5,7 +5,7 @@ Investigation-only document. No production code is changed by this branch.
 ## 0. Context
 
 - Upstream repo: `anomalyco/opencode` (`upstream` remote). Working fork: `dcerisano/opencode` (`origin`).
-- Target branch: `fix/markdown-stream-incremental-projection`, created from `origin/dev`
+- Target branch: `markdown-incremental-projection`, created from `origin/dev`
   (`d0732eadf883bdc64c0b0ea91e9c4ee0fe51d8c3`, which equals the current `dev`).
 - Original PR #48432 (`fix(session-ui): grow markdown live tail in place`) was authored
   against V1 `dev` and **closed** by a maintainer with "port it over and open it for V2".
@@ -22,10 +22,10 @@ Two local branches already contain a port of #48432:
   touches only `markdown-stream.ts` (+50/−13) and `markdown-stream.test.ts` (+31). This is the
   closest existing implementation and should be treated as reference/review input, not silently reused.
 
-The requested branch name `fix/markdown-stream-incremental-projection` did not exist and was created fresh.
-Note: this name uses a `fix/` prefix and a slash, which conflicts with the root `AGENTS.md`
-branch-naming guidance ("at most three hyphen-separated words, no slashes or type prefixes").
-The explicit task name is used; flag if the convention should win.
+The branch was initially created as `fix/markdown-stream-incremental-projection`.
+That name uses a `fix/` prefix and a slash, which conflicts with the root `AGENTS.md`
+branch-naming guidance ("at most three hyphen-separated words, no slashes or type
+prefixes"); it was renamed to `markdown-incremental-projection` to follow the convention.
 
 ## 1. Exact source files involved
 
@@ -254,8 +254,8 @@ From `packages/session-ui` (tests cannot run from repo root):
 
 ## 8. Questions to resolve before implementation
 
-1. Branch naming: keep the requested `fix/markdown-stream-incremental-projection`, or follow the root
-   `AGENTS.md` convention (no slash/type prefix)?
+1. Branch naming: resolved by following the root `AGENTS.md` convention (no slash/type
+   prefix); the branch was renamed to `markdown-incremental-projection`.
 2. Reuse/rebase the existing `v2-markdown-live-relex` port, or re-implement cleanly on this branch? (Both
    are the same change.)
 3. How should a **late reference definition** be handled — re-check `refs` on the suffix and full-text

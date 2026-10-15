@@ -3,7 +3,7 @@
 Benchmark of `project()` in `packages/session-ui/src/components/markdown-stream.ts`
 for the V2 port of [anomalyco/opencode#48432](https://github.com/anomalyco/opencode/pull/48432)
 ("grow markdown live tail in place"). The baseline is unmodified `origin/dev`; the
-candidate is the `fix/markdown-stream-incremental-projection` feature branch.
+candidate is the `markdown-incremental-projection` feature branch.
 
 ## Conclusion
 
