@@ -21,8 +21,6 @@ import { copy, copyOnSelectRelease } from "../util/selection"
 
 export type DialogSize = "medium" | "large" | "xlarge"
 
-export const DIALOG_PADDING_X = 4
-
 export const DIALOG_INSET = 3
 // List rows reserve a 1-cell gutter for the ▌ bar / ● marker.
 export const DIALOG_LIST_INSET = DIALOG_INSET + 1
@@ -95,8 +93,8 @@ export function DialogHeader(
     closeLabel?: string
     onClose?: () => void
     gap?: number
-    inset?: boolean
-    newInset?: number
+    /** Side padding in cells, e.g. DIALOG_INSET or DIALOG_LIST_INSET. Omit when the parent already pads. */
+    inset?: number
   }>,
 ) {
   const dialog = useDialog()
@@ -106,8 +104,8 @@ export function DialogHeader(
       flexDirection="row"
       justifyContent="space-between"
       gap={props.gap}
-      paddingLeft={props.newInset ?? (props.inset ? DIALOG_PADDING_X : undefined)}
-      paddingRight={props.newInset ?? (props.inset ? DIALOG_PADDING_X : undefined)}
+      paddingLeft={props.inset}
+      paddingRight={props.inset}
     >
       {props.titleView ?? (
         <text attributes={TextAttributes.BOLD} fg={theme.text.base}>
@@ -169,8 +167,8 @@ export type DialogFooterAction = {
 export function DialogFooter(
   props: ParentProps<{
     actions?: DialogFooterAction[]
-    inset?: boolean
-    newInset?: number
+    /** Side padding in cells, e.g. DIALOG_INSET or DIALOG_LIST_INSET. Omit when the parent already pads. */
+    inset?: number
   }>,
 ) {
   const dimensions = useTerminalDimensions()
@@ -186,8 +184,8 @@ export function DialogFooter(
   const right = () => actions().filter((action) => action.side === "right")
   return (
     <box
-      paddingLeft={props.newInset ?? (props.inset ? DIALOG_PADDING_X : undefined)}
-      paddingRight={props.newInset ?? (props.inset ? DIALOG_PADDING_X : undefined)}
+      paddingLeft={props.inset}
+      paddingRight={props.inset}
       flexDirection="row"
       justifyContent="space-between"
       flexShrink={0}
