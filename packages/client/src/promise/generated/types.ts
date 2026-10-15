@@ -168,7 +168,19 @@ export type ModelMaxTokensField = "max_completion_tokens" | "max_tokens"
 
 export type ModelCacheFormat = "anthropic" | "alibaba"
 
-export type ModelCapabilities = { tools: boolean; input: Array<string>; output: Array<string> }
+export type ModelRequestDefaults = {
+  outputTokenBudget?: number
+  outputTokenBudgetByReasoningEffort?: { [x: string]: number }
+}
+
+export type ModelCapabilities = {
+  tools: boolean
+  parallelTools?: boolean
+  reasoning?: boolean
+  endpoints?: Array<string>
+  input: Array<string>
+  output: Array<string>
+}
 
 export type MoneyUSDPerMillionTokens = number
 
@@ -298,7 +310,14 @@ export type McpProtocol = "legacy" | "auto" | "2026-07-28"
 
 export type ConfigWorktree = { directory: string }
 
-export type ConfigModelCapabilities = { tools?: boolean; input?: Array<string>; output?: Array<string> }
+export type ConfigModelCapabilities = {
+  tools?: boolean
+  parallelTools?: boolean
+  reasoning?: boolean
+  endpoints?: Array<string>
+  input?: Array<string>
+  output?: Array<string>
+}
 
 export type ConfigShellOption = { path: string; name: string; acceptable: boolean }
 
@@ -334,10 +353,16 @@ export type ProviderSettings = {
   chunkTimeout?: number | false
   compaction?: ProviderCompaction
   transport?: ProviderTransport
+  modelDiscovery?: boolean
+  outputTokenBudget?: number
   encoding?: ProviderEncoding
 } & { [x: string]: any }
 
-export type ModelSettings = { compaction?: ProviderCompaction; encoding?: ProviderEncoding } & { [x: string]: any }
+export type ModelSettings = {
+  compaction?: ProviderCompaction
+  outputTokenBudget?: number
+  encoding?: ProviderEncoding
+} & { [x: string]: any }
 
 export type ConfigProviderSettings = {
   timeout?: number | false
@@ -345,12 +370,16 @@ export type ConfigProviderSettings = {
   chunkTimeout?: number | false
   compaction?: ProviderCompaction
   transport?: ProviderTransport
+  modelDiscovery?: boolean
+  outputTokenBudget?: number
   encoding?: ProviderEncoding
 } & { [x: string]: JsonValue | null }
 
-export type ConfigModelSettings = { compaction?: ProviderCompaction; encoding?: ProviderEncoding } & {
-  [x: string]: JsonValue | null
-}
+export type ConfigModelSettings = {
+  compaction?: ProviderCompaction
+  outputTokenBudget?: number
+  encoding?: ProviderEncoding
+} & { [x: string]: JsonValue | null }
 
 export type PermissionRule = { action: string; resource: string; effect: PermissionEffect }
 
@@ -2065,6 +2094,7 @@ export type ModelInfo = {
   settings?: ModelSettings
   headers?: { [x: string]: string }
   body?: { [x: string]: any }
+  requestDefaults?: ModelRequestDefaults
   capabilities: ModelCapabilities
   variants: Array<ModelVariant>
   time: { released: number }
@@ -2280,6 +2310,7 @@ export type ConfigEntry =
                 settings?: ConfigModelSettings
                 headers?: { [x: string]: string }
                 body?: { [x: string]: JsonValue }
+                requestDefaults?: ModelRequestDefaults
                 capabilities?: ConfigModelCapabilities
                 variants?: Array<{
                   id: string

@@ -177,6 +177,7 @@ export const bodyFields = {
   messages: Schema.Array(OpenAIChatMessage),
   tools: optionalArray(OpenAIChatTool),
   tool_choice: Schema.optional(OpenAIChatToolChoice),
+  parallel_tool_calls: Schema.optional(Schema.Boolean),
   stream: Schema.Literal(true),
   stream_options: Schema.optional(Schema.Struct({ include_usage: Schema.Boolean })),
   store: Schema.optional(Schema.Boolean),
@@ -839,6 +840,7 @@ export const fromRequest = Effect.fn("OpenAIChat.fromRequest")(function* (
           : undefined
         : flattened.tools.map((tool) => lowerTool(tool, lowering, supportsStrictMode)),
     tool_choice: hasActiveTools && request.toolChoice ? yield* lowerToolChoice(request.toolChoice) : undefined,
+    ...(hasActiveTools && request.toolChoice?.disableParallelToolUse === true ? { parallel_tool_calls: false } : {}),
     stream: true as const,
     ...(supportsUsageInStreaming ? { stream_options: { include_usage: true } } : {}),
     ...(zaiToolStream && hasActiveTools ? { tool_stream: true } : {}),
