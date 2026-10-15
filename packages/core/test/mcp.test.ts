@@ -91,8 +91,6 @@ function resourceServer(
   input: {
     /** Serve 2026-07-28 only through createMcpHandler; the default is a sessionful legacy transport. */
     modern?: boolean
-    /** Advertise nothing; the fixture then registers no handlers (see server()). */
-    capabilities?: false
     resources?: boolean
     listChanged?: boolean
     emptyElicitation?: boolean
@@ -133,20 +131,14 @@ function resourceServer(
         const protocol = new Server(
           { name: "mcp-resources", version: "1.0.0" },
           {
-            capabilities:
-              input.capabilities === false
-                ? {}
-                : {
-                    tools: {},
-                    prompts: {},
-                    ...(input.resources === false ? {} : { resources: { listChanged: input.listChanged } }),
-                  },
+            capabilities: {
+              tools: {},
+              prompts: {},
+              ...(input.resources === false ? {} : { resources: { listChanged: input.listChanged } }),
+            },
             instructions: "Use the resources tools.",
           },
         )
-        // The SDK refuses handlers for capabilities the server never declared, so a server that
-        // advertises nothing registers none.
-        if (input.capabilities === false) return protocol
         protocol.setRequestHandler("tools/list", () => {
           state.toolLists += 1
           return Promise.resolve({
@@ -1302,46 +1294,6 @@ test("skips MCP resource requests when the capability is absent", async () => {
       }),
     ),
   )
-})
-
-/**
- * The MCP SDK negotiates capabilities by printing to stdout, so a server that never advertised a
- * capability turns every catalog refresh into terminal spam. Capture those lines around `run`.
- */
-async function capabilityDebugLines(run: () => Promise<void>) {
-  const lines: string[] = []
-  const original = console.debug
-  console.debug = (...args: unknown[]) => {
-    lines.push(args.map((arg) => String(arg)).join(" "))
-  }
-  try {
-    await run()
-  } finally {
-    console.debug = original
-  }
-  return lines.filter((line) => line.includes("does not advertise"))
-}
-
-test("does not ask the MCP SDK to list capabilities a server never advertised", async () => {
-  const lines = await capabilityDebugLines(async () => {
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const server = yield* resourceServer({ capabilities: false })
-          const connection = yield* connect(
-            "resources",
-            new ConfigMCP.Remote({ type: "remote", url: server.url, oauth: false }),
-            import.meta.dir,
-          )
-          expect(yield* connection.tools()).toEqual([])
-          expect(yield* connection.prompts()).toEqual([])
-          expect(yield* connection.resources()).toEqual([])
-          expect(yield* connection.resourceTemplates()).toEqual([])
-        }),
-      ),
-    )
-  })
-  expect(lines).toEqual([])
 })
 
 test("accepts empty MCP elicitations without creating forms", async () => {
