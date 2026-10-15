@@ -131,6 +131,8 @@ const appearanceSchema = Persistence.struct({
   terminal: Schema.String,
   tabLayout: Schema.Literals(["horizontal", "vertical"]),
   sidebarOpen: Persistence.optional(Schema.Boolean),
+  // Experimental: vertical sidebar shows open tabs or a server-wide session inbox.
+  sidebarMode: Persistence.optional(Schema.Literals(["tabs", "inbox"])),
 })
 
 const permissionsSchema = Persistence.struct({
@@ -404,6 +406,10 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         sidebarOpen: withFallback(() => store.appearance?.sidebarOpen, true),
         setSidebarOpen(value: boolean) {
           setStore("appearance", "sidebarOpen", value)
+        },
+        sidebarMode: withFallback(() => store.appearance?.sidebarMode, "tabs" as const),
+        setSidebarMode(value: "tabs" | "inbox") {
+          setStore("appearance", "sidebarMode", value)
         },
       },
       keybinds: {
