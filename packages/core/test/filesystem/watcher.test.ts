@@ -1,6 +1,7 @@
 import { $ } from "bun"
 import { describe, expect } from "bun:test"
 import fs from "fs/promises"
+import os from "os"
 import path from "path"
 import { Deferred, Duration, Effect, Fiber, Layer, Option, Queue, Schedule, Stream } from "effect"
 import { Config } from "@opencode/core/config"
@@ -10,6 +11,7 @@ import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Bus } from "@opencode/core/bus"
 import { FSUtil } from "@opencode/util/fs-util"
+import { Ignore } from "@opencode/core/filesystem/ignore"
 import { LocationWatcher } from "@opencode/core/filesystem/location-watcher"
 import { LocationWatcherPolicy } from "@opencode/core/filesystem/location-watcher-policy"
 import { Watcher } from "@opencode/core/filesystem/watcher"
@@ -298,7 +300,7 @@ describe("LocationWatcher subscriptions", () => {
   const directoryInput = (directory: string): Watcher.WatchInput => ({
     path: directory,
     type: "directory",
-    ignore: ["**/{node_modules,.git,.hg}/**", ".git", ".hg", "node_modules"],
+    ignore: [...new Set(Ignore.PATTERNS)].toSorted(),
   })
 
   it.live("watches the workspace directory and exact Git branch metadata", () => {
@@ -351,6 +353,27 @@ describe("LocationWatcher subscriptions", () => {
         }),
       { vcs: "hg", watcher },
     )
+  })
+
+  it.live("watches only branch metadata for a home-directory workspace", () => {
+    const subscriptions: Watcher.WatchInput[] = []
+    const watcher = Layer.succeed(
+      Watcher.Service,
+      Watcher.Service.of({
+        subscribe: (input) => Effect.sync(() => subscriptions.push(input)).pipe(Effect.as(Stream.empty)),
+      }),
+    )
+    const home = os.homedir()
+    const store = AbsolutePath.make(path.join(home, ".hg"))
+    return Effect.gen(function* () {
+      yield* LocationWatcher.Service
+      yield* Effect.sync(() => subscriptions.length).pipe(
+        Effect.filterOrFail((count) => count > 0),
+        Effect.retry(Schedule.spaced("10 millis")),
+      )
+      yield* Effect.sleep("10 millis")
+      expect(subscriptions).toEqual([{ path: path.join(store, "branch"), type: "file" }])
+    }).pipe(provide(home, { type: "hg", store }, watcher))
   })
 
   it.live("reconciles config without duplicate subscriptions", () => {

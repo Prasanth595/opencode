@@ -9,7 +9,9 @@ import { FSUtil } from "@opencode/util/fs-util"
 import { Git } from "../git.js"
 import { Location } from "../location.js"
 import { Plugin } from "../plugin.js"
+import { Ignore } from "./ignore.js"
 import { LocationWatcherPolicy } from "./location-watcher-policy.js"
+import { Protected } from "./protected.js"
 import { Watcher } from "./watcher.js"
 
 export interface Interface {}
@@ -87,14 +89,27 @@ const layer = Layer.effect(
           // refresh open views. VCS metadata is excluded: store churn is not an
           // edit, and the exact branch-metadata subscription below covers switches.
           const inputs = new Map<string, Watcher.WatchInput>()
-          const directory: Watcher.WatchInput = {
-            path: location.directory,
-            type: "directory",
-            ignore: [
-              ...new Set([...ignore, "node_modules", ".git", ".hg", "**/{node_modules,.git,.hg}/**"]),
-            ].toSorted(),
+          // A workspace rooted at the home directory or the filesystem root would
+          // recursively watch everything under it. Only branch metadata is watched
+          // there; the policy remains available for narrower explicit watches.
+          const oversized = Protected.isHome(location.directory)
+            ? "home directory"
+            : location.directory === path.parse(location.directory).root
+              ? "filesystem root"
+              : undefined
+          if (oversized) {
+            yield* Effect.logWarning("workspace directory watch skipped", {
+              directory: location.directory,
+              reason: oversized,
+            })
+          } else {
+            const directory: Watcher.WatchInput = {
+              path: location.directory,
+              type: "directory",
+              ignore: [...new Set([...ignore, ...Ignore.PATTERNS])].toSorted(),
+            }
+            inputs.set(JSON.stringify(directory), directory)
           }
-          inputs.set(JSON.stringify(directory), directory)
           const vcs =
             resolved && !resolved.aliases.some((alias) => ignore.includes(alias))
               ? { path: resolved.path, type: "file" as const }
