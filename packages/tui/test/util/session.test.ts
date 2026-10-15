@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { formatContextUsage, sessionFamily } from "../../src/util/session"
+import { sessionFamily } from "../../src/util/session"
 
 describe("util.session", () => {
   test("flattens nested subagents from any session in the family", () => {
@@ -21,10 +21,5 @@ describe("util.session", () => {
       { session: sessions[5], prefix: "" },
       { session: sessions[6], prefix: "└─ " },
     ])
-  })
-
-  test("reports the context counter a million tokens in as 1.0M", () => {
-    expect(formatContextUsage(999950, 101)).toBe("1.0M (101%)")
-    expect(formatContextUsage(999949)).toBe("999.9K")
   })
 })

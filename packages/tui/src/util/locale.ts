@@ -17,7 +17,7 @@ export function datetime(input: number): string {
 }
 
 export function number(num: number): string {
-  // One decimal place means the K branch reaches "1000.0K" at 999950, so that range belongs to M.
+  // 999950+ would round to "1000.0K"
   if (num >= 999950) {
     return (num / 1000000).toFixed(1) + "M"
   } else if (num >= 1000) {
