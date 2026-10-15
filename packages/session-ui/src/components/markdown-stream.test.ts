@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { canReusePendingBlock } from "./markdown-projection"
+import { canReusePendingBlock, completedProjection } from "./markdown-projection"
 import { project, stream } from "./markdown-stream"
 
 describe("markdown stream", () => {
@@ -244,5 +244,215 @@ describe("markdown stream", () => {
       language: "ts",
       complete: true,
     })
+  })
+
+  test("appends plain text deltas without reprojecting frozen blocks", () => {
+    const previous = project(undefined, "# Plan\n\nFinished paragraph.\n\n- final", true)
+    const next = project(previous, `${previous.text} item`, true)
+
+    expect(next.blocks[0]).toBe(previous.blocks[0])
+    expect(next.blocks[1]).toBe(previous.blocks[1])
+    expect(next.blocks.at(-1)).toEqual({ raw: "- final item", src: "- final item", mode: "live" })
+  })
+
+  test("grows ordinary prose in place without re-lexing earlier blocks", () => {
+    let grown = project(undefined, "# Title\n\nA paragraph", true)
+    const heading = grown.blocks[0]
+
+    for (let index = 0; index < 200; index++) grown = project(grown, `${grown.text} word`, true)
+
+    expect(grown.blocks[0]).toBe(heading)
+    expect(grown.blocks).toHaveLength(2)
+    expect(grown.blocks.at(-1)).toEqual({
+      raw: `A paragraph${" word".repeat(200)}`,
+      src: `A paragraph${" word".repeat(200)}`,
+      mode: "live",
+    })
+  })
+
+  test("boundedly re-lexes the live tail once it exceeds the cap", () => {
+    const unit = "para\n\n"
+    let grown = project(undefined, unit, true)
+    for (let index = 0; index < 400; index++) grown = project(grown, `${grown.text}${unit}`, true)
+
+    expect(grown.blocks.at(-1)!.mode).toBe("live")
+    expect(grown.blocks.filter((block) => block.mode === "full").length).toBeGreaterThan(0)
+    expect(grown.blocks.map((block) => block.raw).join("")).toBe(grown.text)
+  })
+
+  test("grows a boundary-less oversized tail in place without splitting", () => {
+    const word = "word "
+    let grown = project(undefined, word, true)
+    for (let index = 0; index < 600; index++) grown = project(grown, `${grown.text}${word}`, true)
+
+    expect(grown.blocks).toHaveLength(1)
+    expect(grown.blocks[0]!.mode).toBe("live")
+    expect(grown.blocks[0]!.raw).toBe(word.repeat(601))
+  })
+
+  test("re-projects the live tail when an oversized tail crosses a blank-line boundary", () => {
+    const body = "sentence ".repeat(300)
+    let grown = project(undefined, body, true)
+    expect(grown.blocks).toHaveLength(1)
+
+    grown = project(grown, `${grown.text}\n\nnext paragraph`, true)
+
+    expect(grown.blocks.length).toBeGreaterThan(1)
+    expect(grown.blocks.at(-1)).toEqual({ raw: "next paragraph", src: "next paragraph", mode: "live" })
+    expect(grown.blocks.map((block) => block.raw).join("")).toBe(grown.text)
+  })
+
+  test("keeps a list in one live block while items are appended", () => {
+    let previous = project(undefined, "- one\n- two", true)
+    previous = project(previous, `${previous.text}\n- three`, true)
+
+    expect(previous.blocks).toEqual([{ raw: "- one\n- two\n- three", src: "- one\n- two\n- three", mode: "live" }])
+  })
+
+  test("keeps a table in one live block while rows are appended", () => {
+    let previous = project(undefined, "| a | b |\n|---|---|\n| 1 | 2 |", true)
+    previous = project(previous, `${previous.text}\n| 3 | 4 |`, true)
+
+    expect(previous.blocks).toEqual([
+      {
+        raw: "| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |",
+        src: "| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |",
+        mode: "live",
+      },
+    ])
+  })
+
+  test("heals an incomplete link across appended deltas", () => {
+    let previous = project(undefined, "see [docs](https://example.com/gu", true)
+    previous = project(previous, `${previous.text}ide`, true)
+
+    expect(previous.blocks).toEqual([{ raw: "see [docs](https://example.com/guide", src: "see docs", mode: "live" }])
+  })
+
+  test("keeps a display math block in one live block while it grows", () => {
+    let previous = project(undefined, "$$\na", true)
+    previous = project(previous, `${previous.text}\n\nb\n$$`, true)
+    previous = project(previous, `${previous.text}\n\nafter`, true)
+
+    expect(previous.blocks).toEqual([{ raw: "$$\na\n\nb\n$$\n\nafter", src: "$$\na\n\nb\n$$\n\nafter", mode: "live" }])
+  })
+
+  test("switches a growing tail to code mode when a fence opens", () => {
+    const previous = project(undefined, "Here is some code:", true)
+    const next = project(previous, `${previous.text}\n\n\`\`\`ts\nconst x = 1`, true)
+
+    expect(next.blocks).toEqual([
+      { raw: "Here is some code:\n\n", src: "Here is some code:\n\n", mode: "full" },
+      { raw: "```ts\nconst x = 1", src: "const x = 1", mode: "code", language: "ts" },
+    ])
+  })
+
+  test("switches a growing tail to code mode when a fence is split across deltas", () => {
+    const previous = project(undefined, "Here is some code:", true)
+    const opened = project(previous, `${previous.text}\n\n\`\`\``, true)
+    const typed = project(opened, `${opened.text}ts\nconst x = 1`, true)
+
+    expect(typed.blocks).toEqual([
+      { raw: "Here is some code:\n\n", src: "Here is some code:\n\n", mode: "full" },
+      { raw: "```ts\nconst x = 1", src: "const x = 1", mode: "code", language: "ts" },
+    ])
+  })
+
+  test("completes a fence opened while the tail was live", () => {
+    const previous = project(undefined, "Here is some code:", true)
+    const opened = project(previous, `${previous.text}\n\n\`\`\`ts\nconst x = 1`, true)
+    const closed = project(opened, `${opened.text}\n\`\`\``, true)
+
+    expect(closed.blocks.at(-1)).toEqual({
+      raw: "```ts\nconst x = 1\n```",
+      src: "const x = 1",
+      mode: "code",
+      language: "ts",
+      complete: true,
+    })
+  })
+
+  test("falls back to a full re-lex when a late reference definition arrives", () => {
+    const previous = project(undefined, "See [docs][1].\n\nA body paragraph.", true)
+    expect(previous.blocks).toHaveLength(2)
+
+    const next = project(previous, `${previous.text}\n\n[1]: https://example.com`, true)
+
+    expect(next.blocks).toEqual([
+      {
+        raw: "See [docs][1].\n\nA body paragraph.\n\n[1]: https://example.com",
+        src: "See [docs][1].\n\nA body paragraph.\n\n[1]: https://example.com",
+        mode: "live",
+      },
+    ])
+  })
+
+  test("catches up a reference definition split across appended deltas", () => {
+    const previous = project(undefined, "See [docs][1].\n\nA body paragraph.", true)
+    const partial = project(previous, `${previous.text}\n\n[1]:`, true)
+    const complete = project(partial, `${partial.text} https://example.com`, true)
+
+    expect(complete.blocks).toEqual([
+      {
+        raw: "See [docs][1].\n\nA body paragraph.\n\n[1]: https://example.com",
+        src: "See [docs][1].\n\nA body paragraph.\n\n[1]: https://example.com",
+        mode: "live",
+      },
+    ])
+  })
+
+  test("does not reuse stale projection state for non-append updates", () => {
+    const previous = project(undefined, "# Old\n\nOld body", true)
+    const next = project(previous, "# New\n\nNew body", true)
+
+    expect(next.blocks).toEqual(stream("# New\n\nNew body", true))
+  })
+
+  test("reprojects truncation through project without retaining removed blocks", () => {
+    const previous = project(undefined, "First paragraph.\n\nSecond paragraph.", true)
+    const next = project(previous, "First paragraph.", true)
+
+    expect(next.blocks).toEqual(stream("First paragraph.", true))
+  })
+
+  test("returns the previous projection when the text is unchanged", () => {
+    const previous = project(undefined, "# Plan\n\n- item", true)
+
+    expect(project(previous, previous.text, true)).toBe(previous)
+  })
+
+  test("final incremental projection matches a full projection", () => {
+    let previous = project(undefined, "The quick", true)
+    for (const delta of [" brown", " fox", " jumps", " over", " the", " lazy", " dog"]) {
+      previous = project(previous, `${previous.text}${delta}`, true)
+    }
+    const final = project(previous, previous.text, false)
+
+    expect(final.blocks).toEqual(completedProjection(previous.text).blocks)
+  })
+
+  test("keeps the incremental projection a faithful partition of the text", () => {
+    const deltas = [
+      "# Head\n",
+      "\n",
+      "First ",
+      "paragraph.\n",
+      "\n",
+      "- item one\n",
+      "- item two\n",
+      "\n",
+      "```",
+      "js\n",
+      "const x = 1",
+    ]
+    let text = ""
+    let previous: ReturnType<typeof project> | undefined
+
+    for (const delta of deltas) {
+      text += delta
+      previous = project(previous, text, true)
+
+      expect(previous.blocks.map((block) => block.raw).join("")).toBe(text)
+    }
   })
 })

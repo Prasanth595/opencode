@@ -109,6 +109,28 @@ export function stream(text: string, live: boolean): Block[] {
   return [...result, { raw, src: openCode(code.raw), mode: "code", language: language(code.lang) }]
 }
 
+// Streaming projection bounds the work done per delta. Re-lexing the whole
+// accumulated text on every delta is O(n²) for a long single part and freezes
+// the UI; while a tail block is still open we grow it in place, only re-lexing
+// when the appended text introduces a block boundary (a blank line) or the tail
+// exceeds this cap. A boundary-less tail (one giant paragraph, list, or table)
+// keeps growing in place past the cap so it is never re-lexed on every delta.
+const LIVE_TAIL_MAX = 2048
+
+function hasBlockBoundary(text: string) {
+  return text.includes("\n\n")
+}
+
+// A fenced code block must be projected in `code` mode so the worker streams
+// syntax highlighting. Detect a fence opening at a line start anywhere in the
+// growing tail so a fence that arrives inside a live tail re-projects promptly
+// instead of waiting for the cap or for streaming to stop. A live tail cannot
+// hold a *closed* fence (that token would have been frozen on its own), so any
+// line-start fence marker here means the tail is becoming a code block.
+function opensFence(raw: string) {
+  return /(?:^|\n)[ \t]{0,3}(?:`{3,}|~{3,})/.test(raw)
+}
+
 export function project(previous: Projection | undefined, text: string, live: boolean): Projection {
   if (!live) {
     const current =
@@ -136,18 +158,39 @@ export function project(previous: Projection | undefined, text: string, live: bo
   const tail = previous.blocks.at(-1)
   const suffix = text.slice(previous.text.length)
 
-  if (!suffix || tail?.mode !== "code" || tail.complete || closesFence(tail.raw, suffix))
-    return { text, blocks: stream(text, live) }
+  if (!suffix) return previous
 
-  return {
-    text,
-    blocks: [
-      ...previous.blocks.slice(0, -1),
-      {
-        ...tail,
-        raw: tail.raw + suffix,
-        src: tail.src + suffix,
-      },
-    ],
+  if (tail?.mode === "live") {
+    // Reference definitions resolve against the whole document. When one arrives
+    // after earlier blocks were frozen, fall back to a full re-lex so it can
+    // merge with its uses (see `stream`). Once merged, `stream` collapses the
+    // text into a single live block and later deltas grow it in place again.
+    if (refs(suffix) || (previous.blocks.length > 1 && refs(tail.raw + suffix)))
+      return { text, blocks: stream(text, live) }
+
+    const raw = tail.raw + suffix
+
+    if (opensFence(raw)) return { text, blocks: [...previous.blocks.slice(0, -1), ...stream(raw, true)] }
+
+    if (raw.length <= LIVE_TAIL_MAX || !hasBlockBoundary(suffix))
+      return { text, blocks: [...previous.blocks.slice(0, -1), { ...tail, raw, src: heal(raw) }] }
+
+    return { text, blocks: [...previous.blocks.slice(0, -1), ...stream(raw, true)] }
   }
+
+  if (tail?.mode === "code" && !tail.complete && !closesFence(tail.raw, suffix)) {
+    return {
+      text,
+      blocks: [
+        ...previous.blocks.slice(0, -1),
+        {
+          ...tail,
+          raw: tail.raw + suffix,
+          src: tail.src + suffix,
+        },
+      ],
+    }
+  }
+
+  return { text, blocks: stream(text, live) }
 }
