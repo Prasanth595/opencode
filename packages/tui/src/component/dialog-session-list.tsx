@@ -206,6 +206,10 @@ export function DialogSessionList() {
           </Show>
         </box>
       }
+      searchInTitle
+      titlePlaceholder={
+        !allProjects() && currentProjectName() ? `Search sessions in ${currentProjectName()}` : "Search sessions"
+      }
       options={options()}
       skipFilter={true}
       current={currentSessionID()}

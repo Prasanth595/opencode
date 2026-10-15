@@ -394,6 +394,8 @@ export function DialogConfig(props: { current?: string }) {
   return (
     <DialogSelect
       title="Settings"
+      searchInTitle
+      titlePlaceholder="Search settings"
       options={options()}
       current={current}
       filterThreshold={0.7}
