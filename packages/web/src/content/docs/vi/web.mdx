@@ -1,0 +1,142 @@
+---
+title: Web
+description: Dùng OpenCode trong trình duyệt của bạn.
+---
+
+OpenCode có thể chạy như một ứng dụng web trong trình duyệt của bạn, mang đến trải nghiệm lập trình AI mạnh mẽ như mà không cần terminal.
+
+![OpenCode Web - New Session](../../../assets/web/web-homepage-new-session.png)
+
+## Bắt đầu
+
+Khởi động giao diện web bằng cách chạy:
+
+```bash
+opencode web
+```
+
+Thao tác này khởi động một máy chủ cục bộ trên `127.0.0.1` với một cổng ngẫu nhiên khả dụng và tự động mở OpenCode trong trình duyệt mặc định của bạn.
+
+:::caution
+Nếu `OPENCODE_SERVER_PASSWORD` chưa được đặt, máy chủ sẽ không có bảo mật. Điều này ổn khi dùng cục bộ nhưng nên được đặt khi truy cập qua mạng.
+:::
+
+:::tip[Người dùng Windows]
+Để có trải nghiệm tốt nhất, hãy chạy `opencode web` từ [WSL](/docs/windows-wsl) thay vì PowerShell. Điều này đảm bảo quyền truy cập hệ thống tệp và tích hợp terminal đúng cách.
+:::
+
+---
+
+## Cấu hình
+
+Bạn có thể cấu hình máy chủ web bằng các cờ dòng lệnh hoặc trong [tệp cấu hình](/docs/config) của bạn.
+
+### Cổng
+
+Mặc định, OpenCode chọn một cổng khả dụng. Bạn có thể chỉ định một cổng:
+
+```bash
+opencode web --port 4096
+```
+
+### Hostname
+
+Mặc định, máy chủ liên kết với `127.0.0.1` (chỉ localhost). Để OpenCode có thể truy cập được trên mạng của bạn:
+
+```bash
+opencode web --hostname 0.0.0.0
+```
+
+Khi dùng `0.0.0.0`, OpenCode sẽ hiển thị cả địa chỉ cục bộ lẫn địa chỉ mạng:
+
+```
+  Local access:       http://localhost:4096
+  Network access:     http://192.168.1.100:4096
+```
+
+### Khám phá mDNS
+
+Bật mDNS để máy chủ của bạn có thể được phát hiện trên mạng nội bộ:
+
+```bash
+opencode web --mdns
+```
+
+Thao tác này tự động đặt hostname thành `0.0.0.0` và công bố máy chủ dưới tên `opencode.local`.
+
+Bạn có thể tùy chỉnh tên miền mDNS để chạy nhiều thực thể trên cùng một mạng:
+
+```bash
+opencode web --mdns --mdns-domain myproject.local
+```
+
+### CORS
+
+Để cho phép thêm các tên miền cho CORS (hữu ích với frontend tùy chỉnh):
+
+```bash
+opencode web --cors https://example.com
+```
+
+### Xác thực
+
+Để bảo vệ quyền truy cập, hãy đặt mật khẩu bằng biến môi trường `OPENCODE_SERVER_PASSWORD`:
+
+```bash
+OPENCODE_SERVER_PASSWORD=secret opencode web
+```
+
+Tên đăng nhập mặc định là `opencode` nhưng có thể thay đổi bằng `OPENCODE_SERVER_USERNAME`.
+
+---
+
+## Sử dụng giao diện web
+
+Sau khi khởi động, giao diện web cho phép bạn truy cập các phiên OpenCode của mình.
+
+### Phiên
+
+Xem và quản lý các phiên của bạn từ trang chủ. Bạn có thể thấy các phiên đang hoạt động và bắt đầu phiên mới.
+
+![OpenCode Web - Active Session](../../../assets/web/web-homepage-active-session.png)
+
+### Trạng thái máy chủ
+
+Nhấp "See Servers" để xem các máy chủ đang kết nối và trạng thái của chúng.
+
+![OpenCode Web - See Servers](../../../assets/web/web-homepage-see-servers.png)
+
+---
+
+## Đính kèm một terminal
+
+Bạn có thể đính kèm một TUI terminal vào máy chủ web đang chạy:
+
+```bash
+# Start the web server
+opencode web --port 4096
+
+# In another terminal, attach the TUI
+opencode attach http://localhost:4096
+```
+
+Điều này cho phép bạn dùng đồng thời cả giao diện web và terminal, chia sẻ cùng các phiên và trạng thái.
+
+---
+
+## Tệp cấu hình
+
+Bạn cũng có thể cấu hình các cài đặt máy chủ trong tệp cấu hình `opencode.json` của bạn:
+
+```json
+{
+  "server": {
+    "port": 4096,
+    "hostname": "0.0.0.0",
+    "mdns": true,
+    "cors": ["https://example.com"]
+  }
+}
+```
+
+Các cờ dòng lệnh được ưu tiên hơn cài đặt trong tệp cấu hình.

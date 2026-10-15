@@ -1,0 +1,166 @@
+---
+title: Enterprise
+description: Sử dụng OpenCode một cách an toàn trong tổ chức của bạn.
+---
+
+export const enterprise = "https://opencode.ai/enterprise"
+
+OpenCode Enterprise dành cho các tổ chức muốn bảo đảm mã nguồn và dữ liệu của họ không bao giờ rời khỏi hạ tầng của họ. Điều này có thể thực hiện bằng cách dùng một cấu hình tập trung tích hợp với SSO và AI gateway nội bộ của bạn.
+
+:::note
+OpenCode không lưu bất kỳ mã nguồn hay dữ liệu context nào của bạn.
+:::
+
+Để bắt đầu với OpenCode Enterprise:
+
+1. Thử nghiệm nội bộ cùng đội ngũ của bạn.
+2. **<a href={enterprise}>Liên hệ với chúng tôi</a>** để trao đổi về giá và các phương án triển khai.
+
+---
+
+## Thử nghiệm
+
+OpenCode là mã nguồn mở và không lưu bất kỳ mã nguồn hay dữ liệu context nào của bạn, nên các nhà phát triển của bạn có thể đơn giản là [bắt đầu](/docs/) và thực hiện thử nghiệm.
+
+---
+
+### Xử lý dữ liệu
+
+**OpenCode không lưu mã nguồn hay dữ liệu context của bạn.** Mọi xử lý diễn ra cục bộ hoặc thông qua các lệnh gọi API trực tiếp tới nhà cung cấp AI của bạn.
+
+Điều này có nghĩa là chừng nào bạn dùng một nhà cung cấp đáng tin cậy, hoặc một
+AI gateway nội bộ, bạn có thể sử dụng OpenCode một cách an toàn.
+
+Lưu ý duy nhất ở đây là tính năng `/share` không bắt buộc.
+
+---
+
+#### Chia sẻ cuộc trò chuyện
+
+Nếu một người dùng bật tính năng `/share`, cuộc trò chuyện và dữ liệu liên kết với nó sẽ được gửi tới dịch vụ mà chúng tôi dùng để host các trang chia sẻ này tại opencode.ai.
+
+Dữ liệu hiện được phục vụ qua mạng biên của CDN và được cache tại biên gần người dùng của bạn.
+
+Chúng tôi khuyến nghị tắt tính năng này trong quá trình thử nghiệm.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "share": "disabled"
+}
+```
+
+[Tìm hiểu thêm về chia sẻ](/docs/share).
+
+---
+
+### Quyền sở hữu mã nguồn
+
+**Bạn sở hữu toàn bộ mã nguồn do OpenCode tạo ra.** Không có ràng buộc cấp phép hay tuyên bố sở hữu nào.
+
+---
+
+## Giá cả
+
+Chúng tôi dùng mô hình tính phí theo chỗ ngồi cho OpenCode Enterprise. Nếu bạn có LLM gateway riêng, chúng tôi không tính phí cho các token đã dùng. Để biết thêm chi tiết về giá và các phương án triển khai, hãy **<a href={enterprise}>liên hệ với chúng tôi</a>**.
+
+---
+
+## Triển khai
+
+Sau khi bạn hoàn tất thử nghiệm và sẵn sàng dùng OpenCode trong tổ chức của mình, bạn có thể **<a href={enterprise}>liên hệ với chúng tôi</a>** để trao đổi về giá và các phương án triển khai.
+
+---
+
+### Cấu hình tập trung
+
+Chúng tôi có thể thiết lập OpenCode để dùng một cấu hình tập trung duy nhất cho toàn bộ tổ chức của bạn.
+
+Cấu hình tập trung này có thể tích hợp với nhà cung cấp SSO của bạn và bảo đảm mọi người dùng chỉ truy cập AI gateway nội bộ của bạn.
+
+---
+
+### Tích hợp SSO
+
+Thông qua cấu hình tập trung, OpenCode có thể tích hợp với nhà cung cấp SSO của tổ chức bạn để xác thực.
+
+Điều này cho phép OpenCode lấy thông tin xác thực cho AI gateway nội bộ của bạn thông qua hệ thống quản lý danh tính hiện có.
+
+---
+
+### AI gateway nội bộ
+
+Với cấu hình tập trung, OpenCode cũng có thể được cấu hình để chỉ dùng AI gateway nội bộ của bạn.
+
+Bạn cũng có thể tắt tất cả nhà cung cấp AI khác, bảo đảm mọi yêu cầu đều đi qua hạ tầng đã được phê duyệt của tổ chức bạn.
+
+---
+
+### Tự host
+
+Mặc dù chúng tôi khuyến nghị tắt các trang chia sẻ để bảo đảm dữ liệu của bạn không bao giờ rời khỏi tổ chức, chúng tôi cũng có thể giúp bạn tự host chúng trên hạ tầng của mình.
+
+Tính năng này hiện nằm trong lộ trình của chúng tôi. Nếu bạn quan tâm, hãy **<a href={enterprise}>cho chúng tôi biết</a>**.
+
+---
+
+## Câu hỏi thường gặp
+
+<details>
+<summary>OpenCode Enterprise là gì?</summary>
+
+OpenCode Enterprise dành cho các tổ chức muốn bảo đảm mã nguồn và dữ liệu của họ không bao giờ rời khỏi hạ tầng của họ. Điều này có thể thực hiện bằng cách dùng một cấu hình tập trung tích hợp với SSO và AI gateway nội bộ của bạn.
+
+</details>
+
+<details>
+<summary>Làm thế nào để bắt đầu với OpenCode Enterprise?</summary>
+
+Chỉ cần bắt đầu bằng một thử nghiệm nội bộ cùng đội ngũ của bạn. Mặc định OpenCode không lưu mã nguồn hay dữ liệu context của bạn, nên rất dễ bắt đầu.
+
+Sau đó hãy **<a href={enterprise}>liên hệ với chúng tôi</a>** để trao đổi về giá và các phương án triển khai.
+
+</details>
+
+<details>
+<summary>Giá enterprise được tính như thế nào?</summary>
+
+Chúng tôi áp dụng giá enterprise theo chỗ ngồi. Nếu bạn có LLM gateway riêng, chúng tôi không tính phí cho các token đã dùng. Để biết thêm chi tiết, hãy **<a href={enterprise}>liên hệ với chúng tôi</a>** để nhận báo giá riêng dựa trên nhu cầu của tổ chức bạn.
+
+</details>
+
+<details>
+<summary>Dữ liệu của tôi có an toàn với OpenCode Enterprise không?</summary>
+
+Có. OpenCode không lưu mã nguồn hay dữ liệu context của bạn. Mọi xử lý diễn ra cục bộ hoặc thông qua các lệnh gọi API trực tiếp tới nhà cung cấp AI của bạn. Với cấu hình tập trung và tích hợp SSO, dữ liệu của bạn vẫn an toàn trong hạ tầng của tổ chức.
+
+</details>
+
+<details>
+<summary>Chúng tôi có thể dùng NPM registry riêng của mình không?</summary>
+
+OpenCode hỗ trợ các npm registry riêng thông qua hỗ trợ tệp `.npmrc` gốc của Bun. Nếu tổ chức của bạn dùng một registry riêng, chẳng hạn như JFrog Artifactory, Nexus hoặc tương tự, hãy bảo đảm các nhà phát triển đã xác thực trước khi chạy OpenCode.
+
+Để thiết lập xác thực với registry riêng của bạn:
+
+```bash
+npm login --registry=https://your-company.jfrog.io/api/npm/npm-virtual/
+```
+
+Thao tác này tạo `~/.npmrc` chứa thông tin xác thực. OpenCode sẽ tự động
+đọc tệp đó.
+
+:::caution
+Bạn phải đăng nhập vào registry riêng trước khi chạy OpenCode.
+:::
+
+Hoặc bạn có thể tự cấu hình một tệp `.npmrc`:
+
+```bash title="~/.npmrc"
+registry=https://your-company.jfrog.io/api/npm/npm-virtual/
+//your-company.jfrog.io/api/npm/npm-virtual/:_authToken=${NPM_AUTH_TOKEN}
+```
+
+Các nhà phát triển phải đăng nhập vào registry riêng trước khi chạy OpenCode để bảo đảm package có thể được cài đặt từ registry enterprise của bạn.
+
+</details>

@@ -1,0 +1,286 @@
+---
+title: Máy chủ
+description: Tương tác với máy chủ opencode qua HTTP.
+---
+
+import config from "../../../../config.mjs"
+export const typesUrl = `${config.github}/blob/dev/packages/sdk/js/src/gen/types.gen.ts`
+
+Lệnh `opencode serve` chạy một máy chủ HTTP không giao diện, cung cấp một endpoint OpenAPI mà opencode client có thể sử dụng.
+
+---
+
+### Cách dùng
+
+```bash
+opencode serve [--port <number>] [--hostname <string>] [--cors <origin>]
+```
+
+#### Tuỳ chọn
+
+| Cờ              | Mô tả                                        | Mặc định         |
+| --------------- | -------------------------------------------- | ---------------- |
+| `--port`        | Cổng lắng nghe                               | `4096`           |
+| `--hostname`    | Hostname lắng nghe                           | `127.0.0.1`      |
+| `--mdns`        | Bật khám phá mDNS                            | `false`          |
+| `--mdns-domain` | Tên miền tuỳ chỉnh cho dịch vụ mDNS          | `opencode.local` |
+| `--cors`        | Các origin trình duyệt bổ sung được cho phép | `[]`             |
+
+`--cors` có thể được truyền nhiều lần:
+
+```bash
+opencode serve --cors http://localhost:5173 --cors https://app.example.com
+```
+
+---
+
+### Xác thực
+
+Đặt `OPENCODE_SERVER_PASSWORD` để bảo vệ máy chủ bằng HTTP basic auth. Tên đăng nhập mặc định là `opencode`, hoặc đặt `OPENCODE_SERVER_USERNAME` để ghi đè. Điều này áp dụng cho cả `opencode serve` và `opencode web`.
+
+```bash
+OPENCODE_SERVER_PASSWORD=your-password opencode serve
+```
+
+---
+
+### Cách hoạt động
+
+Khi bạn chạy `opencode`, nó khởi động một TUI và một máy chủ. TUI là client
+giao tiếp với máy chủ. Máy chủ cung cấp một endpoint đặc tả OpenAPI 3.1.
+Endpoint này cũng được dùng để sinh ra [SDK](/docs/sdk).
+
+:::tip
+Hãy dùng máy chủ opencode để tương tác với opencode theo chương trình.
+:::
+
+Kiến trúc này cho phép opencode hỗ trợ nhiều client và giúp bạn tương tác với opencode theo chương trình.
+
+Bạn có thể chạy `opencode serve` để khởi động một máy chủ độc lập. Nếu bạn đang
+chạy TUI của opencode, `opencode serve` sẽ khởi động một máy chủ mới.
+
+---
+
+#### Kết nối tới máy chủ đã có
+
+Khi bạn khởi động TUI, nó gán ngẫu nhiên một cổng và một hostname. Thay vào đó, bạn có thể truyền các cờ [`--hostname` và `--port`](/docs/cli), rồi dùng chúng để kết nối tới máy chủ của nó.
+
+Endpoint [`/tui`](#tui) có thể dùng để điều khiển TUI thông qua máy chủ. Ví dụ, bạn có thể điền sẵn hoặc chạy một lời nhắc. Thiết lập này được các tiện ích mở rộng OpenCode [IDE](/docs/ide) sử dụng.
+
+---
+
+## Đặc tả
+
+Máy chủ công bố một đặc tả OpenAPI 3.1 có thể xem tại:
+
+```
+http://<hostname>:<port>/doc
+```
+
+Ví dụ, `http://localhost:4096/doc`. Hãy dùng đặc tả này để sinh client hoặc kiểm tra các kiểu request và response. Hoặc xem nó trong một trình khám phá Swagger.
+
+---
+
+## API
+
+Máy chủ opencode cung cấp các API sau.
+
+---
+
+### Toàn cục
+
+| Method | Path             | Mô tả                               | Response                             |
+| ------ | ---------------- | ----------------------------------- | ------------------------------------ |
+| `GET`  | `/global/health` | Lấy tình trạng và phiên bản máy chủ | `{ healthy: true, version: string }` |
+| `GET`  | `/global/event`  | Lấy sự kiện toàn cục (luồng SSE)    | Luồng sự kiện                        |
+
+---
+
+### Project
+
+| Method | Path               | Mô tả                  | Response                                      |
+| ------ | ------------------ | ---------------------- | --------------------------------------------- |
+| `GET`  | `/project`         | Liệt kê tất cả project | <a href={typesUrl}><code>Project[]</code></a> |
+| `GET`  | `/project/current` | Lấy project hiện tại   | <a href={typesUrl}><code>Project</code></a>   |
+
+---
+
+### Path & VCS
+
+| Method | Path    | Mô tả                                  | Response                                    |
+| ------ | ------- | -------------------------------------- | ------------------------------------------- |
+| `GET`  | `/path` | Lấy path hiện tại                      | <a href={typesUrl}><code>Path</code></a>    |
+| `GET`  | `/vcs`  | Lấy thông tin VCS của project hiện tại | <a href={typesUrl}><code>VcsInfo</code></a> |
+
+---
+
+### Instance
+
+| Method | Path                | Mô tả                        | Response  |
+| ------ | ------------------- | ---------------------------- | --------- |
+| `POST` | `/instance/dispose` | Giải phóng instance hiện tại | `boolean` |
+
+---
+
+### Config
+
+| Method  | Path                | Mô tả                                    | Response                                                                                 |
+| ------- | ------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `GET`   | `/config`           | Lấy thông tin cấu hình                   | <a href={typesUrl}><code>Config</code></a>                                               |
+| `PATCH` | `/config`           | Cập nhật cấu hình                        | <a href={typesUrl}><code>Config</code></a>                                               |
+| `GET`   | `/config/providers` | Liệt kê nhà cung cấp và mô hình mặc định | `{ providers: `<a href={typesUrl}>Provider[]</a>`, default: { [key: string]: string } }` |
+
+---
+
+### Provider
+
+| Method | Path                             | Mô tả                                         | Response                                                                            |
+| ------ | -------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `GET`  | `/provider`                      | Liệt kê tất cả nhà cung cấp                   | `{ all: `<a href={typesUrl}>Provider[]</a>`, default: {...}, connected: string[] }` |
+| `GET`  | `/provider/auth`                 | Lấy các phương thức xác thực của nhà cung cấp | `{ [providerID: string]: `<a href={typesUrl}>ProviderAuthMethod[]</a>` }`           |
+| `POST` | `/provider/{id}/oauth/authorize` | Cấp quyền cho nhà cung cấp bằng OAuth         | <a href={typesUrl}><code>ProviderAuthAuthorization</code></a>                       |
+| `POST` | `/provider/{id}/oauth/callback`  | Xử lý OAuth callback cho nhà cung cấp         | `boolean`                                                                           |
+
+---
+
+### Phiên
+
+| Method   | Path                                     | Mô tả                                   | Ghi chú                                                                           |
+| -------- | ---------------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------- |
+| `GET`    | `/session`                               | Liệt kê tất cả phiên                    | Trả về <a href={typesUrl}><code>Session[]</code></a>                              |
+| `POST`   | `/session`                               | Tạo phiên mới                           | body: `{ parentID?, title? }`, trả về <a href={typesUrl}><code>Session</code></a> |
+| `GET`    | `/session/status`                        | Lấy trạng thái của tất cả phiên         | Trả về `{ [sessionID: string]: `<a href={typesUrl}>SessionStatus</a>` }`          |
+| `GET`    | `/session/:id`                           | Lấy chi tiết phiên                      | Trả về <a href={typesUrl}><code>Session</code></a>                                |
+| `DELETE` | `/session/:id`                           | Xoá một phiên cùng toàn bộ dữ liệu      | Trả về `boolean`                                                                  |
+| `PATCH`  | `/session/:id`                           | Cập nhật thuộc tính phiên               | body: `{ title? }`, trả về <a href={typesUrl}><code>Session</code></a>            |
+| `GET`    | `/session/:id/children`                  | Lấy các phiên con của một phiên         | Trả về <a href={typesUrl}><code>Session[]</code></a>                              |
+| `POST`   | `/session/:id/init`                      | Phân tích app và tạo `AGENTS.md`        | body: `{ messageID, providerID, modelID }`, trả về `boolean`                      |
+| `POST`   | `/session/:id/fork`                      | Fork một phiên tồn tại tại một tin nhắn | body: `{ messageID? }`, trả về <a href={typesUrl}><code>Session</code></a>        |
+| `POST`   | `/session/:id/abort`                     | Huỷ một phiên đang chạy                 | Trả về `boolean`                                                                  |
+| `POST`   | `/session/:id/share`                     | Chia sẻ một phiên                       | Trả về <a href={typesUrl}><code>Session</code></a>                                |
+| `DELETE` | `/session/:id/share`                     | Ngừng chia sẻ một phiên                 | Trả về <a href={typesUrl}><code>Session</code></a>                                |
+| `GET`    | `/session/:id/diff`                      | Lấy diff của phiên này                  | query: `messageID?`, trả về <a href={typesUrl}><code>FileDiff[]</code></a>        |
+| `POST`   | `/session/:id/summarize`                 | Tóm tắt phiên                           | body: `{ providerID, modelID }`, trả về `boolean`                                 |
+| `POST`   | `/session/:id/revert`                    | Hoàn tác một tin nhắn                   | body: `{ messageID, partID? }`, trả về `boolean`                                  |
+| `POST`   | `/session/:id/unrevert`                  | Khôi phục tất cả tin nhắn đã hoàn tác   | Trả về `boolean`                                                                  |
+| `POST`   | `/session/:id/permissions/:permissionID` | Phản hồi một yêu cầu cấp quyền          | body: `{ response, remember? }`, trả về `boolean`                                 |
+
+---
+
+### Tin nhắn
+
+| Method | Path                              | Mô tả                                | Ghi chú                                                                                                                                                              |
+| ------ | --------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/session/:id/message`            | Liệt kê tin nhắn trong một phiên     | query: `limit?`, trả về `{ info: `<a href={typesUrl}>Message</a>`, parts: `<a href={typesUrl}>Part[]</a>`}[]`                                                        |
+| `POST` | `/session/:id/message`            | Gửi tin nhắn và chờ phản hồi         | body: `{ messageID?, model?, agent?, noReply?, system?, tools?, parts }`, trả về `{ info: `<a href={typesUrl}>Message</a>`, parts: `<a href={typesUrl}>Part[]</a>`}` |
+| `GET`  | `/session/:id/message/:messageID` | Lấy chi tiết tin nhắn                | Trả về `{ info: `<a href={typesUrl}>Message</a>`, parts: `<a href={typesUrl}>Part[]</a>`}`                                                                           |
+| `POST` | `/session/:id/prompt_async`       | Gửi tin nhắn bất đồng bộ (không chờ) | body: giống `/session/:id/message`, trả về `204 No Content`                                                                                                          |
+| `POST` | `/session/:id/command`            | Chạy một lệnh dạng slash             | body: `{ messageID?, agent?, model?, command, arguments }`, trả về `{ info: `<a href={typesUrl}>Message</a>`, parts: `<a href={typesUrl}>Part[]</a>`}`               |
+| `POST` | `/session/:id/shell`              | Chạy một lệnh shell                  | body: `{ agent, model?, command }`, trả về `{ info: `<a href={typesUrl}>Message</a>`, parts: `<a href={typesUrl}>Part[]</a>`}`                                       |
+
+---
+
+### Lệnh
+
+| Method | Path       | Mô tả               | Response                                      |
+| ------ | ---------- | ------------------- | --------------------------------------------- |
+| `GET`  | `/command` | Liệt kê tất cả lệnh | <a href={typesUrl}><code>Command[]</code></a> |
+
+---
+
+### Tệp
+
+| Method | Path                     | Mô tả                                    | Response                                                                                    |
+| ------ | ------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `GET`  | `/find?pattern=<pat>`    | Tìm kiếm văn bản trong tệp               | Mảng các đối tượng khớp với `path`, `lines`, `line_number`, `absolute_offset`, `submatches` |
+| `GET`  | `/find/file?query=<q>`   | Tìm tệp và thư mục theo tên              | `string[]` (các path)                                                                       |
+| `GET`  | `/find/symbol?query=<q>` | Tìm symbol trong không gian làm việc     | <a href={typesUrl}><code>Symbol[]</code></a>                                                |
+| `GET`  | `/file?path=<path>`      | Liệt kê tệp và thư mục                   | <a href={typesUrl}><code>FileNode[]</code></a>                                              |
+| `GET`  | `/file/content?path=<p>` | Đọc một tệp                              | <a href={typesUrl}><code>FileContent</code></a>                                             |
+| `GET`  | `/file/status`           | Lấy trạng thái của các tệp được theo dõi | <a href={typesUrl}><code>File[]</code></a>                                                  |
+
+#### Tham số truy vấn của `/find/file`
+
+- `query` (bắt buộc) — chuỗi tìm kiếm (khớp mờ)
+- `type` (tuỳ chọn) — giới hạn kết quả ở `"file"` hoặc `"directory"`
+- `directory` (tuỳ chọn) — ghi đè thư mục gốc project cho việc tìm kiếm
+- `limit` (tuỳ chọn) — số kết quả tối đa (1–200)
+- `dirs` (tuỳ chọn) — cờ cũ (`"false"` chỉ trả về tệp)
+
+---
+
+### Công cụ (thử nghiệm)
+
+| Method | Path                                        | Mô tả                                               | Response                                     |
+| ------ | ------------------------------------------- | --------------------------------------------------- | -------------------------------------------- |
+| `GET`  | `/experimental/tool/ids`                    | Liệt kê tất cả ID công cụ                           | <a href={typesUrl}><code>ToolIDs</code></a>  |
+| `GET`  | `/experimental/tool?provider=<p>&model=<m>` | Liệt kê các công cụ kèm JSON schema cho một mô hình | <a href={typesUrl}><code>ToolList</code></a> |
+
+---
+
+### LSP, Formatter & MCP
+
+| Method | Path         | Mô tả                      | Response                                                  |
+| ------ | ------------ | -------------------------- | --------------------------------------------------------- |
+| `GET`  | `/lsp`       | Lấy trạng thái máy chủ LSP | <a href={typesUrl}><code>LSPStatus[]</code></a>           |
+| `GET`  | `/formatter` | Lấy trạng thái formatter   | <a href={typesUrl}><code>FormatterStatus[]</code></a>     |
+| `GET`  | `/mcp`       | Lấy trạng thái máy chủ MCP | `{ [name: string]: `<a href={typesUrl}>MCPStatus</a>` }`  |
+| `POST` | `/mcp`       | Thêm máy chủ MCP động      | body: `{ name, config }`, trả về đối tượng trạng thái MCP |
+
+---
+
+### Tác nhân
+
+| Method | Path     | Mô tả                   | Response                                    |
+| ------ | -------- | ----------------------- | ------------------------------------------- |
+| `GET`  | `/agent` | Liệt kê tất cả tác nhân | <a href={typesUrl}><code>Agent[]</code></a> |
+
+---
+
+### Ghi log
+
+| Method | Path   | Mô tả                                                        | Response  |
+| ------ | ------ | ------------------------------------------------------------ | --------- |
+| `POST` | `/log` | Ghi một mục log. Body: `{ service, level, message, extra? }` | `boolean` |
+
+---
+
+### TUI
+
+| Method | Path                    | Mô tả                                           | Response                     |
+| ------ | ----------------------- | ----------------------------------------------- | ---------------------------- |
+| `POST` | `/tui/append-prompt`    | Nối thêm văn bản vào lời nhắc                   | `boolean`                    |
+| `POST` | `/tui/open-help`        | Mở hộp thoại trợ giúp                           | `boolean`                    |
+| `POST` | `/tui/open-sessions`    | Mở bộ chọn phiên                                | `boolean`                    |
+| `POST` | `/tui/open-themes`      | Mở bộ chọn theme                                | `boolean`                    |
+| `POST` | `/tui/open-models`      | Mở bộ chọn mô hình                              | `boolean`                    |
+| `POST` | `/tui/submit-prompt`    | Gửi lời nhắc hiện tại                           | `boolean`                    |
+| `POST` | `/tui/clear-prompt`     | Xoá lời nhắc                                    | `boolean`                    |
+| `POST` | `/tui/execute-command`  | Chạy một lệnh (`{ command }`)                   | `boolean`                    |
+| `POST` | `/tui/show-toast`       | Hiển thị toast (`{ title?, message, variant }`) | `boolean`                    |
+| `GET`  | `/tui/control/next`     | Chờ yêu cầu điều khiển tiếp theo                | Đối tượng yêu cầu điều khiển |
+| `POST` | `/tui/control/response` | Phản hồi một yêu cầu điều khiển (`{ body }`)    | `boolean`                    |
+
+---
+
+### Xác thực
+
+| Method | Path        | Mô tả                                                           | Response  |
+| ------ | ----------- | --------------------------------------------------------------- | --------- |
+| `PUT`  | `/auth/:id` | Đặt thông tin đăng nhập. Body phải khớp schema của nhà cung cấp | `boolean` |
+
+---
+
+### Sự kiện
+
+| Method | Path     | Mô tả                                                                                    | Response                  |
+| ------ | -------- | ---------------------------------------------------------------------------------------- | ------------------------- |
+| `GET`  | `/event` | Luồng sự kiện server-sent. Sự kiện đầu tiên là `server.connected`, sau đó là sự kiện bus | Luồng sự kiện server-sent |
+
+---
+
+### Tài liệu
+
+| Method | Path   | Mô tả              | Response                      |
+| ------ | ------ | ------------------ | ----------------------------- |
+| `GET`  | `/doc` | Đặc tả OpenAPI 3.1 | Trang HTML với đặc tả OpenAPI |

@@ -1,0 +1,947 @@
+---
+title: Cấu hình
+description: Sử dụng cấu hình JSON của OpenCode.
+---
+
+Bạn có thể cấu hình OpenCode bằng một tệp cấu hình JSON.
+
+---
+
+## Định dạng
+
+OpenCode hỗ trợ cả định dạng **JSON** và **JSONC** (JSON có chú thích).
+
+```jsonc title="opencode.jsonc"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "anthropic/claude-sonnet-4-5",
+  "autoupdate": true,
+  "server": {
+    "port": 4096,
+  },
+}
+```
+
+---
+
+## Vị trí
+
+Bạn có thể đặt tệp cấu hình ở một vài vị trí khác nhau và chúng có
+thứ tự ưu tiên khác nhau.
+
+:::note
+Các tệp cấu hình được **gộp lại với nhau**, chứ không phải thay thế nhau.
+:::
+
+Các tệp cấu hình được gộp lại với nhau, chứ không phải thay thế nhau. Cài đặt từ các vị trí cấu hình sau đây được kết hợp lại với nhau. Cấu hình sau chỉ ghi đè cấu hình trước ở những khóa bị xung đột. Cài đặt không bị xung đột từ mọi cấu hình đều được giữ nguyên.
+
+Ví dụ, nếu cấu hình toàn cục đặt `autoupdate: true` và cấu hình dự án đặt `model: "anthropic/claude-sonnet-4-5"`, cấu hình cuối cùng sẽ chứa cả hai cài đặt.
+
+---
+
+### Thứ tự ưu tiên
+
+Các nguồn cấu hình được nạp theo thứ tự sau (nguồn sau ghi đè nguồn trước):
+
+1. **Cấu hình từ xa** (từ `.well-known/opencode`) - mặc định của tổ chức
+2. **Cấu hình toàn cục** (`~/.config/opencode/opencode.json`) - tùy chọn của người dùng
+3. **Cấu hình tùy chỉnh** (biến môi trường `OPENCODE_CONFIG`) - ghi đè tùy chỉnh
+4. **Cấu hình dự án** (`opencode.json` trong dự án) - cài đặt riêng cho dự án
+5. **Các thư mục `.opencode`** - tác nhân, lệnh, plugin
+6. **Cấu hình nội tuyến** (biến môi trường `OPENCODE_CONFIG_CONTENT`) - ghi đè lúc chạy
+7. **Các tệp cấu hình được quản lý** (`/Library/Application Support/opencode/` trên macOS) - do quản trị viên kiểm soát
+8. **Tùy chọn được quản lý trên macOS** (`.mobileconfig` qua MDM) - ưu tiên cao nhất, người dùng không thể ghi đè
+
+Điều này có nghĩa là cấu hình dự án có thể ghi đè mặc định toàn cục, và cấu hình toàn cục có thể ghi đè mặc định của tổ chức từ xa. Cài đặt được quản lý ghi đè mọi thứ.
+
+:::note
+Các thư mục `.opencode` và `~/.config/opencode` dùng tên **số nhiều** cho các thư mục con: `agents/`, `commands/`, `modes/`, `plugins/`, `skills/`, `tools/`, và `themes/`. Tên số ít (ví dụ `agent/`) cũng được hỗ trợ để giữ tương thích ngược.
+:::
+
+---
+
+### Từ xa
+
+Các tổ chức có thể cung cấp cấu hình mặc định qua endpoint `.well-known/opencode`. Nội dung này được tự động tải khi bạn xác thực với một nhà cung cấp có hỗ trợ.
+
+Cấu hình từ xa được nạp trước tiên và đóng vai trò là lớp nền tảng. Mọi nguồn cấu hình khác (toàn cục, dự án) đều có thể ghi đè các mặc định này.
+
+Ví dụ, nếu tổ chức của bạn cung cấp các máy chủ MCP bị tắt mặc định:
+
+```json title="Remote config from .well-known/opencode"
+{
+  "mcp": {
+    "jira": {
+      "type": "remote",
+      "url": "https://jira.example.com/mcp",
+      "enabled": false
+    }
+  }
+}
+```
+
+Bạn có thể bật những máy chủ cụ thể trong cấu hình cục bộ của mình:
+
+```json title="opencode.json"
+{
+  "mcp": {
+    "jira": {
+      "type": "remote",
+      "url": "https://jira.example.com/mcp",
+      "enabled": true
+    }
+  }
+}
+```
+
+---
+
+### Toàn cục
+
+Đặt cấu hình OpenCode toàn cục của bạn trong `~/.config/opencode/opencode.json`. Dùng cấu hình toàn cục cho các tùy chọn máy chủ/thời gian chạy áp dụng cho toàn bộ người dùng như nhà cung cấp, mô hình và quyền.
+
+Đối với cài đặt riêng của TUI, hãy dùng `~/.config/opencode/tui.json`.
+
+Cấu hình toàn cục ghi đè các mặc định của tổ chức từ xa.
+
+---
+
+### Theo dự án
+
+Thêm `opencode.json` vào thư mục gốc dự án của bạn. Cấu hình dự án có ưu tiên cao nhất trong số các tệp cấu hình tiêu chuẩn - nó ghi đè cả cấu hình toàn cục và cấu hình từ xa.
+
+Đối với cài đặt TUI riêng cho dự án, hãy thêm `tui.json` cạnh bên.
+
+:::tip
+Đặt cấu hình riêng cho dự án ở thư mục gốc của dự án.
+:::
+
+Khi OpenCode khởi động, trước tiên nó tìm tệp cấu hình trong thư mục hiện tại, rồi đi lên trên cho đến thư mục Git gần nhất.
+
+Tệp này cũng an toàn để commit vào Git và dùng cùng schema với tệp toàn cục.
+
+---
+
+### Đường dẫn tùy chỉnh
+
+Chỉ định một đường dẫn tệp cấu hình tùy chỉnh bằng biến môi trường `OPENCODE_CONFIG`.
+
+```bash
+export OPENCODE_CONFIG=/path/to/my/custom-config.json
+opencode run "Hello world"
+```
+
+Trong thứ tự ưu tiên, cấu hình tùy chỉnh được nạp giữa cấu hình toàn cục và cấu hình dự án.
+
+---
+
+### Thư mục tùy chỉnh
+
+Chỉ định một thư mục cấu hình tùy chỉnh bằng biến môi trường `OPENCODE_CONFIG_DIR`.
+Thư mục này sẽ được tìm kiếm tác nhân, lệnh,
+chế độ và plugin giống hệt thư mục `.opencode` tiêu chuẩn, và nên
+tuân theo cùng cấu trúc.
+
+```bash
+export OPENCODE_CONFIG_DIR=/path/to/my/config-directory
+opencode run "Hello world"
+```
+
+Thư mục tùy chỉnh được nạp sau cấu hình toàn cục và các thư mục `.opencode`, vì vậy nó **có thể ghi đè** cài đặt của chúng.
+
+---
+
+### Cài đặt được quản lý
+
+Các tổ chức có thể áp dụng cấu hình mà người dùng không thể ghi đè. Cài đặt được quản lý được nạp ở cấp ưu tiên cao nhất.
+
+#### Dựa trên tệp
+
+Đặt một tệp `opencode.json` hoặc `opencode.jsonc` vào thư mục cấu hình do hệ thống quản lý:
+
+| Nền tảng | Đường dẫn                                |
+| -------- | ---------------------------------------- |
+| macOS    | `/Library/Application Support/opencode/` |
+| Linux    | `/etc/opencode/`                         |
+| Windows  | `%ProgramData%\opencode`                 |
+
+Các thư mục này yêu cầu quyền quản trị viên/root để ghi, nên người dùng không thể chỉnh sửa chúng.
+
+#### Tùy chọn được quản lý trên macOS
+
+Trên macOS, OpenCode đọc các tùy chọn được quản lý từ preference domain `ai.opencode.managed`. Triển khai một `.mobileconfig` qua MDM (Jamf, Kandji, FleetDM) và các cài đặt sẽ được áp dụng tự động.
+
+OpenCode kiểm tra các đường dẫn sau:
+
+1. `/Library/Managed Preferences/<user>/ai.opencode.managed.plist`
+2. `/Library/Managed Preferences/ai.opencode.managed.plist`
+
+Các khóa plist ánh xạ trực tiếp tới các trường của `opencode.json`. Các khóa siêu dữ liệu MDM (`PayloadUUID`, `PayloadType`, v.v.) sẽ tự động bị loại bỏ.
+
+**Tạo một `.mobileconfig`**
+
+Dùng PayloadType `ai.opencode.managed`. Các khóa cấu hình OpenCode đặt trực tiếp trong dict của payload:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>PayloadType</key>
+      <string>ai.opencode.managed</string>
+      <key>PayloadIdentifier</key>
+      <string>com.example.opencode.config</string>
+      <key>PayloadUUID</key>
+      <string>GENERATE-YOUR-OWN-UUID</string>
+      <key>PayloadVersion</key>
+      <integer>1</integer>
+      <key>share</key>
+      <string>disabled</string>
+      <key>server</key>
+      <dict>
+        <key>hostname</key>
+        <string>127.0.0.1</string>
+      </dict>
+      <key>permission</key>
+      <dict>
+        <key>*</key>
+        <string>ask</string>
+        <key>bash</key>
+        <dict>
+          <key>*</key>
+          <string>ask</string>
+          <key>rm -rf *</key>
+          <string>deny</string>
+        </dict>
+      </dict>
+    </dict>
+  </array>
+  <key>PayloadType</key>
+  <string>Configuration</string>
+  <key>PayloadIdentifier</key>
+  <string>com.example.opencode</string>
+  <key>PayloadUUID</key>
+  <string>GENERATE-YOUR-OWN-UUID</string>
+  <key>PayloadVersion</key>
+  <integer>1</integer>
+</dict>
+</plist>
+```
+
+Tạo các UUID duy nhất bằng `uuidgen`. Hãy tùy chỉnh cài đặt cho phù hợp với yêu cầu của tổ chức bạn.
+
+**Triển khai qua MDM**
+
+- **Jamf Pro:** Computers > Configuration Profiles > Upload > scope to target devices or smart groups
+- **FleetDM:** Thêm `.mobileconfig` vào repo gitops của bạn dưới `mdm.macos_settings.custom_settings` rồi chạy `fleetctl apply`
+
+**Kiểm tra trên thiết bị**
+
+Nhấp đúp vào `.mobileconfig` để cài đặt cục bộ phục vụ thử nghiệm (hiển thị trong System Settings > Privacy & Security > Profiles), sau đó chạy:
+
+```bash
+opencode debug config
+```
+
+Mọi khóa tùy chọn được quản lý đều xuất hiện trong cấu hình đã phân giải và không thể bị cấu hình của người dùng hoặc của dự án ghi đè.
+
+---
+
+## Schema
+
+Schema cấu hình máy chủ/thời gian chạy được định nghĩa trong [**`opencode.ai/config.json`**](https://opencode.ai/config.json).
+
+Cấu hình TUI dùng [**`opencode.ai/tui.json`**](https://opencode.ai/tui.json).
+
+Trình soạn thảo của bạn nên có thể kiểm tra và gợi ý tự động dựa trên schema.
+
+---
+
+### TUI
+
+Dùng một tệp `tui.json` (hoặc `tui.jsonc`) riêng cho các cài đặt của TUI.
+
+```json title="tui.json"
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "scroll_speed": 3,
+  "scroll_acceleration": {
+    "enabled": true
+  },
+  "diff_style": "auto",
+  "cursor": {
+    "style": "block",
+    "blinking": true
+  },
+  "mouse": true,
+  "attention": {
+    "enabled": true,
+    "notifications": true,
+    "sound": true,
+    "volume": 0.4
+  }
+}
+```
+
+Dùng `OPENCODE_TUI_CONFIG` để trỏ tới một tệp cấu hình TUI tùy chỉnh.
+
+Khi `cursor.style` là `"default"`, con trỏ mặc định của terminal được khôi phục, nên `cursor.blinking` không có tác dụng.
+
+Đặt `attention.enabled` để bật thông báo desktop và âm thanh cho TUI. Xem [TUI attention](/docs/tui#attention).
+
+Các khóa `theme`, `keybinds` và `tui` cũ trong `opencode.json` không còn được khuyến nghị và sẽ được chuyển đổi tự động khi có thể.
+
+---
+
+### Máy chủ
+
+Bạn có thể cấu hình cài đặt máy chủ cho các lệnh `opencode serve` và `opencode web` thông qua tùy chọn `server`.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "server": {
+    "port": 4096,
+    "hostname": "0.0.0.0",
+    "mdns": true,
+    "mdnsDomain": "myproject.local",
+    "cors": ["http://localhost:5173"]
+  }
+}
+```
+
+Các tùy chọn có sẵn:
+
+- `port` - Cổng để lắng nghe.
+- `hostname` - Tên máy chủ để lắng nghe. Khi `mdns` được bật và không có tên máy chủ nào được đặt, mặc định là `0.0.0.0`.
+- `mdns` - Bật tính năng khám phá dịch vụ mDNS. Điều này cho phép các thiết bị khác trong mạng khám phá máy chủ OpenCode của bạn.
+- `mdnsDomain` - Tên miền tùy chỉnh cho dịch vụ mDNS. Mặc định là `opencode.local`. Hữu ích khi chạy nhiều phiên bản trên cùng một mạng.
+- `cors` - Các origin bổ sung được cho phép cho CORS khi dùng máy chủ HTTP từ một client chạy trên trình duyệt. Giá trị phải là origin đầy đủ (scheme + host + port tùy chọn), ví dụ `https://app.example.com`.
+
+[Tìm hiểu thêm về máy chủ](/docs/server).
+
+---
+
+### Shell
+
+Bạn có thể cấu hình shell được dùng cho terminal tương tác bằng tùy chọn `shell`. Các shell tương thích cũng được dùng cho các lệnh gọi tool của tác nhân.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "shell": "pwsh"
+}
+```
+
+Nếu không chỉ định, OpenCode sẽ tự động phát hiện và dùng một giá trị mặc định hợp lý dựa trên hệ điều hành của bạn (ví dụ `pwsh` hoặc `cmd.exe` trên Windows, `/bin/zsh` hoặc `/bin/bash` trên macOS/Linux). Bạn có thể cung cấp một đường dẫn tuyệt đối hoặc một tên ngắn.
+
+---
+
+### Công cụ
+
+Bạn có thể quản lý các công cụ mà một LLM có thể dùng thông qua tùy chọn `tools`.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "tools": {
+    "write": false,
+    "bash": false
+  }
+}
+```
+
+[Tìm hiểu thêm về các công cụ](/docs/tools).
+
+---
+
+### Mô hình
+
+Bạn có thể cấu hình các nhà cung cấp và mô hình muốn dùng trong cấu hình OpenCode thông qua các tùy chọn `provider`, `model` và `small_model`.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {},
+  "model": "anthropic/claude-sonnet-4-5",
+  "small_model": "anthropic/claude-haiku-4-5"
+}
+```
+
+Tùy chọn `small_model` cấu hình một mô hình riêng cho các tác vụ nhẹ như tạo tiêu đề. Mặc định, OpenCode sẽ cố dùng một mô hình rẻ hơn nếu nhà cung cấp của bạn có sẵn, nếu không thì dùng lại mô hình chính của bạn.
+
+Các tùy chọn của nhà cung cấp có thể bao gồm `timeout`, `headerTimeout`, `chunkTimeout` và `setCacheKey`:
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "anthropic": {
+      "options": {
+        "timeout": 600000,
+        "chunkTimeout": 30000,
+        "setCacheKey": true
+      }
+    }
+  }
+}
+```
+
+- `timeout` - Thời gian chờ yêu cầu tính bằng mili giây (mặc định: 300000). Đặt thành `false` để tắt.
+- `headerTimeout` - Thời gian chờ header phản hồi tính bằng mili giây (mặc định: 300000, tức 5 phút). Bộ đếm này dừng lại khi header đến và không giới hạn phần thân phản hồi được truyền theo luồng. Đặt thành `false` để tắt.
+- `chunkTimeout` - Thời gian chờ giữa các phần của phản hồi truyền theo luồng tính bằng mili giây (mặc định: 900000, tức 15 phút). Nếu không có phần nào đến đúng hạn, yêu cầu sẽ bị hủy. Đặt thành `false` để tắt.
+- `setCacheKey` - Đảm bảo cache key luôn được đặt cho nhà cung cấp được chỉ định.
+
+Bạn cũng có thể cấu hình [mô hình cục bộ](/docs/models#local). [Tìm hiểu thêm](/docs/models).
+
+---
+
+### Chính sách
+
+Dùng tùy chọn `experimental.policies` để cho phép hoặc từ chối các hành động của OpenCode trên những tài nguyên đã cấu hình. Hiện tại, các chính sách có thể kiểm soát những nhà cung cấp mà OpenCode được phép dùng.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "experimental": {
+    "policies": [
+      {
+        "effect": "deny",
+        "action": "provider.use",
+        "resource": "openai"
+      }
+    ]
+  }
+}
+```
+
+[Tìm hiểu thêm về các chính sách](/docs/policies).
+
+---
+
+### Tệp đính kèm hình ảnh
+
+OpenCode chuẩn hóa các tệp đính kèm hình ảnh trước khi gửi chúng tới mô hình. Mặc định, hình ảnh sẽ được thay đổi kích thước khi vượt quá `2000x2000` pixel hoặc `5242880` byte base64.
+
+Cấu hình giới hạn cho tệp đính kèm hình ảnh bằng tùy chọn `attachment.image`:
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "attachment": {
+    "image": {
+      "auto_resize": true,
+      "max_width": 2000,
+      "max_height": 2000,
+      "max_base64_bytes": 5242880
+    }
+  }
+}
+```
+
+- `auto_resize` - Thay đổi kích thước những hình ảnh vượt quá giới hạn đã cấu hình trước khi gửi yêu cầu tới nhà cung cấp. Đặt thành `false` để thay thế bằng việc từ chối hình ảnh quá lớn.
+- `max_width` - Chiều rộng tối đa của hình ảnh tính bằng pixel trước khi thay đổi kích thước hoặc từ chối.
+- `max_height` - Chiều cao tối đa của hình ảnh tính bằng pixel trước khi thay đổi kích thước hoặc từ chối.
+- `max_base64_bytes` - Kích thước tối đa của payload hình ảnh đã mã hóa. Đây là kích thước payload base64, không phải kích thước tệp gốc.
+
+Nếu hình ảnh vẫn không vừa sau khi thay đổi kích thước, OpenCode sẽ bỏ qua những hình ảnh quá lớn trong kết quả tool hoặc báo lỗi kích thước hình ảnh cho những hình ảnh quá lớn do người dùng cung cấp.
+
+---
+
+#### Tùy chọn riêng cho từng nhà cung cấp
+
+Một số nhà cung cấp hỗ trợ thêm các tùy chọn cấu hình ngoài hai cài đặt chung `timeout` và `apiKey`.
+
+##### Amazon Bedrock
+
+Amazon Bedrock hỗ trợ cấu hình riêng của AWS:
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "amazon-bedrock": {
+      "options": {
+        "region": "us-east-1",
+        "profile": "my-aws-profile",
+        "endpoint": "https://bedrock-runtime.us-east-1.vpce-xxxxx.amazonaws.com"
+      }
+    }
+  }
+}
+```
+
+- `region` - Khu vực AWS cho Bedrock (mặc định là biến môi trường `AWS_REGION` hoặc `us-east-1`)
+- `profile` - Hồ sơ AWS có tên trong `~/.aws/credentials` (mặc định là biến môi trường `AWS_PROFILE`)
+- `endpoint` - URL endpoint tùy chỉnh cho VPC endpoint. Đây là bí danh của tùy chọn chung `baseURL` nhưng dùng thuật ngữ riêng của AWS. Nếu cả hai đều được chỉ định, `endpoint` sẽ được ưu tiên.
+
+:::note
+Bearer token (`AWS_BEARER_TOKEN_BEDROCK` hoặc `/connect`) được ưu tiên hơn việc xác thực dựa trên hồ sơ. Xem [thứ tự ưu tiên xác thực](/docs/providers#authentication-precedence) để biết chi tiết.
+:::
+
+[Tìm hiểu thêm về cấu hình Amazon Bedrock](/docs/providers#amazon-bedrock).
+
+---
+
+### Giao diện
+
+Đặt giao diện UI của bạn trong `tui.json`.
+
+```json title="tui.json"
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "theme": "tokyonight"
+}
+```
+
+[Tìm hiểu thêm](/docs/themes).
+
+---
+
+### Tác nhân
+
+Bạn có thể cấu hình các tác nhân chuyên biệt cho những tác vụ cụ thể thông qua tùy chọn `agent`.
+
+```jsonc title="opencode.jsonc"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "code-reviewer": {
+      "description": "Reviews code for best practices and potential issues",
+      "model": "anthropic/claude-sonnet-4-5",
+      "prompt": "You are a code reviewer. Focus on security, performance, and maintainability.",
+      "tools": {
+        // Disable file modification tools for review-only agent
+        "write": false,
+        "edit": false,
+      },
+    },
+  },
+}
+```
+
+Bạn cũng có thể định nghĩa tác nhân bằng các tệp markdown trong `~/.config/opencode/agents/` hoặc `.opencode/agents/`. [Tìm hiểu thêm](/docs/agents).
+
+---
+
+### Tác nhân mặc định
+
+Bạn có thể đặt tác nhân mặc định bằng tùy chọn `default_agent`. Điều này xác định tác nhân nào được dùng khi không có tác nhân nào được chỉ định rõ ràng.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "plan"
+}
+```
+
+Tác nhân mặc định phải là một tác nhân chính (không phải tác nhân phụ). Đây có thể là một tác nhân tích hợp sẵn như `"build"` hoặc `"plan"`, hoặc một [tác nhân tùy chỉnh](/docs/agents) mà bạn đã định nghĩa. Nếu tác nhân được chỉ định không tồn tại hoặc là tác nhân phụ, OpenCode sẽ quay về `"build"` kèm theo một cảnh báo.
+
+Cài đặt này áp dụng cho mọi giao diện: TUI, CLI (`opencode run`), ứng dụng desktop và GitHub Action.
+
+---
+
+### Độ sâu của tác nhân phụ
+
+Bạn có thể kiểm soát tác nhân phụ có thể gọi tác nhân phụ khác sâu đến mức nào bằng tùy chọn `subagent_depth`.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "subagent_depth": 2
+}
+```
+
+Giá trị mặc định là `1`, cho phép các tác nhân chính khởi chạy tác nhân phụ nhưng ngăn chính những tác nhân phụ đó khởi chạy thêm tác nhân phụ khác. Đặt thành `2` để cho phép thêm một cấp tác nhân phụ lồng nhau, hoặc `0` để ngăn toàn bộ việc khởi chạy tác nhân phụ.
+
+---
+
+### Chia sẻ
+
+Bạn có thể cấu hình tính năng [chia sẻ](/docs/share) thông qua tùy chọn `share`.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "share": "manual"
+}
+```
+
+Tùy chọn này nhận:
+
+- `"manual"` - Cho phép chia sẻ thủ công qua các lệnh (mặc định)
+- `"auto"` - Tự động chia sẻ các cuộc trò chuyện mới
+- `"disabled"` - Tắt hoàn toàn việc chia sẻ
+
+Mặc định, việc chia sẻ được đặt ở chế độ thủ công, nghĩa là bạn phải chủ động chia sẻ các cuộc trò chuyện bằng lệnh `/share`.
+
+---
+
+### Lệnh
+
+Bạn có thể cấu hình các lệnh tùy chỉnh cho những tác vụ lặp lại bằng tùy chọn `command`.
+
+```jsonc title="opencode.jsonc"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "command": {
+    "test": {
+      "template": "Run the full test suite with coverage report and show any failures.\nFocus on the failing tests and suggest fixes.",
+      "description": "Run tests with coverage",
+      "agent": "build",
+      "model": "anthropic/claude-haiku-4-5",
+    },
+    "component": {
+      "template": "Create a new React component named $ARGUMENTS with TypeScript support.\nInclude proper typing and basic structure.",
+      "description": "Create a new component",
+    },
+  },
+}
+```
+
+Bạn cũng có thể định nghĩa lệnh bằng các tệp markdown trong `~/.config/opencode/commands/` hoặc `.opencode/commands/`. [Tìm hiểu thêm](/docs/commands).
+
+---
+
+### Phím tắt
+
+Tùy chỉnh các phím tắt của TUI trong `tui.json` bằng `keybinds`.
+
+```json title="tui.json"
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "keybinds": {
+    "command_list": "ctrl+p"
+  }
+}
+```
+
+`keybinds` được gộp với các giá trị mặc định tích hợp sẵn, nên bạn chỉ cần cấu hình những phím tắt mà bạn muốn thay đổi.
+
+[Tìm hiểu thêm](/docs/keybinds).
+
+---
+
+### Ảnh chụp
+
+OpenCode dùng ảnh chụp (snapshot) để theo dõi các thay đổi tệp trong khi tác nhân hoạt động, cho phép bạn hoàn tác và đưa các thay đổi trong một phiên về trạng thái trước đó. Ảnh chụp được bật mặc định.
+
+Với các kho lưu trữ lớn hoặc dự án có nhiều submodule, hệ thống ảnh chụp có thể gây ra việc lập chỉ mục chậm và tốn nhiều dung lượng đĩa vì nó theo dõi mọi thay đổi bằng một kho git nội bộ. Bạn có thể tắt ảnh chụp bằng tùy chọn `snapshot`.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "snapshot": false
+}
+```
+
+Lưu ý rằng việc tắt ảnh chụp có nghĩa là các thay đổi do tác nhân thực hiện không thể được hoàn tác qua UI.
+
+---
+
+### Tự động cập nhật
+
+OpenCode sẽ tự động tải mọi bản cập nhật mới khi khởi động. Bạn có thể tắt hành vi này bằng tùy chọn `autoupdate`.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": false
+}
+```
+
+Nếu bạn không muốn cập nhật nhưng vẫn muốn được thông báo khi có phiên bản mới, hãy đặt `autoupdate` thành `"notify"`. Lưu ý rằng điều này chỉ hoạt động nếu OpenCode không được cài đặt bằng trình quản lý gói như Homebrew.
+
+---
+
+### Trình định dạng
+
+Bạn có thể bật và cấu hình các trình định dạng mã thông qua tùy chọn `formatter`. Bỏ qua tùy chọn này để giữ trình định dạng ở trạng thái tắt.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "formatter": true
+}
+```
+
+Dùng một object để giữ các trình định dạng tích hợp sẵn ở trạng thái bật trong khi cấu hình ghi đè hoặc trình định dạng tùy chỉnh.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "formatter": {
+    "prettier": {
+      "disabled": true
+    },
+    "custom-prettier": {
+      "command": ["npx", "prettier", "--write", "$FILE"],
+      "environment": {
+        "NODE_ENV": "development"
+      },
+      "extensions": [".js", ".ts", ".jsx", ".tsx"]
+    }
+  }
+}
+```
+
+[Tìm hiểu thêm về trình định dạng](/docs/formatters).
+
+---
+
+### Máy chủ LSP
+
+Bạn có thể bật và cấu hình các máy chủ LSP thông qua tùy chọn `lsp`. Bỏ qua tùy chọn này để giữ LSP ở trạng thái tắt.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "lsp": true
+}
+```
+
+Dùng một object để giữ các máy chủ LSP tích hợp sẵn ở trạng thái bật trong khi cấu hình ghi đè hoặc máy chủ LSP tùy chỉnh.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "lsp": {
+    "typescript": {
+      "disabled": true
+    }
+  }
+}
+```
+
+[Tìm hiểu thêm về máy chủ LSP](/docs/lsp).
+
+---
+
+### Quyền
+
+Mặc định, opencode **cho phép mọi thao tác** mà không cần phê duyệt rõ ràng. Bạn có thể thay đổi điều này bằng tùy chọn `permission`.
+
+Ví dụ, để đảm bảo các tool `edit` và `bash` yêu cầu người dùng phê duyệt:
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "edit": "ask",
+    "bash": "ask"
+  }
+}
+```
+
+[Tìm hiểu thêm về quyền](/docs/permissions).
+
+---
+
+### Nén ngữ cảnh
+
+Bạn có thể kiểm soát hành vi nén ngữ cảnh thông qua tùy chọn `compaction`.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "compaction": {
+    "auto": true,
+    "prune": false,
+    "reserved": 10000
+  }
+}
+```
+
+- `auto` - Tự động nén phiên khi ngữ cảnh đầy (mặc định: `true`).
+- `prune` - Xóa các kết quả tool cũ để tiết kiệm token (mặc định: `false`). Đặt thành `true` để bật việc dọn dẹp.
+- `reserved` - Buffer token cho việc nén. Chừa lại đủ cửa sổ để tránh tràn bộ đệm trong khi nén.
+
+---
+
+### Trình theo dõi
+
+Bạn có thể cấu hình các mẫu bỏ qua của trình theo dõi tệp thông qua tùy chọn `watcher`.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "watcher": {
+    "ignore": ["**/generated/**"]
+  }
+}
+```
+
+Các mẫu tuân theo cú pháp glob. Các thư mục phụ thuộc, VCS, build và cache thông dụng sẽ tự động bị bỏ qua ở mọi cấp độ.
+
+---
+
+### Máy chủ MCP
+
+Bạn có thể cấu hình các máy chủ MCP mà bạn muốn dùng thông qua tùy chọn `mcp`.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {}
+}
+```
+
+[Tìm hiểu thêm](/docs/mcp-servers).
+
+---
+
+### Plugin
+
+[Plugin](/docs/plugins) mở rộng OpenCode bằng các tool, hook và tích hợp tùy chỉnh.
+
+Đặt các tệp plugin trong `.opencode/plugins/` hoặc `~/.config/opencode/plugins/`. Bạn cũng có thể tải plugin từ npm thông qua tùy chọn `plugin`.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["opencode-helicone-session", "@my-org/custom-plugin"]
+}
+```
+
+[Tìm hiểu thêm](/docs/plugins).
+
+---
+
+### Chỉ dẫn
+
+Bạn có thể cấu hình các chỉ dẫn cho mô hình đang dùng thông qua tùy chọn `instructions`.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["CONTRIBUTING.md", "docs/guidelines.md", ".cursor/rules/*.md"]
+}
+```
+
+Tùy chọn này nhận một mảng các đường dẫn và mẫu glob trỏ tới các tệp chỉ dẫn. [Tìm hiểu
+thêm về quy tắc](/docs/rules).
+
+---
+
+### Nhà cung cấp bị tắt
+
+Bạn có thể tắt các nhà cung cấp được nạp tự động bằng tùy chọn `disabled_providers`. Điều này hữu ích khi bạn muốn ngăn một nhà cung cấp nào đó được nạp, ngay cả khi thông tin đăng nhập của chúng vẫn khả dụng.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "disabled_providers": ["openai", "gemini"]
+}
+```
+
+:::note
+`disabled_providers` được ưu tiên hơn `enabled_providers`.
+:::
+
+Tùy chọn `disabled_providers` nhận một mảng các ID của nhà cung cấp. Khi một nhà cung cấp bị tắt:
+
+- Nó sẽ không được nạp, kể cả khi các biến môi trường đã được đặt.
+- Nó sẽ không được nạp, kể cả khi API key đã được cấu hình qua lệnh `/connect`.
+- Các mô hình của nhà cung cấp đó sẽ không xuất hiện trong danh sách chọn mô hình.
+
+---
+
+### Nhà cung cấp được bật
+
+Bạn có thể chỉ định một danh sách cho phép các nhà cung cấp thông qua tùy chọn `enabled_providers`. Khi được đặt, chỉ những nhà cung cấp được chỉ định sẽ được bật và tất cả những cái khác sẽ bị bỏ qua.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "enabled_providers": ["anthropic", "openai"]
+}
+```
+
+Điều này hữu ích khi bạn muốn giới hạn OpenCode chỉ dùng một vài nhà cung cấp cụ thể thay vì tắt từng nhà cung cấp một.
+
+:::note
+`disabled_providers` được ưu tiên hơn `enabled_providers`.
+:::
+
+Nếu một nhà cung cấp xuất hiện trong cả `enabled_providers` và `disabled_providers`, `disabled_providers` sẽ được ưu tiên để giữ tương thích ngược.
+
+---
+
+### Thử nghiệm
+
+Khóa `experimental` chứa các tùy chọn đang trong quá trình phát triển.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "experimental": {}
+}
+```
+
+:::caution
+Các tùy chọn thử nghiệm chưa ổn định. Chúng có thể thay đổi hoặc bị gỡ bỏ mà không cần báo trước.
+:::
+
+---
+
+## Biến
+
+Bạn có thể dùng phép thế biến trong các tệp cấu hình để tham chiếu biến môi trường và nội dung tệp.
+
+---
+
+### Biến môi trường
+
+Dùng `{env:VARIABLE_NAME}` để thay thế biến môi trường:
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "{env:OPENCODE_MODEL}",
+  "provider": {
+    "anthropic": {
+      "models": {},
+      "options": {
+        "apiKey": "{env:ANTHROPIC_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+Nếu biến môi trường chưa được đặt, nó sẽ được thay bằng một chuỗi rỗng.
+
+---
+
+### Tệp
+
+Dùng `{file:path/to/file}` để thay thế nội dung của một tệp:
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["./custom-instructions.md"],
+  "provider": {
+    "openai": {
+      "options": {
+        "apiKey": "{file:~/.secrets/openai-key}"
+      }
+    }
+  }
+}
+```
+
+Đường dẫn tệp có thể là:
+
+- Tương đối so với thư mục chứa tệp cấu hình
+- Hoặc đường dẫn tuyệt đối bắt đầu bằng `/` hoặc `~`
+
+Những thứ này hữu ích cho:
+
+- Giữ dữ liệu nhạy cảm như API key trong các tệp riêng biệt.
+- Đưa vào các tệp chỉ dẫn lớn mà không làm rối cấu hình của bạn.
+- Chia sẻ các đoạn cấu hình dùng chung giữa nhiều tệp cấu hình.

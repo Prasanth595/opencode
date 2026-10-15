@@ -1,0 +1,512 @@
+---
+title: Máy chủ MCP
+description: Thêm công cụ MCP cục bộ và từ xa.
+---
+
+Bạn có thể thêm công cụ bên ngoài vào OpenCode bằng _Model Context Protocol_, hay MCP. OpenCode hỗ trợ cả máy chủ cục bộ lẫn máy chủ từ xa.
+
+Sau khi thêm, các công cụ MCP sẽ tự động khả dụng cho LLM cùng với các công cụ tích hợp sẵn.
+
+---
+
+#### Lưu ý
+
+Khi bạn dùng một máy chủ MCP, nó làm tăng ngữ cảnh. Điều này có thể tăng nhanh chóng nếu bạn có nhiều công cụ. Vì vậy, chúng tôi khuyên bạn nên cân nhắc kỹ trước khi chọn máy chủ MCP nào.
+
+:::tip
+Máy chủ MCP làm tăng ngữ cảnh của bạn, vì vậy hãy cẩn thận với những máy chủ mà bạn bật.
+:::
+
+Một số máy chủ MCP, như máy chủ MCP của GitHub, có xu hướng thêm rất nhiều token và có thể dễ dàng vượt quá giới hạn ngữ cảnh.
+
+---
+
+## Bật
+
+Bạn có thể định nghĩa máy chủ MCP trong [OpenCode Config](https://opencode.ai/docs/config/) dưới khoá `mcp`. Hãy thêm mỗi MCP với một tên duy nhất. Bạn có thể gọi tới MCP đó theo tên khi nhắc LLM.
+
+```jsonc title="opencode.jsonc" {6}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "name-of-mcp-server": {
+      // ...
+      "enabled": true,
+    },
+    "name-of-other-mcp-server": {
+      // ...
+    },
+  },
+}
+```
+
+Bạn cũng có thể tắt một máy chủ bằng cách đặt `enabled` thành `false`. Điều này hữu ích nếu bạn muốn tạm thời tắt một máy chủ mà không cần xoá nó khỏi cấu hình.
+
+---
+
+### Ghi đè giá trị mặc định từ xa
+
+Các tổ chức có thể cung cấp máy chủ MCP mặc định qua endpoint `.well-known/opencode` của họ. Những máy chủ này có thể bị tắt mặc định, cho phép người dùng chọn bật những máy chủ họ cần.
+
+Để bật một máy chủ cụ thể từ cấu hình từ xa của tổ chức, hãy thêm nó vào cấu hình cục bộ với `enabled: true`:
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "jira": {
+      "type": "remote",
+      "url": "https://jira.example.com/mcp",
+      "enabled": true
+    }
+  }
+}
+```
+
+Giá trị trong cấu hình cục bộ của bạn sẽ ghi đè giá trị mặc định từ xa. Xem [thứ tự ưu tiên cấu hình](/docs/config#precedence-order) để biết thêm chi tiết.
+
+---
+
+## Cục bộ
+
+Thêm máy chủ MCP cục bộ bằng cách đặt `type` thành `"local"` bên trong đối tượng MCP.
+
+```jsonc title="opencode.jsonc" {15}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "my-local-mcp-server": {
+      "type": "local",
+      // Or ["bun", "x", "my-mcp-command"]
+      "command": ["npx", "-y", "my-mcp-command"],
+      "enabled": true,
+      "environment": {
+        "MY_ENV_VAR": "my_env_var_value",
+      },
+    },
+  },
+}
+```
+
+Lệnh là cách khởi động máy chủ MCP cục bộ. Bạn cũng có thể truyền kèm một danh sách biến môi trường.
+
+Ví dụ, đây là cách bạn thêm máy chủ MCP thử nghiệm [`@modelcontextprotocol/server-everything`](https://www.npmjs.com/package/@modelcontextprotocol/server-everything).
+
+```jsonc title="opencode.jsonc"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "mcp_everything": {
+      "type": "local",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-everything"],
+    },
+  },
+}
+```
+
+Và để dùng nó, bạn có thể thêm `use the mcp_everything tool` vào các lời nhắc của mình.
+
+```txt "mcp_everything"
+use the mcp_everything tool to add the number 3 and 4
+```
+
+---
+
+#### Tuỳ chọn
+
+Dưới đây là toàn bộ các tuỳ chọn để cấu hình một máy chủ MCP cục bộ.
+
+| Option        | Type    | Required | Mô tả                                                                                                   |
+| ------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------- |
+| `type`        | String  | Y        | Loại kết nối máy chủ MCP, phải là `"local"`.                                                            |
+| `command`     | Array   | Y        | Lệnh và các đối số để chạy máy chủ MCP.                                                                 |
+| `cwd`         | String  |          | Thư mục làm việc của tiến trình máy chủ MCP. Đường dẫn tương đối được phân giải từ không gian làm việc. |
+| `environment` | Object  |          | Các biến môi trường cần đặt khi chạy máy chủ.                                                           |
+| `enabled`     | Boolean |          | Bật hoặc tắt máy chủ MCP khi khởi động.                                                                 |
+| `timeout`     | Number  |          | Thời gian chờ (ms) để lấy danh sách công cụ từ máy chủ MCP. Mặc định là 5000 (5 giây).                  |
+
+---
+
+## Từ xa
+
+Thêm máy chủ MCP từ xa bằng cách đặt `type` thành `"remote"`.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "my-remote-mcp": {
+      "type": "remote",
+      "url": "https://my-mcp-server.com",
+      "enabled": true,
+      "headers": {
+        "Authorization": "Bearer MY_API_KEY"
+      }
+    }
+  }
+}
+```
+
+`url` là URL của máy chủ MCP từ xa, và với tuỳ chọn `headers` bạn có thể truyền một danh sách header.
+
+---
+
+#### Tuỳ chọn
+
+| Option    | Type    | Required | Mô tả                                                                                  |
+| --------- | ------- | -------- | -------------------------------------------------------------------------------------- |
+| `type`    | String  | Y        | Loại kết nối máy chủ MCP, phải là `"remote"`.                                          |
+| `url`     | String  | Y        | URL của máy chủ MCP từ xa.                                                             |
+| `enabled` | Boolean |          | Bật hoặc tắt máy chủ MCP khi khởi động.                                                |
+| `headers` | Object  |          | Các header gửi kèm request.                                                            |
+| `oauth`   | Object  |          | Cấu hình xác thực OAuth. Xem mục [OAuth](#oauth) bên dưới.                             |
+| `timeout` | Number  |          | Thời gian chờ (ms) để lấy danh sách công cụ từ máy chủ MCP. Mặc định là 5000 (5 giây). |
+
+---
+
+## OAuth
+
+OpenCode tự động xử lý việc xác thực OAuth cho máy chủ MCP từ xa. Khi một máy chủ yêu cầu xác thực, OpenCode sẽ:
+
+1. Phát hiện response 401 và bắt đầu luồng OAuth
+2. Dùng **Dynamic Client Registration (RFC 7591)** nếu máy chủ hỗ trợ
+3. Lưu trữ token một cách an toàn cho các request sau
+
+---
+
+### Tự động
+
+Với hầu hết máy chủ MCP có hỗ trợ OAuth, bạn không cần cấu hình đặc biệt. Chỉ cần cấu hình máy chủ từ xa:
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "my-oauth-server": {
+      "type": "remote",
+      "url": "https://mcp.example.com/mcp"
+    }
+  }
+}
+```
+
+Nếu máy chủ yêu cầu xác thực, OpenCode sẽ yêu cầu bạn đăng nhập khi bạn lần đầu sử dụng nó. Nếu không, bạn có thể [kích hoạt luồng thủ công](#authenticating) bằng `opencode mcp auth <server-name>`.
+
+---
+
+### Đăng ký trước
+
+Nếu bạn có client credentials từ nhà cung cấp máy chủ MCP, bạn có thể cấu hình chúng:
+
+```json title="opencode.json" {7-11}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "my-oauth-server": {
+      "type": "remote",
+      "url": "https://mcp.example.com/mcp",
+      "oauth": {
+        "clientId": "{env:MY_MCP_CLIENT_ID}",
+        "clientSecret": "{env:MY_MCP_CLIENT_SECRET}",
+        "scope": "tools:read tools:execute"
+      }
+    }
+  }
+}
+```
+
+---
+
+### Xác thực
+
+Bạn có thể kích hoạt xác thực theo cách thủ công hoặc quản lý thông tin đăng nhập.
+
+Xác thực với một máy chủ MCP cụ thể:
+
+```bash
+opencode mcp auth my-oauth-server
+```
+
+Liệt kê tất cả máy chủ MCP cùng trạng thái xác thực:
+
+```bash
+opencode mcp list
+```
+
+Xoá thông tin đăng nhập đã lưu:
+
+```bash
+opencode mcp logout my-oauth-server
+```
+
+Lệnh `mcp auth` sẽ mở trình duyệt của bạn để cấp quyền. Sau khi bạn cấp quyền, OpenCode sẽ lưu token một cách an toàn trong `~/.local/share/opencode/mcp-auth.json`.
+
+---
+
+#### Tắt OAuth
+
+Nếu bạn muốn tắt OAuth tự động cho một máy chủ (ví dụ với các máy chủ dùng API key), hãy đặt `oauth` thành `false`:
+
+```json title="opencode.json" {7}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "my-api-key-server": {
+      "type": "remote",
+      "url": "https://mcp.example.com/mcp",
+      "oauth": false,
+      "headers": {
+        "Authorization": "Bearer {env:MY_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+---
+
+#### Tuỳ chọn OAuth
+
+| Option         | Type            | Mô tả                                                                       |
+| -------------- | --------------- | --------------------------------------------------------------------------- |
+| `oauth`        | Object \| false | Đối tượng cấu hình OAuth, hoặc `false` để tắt việc tự động phát hiện OAuth. |
+| `clientId`     | String          | Client ID của OAuth. Nếu không được cung cấp, sẽ thử đăng ký client động.   |
+| `clientSecret` | String          | Client secret của OAuth, nếu máy chủ cấp quyền yêu cầu.                     |
+| `scope`        | String          | Các scope OAuth được yêu cầu trong quá trình cấp quyền.                     |
+
+#### Gỡ lỗi
+
+Nếu một máy chủ MCP từ xa không xác thực được, bạn có thể chẩn đoán sự cố bằng:
+
+```bash
+# View auth status for all OAuth-capable servers
+opencode mcp auth list
+
+# Debug connection and OAuth flow for a specific server
+opencode mcp debug my-oauth-server
+```
+
+Lệnh `mcp debug` hiển thị trạng thái xác thực hiện tại, kiểm tra kết nối HTTP và thử luồng khám phá OAuth.
+
+---
+
+## Quản lý
+
+Các công cụ từ máy chủ MCP của bạn khả dụng trong OpenCode cùng với các công cụ tích hợp sẵn. Bạn có thể quản lý chúng thông qua cấu hình OpenCode như bất kỳ công cụ nào khác.
+
+---
+
+### Toàn cục
+
+Điều này có nghĩa là bạn có thể bật hoặc tắt chúng trên toàn cục.
+
+```json title="opencode.json" {14}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "my-mcp-foo": {
+      "type": "local",
+      "command": ["bun", "x", "my-mcp-command-foo"]
+    },
+    "my-mcp-bar": {
+      "type": "local",
+      "command": ["bun", "x", "my-mcp-command-bar"]
+    }
+  },
+  "tools": {
+    "my-mcp-foo": false
+  }
+}
+```
+
+Bạn cũng có thể dùng một mẫu glob để tắt tất cả các công cụ MCP khớp.
+
+```json title="opencode.json" {14}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "my-mcp-foo": {
+      "type": "local",
+      "command": ["bun", "x", "my-mcp-command-foo"]
+    },
+    "my-mcp-bar": {
+      "type": "local",
+      "command": ["bun", "x", "my-mcp-command-bar"]
+    }
+  },
+  "tools": {
+    "my-mcp*": false
+  }
+}
+```
+
+Ở đây bạn dùng mẫu glob `my-mcp*` để tắt tất cả các công cụ MCP khớp.
+
+---
+
+### Theo từng tác nhân
+
+Nếu bạn có rất nhiều máy chủ MCP, bạn có thể chỉ bật chúng theo từng tác nhân và tắt chúng trên toàn cục. Để làm điều đó:
+
+1. Tắt nó như một công cụ trên toàn cục.
+2. Trong [cấu hình tác nhân](/docs/agents#tools) của bạn, bật máy chủ MCP như một công cụ.
+
+```json title="opencode.json" {11, 14-18}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "my-mcp": {
+      "type": "local",
+      "command": ["bun", "x", "my-mcp-command"],
+      "enabled": true
+    }
+  },
+  "tools": {
+    "my-mcp*": false
+  },
+  "agent": {
+    "my-agent": {
+      "tools": {
+        "my-mcp*": true
+      }
+    }
+  }
+}
+```
+
+---
+
+#### Mẫu glob
+
+Mẫu glob sử dụng các mẫu globbing regex đơn giản:
+
+- `*` khớp với không hoặc nhiều ký tự bất kỳ (ví dụ, `"my-mcp*"` khớp với `my-mcp_search`, `my-mcp_list`, v.v.)
+- `?` khớp với đúng một ký tự
+- Mọi ký tự khác đều được khớp theo nghĩa đen
+
+:::note
+Các công cụ của máy chủ MCP được đăng ký với tiền tố là tên máy chủ, vì vậy để tắt tất cả công cụ của một máy chủ, bạn chỉ cần dùng:
+
+```
+"mymcpservername_*": false
+```
+
+:::
+
+---
+
+## Ví dụ
+
+Dưới đây là các ví dụ về một vài máy chủ MCP phổ biến. Bạn có thể gửi PR nếu muốn tài liệu hoá các máy chủ khác.
+
+---
+
+### Sentry
+
+Thêm [máy chủ MCP của Sentry](https://mcp.sentry.dev) để tương tác với các project và issue của Sentry.
+
+```json title="opencode.json" {4-8}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "sentry": {
+      "type": "remote",
+      "url": "https://mcp.sentry.dev/mcp",
+      "oauth": {}
+    }
+  }
+}
+```
+
+Sau khi thêm cấu hình, hãy xác thực với Sentry:
+
+```bash
+opencode mcp auth sentry
+```
+
+Thao tác này sẽ mở một cửa sổ trình duyệt để hoàn tất luồng OAuth và kết nối OpenCode với tài khoản Sentry của bạn.
+
+Sau khi xác thực, bạn có thể dùng các công cụ Sentry trong lời nhắc để truy vấn issue, project và dữ liệu lỗi.
+
+```txt "use sentry"
+Show me the latest unresolved issues in my project. use sentry
+```
+
+---
+
+### Context7
+
+Thêm [máy chủ MCP của Context7](https://github.com/upstash/context7) để tìm kiếm trong tài liệu.
+
+```json title="opencode.json" {4-7}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp"
+    }
+  }
+}
+```
+
+Nếu bạn đã đăng ký tài khoản miễn phí, bạn có thể dùng API key của mình để có hạn mức cao hơn.
+
+```json title="opencode.json" {7-9}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp",
+      "headers": {
+        "CONTEXT7_API_KEY": "{env:CONTEXT7_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+Ở đây chúng ta giả định rằng bạn đã đặt biến môi trường `CONTEXT7_API_KEY`.
+
+Thêm `use context7` vào các lời nhắc của bạn để dùng máy chủ MCP Context7.
+
+```txt "use context7"
+Configure a Cloudflare Worker script to cache JSON API responses for five minutes. use context7
+```
+
+Hoặc thay thế, bạn có thể thêm nội dung tương tự vào [AGENTS.md](/docs/rules/) của mình.
+
+```md title="AGENTS.md"
+When you need to search docs, use `context7` tools.
+```
+
+---
+
+### Grep by Vercel
+
+Thêm máy chủ MCP [Grep by Vercel](https://grep.app) để tìm kiếm trong các đoạn mã trên GitHub.
+
+```json title="opencode.json" {4-7}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "gh_grep": {
+      "type": "remote",
+      "url": "https://mcp.grep.app"
+    }
+  }
+}
+```
+
+Vì chúng ta đã đặt tên máy chủ MCP là `gh_grep`, bạn có thể thêm `use the gh_grep tool` vào các lời nhắc để tác nhân sử dụng nó.
+
+```txt "use the gh_grep tool"
+What's the right way to set a custom domain in an SST Astro component? use the gh_grep tool
+```
+
+Hoặc thay thế, bạn có thể thêm nội dung tương tự vào [AGENTS.md](/docs/rules/) của mình.
+
+```md title="AGENTS.md"
+If you are unsure how to do something, use `gh_grep` to search code examples from GitHub.
+```

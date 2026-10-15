@@ -1,0 +1,137 @@
+---
+title: Chính sách
+description: Kiểm soát những tài nguyên đã cấu hình mà OpenCode được phép sử dụng.
+---
+
+Chính sách kiểm soát việc OpenCode có được phép thực hiện một hành động trên một tài nguyên được đặt tên hay không. Tính năng này đang ở trạng thái thử nghiệm và được cấu hình bằng mảng `experimental.policies` trong `opencode.json`.
+
+Chính sách khác với [quyền](/docs/permissions). Quyền kiểm soát những gì tool có thể làm trong một phiên, còn chính sách kiểm soát việc OpenCode có được phép dùng một tài nguyên như một nhà cung cấp LLM hay không.
+
+---
+
+## Cấu hình
+
+Mỗi câu chính sách có ba trường:
+
+- `effect` - Hoặc `"allow"` hoặc `"deny"`.
+- `action` - Thao tác được kiểm soát.
+- `resource` - ID tài nguyên hoặc mẫu ký tự đại diện mà câu đó áp dụng.
+
+Ví dụ, từ chối việc dùng nhà cung cấp `openai`:
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "experimental": {
+    "policies": [
+      {
+        "effect": "deny",
+        "action": "provider.use",
+        "resource": "openai"
+      }
+    ]
+  }
+}
+```
+
+Một nhà cung cấp bị chính sách từ chối sẽ không khả dụng để chọn mô hình hay sử dụng mô hình, ngay cả khi nó có thông tin xác thực hoặc đã được cấu hình đúng cách.
+
+---
+
+## Chính sách khả dụng
+
+OpenCode hiện hỗ trợ một hành động chính sách:
+
+| Hành động      | Tài nguyên                      | Mô tả                                                 |
+| -------------- | ------------------------------- | ----------------------------------------------------- |
+| `provider.use` | ID nhà cung cấp, ví dụ `openai` | Cho phép hoặc từ chối việc dùng một nhà cung cấp LLM. |
+
+Có thể sẽ có thêm các hành động chính sách khác trong tương lai.
+
+---
+
+## Khớp
+
+Trường `resource` hỗ trợ việc khớp bằng ký tự đại diện. Dùng `*` để khớp không hoặc nhiều ký tự và `?` để khớp một ký tự.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "experimental": {
+    "policies": [
+      {
+        "effect": "deny",
+        "action": "provider.use",
+        "resource": "company-*"
+      }
+    ]
+  }
+}
+```
+
+Điều này từ chối các nhà cung cấp như `company-us` và `company-eu`.
+
+---
+
+## Thứ tự quy tắc
+
+Khi có nhiều câu cùng khớp, câu khớp sau cùng sẽ thắng. Hãy đặt các quy tắc rộng trước, rồi đến các ngoại lệ cụ thể hơn sau đó.
+
+Ví dụ, chỉ cho phép Anthropic:
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "experimental": {
+    "policies": [
+      {
+        "effect": "deny",
+        "action": "provider.use",
+        "resource": "*"
+      },
+      {
+        "effect": "allow",
+        "action": "provider.use",
+        "resource": "anthropic"
+      }
+    ]
+  }
+}
+```
+
+Nếu không có chính sách nào khớp với một nhà cung cấp, việc dùng nhà cung cấp đó được phép theo mặc định.
+
+Chính sách có thể được đặt trong cả cấu hình toàn cục và cấu hình dự án của bạn. Nếu chính sách từ cả hai vị trí cùng khớp với một nhà cung cấp, chính sách toàn cục của bạn sẽ được ưu tiên hơn chính sách của dự án. Điều này ngăn một kho không bật lại được nhà cung cấp mà bạn đã từ chối ở phạm vi toàn cục.
+
+---
+
+## Danh sách nhà cung cấp
+
+Hãy dùng chính sách thay cho các cài đặt `disabled_providers` và `enabled_providers` cũ khi kiểm soát quyền truy cập nhà cung cấp.
+
+Để thay thế `disabled_providers`:
+
+```json title="opencode.json"
+{
+  "experimental": {
+    "policies": [
+      { "effect": "deny", "action": "provider.use", "resource": "openai" },
+      { "effect": "deny", "action": "provider.use", "resource": "google" }
+    ]
+  }
+}
+```
+
+Để thay thế `enabled_providers`, hãy từ chối mọi nhà cung cấp trước rồi cho phép các nhà cung cấp đã chọn sau đó:
+
+```json title="opencode.json"
+{
+  "experimental": {
+    "policies": [
+      { "effect": "deny", "action": "provider.use", "resource": "*" },
+      { "effect": "allow", "action": "provider.use", "resource": "anthropic" },
+      { "effect": "allow", "action": "provider.use", "resource": "openai" }
+    ]
+  }
+}
+```

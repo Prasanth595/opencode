@@ -1,0 +1,314 @@
+---
+title: Khắc phục sự cố
+description: Những sự cố thường gặp và cách khắc phục.
+---
+
+Để gỡ lỗi các sự cố với OpenCode, trước tiên hãy kiểm tra log và dữ liệu cục bộ mà nó lưu trên đĩa.
+
+---
+
+## Log
+
+Các tệp log được ghi vào:
+
+- **macOS/Linux**: `~/.local/share/opencode/log/`
+- **Windows**: Nhấn `WIN+R` và dán `%USERPROFILE%\.local\share\opencode\log`
+
+Các tệp log được đặt tên theo dấu thời gian (ví dụ `2025-01-09T123456.log`) và 10 tệp log mới nhất được giữ lại.
+
+Bạn có thể đặt mức độ log bằng tuỳ chọn dòng lệnh `--log-level` để có thông tin gỡ lỗi chi tiết hơn. Ví dụ, `opencode --log-level DEBUG`.
+
+---
+
+## Lưu trữ
+
+opencode lưu dữ liệu phiên cùng các dữ liệu ứng dụng khác trên đĩa tại:
+
+- **macOS/Linux**: `~/.local/share/opencode/`
+- **Windows**: Nhấn `WIN+R` và dán `%USERPROFILE%\.local\share\opencode`
+
+Thư mục này chứa:
+
+- `auth.json` - Dữ liệu xác thực như API key, token OAuth
+- `log/` - Log ứng dụng
+- `project/` - Dữ liệu riêng của project như dữ liệu phiên và tin nhắn
+  - Nếu project nằm trong một Git repo, nó được lưu tại `./<project-slug>/storage/`
+  - Nếu không phải Git repo, nó được lưu tại `./global/storage/`
+
+---
+
+## Gỡ cài đặt
+
+Để gỡ cài đặt OpenCode CLI cùng các tệp liên quan, hãy chạy:
+
+```bash
+opencode uninstall
+```
+
+Lệnh này hiển thị những gì sẽ bị xoá và yêu cầu bạn xác nhận. Xem [tài liệu CLI](/docs/cli#uninstall) để biết các tuỳ chọn giữ lại cấu hình hoặc dữ liệu ứng dụng.
+
+Để gỡ cài đặt OpenCode Desktop, hãy gỡ cài đặt ứng dụng thông qua các công cụ quản lý ứng dụng của hệ điều hành.
+
+---
+
+## Ứng dụng desktop
+
+OpenCode Desktop chạy một máy chủ OpenCode cục bộ (sidecar `opencode-cli`) ở chế độ nền. Hầu hết các sự cố là do một tiện ích mở rộng bị lỗi, bộ nhớ đệm bị hỏng hoặc một cài đặt máy chủ sai.
+
+### Kiểm tra nhanh
+
+- Thoát hoàn toàn rồi mở lại ứng dụng.
+- Nếu ứng dụng hiển thị màn hình lỗi, hãy nhấn **Restart** và sao chép chi tiết lỗi.
+- Chỉ macOS: menu `OpenCode` -> **Reload Webview** (giúp ích nếu UI trống hoặc bị đóng băng).
+
+---
+
+### Tắt tiện ích mở rộng
+
+Nếu ứng dụng desktop bị treo khi khởi động, bị treo hoặc hoạt động bất thường, hãy bắt đầu bằng cách tắt các tiện ích mở rộng.
+
+#### Kiểm tra cấu hình toàn cục
+
+Mở tệp cấu hình toàn cục của bạn và tìm khoá `plugin`.
+
+- **macOS/Linux**: `~/.config/opencode/opencode.jsonc` (hoặc `~/.config/opencode/opencode.json`)
+- **macOS/Linux** (bản cài đặt cũ): `~/.local/share/opencode/opencode.jsonc`
+- **Windows**: Nhấn `WIN+R` và dán `%USERPROFILE%\.config\opencode\opencode.jsonc`
+
+Nếu bạn đã cấu hình tiện ích mở rộng, hãy tạm thời tắt chúng bằng cách xoá khoá hoặc đặt thành mảng rỗng:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [],
+}
+```
+
+#### Kiểm tra các thư mục tiện ích mở rộng
+
+OpenCode cũng có thể nạp tiện ích mở rộng cục bộ từ đĩa. Hãy tạm thời di chuyển chúng ra khỏi chỗ (hoặc đổi tên thư mục) rồi khởi động lại ứng dụng desktop:
+
+- **Tiện ích mở rộng toàn cục**
+  - **macOS/Linux**: `~/.config/opencode/plugins/`
+  - **Windows**: Nhấn `WIN+R` và dán `%USERPROFILE%\.config\opencode\plugins`
+- **Tiện ích mở rộng của project** (chỉ khi bạn dùng cấu hình riêng cho từng project)
+  - `<your-project>/.opencode/plugins/`
+
+Nếu ứng dụng hoạt động trở lại, hãy bật lại từng tiện ích mở rộng một để tìm ra tiện ích nào gây ra sự cố.
+
+---
+
+### Xoá bộ nhớ đệm
+
+Nếu việc tắt tiện ích mở rộng không giúp ích (hoặc một tiện ích mở rộng bị kẹt khi cài đặt), hãy xoá bộ nhớ đệm để OpenCode có thể dựng lại.
+
+1. Thoát hoàn toàn OpenCode Desktop.
+2. Xoá thư mục bộ nhớ đệm:
+
+- **macOS**: Finder -> `Cmd+Shift+G` -> dán `~/.cache/opencode`
+- **Linux**: xoá `~/.cache/opencode` (hoặc chạy `rm -rf ~/.cache/opencode`)
+- **Windows**: Nhấn `WIN+R` và dán `%USERPROFILE%\.cache\opencode`
+
+3. Khởi động lại OpenCode Desktop.
+
+---
+
+### Khắc phục sự cố kết nối máy chủ
+
+OpenCode Desktop có thể tự khởi động máy chủ cục bộ của riêng nó (mặc định) hoặc kết nối tới một URL máy chủ mà bạn đã cấu hình.
+
+Nếu bạn thấy hộp thoại **"Connection Failed"** (hoặc ứng dụng không vượt qua được màn hình khởi động), hãy kiểm tra xem có URL máy chủ tuỳ chỉnh nào không.
+
+#### Xoá URL máy chủ mặc định của desktop
+
+Từ màn hình Home, hãy nhấn vào tên máy chủ (kèm chấm trạng thái) để mở bộ chọn máy chủ. Trong phần **Default server**, hãy nhấn **Clear**.
+
+#### Xoá `server.port` / `server.hostname` khỏi cấu hình
+
+Nếu `opencode.json(c)` của bạn có mục `server`, hãy tạm thời xoá nó rồi khởi động lại ứng dụng desktop.
+
+#### Kiểm tra biến môi trường
+
+Nếu bạn đã đặt `OPENCODE_PORT` trong môi trường của mình, ứng dụng desktop sẽ cố dùng cổng đó cho máy chủ cục bộ.
+
+- Bỏ đặt `OPENCODE_PORT` (hoặc chọn một cổng trống) rồi khởi động lại.
+
+---
+
+### Linux: vấn đề Wayland / X11
+
+Trên Linux, một số thiết lập Wayland có thể gây ra cửa sổ trống hoặc lỗi compositor.
+
+- Nếu bạn đang dùng Wayland mà ứng dụng bị trống hoặc treo, hãy thử khởi chạy với `OC_ALLOW_WAYLAND=1`.
+- Nếu điều đó làm mọi thứ tệ hơn, hãy bỏ nó đi và thử khởi chạy dưới một phiên X11.
+
+---
+
+### Windows: runtime WebView2
+
+Trên Windows, OpenCode Desktop yêu cầu Microsoft Edge **WebView2 Runtime**. Nếu ứng dụng mở ra với cửa sổ trống hoặc không khởi động được, hãy cài đặt/cập nhật WebView2 rồi thử lại.
+
+---
+
+### Windows: vấn đề hiệu năng chung
+
+Nếu bạn gặp hiệu năng chậm, vấn đề truy cập tệp hoặc sự cố terminal trên Windows, hãy thử dùng [WSL (Windows Subsystem for Linux)](/docs/windows-wsl). WSL cung cấp một môi trường Linux hoạt động tốt hơn với các tính năng của OpenCode.
+
+---
+
+### Thông báo không hiển thị
+
+OpenCode Desktop chỉ hiển thị thông báo hệ thống khi:
+
+- thông báo đã được bật cho OpenCode trong cài đặt hệ điều hành của bạn, và
+- cửa sổ ứng dụng không được focus.
+
+---
+
+### Đặt lại dữ liệu lưu trữ của ứng dụng desktop (phương án cuối)
+
+Nếu ứng dụng không khởi động được và bạn không thể xoá cài đặt từ bên trong UI, hãy đặt lại trạng thái đã lưu của ứng dụng desktop.
+
+1. Thoát OpenCode Desktop.
+2. Tìm và xoá các tệp sau (chúng nằm trong thư mục dữ liệu ứng dụng của OpenCode Desktop):
+
+- `opencode.settings.dat` (URL máy chủ mặc định của desktop)
+- `opencode.global.dat` và `opencode.workspace.*.dat` (trạng thái UI như các máy chủ/project gần đây)
+
+Để nhanh chóng tìm thư mục đó:
+
+- **macOS**: Finder -> `Cmd+Shift+G` -> `~/Library/Application Support` (sau đó tìm các tên tệp ở trên)
+- **Linux**: tìm trong `~/.local/share` với các tên tệp ở trên
+- **Windows**: Nhấn `WIN+R` -> `%APPDATA%` (sau đó tìm các tên tệp ở trên)
+
+---
+
+## Nhận trợ giúp
+
+Nếu bạn gặp sự cố với OpenCode:
+
+1. **Báo cáo sự cố trên GitHub**
+
+   Cách tốt nhất để báo lỗi hoặc yêu cầu tính năng là qua GitHub repo của chúng tôi:
+
+   [**github.com/anomalyco/opencode/issues**](https://github.com/anomalyco/opencode/issues)
+
+   Trước khi tạo issue mới, hãy tìm kiếm các issue hiện có để xem vấn đề của bạn đã được báo chưa.
+
+2. **Tham gia Discord của chúng tôi**
+
+   Để được trợ giúp theo thời gian thực và thảo luận cùng cộng đồng, hãy tham gia máy chủ Discord của chúng tôi:
+
+   [**opencode.ai/discord**](https://opencode.ai/discord)
+
+---
+
+## Sự cố thường gặp
+
+Dưới đây là một số sự cố thường gặp và cách khắc phục.
+
+---
+
+### OpenCode không khởi động
+
+1. Kiểm tra log để tìm thông báo lỗi
+2. Thử chạy với `--print-logs` để xem kết quả trong terminal
+3. Đảm bảo bạn đang dùng phiên bản mới nhất với `opencode upgrade`
+
+---
+
+### Sự cố xác thực
+
+1. Thử xác thực lại bằng lệnh `/connect` trong TUI
+2. Kiểm tra xem API key của bạn có hợp lệ không
+3. Đảm bảo mạng của bạn cho phép kết nối tới API của nhà cung cấp
+
+---
+
+### Mô hình không khả dụng
+
+1. Kiểm tra xem bạn đã xác thực với nhà cung cấp chưa
+2. Xác minh tên mô hình trong cấu hình của bạn là chính xác
+3. Một số mô hình có thể yêu cầu quyền truy cập hoặc gói đăng ký cụ thể
+
+Nếu bạn gặp `ProviderModelNotFoundError`, rất có thể bạn đang tham chiếu sai
+mô hình ở đâu đó.
+Các mô hình nên được tham chiếu như sau: `<providerId>/<modelId>`
+
+Ví dụ:
+
+- `openai/gpt-4.1`
+- `openrouter/google/gemini-2.5-flash`
+- `opencode/kimi-k2`
+
+Để biết bạn có quyền truy cập vào những mô hình nào, hãy chạy `opencode models`
+
+---
+
+### ProviderInitError
+
+Nếu bạn gặp ProviderInitError, rất có thể cấu hình của bạn không hợp lệ hoặc bị hỏng.
+
+Để khắc phục:
+
+1. Trước tiên, hãy xác minh nhà cung cấp của bạn được thiết lập đúng bằng cách làm theo [hướng dẫn về nhà cung cấp](/docs/providers)
+2. Nếu sự cố vẫn tiếp diễn, hãy thử xoá cấu hình đã lưu:
+
+   ```bash
+   rm -rf ~/.local/share/opencode
+   ```
+
+   Trên Windows, hãy nhấn `WIN+R` và xoá: `%USERPROFILE%\.local\share\opencode`
+
+3. Xác thực lại với nhà cung cấp của bạn bằng lệnh `/connect` trong TUI.
+
+---
+
+### AI_APICallError và sự cố gói nhà cung cấp
+
+Nếu bạn gặp lỗi gọi API, điều này có thể do các gói nhà cung cấp đã lỗi thời. opencode sẽ cài đặt động các gói nhà cung cấp (OpenAI, Anthropic, Google, v.v.) khi cần và lưu chúng vào bộ nhớ đệm cục bộ.
+
+Để khắc phục sự cố với gói nhà cung cấp:
+
+1. Xoá bộ nhớ đệm gói nhà cung cấp:
+
+   ```bash
+   rm -rf ~/.cache/opencode
+   ```
+
+   Trên Windows, hãy nhấn `WIN+R` và xoá: `%USERPROFILE%\.cache\opencode`
+
+2. Khởi động lại opencode để cài lại các gói nhà cung cấp mới nhất
+
+Thao tác này buộc opencode tải các phiên bản mới nhất của gói nhà cung cấp, điều thường giải quyết các sự cố tương thích với tham số mô hình và thay đổi API.
+
+---
+
+### Copy/paste không hoạt động trên Linux
+
+Người dùng Linux cần cài đặt một trong các tiện ích clipboard sau để copy/paste hoạt động:
+
+**Cho hệ thống X11:**
+
+```bash
+apt install -y xclip
+# or
+apt install -y xsel
+```
+
+**Cho hệ thống Wayland:**
+
+```bash
+apt install -y wl-clipboard
+```
+
+**Cho môi trường không có giao diện:**
+
+```bash
+apt install -y xvfb
+# and run:
+Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+export DISPLAY=:99.0
+```
+
+opencode sẽ phát hiện nếu bạn đang dùng Wayland và ưu tiên `wl-clipboard`, nếu không nó sẽ thử tìm các công cụ clipboard theo thứ tự: `xclip` và `xsel`.

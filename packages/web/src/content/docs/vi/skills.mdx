@@ -1,0 +1,236 @@
+---
+title: Kỹ năng tác nhân
+description: Định nghĩa hành vi có thể tái sử dụng thông qua các định nghĩa SKILL.md
+---
+
+Kỹ năng tác nhân cho phép OpenCode phát hiện các hướng dẫn có thể tái sử dụng từ repo hoặc thư mục home của bạn.
+Kỹ năng được tải theo yêu cầu qua tool `skill` gốc — các tác nhân thấy danh sách kỹ năng khả dụng và có thể tải toàn bộ nội dung khi cần.
+
+---
+
+## Đặt tệp
+
+Tạo một thư mục cho mỗi tên kỹ năng và đặt một `SKILL.md` bên trong.
+OpenCode tìm kiếm ở các vị trí sau:
+
+- Cấu hình dự án: `.opencode/skills/<name>/SKILL.md`
+- Cấu hình toàn cục: `~/.config/opencode/skills/<name>/SKILL.md`
+- Dự án tương thích Claude: `.claude/skills/<name>/SKILL.md`
+- Toàn cục tương thích Claude: `~/.claude/skills/<name>/SKILL.md`
+- Dự án tương thích agent: `.agents/skills/<name>/SKILL.md`
+- Toàn cục tương thích agent: `~/.agents/skills/<name>/SKILL.md`
+
+---
+
+## Hiểu cách phát hiện
+
+Với các đường dẫn cục bộ trong dự án, OpenCode đi ngược lên từ thư mục làm việc hiện tại của bạn cho đến khi tới git worktree.
+Trong quá trình đó, nó tải mọi `skills/*/SKILL.md` khớp trong `.opencode/` cùng mọi `.claude/skills/*/SKILL.md` hoặc `.agents/skills/*/SKILL.md` khớp.
+
+Các định nghĩa toàn cục cũng được tải từ `~/.config/opencode/skills/*/SKILL.md`, `~/.claude/skills/*/SKILL.md` và `~/.agents/skills/*/SKILL.md`.
+
+---
+
+## Viết frontmatter
+
+Mỗi `SKILL.md` phải bắt đầu bằng frontmatter YAML.
+Hãy dùng các trường Agent Skills sau:
+
+- `name` (bắt buộc)
+- `description` (bắt buộc)
+- `license` (tùy chọn)
+- `compatibility` (tùy chọn)
+- `metadata` (tùy chọn, bản đồ chuỗi sang chuỗi)
+
+Đặt hành vi riêng của OpenCode trong `metadata` thay vì thêm các trường cấp cao nhất tùy chỉnh.
+
+OpenCode nhận biết các khóa `metadata` tùy chọn sau:
+
+- `opencode/slash`: đặt là `"true"` để hiển thị kỹ năng dưới dạng lệnh `/name` trong TUI
+- `opencode/autoinvoke`: đặt là `"false"` để giữ kỹ năng khỏi hướng dẫn tự động chọn mà mô hình nhìn thấy
+
+Đặc tả Agent Skills định nghĩa giá trị `metadata` là chuỗi, nên các giá trị trong dấu nháy là dạng dễ mang theo nhất.
+OpenCode cũng chấp nhận các giá trị boolean YAML như `opencode/slash: true` và `opencode/autoinvoke: false`.
+
+---
+
+## Kiểm tra tên
+
+`name` phải:
+
+- Dài từ 1–64 ký tự
+- Là chữ thường và số, phân tách bằng một dấu gạch ngang
+- Không bắt đầu hoặc kết thúc bằng `-`
+- Không chứa hai dấu `--` liên tiếp
+- Khớp với tên thư mục chứa `SKILL.md`
+
+Regex tương đương:
+
+```text
+^[a-z0-9]+(-[a-z0-9]+)*$
+```
+
+---
+
+## Tuân thủ quy tắc độ dài
+
+`description` phải dài từ 1-1024 ký tự.
+Hãy viết đủ cụ thể để tác nhân có thể chọn đúng.
+
+---
+
+## Dùng một ví dụ
+
+Tạo `.opencode/skills/git-release/SKILL.md` như sau:
+
+```markdown
+---
+name: git-release
+description: Create consistent releases and changelogs
+license: MIT
+compatibility: opencode
+metadata:
+  audience: maintainers
+  workflow: github
+  opencode/slash: "true"
+  opencode/autoinvoke: "false"
+---
+
+## What I do
+
+- Draft release notes from merged PRs
+- Propose a version bump
+- Provide a copy-pasteable `gh release create` command
+
+## When to use me
+
+Use this when you are preparing a tagged release.
+Ask clarifying questions if the target versioning scheme is unclear.
+```
+
+---
+
+## Nhận biết mô tả của tool
+
+OpenCode liệt kê các kỹ năng khả dụng trong mô tả của tool `skill`.
+Mỗi mục bao gồm tên và mô tả của kỹ năng:
+
+```xml
+<available_skills>
+  <skill>
+    <name>git-release</name>
+    <description>Create consistent releases and changelogs</description>
+  </skill>
+</available_skills>
+```
+
+Tác nhân tải một kỹ năng bằng cách gọi tool:
+
+```
+skill({ name: "git-release" })
+```
+
+Các kỹ năng có `metadata["opencode/autoinvoke"]` được đặt là `"false"` sẽ không có trong `<available_skills>`.
+Chúng vẫn có thể được chọn thủ công và tải bằng tên chính xác.
+
+---
+
+## Cấu hình quyền
+
+Kiểm soát những kỹ năng nào tác nhân có thể truy cập bằng các quyền dựa trên mẫu trong `opencode.json`:
+
+```json
+{
+  "permission": {
+    "skill": {
+      "*": "allow",
+      "pr-review": "allow",
+      "internal-*": "deny",
+      "experimental-*": "ask"
+    }
+  }
+}
+```
+
+| Quyền   | Hành vi                                          |
+| ------- | ------------------------------------------------ |
+| `allow` | Kỹ năng được tải ngay lập tức                    |
+| `deny`  | Kỹ năng bị ẩn khỏi tác nhân, truy cập bị từ chối |
+| `ask`   | Người dùng được hỏi phê duyệt trước khi tải      |
+
+Các mẫu hỗ trợ ký tự đại diện: `internal-*` khớp với `internal-docs`, `internal-tools`, v.v.
+
+---
+
+## Ghi đè theo từng tác nhân
+
+Cho các tác nhân cụ thể quyền khác với mặc định toàn cục.
+
+**Với tác nhân tùy chỉnh** (trong frontmatter của tác nhân):
+
+```yaml
+---
+permission:
+  skill:
+    "documents-*": "allow"
+---
+```
+
+**Với tác nhân tích hợp sẵn** (trong `opencode.json`):
+
+```json
+{
+  "agent": {
+    "plan": {
+      "permission": {
+        "skill": {
+          "internal-*": "allow"
+        }
+      }
+    }
+  }
+}
+```
+
+---
+
+## Tắt tool skill
+
+Tắt hoàn toàn kỹ năng cho những tác nhân không nên dùng chúng:
+
+**Với tác nhân tùy chỉnh**:
+
+```yaml
+---
+tools:
+  skill: false
+---
+```
+
+**Với tác nhân tích hợp sẵn**:
+
+```json
+{
+  "agent": {
+    "plan": {
+      "tools": {
+        "skill": false
+      }
+    }
+  }
+}
+```
+
+Khi bị tắt, phần `<available_skills>` sẽ được bỏ qua hoàn toàn.
+
+---
+
+## Khắc phục sự cố tải
+
+Nếu một kỹ năng không xuất hiện:
+
+1. Kiểm tra `SKILL.md` có được viết đúng toàn chữ in hoa hay không
+2. Kiểm tra frontmatter có bao gồm `name` và `description` không
+3. Đảm bảo tên kỹ năng là duy nhất trên tất cả các vị trí
+4. Kiểm tra quyền — các kỹ năng có `deny` sẽ bị ẩn khỏi tác nhân
+5. Kiểm tra `metadata["opencode/autoinvoke"]` — các kỹ năng được đặt là `"false"` sẽ bị ẩn khỏi hướng dẫn mà mô hình nhìn thấy

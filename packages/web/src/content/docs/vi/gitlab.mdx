@@ -1,0 +1,195 @@
+---
+title: GitLab
+description: Sử dụng OpenCode trong issue và merge request của GitLab.
+---
+
+OpenCode tích hợp với quy trình GitLab của bạn thông qua pipeline GitLab CI/CD hoặc với GitLab Duo.
+
+Trong cả hai trường hợp, OpenCode sẽ chạy trên các runner GitLab của bạn.
+
+---
+
+## GitLab CI
+
+OpenCode hoạt động trong một pipeline GitLab thông thường. Bạn có thể tích hợp nó vào pipeline dưới dạng một [CI component](https://docs.gitlab.com/ee/ci/components/)
+
+Ở đây chúng tôi dùng một CI/CD component do cộng đồng tạo cho OpenCode — [nagyv/gitlab-opencode](https://gitlab.com/nagyv/gitlab-opencode).
+
+---
+
+### Tính năng
+
+- **Dùng cấu hình tùy chỉnh cho từng job**: Cấu hình OpenCode với một thư mục cấu hình tùy chỉnh, ví dụ `./config/#custom-directory` để bật hoặc tắt chức năng cho từng lần gọi OpenCode.
+- **Thiết lập tối giản**: CI component thiết lập OpenCode ở chế độ nền, bạn chỉ cần tạo cấu hình OpenCode và lời nhắc ban đầu.
+- **Linh hoạt**: CI component hỗ trợ nhiều input để tùy chỉnh hành vi của nó
+
+---
+
+### Thiết lập
+
+1. Lưu JSON xác thực OpenCode của bạn dưới dạng biến môi trường CI kiểu File trong **Settings** > **CI/CD** > **Variables**. Hãy đảm bảo đánh dấu chúng là "Masked and hidden".
+2. Thêm nội dung sau vào tệp `.gitlab-ci.yml` của bạn.
+
+   ```yaml title=".gitlab-ci.yml"
+   include:
+     - component: $CI_SERVER_FQDN/nagyv/gitlab-opencode/opencode@2
+       inputs:
+         config_dir: ${CI_PROJECT_DIR}/opencode-config
+         auth_json: $OPENCODE_AUTH_JSON # The variable name for your OpenCode authentication JSON
+         command: optional-custom-command
+         message: "Your prompt here"
+   ```
+
+Để biết thêm các input và trường hợp sử dụng, hãy xem [tài liệu](https://gitlab.com/explore/catalog/nagyv/gitlab-opencode) của component này.
+
+---
+
+## GitLab Duo
+
+OpenCode tích hợp với quy trình GitLab của bạn.
+Nhắc `@opencode` trong một bình luận và OpenCode sẽ thực hiện các tác vụ trong pipeline GitLab CI của bạn.
+
+---
+
+### Tính năng
+
+- **Phân loại issue**: Yêu cầu OpenCode xem xét một issue và giải thích cho bạn.
+- **Sửa và triển khai**: Yêu cầu OpenCode sửa một issue hoặc triển khai một tính năng.
+  Nó sẽ tạo một nhánh mới và mở một merge request kèm các thay đổi.
+- **An toàn**: OpenCode chạy trên các runner GitLab của bạn.
+
+---
+
+### Thiết lập
+
+OpenCode chạy trong pipeline GitLab CI/CD của bạn, đây là những gì bạn cần thiết lập:
+
+:::tip
+Xem [**tài liệu GitLab**](https://docs.gitlab.com/user/duo_agent_platform/agent_assistant/) để có hướng dẫn cập nhật nhất.
+:::
+
+1.  Cấu hình môi trường GitLab của bạn
+2.  Thiết lập CI/CD
+3.  Lấy API key của một nhà cung cấp mô hình AI
+4.  Tạo một service account
+5.  Cấu hình các biến CI/CD
+6.  Tạo một tệp cấu hình flow, đây là một ví dụ:
+
+        <details>
+
+    <summary>Cấu hình flow</summary>
+
+    ```yaml
+    image: node:22-slim
+    commands:
+      - echo "Installing opencode"
+      - npm install --global opencode-ai
+      - echo "Installing glab"
+      - export GITLAB_TOKEN=$GITLAB_TOKEN_OPENCODE
+      - apt-get update --quiet && apt-get install --yes curl wget gpg git && rm --recursive --force /var/lib/apt/lists/*
+      - curl --silent --show-error --location "https://raw.githubusercontent.com/upciti/wakemeops/main/assets/install_repository" | bash
+      - apt-get install --yes glab
+      - echo "Configuring glab"
+      - echo $GITLAB_HOST
+      - echo "Creating OpenCode auth configuration"
+      - mkdir --parents ~/.local/share/opencode
+      - |
+        cat > ~/.local/share/opencode/auth.json << EOF
+        {
+          "anthropic": {
+            "type": "api",
+            "key": "$ANTHROPIC_API_KEY"
+          }
+        }
+        EOF
+      - echo "Configuring git"
+      - git config --global user.email "opencode@gitlab.com"
+      - git config --global user.name "OpenCode"
+      - echo "Testing glab"
+      - glab issue list
+      - echo "Running OpenCode"
+      - |
+        opencode run "
+        You are an AI assistant helping with GitLab operations.
+
+        Context: $AI_FLOW_CONTEXT
+        Task: $AI_FLOW_INPUT
+        Event: $AI_FLOW_EVENT
+
+        Please execute the requested task using the available GitLab tools.
+        Be thorough in your analysis and provide clear explanations.
+
+        <important>
+        Please use the glab CLI to access data from GitLab. The glab CLI has already been authenticated. You can run the corresponding commands.
+
+        If you are asked to summarize an MR or issue or asked to provide more information then please post back a note to the MR/Issue so that the user can see it.
+        You don't need to commit or push up changes, those will be done automatically based on the file changes you make.
+        </important>
+        "
+      - git checkout --branch $CI_WORKLOAD_REF origin/$CI_WORKLOAD_REF
+      - echo "Checking for git changes and pushing if any exist"
+      - |
+        if ! git diff --quiet || ! git diff --cached --quiet || [ --not --zero "$(git ls-files --others --exclude-standard)" ]; then
+          echo "Git changes detected, adding and pushing..."
+          git add .
+          if git diff --cached --quiet; then
+            echo "No staged changes to commit"
+          else
+            echo "Committing changes to branch: $CI_WORKLOAD_REF"
+            git commit --message "Codex changes"
+            echo "Pushing changes up to $CI_WORKLOAD_REF"
+            git push https://gitlab-ci-token:$GITLAB_TOKEN@$GITLAB_HOST/gl-demo-ultimate-dev-ai-epic-17570/test-java-project.git $CI_WORKLOAD_REF
+            echo "Changes successfully pushed"
+          fi
+        else
+          echo "No git changes detected, skipping push"
+        fi
+    variables:
+      - ANTHROPIC_API_KEY
+      - GITLAB_TOKEN_OPENCODE
+      - GITLAB_HOST
+    ```
+
+        </details>
+
+Bạn có thể tham khảo [tài liệu về GitLab CLI agents](https://docs.gitlab.com/user/duo_agent_platform/agent_assistant/) để biết hướng dẫn chi tiết.
+
+---
+
+### Ví dụ
+
+Dưới đây là một số ví dụ về cách bạn có thể dùng OpenCode trong GitLab.
+
+:::tip
+Bạn có thể cấu hình để dùng một cụm từ kích hoạt khác thay vì `@opencode`.
+:::
+
+- **Giải thích một issue**
+
+  Thêm bình luận sau vào một issue của GitLab.
+
+  ```
+  @opencode explain this issue
+  ```
+
+  OpenCode sẽ đọc issue và trả lời bằng một lời giải thích rõ ràng.
+
+- **Sửa một issue**
+
+  Trong một issue của GitLab, hãy nói:
+
+  ```
+  @opencode fix this
+  ```
+
+  OpenCode sẽ tạo một nhánh mới, triển khai các thay đổi và mở một merge request kèm các thay đổi đó.
+
+- **Đánh giá merge request**
+
+  Để lại bình luận sau trên một merge request của GitLab.
+
+  ```
+  @opencode review this merge request
+  ```
+
+  OpenCode sẽ đánh giá merge request và đưa ra phản hồi.

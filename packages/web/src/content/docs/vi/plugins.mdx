@@ -1,0 +1,385 @@
+---
+title: Plugin
+description: Viết plugin của riêng bạn để mở rộng OpenCode.
+---
+
+Plugin cho phép bạn mở rộng OpenCode bằng cách đăng ký vào các sự kiện khác nhau và tùy chỉnh hành vi. Bạn có thể tạo plugin để thêm tính năng mới, tích hợp với dịch vụ bên ngoài hoặc thay đổi hành vi mặc định của OpenCode.
+
+Để xem ví dụ, hãy tham khảo các [plugin](/docs/ecosystem#plugins) do cộng đồng tạo ra.
+
+---
+
+## Dùng plugin
+
+Có hai cách để nạp plugin.
+
+---
+
+### Từ tệp cục bộ
+
+Đặt các tệp JavaScript hoặc TypeScript vào thư mục plugin.
+
+- `.opencode/plugins/` - Plugin ở cấp dự án
+- `~/.config/opencode/plugins/` - Plugin toàn cục
+
+Các tệp trong những thư mục này được tự động nạp khi khởi động.
+
+---
+
+### Từ npm
+
+Chỉ định các gói npm trong tệp cấu hình của bạn.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["opencode-helicone-session", "opencode-wakatime", "@my-org/custom-plugin"]
+}
+```
+
+Cả gói npm thông thường và gói có phạm vi (scoped) đều được hỗ trợ.
+
+Xem các plugin hiện có trong [ecosystem](/docs/ecosystem#plugins).
+
+---
+
+### Plugin được cài đặt như thế nào
+
+**Plugin npm** được cài tự động bằng Bun khi khởi động. Các gói và dependency của chúng được lưu vào bộ nhớ đệm tại `~/.cache/opencode/node_modules/`.
+
+**Plugin cục bộ** được nạp trực tiếp từ thư mục plugin. Để dùng gói bên ngoài, bạn phải tạo một tệp `package.json` trong thư mục cấu hình của mình (xem [Dependencies](#dependencies)), hoặc xuất bản plugin lên npm và [thêm nó vào cấu hình](/docs/config#plugins).
+
+---
+
+### Thứ tự nạp
+
+Plugin được nạp từ mọi nguồn và tất cả hook sẽ chạy theo thứ tự. Thứ tự nạp là:
+
+1. Cấu hình toàn cục (`~/.config/opencode/opencode.json`)
+2. Cấu hình dự án (`opencode.json`)
+3. Thư mục plugin toàn cục (`~/.config/opencode/plugins/`)
+4. Thư mục plugin của dự án (`.opencode/plugins/`)
+
+Các gói npm trùng tên và cùng phiên bản chỉ được nạp một lần. Tuy nhiên, một plugin cục bộ và một plugin npm có tên tương tự vẫn được nạp riêng biệt.
+
+---
+
+## Tạo plugin
+
+Một plugin là một **module JavaScript/TypeScript** export một hoặc nhiều hàm
+plugin. Mỗi hàm nhận một đối tượng context và trả về một đối tượng hooks.
+
+---
+
+### Dependencies
+
+Plugin cục bộ và công cụ tùy chỉnh có thể dùng các gói npm bên ngoài. Thêm một tệp `package.json` vào thư mục cấu hình với các dependency bạn cần.
+
+```json title=".opencode/package.json"
+{
+  "dependencies": {
+    "shescape": "^2.1.0"
+  }
+}
+```
+
+OpenCode chạy `bun install` khi khởi động để cài các dependency này. Sau đó plugin và công cụ của bạn có thể import chúng.
+
+```ts title=".opencode/plugins/my-plugin.ts"
+import { escape } from "shescape"
+
+export const MyPlugin = async (ctx) => {
+  return {
+    "tool.execute.before": async (input, output) => {
+      if (input.tool === "bash") {
+        output.args.command = escape(output.args.command)
+      }
+    },
+  }
+}
+```
+
+---
+
+### Cấu trúc cơ bản
+
+```js title=".opencode/plugins/example.js"
+export const MyPlugin = async ({ project, client, $, directory, worktree }) => {
+  console.log("Plugin initialized!")
+
+  return {
+    // Hook implementations go here
+  }
+}
+```
+
+Hàm plugin nhận:
+
+- `project`: Thông tin về dự án hiện tại.
+- `directory`: Thư mục làm việc hiện tại.
+- `worktree`: Đường dẫn git worktree.
+- `client`: Một client SDK của opencode để tương tác với AI.
+- `$`: [shell API](https://bun.com/docs/runtime/shell) của Bun để thực thi lệnh.
+
+---
+
+### Hỗ trợ TypeScript
+
+Với plugin TypeScript, bạn có thể import kiểu từ gói plugin:
+
+```ts title="my-plugin.ts" {1}
+import type { Plugin } from "@opencode-ai/plugin"
+
+export const MyPlugin: Plugin = async ({ project, client, $, directory, worktree }) => {
+  return {
+    // Type-safe hook implementations
+  }
+}
+```
+
+---
+
+### Sự kiện
+
+Plugin có thể đăng ký các sự kiện như cách ví dụ ở mục Examples bên dưới. Dưới đây là danh sách các sự kiện khả dụng.
+
+#### Sự kiện lệnh
+
+- `command.executed`
+
+#### Sự kiện tệp
+
+- `file.edited`
+- `file.watcher.updated`
+
+#### Sự kiện cài đặt
+
+- `installation.updated`
+
+#### Sự kiện LSP
+
+- `lsp.client.diagnostics`
+- `lsp.updated`
+
+#### Sự kiện tin nhắn
+
+- `message.part.removed`
+- `message.part.updated`
+- `message.removed`
+- `message.updated`
+
+#### Sự kiện quyền
+
+- `permission.asked`
+- `permission.replied`
+
+#### Sự kiện máy chủ
+
+- `server.connected`
+
+#### Sự kiện phiên
+
+- `session.created`
+- `session.compacted`
+- `session.deleted`
+- `session.diff`
+- `session.error`
+- `session.idle`
+- `session.status`
+- `session.updated`
+
+#### Sự kiện shell
+
+- `shell.env`
+
+#### Sự kiện công cụ
+
+- `tool.execute.after`
+- `tool.execute.before`
+
+#### Sự kiện TUI
+
+- `tui.prompt.append`
+- `tui.command.execute`
+- `tui.toast.show`
+
+---
+
+## Ví dụ
+
+Dưới đây là một số ví dụ về plugin bạn có thể dùng để mở rộng opencode.
+
+---
+
+### Gửi thông báo
+
+Gửi thông báo khi một số sự kiện nhất định xảy ra:
+
+```js title=".opencode/plugins/notification.js"
+export const NotificationPlugin = async ({ project, client, $, directory, worktree }) => {
+  return {
+    event: async ({ event }) => {
+      // Send notification on session completion
+      if (event.type === "session.idle") {
+        await $`osascript -e 'display notification "Session completed!" with title "opencode"'`
+      }
+    },
+  }
+}
+```
+
+Chúng tôi dùng `osascript` để chạy AppleScript trên macOS. Ở đây chúng tôi dùng nó để gửi thông báo.
+
+:::note
+Nếu bạn dùng ứng dụng desktop OpenCode, ứng dụng có thể tự động gửi thông báo hệ thống khi câu trả lời sẵn sàng hoặc khi một phiên gặp lỗi.
+:::
+
+---
+
+### Bảo vệ .env
+
+Ngăn opencode đọc các tệp `.env`:
+
+```javascript title=".opencode/plugins/env-protection.js"
+export const EnvProtection = async ({ project, client, $, directory, worktree }) => {
+  return {
+    "tool.execute.before": async (input, output) => {
+      if (input.tool === "read" && output.args.filePath.includes(".env")) {
+        throw new Error("Do not read .env files")
+      }
+    },
+  }
+}
+```
+
+---
+
+### Chèn biến môi trường
+
+Chèn biến môi trường vào mọi lần thực thi shell (các công cụ AI và terminal của người dùng):
+
+```javascript title=".opencode/plugins/inject-env.js"
+export const InjectEnvPlugin = async () => {
+  return {
+    "shell.env": async (input, output) => {
+      output.env.MY_API_KEY = "secret"
+      output.env.PROJECT_ROOT = input.cwd
+    },
+  }
+}
+```
+
+---
+
+### Công cụ tùy chỉnh
+
+Plugin cũng có thể thêm công cụ tùy chỉnh cho opencode:
+
+```ts title=".opencode/plugins/custom-tools.ts"
+import { type Plugin, tool } from "@opencode-ai/plugin"
+
+export const CustomToolsPlugin: Plugin = async (ctx) => {
+  return {
+    tool: {
+      mytool: tool({
+        description: "This is a custom tool",
+        args: {
+          foo: tool.schema.string(),
+        },
+        async execute(args, context) {
+          const { directory, worktree } = context
+          return `Hello ${args.foo} from ${directory} (worktree: ${worktree})`
+        },
+      }),
+    },
+  }
+}
+```
+
+Trợ giúp `tool` tạo ra một công cụ tùy chỉnh mà opencode có thể gọi. Nó nhận một hàm schema Zod và trả về một định nghĩa công cụ gồm:
+
+- `description`: Công cụ này làm gì
+- `args`: Schema Zod cho các đối số của công cụ
+- `execute`: Hàm chạy khi công cụ được gọi
+
+Các công cụ tùy chỉnh của bạn sẽ khả dụng trong opencode bên cạnh các công cụ tích hợp sẵn.
+
+:::note
+Nếu một công cụ của plugin trùng tên với một công cụ tích hợp sẵn, công cụ của plugin sẽ được ưu tiên.
+:::
+
+---
+
+### Ghi log
+
+Dùng `client.app.log()` thay cho `console.log` để ghi log có cấu trúc:
+
+```ts title=".opencode/plugins/my-plugin.ts"
+export const MyPlugin = async ({ client }) => {
+  await client.app.log({
+    body: {
+      service: "my-plugin",
+      level: "info",
+      message: "Plugin initialized",
+      extra: { foo: "bar" },
+    },
+  })
+}
+```
+
+Các mức: `debug`, `info`, `warn`, `error`. Xem [tài liệu SDK](https://opencode.ai/docs/sdk) để biết chi tiết.
+
+---
+
+### Hook nén
+
+Tùy chỉnh context được đưa vào khi một phiên bị nén:
+
+```ts title=".opencode/plugins/compaction.ts"
+import type { Plugin } from "@opencode-ai/plugin"
+
+export const CompactionPlugin: Plugin = async (ctx) => {
+  return {
+    "experimental.session.compacting": async (input, output) => {
+      // Inject additional context into the compaction prompt
+      output.context.push(`
+## Custom Context
+
+Include any state that should persist across compaction:
+- Current task status
+- Important decisions made
+- Files being actively worked on
+`)
+    },
+  }
+}
+```
+
+Hook `experimental.session.compacting` kích hoạt trước khi LLM tạo bản tóm tắt tiếp nối. Dùng nó để chèn context riêng theo lĩnh vực mà lời nhắc nén mặc định bỏ sót.
+
+Bạn cũng có thể thay hoàn toàn lời nhắc nén bằng cách đặt `output.prompt`:
+
+```ts title=".opencode/plugins/custom-compaction.ts"
+import type { Plugin } from "@opencode-ai/plugin"
+
+export const CustomCompactionPlugin: Plugin = async (ctx) => {
+  return {
+    "experimental.session.compacting": async (input, output) => {
+      // Replace the entire compaction prompt
+      output.prompt = `
+You are generating a continuation prompt for a multi-agent swarm session.
+
+Summarize:
+1. The current task and its status
+2. Which files are being modified and by whom
+3. Any blockers or dependencies between agents
+4. The next steps to complete the work
+
+Format as a structured prompt that a new agent can use to resume work.
+`
+    },
+  }
+}
+```
+
+Khi `output.prompt` được đặt, nó thay thế hoàn toàn lời nhắc nén mặc định. Mảng `output.context` khi đó sẽ bị bỏ qua.

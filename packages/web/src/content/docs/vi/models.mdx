@@ -1,0 +1,223 @@
+---
+title: Mô hình
+description: Cấu hình một nhà cung cấp LLM và mô hình.
+---
+
+OpenCode dùng [AI SDK](https://ai-sdk.dev/) và [Models.dev](https://models.dev) để hỗ trợ **hơn 75 nhà cung cấp LLM** và hỗ trợ chạy các mô hình cục bộ.
+
+---
+
+## Nhà cung cấp
+
+Hầu hết các nhà cung cấp phổ biến đã được nạp sẵn mặc định. Nếu bạn đã thêm thông tin xác thực cho một nhà cung cấp qua lệnh `/connect`, chúng sẽ khả dụng khi bạn khởi động OpenCode.
+
+Tìm hiểu thêm về [nhà cung cấp](/docs/providers).
+
+---
+
+## Chọn một mô hình
+
+Sau khi đã cấu hình nhà cung cấp, bạn có thể chọn mô hình mình muốn bằng cách nhập:
+
+```bash frame="none"
+/models
+```
+
+---
+
+## Mô hình được đề xuất
+
+Có rất nhiều mô hình ngoài kia, với các mô hình mới ra mắt mỗi tuần.
+
+:::tip
+Hãy cân nhắc dùng một trong các mô hình chúng tôi đề xuất.
+:::
+
+Tuy nhiên, chỉ có ít mô hình vừa giỏi sinh mã vừa giỏi gọi tool.
+
+Dưới đây là một số mô hình hoạt động tốt với OpenCode, không theo thứ tự cụ thể. (Đây không phải danh sách đầy đủ và cũng không nhất thiết là mới nhất):
+
+- GPT 5.2
+- GPT 5.1 Codex
+- Claude Opus 4.5
+- Claude Sonnet 4.5
+- Minimax M2.1
+- Gemini 3 Pro
+
+---
+
+## Đặt mô hình mặc định
+
+Để đặt một trong các mô hình này làm mặc định, bạn có thể đặt khóa `model` trong
+cấu hình OpenCode của mình.
+
+```json title="opencode.json" {3}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "lmstudio/google/gemma-3n-e4b"
+}
+```
+
+Ở đây ID đầy đủ là `provider_id/model_id`. Ví dụ, nếu bạn dùng [OpenCode Zen](https://opencode.ai/v2/docs/console/), bạn sẽ dùng `opencode/gpt-5.1-codex` cho GPT 5.1 Codex.
+
+Nếu bạn đã cấu hình một [nhà cung cấp tùy chỉnh](/docs/providers#custom), thì `provider_id` là khóa trong phần `provider` của cấu hình, còn `model_id` là khóa trong `provider.models`.
+
+---
+
+## Cấu hình mô hình
+
+Bạn có thể cấu hình toàn cục các tùy chọn của một mô hình thông qua cấu hình.
+
+```jsonc title="opencode.jsonc" {7-12,19-24}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "openai": {
+      "models": {
+        "gpt-5": {
+          "options": {
+            "reasoningEffort": "high",
+            "textVerbosity": "low",
+            "reasoningSummary": "auto",
+            "include": ["reasoning.encrypted_content"],
+          },
+        },
+      },
+    },
+    "anthropic": {
+      "models": {
+        "claude-sonnet-4-5-20250929": {
+          "options": {
+            "thinking": {
+              "type": "enabled",
+              "budgetTokens": 16000,
+            },
+          },
+        },
+      },
+    },
+  },
+}
+```
+
+Ở đây chúng tôi đang cấu hình cài đặt toàn cục cho hai mô hình tích hợp sẵn: `gpt-5` khi truy cập qua nhà cung cấp `openai`, và `claude-sonnet-4-20250514` khi truy cập qua nhà cung cấp `anthropic`.
+Bạn có thể tìm tên các nhà cung cấp và mô hình tích hợp sẵn trên [Models.dev](https://models.dev).
+
+Bạn cũng có thể cấu hình các tùy chọn này cho bất kỳ tác nhân nào bạn đang dùng. Cấu hình của tác nhân sẽ ghi đè mọi tùy chọn toàn cục ở đây. [Tìm hiểu thêm](/docs/agents/#additional).
+
+Bạn cũng có thể định nghĩa các biến thể tùy chỉnh mở rộng từ các biến thể tích hợp sẵn. Biến thể cho phép bạn cấu hình các cài đặt khác nhau cho cùng một mô hình mà không cần tạo mục trùng lặp:
+
+```jsonc title="opencode.jsonc" {6-21}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "opencode": {
+      "models": {
+        "gpt-5": {
+          "variants": {
+            "high": {
+              "reasoningEffort": "high",
+              "textVerbosity": "low",
+              "reasoningSummary": "auto",
+            },
+            "low": {
+              "reasoningEffort": "low",
+              "textVerbosity": "low",
+              "reasoningSummary": "auto",
+            },
+          },
+        },
+      },
+    },
+  },
+}
+```
+
+---
+
+## Biến thể
+
+Nhiều mô hình hỗ trợ nhiều biến thể với các cấu hình khác nhau. OpenCode đi kèm với các biến thể mặc định tích hợp sẵn cho các nhà cung cấp phổ biến.
+
+### Biến thể tích hợp sẵn
+
+OpenCode đi kèm với các biến thể mặc định cho nhiều nhà cung cấp:
+
+**Anthropic**:
+
+- `high` - Ngân sách suy luận cao (mặc định)
+- `max` - Ngân sách suy luận tối đa
+
+**OpenAI**:
+
+Khác nhau tùy theo mô hình nhưng đại khái là:
+
+- `none` - Không suy luận
+- `minimal` - Nỗ lực suy luận tối thiểu
+- `low` - Nỗ lực suy luận thấp
+- `medium` - Nỗ lực suy luận trung bình
+- `high` - Nỗ lực suy luận cao
+- `xhigh` - Nỗ lực suy luận siêu cao
+
+**Google**:
+
+- `low` - Nỗ lực/ngân sách token thấp hơn
+- `high` - Nỗ lực/ngân sách token cao hơn
+
+:::tip
+Danh sách này không đầy đủ. Nhiều nhà cung cấp khác cũng có giá trị mặc định tích hợp sẵn.
+:::
+
+### Biến thể tùy chỉnh
+
+Bạn có thể ghi đè các biến thể hiện có hoặc thêm biến thể của riêng mình:
+
+```jsonc title="opencode.jsonc" {7-18}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "openai": {
+      "models": {
+        "gpt-5": {
+          "variants": {
+            "thinking": {
+              "reasoningEffort": "high",
+              "textVerbosity": "low",
+            },
+            "fast": {
+              "disabled": true,
+            },
+          },
+        },
+      },
+    },
+  },
+}
+```
+
+### Xoay vòng biến thể
+
+Dùng phím tắt `variant_cycle` để nhanh chóng chuyển qua lại giữa các biến thể. [Tìm hiểu thêm](/docs/keybinds).
+
+---
+
+## Tải mô hình
+
+Khi OpenCode khởi động, nó kiểm tra các mô hình theo thứ tự ưu tiên sau:
+
+1. Cờ dòng lệnh `--model` hoặc `-m`. Định dạng giống như trong tệp cấu hình: `provider_id/model_id`.
+
+2. Danh sách mô hình trong cấu hình OpenCode.
+
+   ```json title="opencode.json"
+   {
+     "$schema": "https://opencode.ai/config.json",
+     "model": "anthropic/claude-sonnet-4-20250514"
+   }
+   ```
+
+   Định dạng ở đây là `provider/model`.
+
+3. Mô hình được sử dụng gần nhất.
+
+4. Mô hình đầu tiên theo một thứ tự ưu tiên nội bộ.

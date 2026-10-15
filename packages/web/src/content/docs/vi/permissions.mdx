@@ -1,0 +1,260 @@
+---
+title: Quyền
+description: Kiểm soát hành động nào cần phê duyệt để chạy.
+---
+
+OpenCode dùng cấu hình `permission` để quyết định một hành động cụ thể có nên chạy tự động, nhắc bạn hay bị chặn.
+
+Từ `v1.1.1`, cấu hình boolean `tools` cũ không còn được khuyến nghị và đã được hợp nhất vào `permission`. Cấu hình `tools` cũ vẫn được hỗ trợ để tương thích ngược.
+
+---
+
+## Hành động
+
+Mỗi quy tắc quyền sẽ cho ra một trong các giá trị sau:
+
+- `"allow"` — chạy không cần phê duyệt
+- `"ask"` — nhắc phê duyệt
+- `"deny"` — chặn hành động
+
+---
+
+## Chế độ tự động
+
+Khởi chạy OpenCode với `--auto` để tự động phê duyệt các yêu cầu quyền không bị từ chối rõ ràng.
+
+```bash
+opencode --auto
+```
+
+Bạn cũng có thể dùng chế độ tự động với [`opencode run`](/docs/cli#run).
+
+```bash
+opencode run --auto "Refactor this module"
+```
+
+Các quy tắc `"deny"` rõ ràng vẫn luôn được áp dụng. Chế độ tự động chỉ thay đổi những yêu cầu vốn sẽ hỏi phê duyệt.
+
+Trong TUI, mở bảng lệnh và chọn **Enable auto-approve permissions** hoặc **Disable auto-approve permissions** để đổi chế độ. Khi chế độ tự động đang bật, dòng nhắc sẽ hiển thị chỉ báo `auto` mờ bên cạnh tác nhân hiện tại.
+
+---
+
+## Cấu hình
+
+Bạn có thể đặt quyền toàn cục (với `*`), rồi ghi đè cho các công cụ cụ thể.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "*": "ask",
+    "bash": "allow",
+    "edit": "deny"
+  }
+}
+```
+
+Bạn cũng có thể đặt tất cả quyền cùng lúc:
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": "allow"
+}
+```
+
+---
+
+## Quy tắc chi tiết (Cú pháp object)
+
+Với hầu hết các quyền, bạn có thể dùng một object để áp dụng hành động khác nhau tùy theo input của công cụ.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "bash": {
+      "*": "ask",
+      "git *": "allow",
+      "npm *": "allow",
+      "rm *": "deny",
+      "grep *": "allow"
+    },
+    "edit": {
+      "*": "deny",
+      "packages/web/src/content/docs/*.mdx": "allow"
+    },
+    "webfetch": {
+      "*": "ask",
+      "https://en.wikipedia.org/*": "allow"
+    }
+  }
+}
+```
+
+Các quy tắc được đánh giá theo mẫu, trong đó **quy tắc khớp cuối cùng sẽ thắng**. Một cách thông thường là đặt quy tắc `"*"` bắt tất cả trước, rồi đặt các quy tắc cụ thể hơn sau đó.
+
+### Ký tự đại diện
+
+Các mẫu quyền dùng phép khớp ký tự đại diện đơn giản:
+
+- `*` khớp với không hoặc nhiều ký tự bất kỳ
+- `?` khớp với đúng một ký tự
+- Mọi ký tự khác được khớp theo nghĩa đen
+
+### Mở rộng thư mục home
+
+Bạn có thể dùng `~` hoặc `$HOME` ở đầu một mẫu để tham chiếu thư mục home của mình. Điều này đặc biệt hữu ích với các quy tắc [`external_directory`](#external-directories).
+
+- `~/projects/*` -> `/Users/username/projects/*`
+- `$HOME/projects/*` -> `/Users/username/projects/*`
+- `~` -> `/Users/username`
+
+### Thư mục bên ngoài
+
+Dùng `external_directory` để cho phép các lời gọi công cụ chạm vào đường dẫn nằm ngoài thư mục làm việc nơi OpenCode được khởi chạy. Điều này áp dụng cho mọi công cụ nhận đường dẫn làm input (ví dụ `read`, `edit`, `glob`, `grep` và nhiều lệnh `bash`).
+
+Mở rộng home (như `~/...`) chỉ ảnh hưởng đến cách viết một mẫu. Nó không làm cho một đường dẫn bên ngoài trở thành một phần của không gian làm việc hiện tại, vì vậy các đường dẫn nằm ngoài thư mục làm việc vẫn phải được cho phép qua `external_directory`.
+
+Ví dụ, cấu hình sau cho phép truy cập mọi thứ bên dưới `~/projects/personal/`:
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "external_directory": {
+      "~/projects/personal/**": "allow"
+    }
+  }
+}
+```
+
+Mọi thư mục được cho phép ở đây đều kế thừa các mặc định giống như không gian làm việc hiện tại. Vì [`read` mặc định là `allow`](#defaults), các lượt đọc cũng được phép với các mục bên dưới `external_directory` trừ khi bị ghi đè. Hãy thêm quy tắc tường minh khi bạn muốn giới hạn một công cụ trong những đường dẫn đó, ví dụ chặn chỉnh sửa nhưng vẫn cho phép đọc:
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "external_directory": {
+      "~/projects/personal/**": "allow"
+    },
+    "edit": {
+      "~/projects/personal/**": "deny"
+    }
+  }
+}
+```
+
+Hãy giới hạn danh sách vào các đường dẫn tin cậy, rồi bổ sung thêm quy tắc cho phép hoặc từ chối cho các công cụ khác khi cần (ví dụ `bash`).
+
+---
+
+## Các quyền hiện có
+
+Quyền của OpenCode được khóa theo tên công cụ, cộng thêm một vài chốt an toàn:
+
+- `read` — đọc một tệp (khớp với đường dẫn tệp)
+- `edit` — mọi thay đổi tệp (bao gồm `edit`, `write`, `patch`)
+- `glob` — tìm tệp bằng glob (khớp với mẫu glob)
+- `grep` — tìm kiếm nội dung (khớp với mẫu regex)
+- `bash` — chạy lệnh shell (khớp với các lệnh đã phân tích như `git status --porcelain`)
+- `task` — khởi chạy tác nhân phụ (khớp với loại tác nhân phụ)
+- `skill` — tải một skill (khớp với tên skill)
+- `lsp` — chạy truy vấn LSP (hiện chưa phân biệt chi tiết)
+- `question` — hỏi người dùng trong khi thực thi
+- `webfetch` — lấy một URL (khớp với URL)
+- `websearch` — tìm kiếm web
+- `external_directory` — kích hoạt khi một công cụ chạm vào đường dẫn nằm ngoài thư mục làm việc của dự án
+- `doom_loop` — kích hoạt khi cùng một lời gọi công cụ lặp lại 3 lần với input giống hệt
+
+---
+
+## Mặc định
+
+Nếu bạn không chỉ định gì, OpenCode sẽ bắt đầu với các mặc định cho phép:
+
+- Hầu hết quyền mặc định là `"allow"`.
+- `doom_loop` và `external_directory` mặc định là `"ask"`.
+- `read` là `"allow"`, nhưng các tệp `.env` mặc định bị từ chối:
+
+```json title="opencode.json"
+{
+  "permission": {
+    "read": {
+      "*": "allow",
+      "*.env": "deny",
+      "*.env.*": "deny",
+      "*.env.example": "allow"
+    }
+  }
+}
+```
+
+---
+
+## “Ask” dùng để làm gì
+
+Khi OpenCode nhắc phê duyệt, giao diện đưa ra ba kết quả:
+
+- `once` — chỉ phê duyệt yêu cầu này
+- `always` — phê duyệt các yêu cầu sau khớp với các mẫu được gợi ý (trong phần còn lại của phiên OpenCode hiện tại)
+- `reject` — từ chối yêu cầu
+
+Tập các mẫu mà `always` sẽ phê duyệt do công cụ cung cấp (ví dụ, phê duyệt bash thường cho phép một tiền tố lệnh an toàn như `git status*`).
+
+---
+
+## Tác nhân
+
+Bạn có thể ghi đè quyền theo từng tác nhân. Quyền của tác nhân được hợp nhất với cấu hình toàn cục, và quy tắc của tác nhân sẽ thắng. [Tìm hiểu thêm](/docs/agents#permissions) về quyền của tác nhân.
+
+:::note
+Xem mục [Quy tắc chi tiết (Cú pháp object)](#granular-rules-object-syntax) ở trên để biết thêm các ví dụ về khớp mẫu chi tiết.
+:::
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "bash": {
+      "*": "ask",
+      "git *": "allow",
+      "git commit *": "deny",
+      "git push *": "deny",
+      "grep *": "allow"
+    }
+  },
+  "agent": {
+    "build": {
+      "permission": {
+        "bash": {
+          "*": "ask",
+          "git *": "allow",
+          "git commit *": "ask",
+          "git push *": "deny",
+          "grep *": "allow"
+        }
+      }
+    }
+  }
+}
+```
+
+Bạn cũng có thể cấu hình quyền của tác nhân bằng Markdown:
+
+```markdown title="~/.config/opencode/agents/review.md"
+---
+description: Code review without edits
+mode: subagent
+permission:
+  edit: deny
+  bash: ask
+  webfetch: deny
+---
+
+Only analyze code and suggest changes.
+```
+
+:::tip
+Hãy dùng khớp mẫu cho các lệnh có đối số. `"grep *"` cho phép `grep pattern file.txt`, trong khi chỉ `"grep"` sẽ chặn lệnh đó. Các lệnh như `git status` hoạt động theo hành vi mặc định, nhưng cần quyền tường minh (như `"git status *"`) khi có đối số được truyền vào.
+:::

@@ -1,0 +1,366 @@
+---
+title: Giới thiệu
+description: Bắt đầu với OpenCode.
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components"
+import config from "../../../../config.mjs"
+export const console = config.console
+
+:::note
+Cả OpenCode 1 và OpenCode 2 đều dùng lệnh `opencode` nên không thể cài đặt song song dưới tên lệnh mặc định.
+Hãy xem [tài liệu OpenCode 2](https://opencode.ai/v2/docs/) để chuyển sang V2.
+:::
+
+[**OpenCode**](/) là một trợ lý lập trình AI mã nguồn mở. Nó khả dụng dưới dạng giao diện chạy trong terminal, ứng dụng desktop hoặc tiện ích mở rộng cho IDE.
+
+![OpenCode TUI với giao diện opencode](../../../assets/lander/screenshot.png)
+
+Hãy bắt đầu.
+
+---
+
+#### Điều kiện tiên quyết
+
+Để dùng OpenCode trong terminal của bạn, bạn cần:
+
+1. Một trình giả lập terminal hiện đại như:
+   - [WezTerm](https://wezterm.org), đa nền tảng
+   - [Alacritty](https://alacritty.org), đa nền tảng
+   - [Ghostty](https://ghostty.org), Linux và macOS
+   - [Kitty](https://sw.kovidgoyal.net/kitty/), Linux và macOS
+
+2. Khóa API cho các nhà cung cấp LLM mà bạn muốn dùng.
+
+---
+
+## Cài đặt
+
+Cách dễ nhất để cài OpenCode 1 là dùng script cài đặt. Những cách cài đặt này cung cấp tệp nhị phân
+`opencode` và có thể xung đột với, hoặc thay thế một bản cài OpenCode 2.
+
+```bash
+curl -fsSL https://opencode.ai/install | bash
+```
+
+Bạn cũng có thể cài bằng các lệnh sau:
+
+- **Dùng Node.js**
+
+        <Tabs>
+
+      <TabItem label="npm">
+      ```bash
+      npm install -g opencode-ai
+      ```
+
+          </TabItem>
+
+        <TabItem label="Bun">
+        ```bash
+        bun install -g opencode-ai
+        ```
+
+          </TabItem>
+
+        <TabItem label="pnpm">
+        ```bash
+        pnpm install -g opencode-ai
+        ```
+
+          </TabItem>
+
+        <TabItem label="Yarn">
+        ```bash
+        yarn global add opencode-ai
+        ```
+
+      </TabItem>
+
+  </Tabs>
+
+- **Dùng Homebrew trên macOS và Linux**
+
+  ```bash
+  brew install anomalyco/tap/opencode
+  ```
+
+  > Chúng tôi khuyên bạn dùng tap OpenCode để có các bản phát hành mới nhất. Công thức `brew install opencode` chính thức do nhóm Homebrew duy trì và được cập nhật ít thường xuyên hơn.
+
+- **Cài trên Arch Linux**
+
+  ```bash
+  sudo pacman -S opencode           # Arch Linux (Stable)
+  paru -S opencode-bin              # Arch Linux (Latest from AUR)
+  ```
+
+#### Windows
+
+:::tip[Khuyến nghị: Dùng WSL]
+Để có trải nghiệm tốt nhất trên Windows, chúng tôi khuyên bạn dùng [Windows Subsystem for Linux (WSL)](/docs/windows-wsl). Nó mang lại hiệu năng tốt hơn và tương thích đầy đủ với các tính năng của OpenCode.
+:::
+
+- **Dùng Chocolatey**
+
+  ```bash
+  choco install opencode
+  ```
+
+- **Dùng Scoop**
+
+  ```bash
+  scoop install opencode
+  ```
+
+- **Dùng NPM**
+
+  ```bash
+  npm install -g opencode-ai
+  ```
+
+- **Dùng Mise**
+
+  ```bash
+  mise use -g github:anomalyco/opencode
+  ```
+
+- **Dùng Docker**
+
+  ```bash
+  docker run -it --rm ghcr.io/anomalyco/opencode
+  ```
+
+Tính năng cài OpenCode trên Windows bằng Bun hiện đang được phát triển.
+
+Bạn cũng có thể tải tệp nhị phân từ [Releases](https://github.com/anomalyco/opencode/releases).
+
+---
+
+## Cấu hình
+
+Với OpenCode, bạn có thể dùng bất kỳ nhà cung cấp LLM nào bằng cách cấu hình khóa API của họ.
+
+Nếu bạn mới bắt đầu dùng các nhà cung cấp LLM, chúng tôi khuyên bạn dùng [OpenCode Zen](https://opencode.ai/v2/docs/console/).
+Đó là danh sách các mô hình đã được đội ngũ OpenCode kiểm thử và
+xác minh.
+
+1. Chạy lệnh `/connect` trong TUI, chọn opencode và truy cập [opencode.ai/auth](https://opencode.ai/auth).
+
+   ```txt
+   /connect
+   ```
+
+2. Đăng nhập, thêm thông tin thanh toán và sao chép khóa API của bạn.
+
+3. Dán khóa API của bạn.
+
+   ```txt
+   ┌ API key
+   │
+   │
+   └ enter
+   ```
+
+Ngoài ra, bạn có thể chọn một nhà cung cấp khác. [Tìm hiểu thêm](/docs/providers#directory).
+
+---
+
+## Khởi tạo
+
+Sau khi đã cấu hình một nhà cung cấp, bạn có thể chuyển đến dự án
+mà bạn muốn làm việc.
+
+```bash
+cd /path/to/project
+```
+
+Và chạy OpenCode.
+
+```bash
+opencode
+```
+
+Tiếp theo, khởi tạo OpenCode cho dự án bằng cách chạy lệnh sau.
+
+```bash frame="none"
+/init
+```
+
+Thao tác này khiến OpenCode phân tích dự án của bạn và tạo một tệp `AGENTS.md` trong
+thư mục gốc của dự án.
+
+:::tip
+Bạn nên commit tệp `AGENTS.md` của dự án vào Git.
+:::
+
+Điều này giúp OpenCode hiểu cấu trúc dự án và các mẫu lập trình
+được sử dụng.
+
+---
+
+## Sử dụng
+
+Giờ bạn đã sẵn sàng dùng OpenCode để làm việc với dự án của mình. Hãy thoải mái hỏi nó
+bất cứ điều gì!
+
+Nếu bạn mới dùng trợ lý lập trình AI, đây là một số ví dụ có thể
+giúp ích.
+
+---
+
+### Đặt câu hỏi
+
+Bạn có thể nhờ OpenCode giải thích codebase cho bạn.
+
+:::tip
+Dùng phím `@` để tìm kiếm mơ hồ các tệp trong dự án.
+:::
+
+```txt frame="none" "@packages/functions/src/api/index.ts"
+How is authentication handled in @packages/functions/src/api/index.ts
+```
+
+Điều này hữu ích khi có phần codebase mà bạn chưa từng làm việc.
+
+---
+
+### Thêm tính năng
+
+Bạn có thể nhờ OpenCode thêm tính năng mới vào dự án của mình. Tuy nhiên, trước tiên chúng tôi khuyên bạn nên nhờ nó tạo một kế hoạch.
+
+1. **Tạo kế hoạch**
+
+   OpenCode có _chế độ Plan_ vô hiệu hóa khả năng thay đổi và
+   thay vào đó gợi ý _cách_ nó sẽ triển khai tính năng đó.
+
+   Chuyển sang bằng phím **Tab**. Bạn sẽ thấy một chỉ báo ở góc dưới bên phải.
+
+   ```bash frame="none" title="Switch to Plan mode"
+   <TAB>
+   ```
+
+   Giờ hãy mô tả điều bạn muốn nó thực hiện.
+
+   ```txt frame="none"
+   When a user deletes a note, we'd like to flag it as deleted in the database.
+   Then create a screen that shows all the recently deleted notes.
+   From this screen, the user can undelete a note or permanently delete it.
+   ```
+
+   Hãy cung cấp cho OpenCode đủ chi tiết để nó hiểu điều bạn muốn. Sẽ dễ trao đổi hơn
+   nếu bạn nói chuyện với nó như với một lập trình viên mới trong nhóm của mình.
+
+   :::tip
+   Hãy đưa cho OpenCode đầy đủ ngữ cảnh và các ví dụ để nó hiểu điều bạn
+   muốn.
+   :::
+
+2. **Lặp lại kế hoạch**
+
+   Khi nó đưa cho bạn một kế hoạch, bạn có thể góp ý hoặc bổ sung thêm chi tiết.
+
+   ```txt frame="none"
+   We'd like to design this new screen using a design I've used before.
+   [Image #1] Take a look at this image and use it as a reference.
+   ```
+
+   :::tip
+   Kéo và thả hình ảnh vào terminal để thêm chúng vào lời nhắc.
+   :::
+
+   OpenCode có thể quét mọi hình ảnh bạn cung cấp và thêm chúng vào lời nhắc. Bạn
+   làm điều này bằng cách kéo và thả một hình ảnh vào terminal.
+
+3. **Xây dựng tính năng**
+
+   Khi bạn đã hài lòng với kế hoạch, chuyển lại về _chế độ Build_ bằng cách
+   nhấn phím **Tab** lần nữa.
+
+   ```bash frame="none"
+   <TAB>
+   ```
+
+   Và nhờ nó thực hiện các thay đổi.
+
+   ```bash frame="none"
+   Sounds good! Go ahead and make the changes.
+   ```
+
+---
+
+### Thực hiện thay đổi
+
+Với các thay đổi đơn giản hơn, bạn có thể nhờ OpenCode trực tiếp xây dựng
+mà không cần xem kế hoạch trước.
+
+```txt frame="none" "@packages/functions/src/settings.ts" "@packages/functions/src/notes.ts"
+We need to add authentication to the /settings route. Take a look at how this is
+handled in the /notes route in @packages/functions/src/notes.ts and implement
+the same logic in @packages/functions/src/settings.ts
+```
+
+Hãy đảm bảo bạn cung cấp đủ chi tiết để OpenCode thực hiện đúng
+những thay đổi cần thiết.
+
+---
+
+### Hoàn tác thay đổi
+
+Giả sử bạn nhờ OpenCode thực hiện một vài thay đổi.
+
+```txt frame="none" "@packages/functions/src/api/index.ts"
+Can you refactor the function in @packages/functions/src/api/index.ts?
+```
+
+Nhưng bạn nhận ra đó không phải điều bạn muốn. Bạn **có thể hoàn tác** các thay đổi
+bằng lệnh `/undo`.
+
+```bash frame="none"
+/undo
+```
+
+OpenCode sẽ hoàn tác các thay đổi bạn vừa thực hiện và hiển thị lại
+tin nhắn ban đầu của bạn.
+
+```txt frame="none" "@packages/functions/src/api/index.ts"
+Can you refactor the function in @packages/functions/src/api/index.ts?
+```
+
+Từ đây bạn có thể tinh chỉnh lời nhắc và nhờ OpenCode thử lại.
+
+:::tip
+Bạn có thể chạy `/undo` nhiều lần để hoàn tác nhiều thay đổi.
+:::
+
+Hoặc bạn **có thể làm lại** các thay đổi bằng lệnh `/redo`.
+
+```bash frame="none"
+/redo
+```
+
+---
+
+## Chia sẻ
+
+Bạn có thể [chia sẻ các cuộc trò chuyện](/docs/share) với OpenCode
+với đội của mình.
+
+```bash frame="none"
+/share
+```
+
+Thao tác này tạo một liên kết đến cuộc trò chuyện hiện tại và sao chép liên kết đó vào clipboard của bạn.
+
+:::note
+Các cuộc trò chuyện không được chia sẻ mặc định.
+:::
+
+Đây là một [cuộc trò chuyện mẫu](https://opencode.ai/s/4XP1fce5) với OpenCode.
+
+---
+
+## Tùy chỉnh
+
+Vậy là xong! Giờ bạn đã là một chuyên gia khi sử dụng OpenCode.
+
+Để tùy chỉnh theo ý mình, chúng tôi khuyên bạn [chọn một giao diện](/docs/themes), [tùy chỉnh phím tắt](/docs/keybinds), [cấu hình trình định dạng mã](/docs/formatters), [tạo các lệnh tùy chỉnh](/docs/commands), hoặc thử nghiệm với [cấu hình OpenCode](/docs/config).

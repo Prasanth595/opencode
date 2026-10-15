@@ -1,0 +1,57 @@
+---
+title: Mạng
+description: Cấu hình proxy và chứng thư tùy chỉnh.
+---
+
+OpenCode hỗ trợ các biến môi trường proxy tiêu chuẩn và chứng thư tùy chỉnh cho các môi trường mạng doanh nghiệp.
+
+---
+
+## Proxy
+
+OpenCode tuân theo các biến môi trường proxy tiêu chuẩn.
+
+```bash
+# HTTPS proxy (recommended)
+export HTTPS_PROXY=https://proxy.example.com:8080
+
+# HTTP proxy (if HTTPS not available)
+export HTTP_PROXY=http://proxy.example.com:8080
+
+# Bypass proxy for local server (required)
+export NO_PROXY=localhost,127.0.0.1
+```
+
+:::caution
+TUI giao tiếp với một máy chủ HTTP cục bộ. Bạn phải bỏ qua proxy cho kết nối này để tránh vòng lặp định tuyến.
+:::
+
+Bạn có thể cấu hình cổng và hostname của máy chủ bằng [cờ CLI](/docs/cli#run).
+
+---
+
+### Xác thực
+
+Nếu proxy của bạn yêu cầu xác thực cơ bản, hãy đưa thông tin đăng nhập vào URL.
+
+```bash
+export HTTPS_PROXY=http://username:password@proxy.example.com:8080
+```
+
+:::caution
+Tránh hardcode mật khẩu. Hãy dùng biến môi trường hoặc kho lưu trữ thông tin xác thực an toàn.
+:::
+
+Với các proxy yêu cầu xác thực nâng cao như NTLM hoặc Kerberos, hãy cân nhắc dùng một LLM Gateway hỗ trợ phương thức xác thực của bạn.
+
+---
+
+## Chứng thư tùy chỉnh
+
+Nếu doanh nghiệp của bạn dùng CA tùy chỉnh cho các kết nối HTTPS, hãy cấu hình OpenCode để tin cậy chúng.
+
+```bash
+export NODE_EXTRA_CA_CERTS=/path/to/ca-cert.pem
+```
+
+Điều này áp dụng cho cả kết nối qua proxy và truy cập API trực tiếp.

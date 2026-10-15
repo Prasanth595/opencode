@@ -1,0 +1,326 @@
+---
+title: Công cụ
+description: Quản lý các công cụ mà LLM có thể dùng.
+---
+
+Các công cụ cho phép LLM thực hiện hành động trong codebase của bạn. OpenCode đi kèm với một bộ công cụ tích hợp sẵn, nhưng bạn có thể mở rộng bằng [công cụ tùy chỉnh](/docs/custom-tools) hoặc [máy chủ MCP](/docs/mcp-servers).
+
+Mặc định, mọi công cụ đều **được bật** và không cần quyền để chạy. Bạn có thể kiểm soát hành vi của công cụ thông qua [quyền](/docs/permissions).
+
+---
+
+## Cấu hình
+
+Dùng trường `permission` để kiểm soát hành vi của công cụ. Bạn có thể cho phép, từ chối hoặc yêu cầu phê duyệt cho từng công cụ.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "edit": "deny",
+    "bash": "ask",
+    "webfetch": "allow"
+  }
+}
+```
+
+Bạn cũng có thể dùng ký tự đại diện để kiểm soát nhiều công cụ cùng lúc. Ví dụ, để yêu cầu phê duyệt cho mọi công cụ đến từ một máy chủ MCP:
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "mymcp_*": "ask"
+  }
+}
+```
+
+[Tìm hiểu thêm](/docs/permissions) về cách cấu hình quyền.
+
+---
+
+## Tích hợp sẵn
+
+Dưới đây là tất cả công cụ tích hợp sẵn có trong OpenCode.
+
+---
+
+### bash
+
+Thực thi lệnh shell trong môi trường dự án của bạn.
+
+```json title="opencode.json" {4}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "bash": "allow"
+  }
+}
+```
+
+Công cụ này cho phép LLM chạy các lệnh terminal như `npm install`, `git status` hoặc bất kỳ lệnh shell nào khác.
+
+---
+
+### edit
+
+Sửa đổi các tệp hiện có bằng cách thay thế chuỗi chính xác.
+
+```json title="opencode.json" {4}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "edit": "allow"
+  }
+}
+```
+
+Công cụ này thực hiện các chỉnh sửa chính xác đối với tệp bằng cách thay thế những đoạn văn bản khớp chính xác. Đây là cách chính để LLM thay đổi mã.
+
+---
+
+### write
+
+Tạo tệp mới hoặc ghi đè các tệp hiện có.
+
+```json title="opencode.json" {4}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "edit": "allow"
+  }
+}
+```
+
+Dùng mục này để cho phép LLM tạo tệp mới. Nó sẽ ghi đè các tệp hiện có nếu chúng đã tồn tại.
+
+:::note
+Công cụ `write` được kiểm soát bởi quyền `edit`, quyền này bao gồm mọi thay đổi tệp (`edit`, `write`, `apply_patch`).
+:::
+
+---
+
+### read
+
+Đọc nội dung tệp từ codebase của bạn.
+
+```json title="opencode.json" {4}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "read": "allow"
+  }
+}
+```
+
+Công cụ này đọc tệp và trả về nội dung của chúng. Nó hỗ trợ đọc các khoảng dòng cụ thể trong tệp lớn.
+
+---
+
+### grep
+
+Tìm kiếm nội dung tệp bằng biểu thức chính quy.
+
+```json title="opencode.json" {4}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "grep": "allow"
+  }
+}
+```
+
+Tìm kiếm nội dung nhanh trong toàn bộ codebase. Hỗ trợ đầy đủ cú pháp regex và lọc theo mẫu tệp.
+
+---
+
+### glob
+
+Tìm tệp bằng cách khớp mẫu.
+
+```json title="opencode.json" {4}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "glob": "allow"
+  }
+}
+```
+
+Tìm tệp bằng các mẫu glob như `**/*.js` hoặc `src/**/*.ts`. Trả về các đường dẫn tệp khớp, sắp xếp theo thời gian sửa đổi.
+
+---
+
+### lsp (thử nghiệm)
+
+Tương tác với các máy chủ LSP đã cấu hình để có những tính năng thông minh mã nguồn như định nghĩa, tham chiếu, thông tin hover và call hierarchy.
+
+:::note
+Công cụ này chỉ khả dụng khi `OPENCODE_EXPERIMENTAL_LSP_TOOL=true` (hoặc `OPENCODE_EXPERIMENTAL=true`).
+:::
+
+```json title="opencode.json" {4}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "lsp": "allow"
+  }
+}
+```
+
+Các thao tác được hỗ trợ gồm `goToDefinition`, `findReferences`, `hover`, `documentSymbol`, `workspaceSymbol`, `goToImplementation`, `prepareCallHierarchy`, `incomingCalls` và `outgoingCalls`.
+
+Để cấu hình máy chủ LSP nào khả dụng cho dự án của bạn, xem [Máy chủ LSP](/docs/lsp).
+
+---
+
+### apply_patch
+
+Áp dụng patch cho tệp.
+
+```json title="opencode.json" {4}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "edit": "allow"
+  }
+}
+```
+
+Công cụ này áp dụng các tệp patch vào codebase của bạn. Hữu ích khi áp dụng diff và patch từ nhiều nguồn khác nhau.
+
+Khi xử lý hook `tool.execute.before` hoặc `tool.execute.after`, hãy kiểm tra `input.tool === "apply_patch"` (không phải `"patch"`).
+
+`apply_patch` dùng `output.args.patchText` thay cho `output.args.filePath`. Các đường dẫn được nhúng trong các dòng đánh dấu bên trong `patchText` và tương đối so với thư mục gốc dự án (ví dụ: `*** Add File: src/new-file.ts`, `*** Update File: src/existing.ts`, `*** Move to: src/renamed.ts`, `*** Delete File: src/obsolete.ts`).
+
+:::note
+Công cụ `apply_patch` được kiểm soát bởi quyền `edit`, quyền này bao gồm mọi thay đổi tệp (`edit`, `write`, `apply_patch`).
+:::
+
+---
+
+### skill
+
+Tải một [skill](/docs/skills) (một tệp `SKILL.md`) và trả về nội dung của nó trong cuộc trò chuyện.
+
+```json title="opencode.json" {4}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "skill": "allow"
+  }
+}
+```
+
+---
+
+### webfetch
+
+Lấy nội dung từ web.
+
+```json title="opencode.json" {4}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "webfetch": "allow"
+  }
+}
+```
+
+Cho phép LLM lấy và đọc các trang web. Hữu ích khi tra cứu tài liệu hoặc nghiên cứu tài nguyên trực tuyến.
+
+---
+
+### websearch
+
+Tìm kiếm thông tin trên web.
+
+:::note
+Công cụ này chỉ khả dụng khi dùng nhà cung cấp OpenCode hoặc OpenCode Go, hoặc khi biến môi trường `OPENCODE_ENABLE_EXA` hoặc `OPENCODE_ENABLE_PARALLEL` được đặt thành bất kỳ giá trị nào đúng (ví dụ `true` hoặc `1`).
+
+Để bật khi khởi chạy OpenCode:
+
+```bash
+OPENCODE_ENABLE_EXA=1 opencode
+# or
+OPENCODE_ENABLE_PARALLEL=1 opencode
+```
+
+:::
+
+```json title="opencode.json" {4}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "websearch": "allow"
+  }
+}
+```
+
+Thực hiện tìm kiếm web bằng Exa hoặc Parallel để tìm thông tin liên quan trực tuyến. Hữu ích khi nghiên cứu chủ đề, tìm tin tức thời sự hoặc thu thập thông tin ngoài phạm vi dữ liệu huấn luyện.
+
+Không cần khóa API — công cụ kết nối trực tiếp với dịch vụ MCP được cung cấp trên backend mà không cần xác thực.
+
+:::tip
+Dùng `websearch` khi bạn cần tìm thông tin (discovery) và `webfetch` khi bạn cần lấy nội dung từ một URL cụ thể (retrieval).
+:::
+
+---
+
+### question
+
+Đặt câu hỏi cho người dùng trong khi thực thi.
+
+```json title="opencode.json" {4}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "question": "allow"
+  }
+}
+```
+
+Công cụ này cho phép LLM hỏi người dùng trong khi thực hiện một tác vụ. Nó hữu ích cho:
+
+- Thu thập sở thích hoặc yêu cầu của người dùng
+- Làm rõ các chỉ dẫn mơ hồ
+- Nhận quyết định về lựa chọn triển khai
+- Đưa ra các lựa chọn về hướng đi
+
+Mỗi câu hỏi gồm một tiêu đề, nội dung câu hỏi và một danh sách các lựa chọn. Người dùng có thể chọn trong số các lựa chọn được cung cấp hoặc nhập câu trả lời riêng. Khi có nhiều câu hỏi, người dùng có thể chuyển qua lại giữa chúng trước khi gửi toàn bộ câu trả lời.
+
+---
+
+## Công cụ tùy chỉnh
+
+Công cụ tùy chỉnh cho phép bạn định nghĩa các hàm riêng mà LLM có thể gọi. Chúng được định nghĩa trong tệp cấu hình của bạn và có thể thực thi mã tùy ý.
+
+[Tìm hiểu thêm](/docs/custom-tools) về cách tạo công cụ tùy chỉnh.
+
+---
+
+## Máy chủ MCP
+
+Các máy chủ MCP (Model Context Protocol) cho phép bạn tích hợp công cụ và dịch vụ bên ngoài. Điều này bao gồm truy cập cơ sở dữ liệu, tích hợp API và các dịch vụ của bên thứ ba.
+
+[Tìm hiểu thêm](/docs/mcp-servers) về cách cấu hình máy chủ MCP.
+
+---
+
+## Nội bộ
+
+Bên trong, các công cụ như `grep` và `glob` dùng [ripgrep](https://github.com/BurntSushi/ripgrep). Mặc định, ripgrep tuân theo các mẫu `.gitignore`, nghĩa là các tệp và thư mục được liệt kê trong `.gitignore` sẽ bị loại khỏi kết quả tìm kiếm và danh sách.
+
+---
+
+### Mẫu bỏ qua
+
+Để đưa các tệp vốn bị bỏ qua vào kết quả, hãy tạo một tệp `.ignore` trong thư mục gốc dự án. Tệp này cho phép rõ ràng các đường dẫn nhất định.
+
+```text title=".ignore"
+!node_modules/
+!dist/
+!build/
+```
+
+Ví dụ, tệp `.ignore` này cho phép ripgrep tìm kiếm bên trong các thư mục `node_modules/`, `dist/` và `build/` ngay cả khi chúng được liệt kê trong `.gitignore`.

@@ -1,0 +1,196 @@
+---
+title: Tool tùy chỉnh
+description: Tạo các tool mà LLM có thể gọi trong opencode.
+---
+
+Tool tùy chỉnh là các hàm do bạn tạo ra để LLM có thể gọi trong cuộc trò chuyện. Chúng hoạt động cùng với các [tool tích hợp sẵn](/docs/tools) của opencode như `read`, `write` và `bash`.
+
+---
+
+## Tạo một tool
+
+Tool được định nghĩa dưới dạng tệp **TypeScript** hoặc **JavaScript**. Tuy nhiên, phần định nghĩa tool có thể gọi các script viết bằng **bất kỳ ngôn ngữ nào** — TypeScript hoặc JavaScript chỉ được dùng cho chính phần định nghĩa tool.
+
+---
+
+### Vị trí
+
+Chúng có thể được định nghĩa:
+
+- Cục bộ bằng cách đặt chúng vào thư mục `.opencode/tools/` của dự án bạn.
+- Hoặc toàn cục bằng cách đặt chúng vào `~/.config/opencode/tools/`.
+
+---
+
+### Cấu trúc
+
+Cách dễ nhất để tạo tool là dùng helper `tool()` vì nó cung cấp an toàn kiểu và kiểm tra.
+
+```ts title=".opencode/tools/database.ts" {1}
+import { tool } from "@opencode-ai/plugin"
+
+export default tool({
+  description: "Query the project database",
+  args: {
+    query: tool.schema.string().describe("SQL query to execute"),
+  },
+  async execute(args) {
+    // Your database logic here
+    return `Executed query: ${args.query}`
+  },
+})
+```
+
+**Tên tệp** trở thành **tên tool**. Ví dụ trên tạo ra một tool `database`.
+
+---
+
+#### Nhiều tool trong một tệp
+
+Bạn cũng có thể export nhiều tool từ một tệp duy nhất. Mỗi export trở thành **một tool riêng biệt** với tên **`<filename>_<exportname>`**:
+
+```ts title=".opencode/tools/math.ts"
+import { tool } from "@opencode-ai/plugin"
+
+export const add = tool({
+  description: "Add two numbers",
+  args: {
+    a: tool.schema.number().describe("First number"),
+    b: tool.schema.number().describe("Second number"),
+  },
+  async execute(args) {
+    return (args.a + args.b).toString()
+  },
+})
+
+export const multiply = tool({
+  description: "Multiply two numbers",
+  args: {
+    a: tool.schema.number().describe("First number"),
+    b: tool.schema.number().describe("Second number"),
+  },
+  async execute(args) {
+    return (args.a * args.b).toString()
+  },
+})
+```
+
+Điều này tạo ra hai tool: `math_add` và `math_multiply`.
+
+---
+
+#### Trùng tên với tool tích hợp sẵn
+
+Tool tùy chỉnh được khóa theo tên tool. Nếu một tool tùy chỉnh dùng trùng tên với một tool tích hợp sẵn, tool tùy chỉnh sẽ được ưu tiên.
+
+Ví dụ, tệp sau thay thế tool `bash` tích hợp sẵn:
+
+```ts title=".opencode/tools/bash.ts"
+import { tool } from "@opencode-ai/plugin"
+
+export default tool({
+  description: "Restricted bash wrapper",
+  args: {
+    command: tool.schema.string(),
+  },
+  async execute(args) {
+    return `blocked: ${args.command}`
+  },
+})
+```
+
+:::note
+Hãy ưu tiên tên duy nhất trừ khi bạn cố ý muốn thay thế một tool tích hợp sẵn. Nếu muốn tắt một tool tích hợp sẵn mà không ghi đè nó, hãy dùng [quyền](/docs/permissions).
+:::
+
+---
+
+### Tham số
+
+Bạn có thể dùng `tool.schema`, vốn chỉ là [Zod](https://zod.dev), để định nghĩa các kiểu tham số.
+
+```ts "tool.schema"
+args: {
+  query: tool.schema.string().describe("SQL query to execute")
+}
+```
+
+Bạn cũng có thể import trực tiếp [Zod](https://zod.dev) và trả về một đối tượng thuần:
+
+```ts {6}
+import { z } from "zod"
+
+export default {
+  description: "Tool description",
+  args: {
+    param: z.string().describe("Parameter description"),
+  },
+  async execute(args, context) {
+    // Tool implementation
+    return "result"
+  },
+}
+```
+
+---
+
+### Context
+
+Tool nhận được context về phiên hiện tại:
+
+```ts title=".opencode/tools/project.ts" {8}
+import { tool } from "@opencode-ai/plugin"
+
+export default tool({
+  description: "Get project information",
+  args: {},
+  async execute(args, context) {
+    // Access context information
+    const { agent, sessionID, messageID, directory, worktree } = context
+    return `Agent: ${agent}, Session: ${sessionID}, Message: ${messageID}, Directory: ${directory}, Worktree: ${worktree}`
+  },
+})
+```
+
+Dùng `context.directory` cho thư mục làm việc của phiên.
+Dùng `context.worktree` cho thư mục gốc của git worktree.
+
+---
+
+## Ví dụ
+
+### Viết một tool bằng Python
+
+Bạn có thể viết tool bằng bất kỳ ngôn ngữ nào bạn muốn. Dưới đây là một ví dụ cộng hai số bằng Python.
+
+Trước tiên, tạo tool dưới dạng một script Python:
+
+```python title=".opencode/tools/add.py"
+import sys
+
+a = int(sys.argv[1])
+b = int(sys.argv[2])
+print(a + b)
+```
+
+Sau đó tạo phần định nghĩa tool gọi script đó:
+
+```ts title=".opencode/tools/python-add.ts" {10}
+import { tool } from "@opencode-ai/plugin"
+import path from "path"
+
+export default tool({
+  description: "Add two numbers using Python",
+  args: {
+    a: tool.schema.number().describe("First number"),
+    b: tool.schema.number().describe("Second number"),
+  },
+  async execute(args, context) {
+    const script = path.join(context.worktree, ".opencode/tools/add.py")
+    const result = await Bun.$`python3 ${script} ${args.a} ${args.b}`.text()
+    return result.trim()
+  },
+})
+```
+
+Ở đây chúng tôi dùng tiện ích [`Bun.$`](https://bun.com/docs/runtime/shell) để chạy script Python.

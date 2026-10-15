@@ -1,0 +1,733 @@
+---
+title: CLI
+description: Các tùy chọn và lệnh của OpenCode CLI.
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components"
+
+Mặc định, OpenCode CLI sẽ khởi chạy [TUI](/docs/tui) khi được chạy mà không có đối số nào.
+
+```bash
+opencode
+```
+
+Nhưng nó cũng chấp nhận các lệnh như được tài liệu hóa trên trang này. Điều này cho phép bạn tương tác với OpenCode theo chương trình.
+
+```bash
+opencode run "Explain how closures work in JavaScript"
+```
+
+---
+
+### tui
+
+Khởi chạy giao diện người dùng terminal của OpenCode.
+
+```bash
+opencode [project]
+```
+
+#### Cờ
+
+| Cờ                                          | Viết tắt | Mô tả                                                                 |
+| ------------------------------------------- | -------- | --------------------------------------------------------------------- |
+| <nobr><code>{"--continue"}</code></nobr>    | `-c`     | Tiếp tục phiên gần nhất                                               |
+| <nobr><code>{"--session"}</code></nobr>     | `-s`     | ID phiên cần tiếp tục                                                 |
+| <nobr><code>{"--fork"}</code></nobr>        |          | Tạo nhánh phiên khi tiếp tục (dùng với `--continue` hoặc `--session`) |
+| <nobr><code>{"--prompt"}</code></nobr>      |          | Lời nhắc cần dùng                                                     |
+| <nobr><code>{"--model"}</code></nobr>       | `-m`     | Mô hình cần dùng ở dạng nhà cung cấp/mô hình                          |
+| <nobr><code>{"--agent"}</code></nobr>       |          | Tác nhân cần dùng                                                     |
+| <nobr><code>{"--auto"}</code></nobr>        |          | Tự động duyệt các quyền không bị từ chối rõ ràng                      |
+| <nobr><code>{"--port"}</code></nobr>        |          | Cổng để lắng nghe                                                     |
+| <nobr><code>{"--hostname"}</code></nobr>    |          | Tên máy chủ để lắng nghe                                              |
+| <nobr><code>{"--mdns"}</code></nobr>        |          | Bật khám phá mDNS                                                     |
+| <nobr><code>{"--mdns-domain"}</code></nobr> |          | Tên miền mDNS tùy chỉnh                                               |
+| <nobr><code>{"--cors"}</code></nobr>        |          | Origin trình duyệt bổ sung được cho phép CORS                         |
+
+---
+
+## Lệnh
+
+OpenCode CLI cũng có các lệnh sau.
+
+---
+
+### agent
+
+Quản lý các tác nhân cho OpenCode.
+
+```bash
+opencode agent [command]
+```
+
+---
+
+#### create
+
+Tạo một tác nhân mới với cấu hình tùy chỉnh.
+
+```bash
+opencode agent create
+```
+
+Lệnh này sẽ hướng dẫn bạn tạo một tác nhân mới với lời nhắc hệ thống tùy chỉnh và cấu hình quyền. Bất kỳ thứ gì bạn không cho phép sẽ bị từ chối trong frontmatter được sinh ra.
+
+#### Cờ
+
+| Cờ                                          | Viết tắt | Mô tả                                                                                                                                                                                                                             |
+| ------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <nobr><code>{"--path"}</code></nobr>        |          | Thư mục để ghi tệp tác nhân vào (mặc định là toàn cục hoặc `.opencode/agent` tùy theo lời nhắc)                                                                                                                                   |
+| <nobr><code>{"--description"}</code></nobr> |          | Điều mà tác nhân nên làm                                                                                                                                                                                                          |
+| <nobr><code>{"--mode"}</code></nobr>        |          | Chế độ tác nhân: `all`, `primary` hoặc `subagent`                                                                                                                                                                                 |
+| <nobr><code>{"--permissions"}</code></nobr> |          | Danh sách quyền được phép, phân tách bằng dấu phẩy (mặc định: tất cả). Có sẵn: `bash`, `read`, `edit`, `glob`, `grep`, `webfetch`, `task`, `websearch`, `lsp`, `skill`. Bất kỳ thứ gì bị bỏ qua sẽ bị từ chối. Bí danh: `--tools` |
+| <nobr><code>{"--model"}</code></nobr>       | `-m`     | Mô hình cần dùng, ở định dạng `provider/model`                                                                                                                                                                                    |
+
+Truyền tất cả `--path`, `--description`, `--mode` và `--permissions` sẽ chạy lệnh ở chế độ không tương tác.
+
+---
+
+#### list
+
+Liệt kê tất cả tác nhân khả dụng.
+
+```bash
+opencode agent list
+```
+
+---
+
+### attach
+
+Gắn một terminal vào máy chủ backend OpenCode đã chạy, được khởi chạy qua lệnh `serve` hoặc `web`.
+
+```bash
+opencode attach [url]
+```
+
+Điều này cho phép dùng TUI với một backend OpenCode từ xa. Ví dụ:
+
+```bash
+# Start the backend server for web/mobile access
+opencode web --port 4096 --hostname 0.0.0.0
+
+# In another terminal, attach the TUI to the running backend
+opencode attach http://10.20.30.40:4096
+```
+
+#### Cờ
+
+| Cờ                                       | Viết tắt | Mô tả                                                                              |
+| ---------------------------------------- | -------- | ---------------------------------------------------------------------------------- |
+| <nobr><code>{"--dir"}</code></nobr>      |          | Thư mục làm việc để khởi chạy TUI                                                  |
+| <nobr><code>{"--continue"}</code></nobr> | `-c`     | Tiếp tục phiên gần nhất                                                            |
+| <nobr><code>{"--session"}</code></nobr>  | `-s`     | ID phiên cần tiếp tục                                                              |
+| <nobr><code>{"--fork"}</code></nobr>     |          | Tạo nhánh phiên khi tiếp tục (dùng với `--continue` hoặc `--session`)              |
+| <nobr><code>{"--password"}</code></nobr> | `-p`     | Mật khẩu basic auth (mặc định là `OPENCODE_SERVER_PASSWORD`)                       |
+| <nobr><code>{"--username"}</code></nobr> | `-u`     | Tên người dùng basic auth (mặc định là `OPENCODE_SERVER_USERNAME` hoặc `opencode`) |
+
+---
+
+### auth
+
+Lệnh quản lý thông tin đăng nhập và đăng nhập cho các nhà cung cấp.
+
+```bash
+opencode auth [command]
+```
+
+---
+
+#### login
+
+OpenCode dựa trên danh sách nhà cung cấp tại [Models.dev](https://models.dev), vì vậy bạn có thể dùng `opencode auth login` để cấu hình API key cho bất kỳ nhà cung cấp nào bạn muốn dùng. Thông tin này được lưu trong `~/.local/share/opencode/auth.json`.
+
+```bash
+opencode auth login
+```
+
+Khi OpenCode khởi động, nó nạp các nhà cung cấp từ tệp thông tin đăng nhập. Cũng như nếu có bất kỳ key nào được định nghĩa trong biến môi trường của bạn hoặc trong một tệp `.env` ở dự án của bạn.
+
+##### Cờ
+
+| Cờ                                       | Viết tắt | Mô tả                                                             |
+| ---------------------------------------- | -------- | ----------------------------------------------------------------- |
+| <nobr><code>{"--provider"}</code></nobr> | `-p`     | ID hoặc tên nhà cung cấp cần đăng nhập                            |
+| <nobr><code>{"--method"}</code></nobr>   | `-m`     | Nhãn phương thức đăng nhập cần dùng, bỏ qua bước chọn phương thức |
+
+---
+
+#### list
+
+Liệt kê tất cả các nhà cung cấp đã xác thực được lưu trong tệp thông tin đăng nhập.
+
+```bash
+opencode auth list
+```
+
+Hoặc dùng phiên bản ngắn.
+
+```bash
+opencode auth ls
+```
+
+---
+
+#### logout
+
+Đăng xuất bạn khỏi một nhà cung cấp bằng cách xóa nó khỏi tệp thông tin đăng nhập.
+
+```bash
+opencode auth logout
+```
+
+---
+
+### github
+
+Quản lý tác nhân GitHub cho việc tự động hóa kho lưu trữ.
+
+```bash
+opencode github [command]
+```
+
+---
+
+#### install
+
+Cài đặt tác nhân GitHub trong kho lưu trữ của bạn.
+
+```bash
+opencode github install
+```
+
+Lệnh này thiết lập workflow GitHub Actions cần thiết và hướng dẫn bạn qua quá trình cấu hình. [Tìm hiểu thêm](/docs/github).
+
+---
+
+#### run
+
+Chạy tác nhân GitHub. Điều này thường được dùng trong GitHub Actions.
+
+```bash
+opencode github run
+```
+
+##### Cờ
+
+| Cờ                                    | Mô tả                                   |
+| ------------------------------------- | --------------------------------------- |
+| <nobr><code>{"--event"}</code></nobr> | Sự kiện GitHub giả lập để chạy tác nhân |
+| <nobr><code>{"--token"}</code></nobr> | GitHub personal access token            |
+
+---
+
+### mcp
+
+Quản lý các máy chủ Model Context Protocol.
+
+```bash
+opencode mcp [command]
+```
+
+---
+
+#### add
+
+Thêm một máy chủ MCP vào cấu hình của bạn.
+
+```bash
+opencode mcp add
+```
+
+Lệnh này sẽ hướng dẫn bạn thêm một máy chủ MCP cục bộ hoặc từ xa.
+
+---
+
+#### list
+
+Liệt kê tất cả các máy chủ MCP đã cấu hình cùng trạng thái kết nối của chúng.
+
+```bash
+opencode mcp list
+```
+
+Hoặc dùng phiên bản ngắn.
+
+```bash
+opencode mcp ls
+```
+
+---
+
+#### auth
+
+Xác thực với một máy chủ MCP có hỗ trợ OAuth.
+
+```bash
+opencode mcp auth [name]
+```
+
+Nếu bạn không cung cấp tên máy chủ, bạn sẽ được yêu cầu chọn từ các máy chủ hỗ trợ OAuth khả dụng.
+
+Bạn cũng có thể liệt kê các máy chủ hỗ trợ OAuth cùng trạng thái xác thực của chúng.
+
+```bash
+opencode mcp auth list
+```
+
+Hoặc dùng phiên bản ngắn.
+
+```bash
+opencode mcp auth ls
+```
+
+---
+
+#### logout
+
+Xóa thông tin đăng nhập OAuth cho một máy chủ MCP.
+
+```bash
+opencode mcp logout [name]
+```
+
+---
+
+#### debug
+
+Gỡ lỗi các sự cố kết nối OAuth cho một máy chủ MCP.
+
+```bash
+opencode mcp debug <name>
+```
+
+---
+
+### models
+
+Liệt kê tất cả mô hình khả dụng từ các nhà cung cấp đã cấu hình.
+
+```bash
+opencode models [provider]
+```
+
+Lệnh này hiển thị tất cả mô hình khả dụng trên các nhà cung cấp đã cấu hình của bạn ở định dạng `provider/model`.
+
+Điều này hữu ích khi bạn cần xác định chính xác tên mô hình dùng trong [cấu hình của bạn](/docs/config/).
+
+Bạn có thể tùy chọn truyền một ID nhà cung cấp để lọc các mô hình theo nhà cung cấp đó.
+
+```bash
+opencode models anthropic
+```
+
+#### Cờ
+
+| Cờ                                      | Mô tả                                                                |
+| --------------------------------------- | -------------------------------------------------------------------- |
+| <nobr><code>{"--refresh"}</code></nobr> | Làm mới bộ nhớ đệm mô hình từ models.dev                             |
+| <nobr><code>{"--verbose"}</code></nobr> | Dùng kết quả mô hình chi tiết hơn (bao gồm siêu dữ liệu như chi phí) |
+
+Dùng cờ `--refresh` để cập nhật danh sách mô hình đã lưu đệm. Điều này hữu ích khi nhà cung cấp đã thêm mô hình mới và bạn muốn thấy chúng trong OpenCode.
+
+```bash
+opencode models --refresh
+```
+
+---
+
+### run
+
+Chạy opencode ở chế độ không tương tác bằng cách truyền thẳng một lời nhắc.
+
+```bash
+opencode run [message..]
+```
+
+Điều này hữu ích cho việc viết script, tự động hóa, hoặc khi bạn muốn có một câu trả lời nhanh mà không cần khởi chạy toàn bộ TUI. Ví dụ.
+
+```bash "opencode run"
+opencode run Explain the use of context in Go
+```
+
+Bạn cũng có thể gắn vào một tiến trình `opencode serve` đang chạy để tránh thời gian khởi động lại máy chủ MCP ở mỗi lần chạy:
+
+```bash
+# Start a headless server in one terminal
+opencode serve
+
+# In another terminal, run commands that attach to it
+opencode run --attach http://localhost:4096 "Explain async/await in JavaScript"
+```
+
+#### Cờ
+
+| Cờ                                       | Viết tắt | Mô tả                                                                                |
+| ---------------------------------------- | -------- | ------------------------------------------------------------------------------------ |
+| <nobr><code>{"--command"}</code></nobr>  |          | Lệnh cần chạy, dùng message làm đối số                                               |
+| <nobr><code>{"--continue"}</code></nobr> | `-c`     | Tiếp tục phiên gần nhất                                                              |
+| <nobr><code>{"--session"}</code></nobr>  | `-s`     | ID phiên cần tiếp tục                                                                |
+| <nobr><code>{"--fork"}</code></nobr>     |          | Tạo nhánh phiên khi tiếp tục (dùng với `--continue` hoặc `--session`)                |
+| <nobr><code>{"--share"}</code></nobr>    |          | Chia sẻ phiên                                                                        |
+| <nobr><code>{"--model"}</code></nobr>    | `-m`     | Mô hình cần dùng ở dạng nhà cung cấp/mô hình                                         |
+| <nobr><code>{"--agent"}</code></nobr>    |          | Tác nhân cần dùng                                                                    |
+| <nobr><code>{"--file"}</code></nobr>     | `-f`     | Tệp cần đính kèm vào tin nhắn                                                        |
+| <nobr><code>{"--format"}</code></nobr>   |          | Định dạng: default (có định dạng) hoặc json (sự kiện JSON thô)                       |
+| <nobr><code>{"--title"}</code></nobr>    |          | Tiêu đề cho phiên (dùng lời nhắc bị cắt ngắn nếu không có giá trị nào được cung cấp) |
+| <nobr><code>{"--attach"}</code></nobr>   |          | Gắn vào một máy chủ opencode đang chạy (ví dụ http://localhost:4096)                 |
+| <nobr><code>{"--password"}</code></nobr> | `-p`     | Mật khẩu basic auth (mặc định là `OPENCODE_SERVER_PASSWORD`)                         |
+| <nobr><code>{"--username"}</code></nobr> | `-u`     | Tên người dùng basic auth (mặc định là `OPENCODE_SERVER_USERNAME` hoặc `opencode`)   |
+| <nobr><code>{"--dir"}</code></nobr>      |          | Thư mục để chạy, hoặc đường dẫn trên máy chủ từ xa khi gắn                           |
+| <nobr><code>{"--port"}</code></nobr>     |          | Cổng cho máy chủ cục bộ (mặc định là cổng ngẫu nhiên)                                |
+| <nobr><code>{"--variant"}</code></nobr>  |          | Biến thể của mô hình (mức độ suy luận riêng theo nhà cung cấp)                       |
+| <nobr><code>{"--thinking"}</code></nobr> |          | Hiển thị các khối suy nghĩ                                                           |
+| <nobr><code>{"--auto"}</code></nobr>     |          | Tự động duyệt các quyền không bị từ chối rõ ràng                                     |
+
+---
+
+### serve
+
+Khởi chạy máy chủ OpenCode không giao diện để truy cập API. Xem [tài liệu máy chủ](/docs/server) để biết giao diện HTTP đầy đủ.
+
+```bash
+opencode serve
+```
+
+Lệnh này khởi chạy một máy chủ HTTP cung cấp quyền truy cập API vào chức năng của opencode mà không cần giao diện TUI. Đặt `OPENCODE_SERVER_PASSWORD` để bật basic auth HTTP (tên người dùng mặc định là `opencode`).
+
+#### Cờ
+
+| Cờ                                          | Mô tả                                         |
+| ------------------------------------------- | --------------------------------------------- |
+| <nobr><code>{"--port"}</code></nobr>        | Cổng để lắng nghe                             |
+| <nobr><code>{"--hostname"}</code></nobr>    | Tên máy chủ để lắng nghe                      |
+| <nobr><code>{"--mdns"}</code></nobr>        | Bật khám phá mDNS                             |
+| <nobr><code>{"--mdns-domain"}</code></nobr> | Tên miền mDNS tùy chỉnh                       |
+| <nobr><code>{"--cors"}</code></nobr>        | Origin trình duyệt bổ sung được cho phép CORS |
+
+---
+
+### session
+
+Quản lý các phiên OpenCode.
+
+```bash
+opencode session [command]
+```
+
+---
+
+#### list
+
+Liệt kê tất cả phiên OpenCode.
+
+```bash
+opencode session list
+```
+
+##### Cờ
+
+| Cờ                                        | Viết tắt | Mô tả                                      |
+| ----------------------------------------- | -------- | ------------------------------------------ |
+| <nobr><code>{"--max-count"}</code></nobr> | `-n`     | Giới hạn ở N phiên gần nhất                |
+| <nobr><code>{"--format"}</code></nobr>    |          | Định dạng kết quả: table hoặc json (table) |
+
+---
+
+#### delete
+
+Xóa một phiên OpenCode.
+
+```bash
+opencode session delete <sessionID>
+```
+
+---
+
+### stats
+
+Hiển thị thống kê mức sử dụng token và chi phí cho các phiên OpenCode của bạn.
+
+```bash
+opencode stats
+```
+
+#### Cờ
+
+| Cờ                                      | Mô tả                                                                                         |
+| --------------------------------------- | --------------------------------------------------------------------------------------------- |
+| <nobr><code>{"--days"}</code></nobr>    | Hiển thị thống kê cho N ngày gần nhất (toàn bộ thời gian)                                     |
+| <nobr><code>{"--tools"}</code></nobr>   | Số lượng tool cần hiển thị (tất cả)                                                           |
+| <nobr><code>{"--models"}</code></nobr>  | Hiển thị chi tiết mức sử dụng mô hình (mặc định ẩn). Truyền một số để hiển thị N mục hàng đầu |
+| <nobr><code>{"--project"}</code></nobr> | Lọc theo dự án (tất cả dự án, chuỗi rỗng: dự án hiện tại)                                     |
+
+---
+
+### export
+
+Xuất dữ liệu phiên dưới dạng JSON.
+
+```bash
+opencode export [sessionID]
+```
+
+Nếu bạn không cung cấp ID phiên, bạn sẽ được yêu cầu chọn từ các phiên khả dụng.
+
+#### Cờ
+
+| Cờ                                       | Mô tả                                              |
+| ---------------------------------------- | -------------------------------------------------- |
+| <nobr><code>{"--sanitize"}</code></nobr> | Ẩn thông tin nhạy cảm trong dữ liệu transcript/tệp |
+
+---
+
+### import
+
+Nhập dữ liệu phiên từ một tệp JSON hoặc URL chia sẻ của OpenCode.
+
+```bash
+opencode import <file>
+```
+
+Bạn có thể nhập từ một tệp cục bộ hoặc một URL chia sẻ của OpenCode.
+
+```bash
+opencode import session.json
+opencode import https://opncd.ai/s/abc123
+```
+
+---
+
+### web
+
+Khởi chạy máy chủ OpenCode không giao diện với một giao diện web.
+
+```bash
+opencode web
+```
+
+Lệnh này khởi chạy một máy chủ HTTP và mở trình duyệt web để truy cập OpenCode qua giao diện web. Đặt `OPENCODE_SERVER_PASSWORD` để bật basic auth HTTP (tên người dùng mặc định là `opencode`).
+
+#### Cờ
+
+| Cờ                                          | Mô tả                                         |
+| ------------------------------------------- | --------------------------------------------- |
+| <nobr><code>{"--port"}</code></nobr>        | Cổng để lắng nghe                             |
+| <nobr><code>{"--hostname"}</code></nobr>    | Tên máy chủ để lắng nghe                      |
+| <nobr><code>{"--mdns"}</code></nobr>        | Bật khám phá mDNS                             |
+| <nobr><code>{"--mdns-domain"}</code></nobr> | Tên miền mDNS tùy chỉnh                       |
+| <nobr><code>{"--cors"}</code></nobr>        | Origin trình duyệt bổ sung được cho phép CORS |
+
+---
+
+### acp
+
+Khởi chạy một máy chủ ACP (Agent Client Protocol).
+
+```bash
+opencode acp
+```
+
+Lệnh này khởi chạy một máy chủ ACP giao tiếp qua stdin/stdout bằng nd-JSON.
+
+#### Cờ
+
+| Cờ                                          | Mô tả                                         |
+| ------------------------------------------- | --------------------------------------------- |
+| <nobr><code>{"--cwd"}</code></nobr>         | Thư mục làm việc                              |
+| <nobr><code>{"--port"}</code></nobr>        | Cổng để lắng nghe                             |
+| <nobr><code>{"--hostname"}</code></nobr>    | Tên máy chủ để lắng nghe                      |
+| <nobr><code>{"--mdns"}</code></nobr>        | Bật khám phá mDNS                             |
+| <nobr><code>{"--mdns-domain"}</code></nobr> | Tên miền mDNS tùy chỉnh                       |
+| <nobr><code>{"--cors"}</code></nobr>        | Origin trình duyệt bổ sung được cho phép CORS |
+
+---
+
+### plugin
+
+Cài đặt một plugin và cập nhật cấu hình của bạn.
+
+```bash
+opencode plugin <module>
+```
+
+Hoặc dùng bí danh.
+
+```bash
+opencode plug <module>
+```
+
+#### Cờ
+
+| Cờ                                     | Viết tắt | Mô tả                             |
+| -------------------------------------- | -------- | --------------------------------- |
+| <nobr><code>{"--global"}</code></nobr> | `-g`     | Cài đặt trong cấu hình toàn cục   |
+| <nobr><code>{"--force"}</code></nobr>  | `-f`     | Thay thế phiên bản plugin hiện có |
+
+---
+
+### pr
+
+Tải và checkout một nhánh PR của GitHub, sau đó chạy OpenCode.
+
+```bash
+opencode pr <number>
+```
+
+---
+
+### db
+
+Các công cụ cơ sở dữ liệu.
+
+```bash
+opencode db [query]
+```
+
+#### Cờ
+
+| Cờ                                     | Mô tả                                |
+| -------------------------------------- | ------------------------------------ |
+| <nobr><code>{"--format"}</code></nobr> | Định dạng kết quả: `json` hoặc `tsv` |
+
+---
+
+#### path
+
+In đường dẫn của cơ sở dữ liệu.
+
+```bash
+opencode db path
+```
+
+---
+
+### debug
+
+Các công cụ gỡ lỗi và xử lý sự cố.
+
+```bash
+opencode debug [command]
+```
+
+---
+
+### uninstall
+
+Gỡ cài đặt OpenCode và xóa mọi tệp liên quan.
+
+```bash
+opencode uninstall
+```
+
+#### Cờ
+
+| Cờ                                          | Viết tắt | Mô tả                                    |
+| ------------------------------------------- | -------- | ---------------------------------------- |
+| <nobr><code>{"--keep-config"}</code></nobr> | `-c`     | Giữ lại các tệp cấu hình                 |
+| <nobr><code>{"--keep-data"}</code></nobr>   | `-d`     | Giữ lại dữ liệu phiên và ảnh chụp        |
+| <nobr><code>{"--dry-run"}</code></nobr>     |          | Hiển thị những gì sẽ bị xóa mà không xóa |
+| <nobr><code>{"--force"}</code></nobr>       | `-f`     | Bỏ qua các bước xác nhận                 |
+
+---
+
+### upgrade
+
+Cập nhật opencode lên phiên bản mới nhất hoặc một phiên bản cụ thể.
+
+```bash
+opencode upgrade [target]
+```
+
+Để lên phiên bản mới nhất.
+
+```bash
+opencode upgrade
+```
+
+Để lên một phiên bản cụ thể.
+
+```bash
+opencode upgrade v0.1.48
+```
+
+#### Cờ
+
+| Cờ                                     | Viết tắt | Mô tả                                                           |
+| -------------------------------------- | -------- | --------------------------------------------------------------- |
+| <nobr><code>{"--method"}</code></nobr> | `-m`     | Phương thức cài đặt đã được sử dụng; curl, npm, pnpm, bun, brew |
+
+---
+
+## Cờ toàn cục
+
+opencode CLI nhận các cờ toàn cục sau.
+
+| Cờ                                         | Viết tắt | Mô tả                                 |
+| ------------------------------------------ | -------- | ------------------------------------- |
+| <nobr><code>{"--help"}</code></nobr>       | `-h`     | Hiển thị trợ giúp                     |
+| <nobr><code>{"--version"}</code></nobr>    | `-v`     | In số phiên bản                       |
+| <nobr><code>{"--print-logs"}</code></nobr> |          | In nhật ký ra stderr                  |
+| <nobr><code>{"--log-level"}</code></nobr>  |          | Mức độ log (DEBUG, INFO, WARN, ERROR) |
+| <nobr><code>{"--pure"}</code></nobr>       |          | Chạy mà không dùng plugin bên ngoài   |
+
+---
+
+## Biến môi trường
+
+OpenCode có thể được cấu hình bằng các biến môi trường.
+
+| Biến                                  | Kiểu    | Mô tả                                                  |
+| ------------------------------------- | ------- | ------------------------------------------------------ |
+| `OPENCODE_AUTO_SHARE`                 | boolean | Tự động chia sẻ các phiên                              |
+| `OPENCODE_GIT_BASH_PATH`              | string  | Đường dẫn tới tệp thực thi Git Bash trên Windows       |
+| `OPENCODE_CONFIG`                     | string  | Đường dẫn tới tệp cấu hình                             |
+| `OPENCODE_TUI_CONFIG`                 | string  | Đường dẫn tới tệp cấu hình TUI                         |
+| `OPENCODE_CONFIG_DIR`                 | string  | Đường dẫn tới thư mục cấu hình                         |
+| `OPENCODE_CONFIG_CONTENT`             | string  | Nội dung cấu hình json nội tuyến                       |
+| `OPENCODE_DISABLE_AUTOUPDATE`         | boolean | Tắt việc kiểm tra cập nhật tự động                     |
+| `OPENCODE_DISABLE_PRUNE`              | boolean | Tắt việc dọn dẹp dữ liệu cũ                            |
+| `OPENCODE_DISABLE_TERMINAL_TITLE`     | boolean | Tắt việc tự động cập nhật tiêu đề terminal             |
+| `OPENCODE_PERMISSION`                 | string  | Cấu hình quyền json nội tuyến                          |
+| `OPENCODE_DISABLE_DEFAULT_PLUGINS`    | boolean | Tắt các plugin mặc định                                |
+| `OPENCODE_DISABLE_LSP_DOWNLOAD`       | boolean | Tắt việc tự động tải máy chủ LSP                       |
+| `OPENCODE_ENABLE_EXPERIMENTAL_MODELS` | boolean | Bật mô hình thử nghiệm                                 |
+| `OPENCODE_DISABLE_AUTOCOMPACT`        | boolean | Tắt việc tự động nén ngữ cảnh                          |
+| `OPENCODE_DISABLE_CLAUDE_CODE`        | boolean | Tắt việc đọc từ `.claude` (prompt + skills)            |
+| `OPENCODE_DISABLE_CLAUDE_CODE_PROMPT` | boolean | Tắt việc đọc `~/.claude/CLAUDE.md`                     |
+| `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS` | boolean | Tắt việc nạp `.claude/skills`                          |
+| `OPENCODE_DISABLE_MODELS_FETCH`       | boolean | Tắt việc lấy mô hình từ nguồn từ xa                    |
+| `OPENCODE_DISABLE_MOUSE`              | boolean | Tắt việc bắt chuột trong TUI                           |
+| `OPENCODE_FAKE_VCS`                   | string  | Nhà cung cấp VCS giả lập cho mục đích kiểm thử         |
+| `OPENCODE_CLIENT`                     | string  | Định danh client (mặc định là `cli`)                   |
+| `OPENCODE_ENABLE_EXA`                 | boolean | Bật các công cụ tìm kiếm web của Exa                   |
+| `OPENCODE_ENABLE_PARALLEL`            | boolean | Bật các công cụ tìm kiếm web của Parallel              |
+| `OPENCODE_SERVER_PASSWORD`            | string  | Bật basic auth cho `serve`/`web`                       |
+| `OPENCODE_SERVER_USERNAME`            | string  | Ghi đè tên người dùng basic auth (mặc định `opencode`) |
+| `OPENCODE_MODELS_URL`                 | string  | URL tùy chỉnh để lấy cấu hình mô hình                  |
+
+---
+
+### Thử nghiệm
+
+Các biến môi trường sau bật những tính năng thử nghiệm có thể thay đổi hoặc bị gỡ bỏ.
+
+| Biến                                            | Kiểu    | Mô tả                                             |
+| ----------------------------------------------- | ------- | ------------------------------------------------- |
+| `OPENCODE_EXPERIMENTAL`                         | boolean | Bật cờ bao trùm cho các tính năng thử nghiệm      |
+| `OPENCODE_EXPERIMENTAL_ICON_DISCOVERY`          | boolean | Bật tính năng khám phá biểu tượng                 |
+| `OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT`  | boolean | Tắt sao chép khi chọn trong TUI                   |
+| `OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS` | number  | Thời gian chờ mặc định cho lệnh bash tính bằng ms |
+| `OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX`        | number  | Số token kết quả tối đa cho phản hồi của LLM      |
+| `OPENCODE_EXPERIMENTAL_FILEWATCHER`             | boolean | Bật trình theo dõi tệp cho toàn bộ thư mục        |
+| `OPENCODE_EXPERIMENTAL_OXFMT`                   | boolean | Bật trình định dạng oxfmt                         |
+| `OPENCODE_EXPERIMENTAL_LSP_TOOL`                | boolean | Bật tool LSP thử nghiệm                           |
+| `OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER`     | boolean | Tắt trình theo dõi tệp                            |
+| `OPENCODE_EXPERIMENTAL_EXA`                     | boolean | Bật tính năng Exa thử nghiệm                      |
+| `OPENCODE_EXPERIMENTAL_LSP_TY`                  | boolean | Bật LSP TY cho các tệp python                     |
+| `OPENCODE_EXPERIMENTAL_PLAN_MODE`               | boolean | Bật chế độ plan                                   |
+| `OPENCODE_EXPERIMENTAL_EVENT_SYSTEM`            | boolean | Bật hệ thống sự kiện thử nghiệm                   |
+| `OPENCODE_EXPERIMENTAL_NATIVE_LLM`              | boolean | Bật luồng yêu cầu LLM gốc                         |
+| `OPENCODE_EXPERIMENTAL_PARALLEL`                | boolean | Bật thực thi tìm kiếm web song song               |
+| `OPENCODE_EXPERIMENTAL_SCOUT`                   | boolean | Bật tác nhân phụ Scout                            |
+| `OPENCODE_EXPERIMENTAL_WORKSPACES`              | boolean | Bật hỗ trợ không gian làm việc                    |

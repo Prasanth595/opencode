@@ -1,0 +1,157 @@
+---
+title: Tham chiếu
+description: Thêm các thư mục cục bộ và kho Git làm tham chiếu dự án.
+---
+
+Tham chiếu cho phép OpenCode truy cập các thư mục bên ngoài dự án hiện tại. Hãy dùng chúng để có sẵn tài liệu, thư viện dùng chung, ví dụ hoặc một kho khác trong khi bạn làm việc.
+
+Tham chiếu được cấu hình theo bí danh trong `opencode.json` hoặc `opencode.jsonc`.
+
+```jsonc title="opencode.jsonc"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "references": {
+    "docs": {
+      "path": "../product-docs",
+      "description": "Use for product behavior and documentation conventions",
+    },
+    "sdk": {
+      "repository": "anomalyco/opencode-sdk-js",
+      "branch": "main",
+      "description": "Use for JavaScript SDK implementation details",
+    },
+  },
+}
+```
+
+---
+
+## Thư mục cục bộ
+
+Dùng `path` để tham chiếu một thư mục cục bộ.
+
+```jsonc title="opencode.jsonc"
+{
+  "references": {
+    "docs": {
+      "path": "../docs",
+    },
+  },
+}
+```
+
+Đường dẫn có thể là:
+
+- Tương đối so với tệp cấu hình định nghĩa tham chiếu
+- Tuyệt đối, ví dụ như `/home/user/docs`
+- Tương đối so với thư mục home của bạn, ví dụ như `~/docs`
+
+Bạn cũng có thể dùng dạng rút gọn là chuỗi:
+
+```jsonc title="opencode.jsonc"
+{
+  "references": {
+    "docs": "../docs",
+  },
+}
+```
+
+---
+
+## Kho Git
+
+Dùng `repository` để tham chiếu một kho Git. OpenCode hiện thực hóa kho đó trong bộ nhớ đệm kho cục bộ và cung cấp mã nguồn đã checkout dưới dạng một thư mục tham chiếu.
+
+```jsonc title="opencode.jsonc"
+{
+  "references": {
+    "effect": {
+      "repository": "Effect-TS/effect",
+      "branch": "main",
+    },
+  },
+}
+```
+
+`repository` chấp nhận Git URL, tham chiếu host/path và dạng rút gọn `owner/repo` của GitHub. Trường `branch` tùy chọn dùng để chọn một nhánh hoặc ref. Khi không có `branch`, OpenCode dùng nhánh mặc định của kho.
+
+Bạn có thể dùng dạng rút gọn là chuỗi khi không cần nhánh, mô tả hoặc các tùy chọn khác:
+
+```jsonc title="opencode.jsonc"
+{
+  "references": {
+    "effect": "Effect-TS/effect",
+  },
+}
+```
+
+:::note
+Tham chiếu Git được làm mới bất đồng bộ. Một kho vừa được cấu hình có thể mất một chút thời gian để hoàn tất clone hoặc cập nhật.
+:::
+
+---
+
+## Mô tả cách sử dụng
+
+Thêm `description` để giải thích khi nào một tác nhân nên dùng một tham chiếu.
+
+```jsonc title="opencode.jsonc"
+{
+  "references": {
+    "design-system": {
+      "path": "../design-system",
+      "description": "Use when implementing UI components or design tokens",
+    },
+  },
+}
+```
+
+OpenCode đưa các tham chiếu có mô tả vào context của tác nhân. Mô tả nên ngắn gọn và đủ cụ thể để phân biệt các tham chiếu có nội dung tương tự nhau. Các tham chiếu không có mô tả vẫn khả dụng qua autocomplete và sử dụng trực tiếp, nhưng không được giới thiệu cho các tác nhân.
+
+---
+
+## Ẩn các mục autocomplete
+
+Đặt `hidden` là `true` để loại một tham chiếu khỏi autocomplete `@` trong TUI.
+
+```jsonc title="opencode.jsonc"
+{
+  "references": {
+    "internal": {
+      "path": "../internal",
+      "description": "Use for internal implementation details",
+      "hidden": true,
+    },
+  },
+}
+```
+
+`hidden` chỉ ảnh hưởng đến autocomplete. Một tham chiếu bị ẩn nhưng có mô tả vẫn được đưa vào context của tác nhân.
+
+---
+
+## Sử dụng tham chiếu
+
+Các tham chiếu đã cấu hình xuất hiện trong autocomplete `@` của TUI. Nhập `@alias` để đính kèm thư mục gốc của tham chiếu, hoặc `@alias/` để tìm kiếm các tệp bên trong nó.
+
+```text
+Compare this implementation with @sdk/src/client.ts
+```
+
+Các tác nhân cũng nhận được các đường dẫn đã phân giải cùng mô tả của những tham chiếu có mô tả trong system context của chúng, nên chúng có thể tự xem một tham chiếu khi thích hợp mà không cần bạn đính kèm thủ công.
+
+OpenCode tự động cho phép các thư mục tham chiếu qua ranh giới quyền thư mục bên ngoài của nó. Quyền tool thông thường vẫn được áp dụng; ví dụ, một tác nhân không thể chỉnh sửa tệp sẽ không có quyền chỉnh sửa chỉ vì một thư mục được cấu hình làm tham chiếu.
+
+---
+
+## Cấu hình các trường
+
+| Trường        | Cục bộ | Git   | Mô tả                                                   |
+| ------------- | ------ | ----- | ------------------------------------------------------- |
+| `path`        | Có     | Không | Thư mục tham chiếu cục bộ                               |
+| `repository`  | Không  | Có    | Git URL, host/path hoặc giá trị `owner/repo` của GitHub |
+| `branch`      | Không  | Có    | Nhánh hoặc ref Git tùy chọn                             |
+| `description` | Có     | Có    | Hướng dẫn mô tả khi nào nên dùng tham chiếu             |
+| `hidden`      | Có     | Có    | Ẩn tham chiếu khỏi autocomplete `@` của TUI             |
+
+Bí danh tham chiếu không được rỗng hoặc chứa `/`, khoảng trắng, dấu backtick hoặc dấu phẩy.
