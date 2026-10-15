@@ -21,7 +21,8 @@
         },
         "secondary": {
           "base": "$text.muted",
-          "$hovered": "$text.base"
+          "$hovered": "$text.base",
+          "$focused": "$hue.interactive.200"
         },
         "destructive": {
           "base": "$hue.neutral.900",
