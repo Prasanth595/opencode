@@ -73,13 +73,5 @@ export const register = Effect.fnUntraced(function* (options: {
   return current.pipe(
     Effect.flatMap((found) => (owns(found) ? fs.remove(options.file) : Effect.void)),
     Effect.ignore,
-    Effect.andThen(
-      fs.readFileString(marker).pipe(
-        Effect.flatMap(decodeInfo),
-        Effect.filterOrFail(owns),
-        Effect.andThen(fs.remove(marker)),
-        Effect.ignore,
-      ),
-    ),
   )
 })

@@ -54,7 +54,7 @@ export async function ensure(options: EnsureOptions = {}): Promise<Endpoint> {
       const registrationFile = options.file ?? fallback()
       const registrationPresent = (await read(registrationFile)) !== undefined
       const registration = await registered(registrationFile, timing.requestTimeout, marker(options.file))
-      if (registrationPresent && registration.timedOut && registration.info !== undefined) {
+      if ((registrationPresent || registration.markerOnly) && registration.timedOut && registration.info !== undefined) {
         timeouts = {
           info: registration.info,
           count: timeouts !== undefined && same(timeouts.info, registration.info) ? timeouts.count + 1 : 1,
@@ -63,7 +63,7 @@ export async function ensure(options: EnsureOptions = {}): Promise<Endpoint> {
           announce("missing")
           console.warn("Background service is unresponsive; recovery cannot preserve persistent terminals")
           await PtyHandoff.clear(options.file ?? fallback())
-          await terminate(registration.info, options, timing)
+          await terminate(registration.info, options, timing, registration.markerOnly ? marker(options.file) : undefined)
           pool.evict(registration.info.pid)
           pool.recruitNow()
           timeouts = undefined
@@ -72,6 +72,10 @@ export async function ensure(options: EnsureOptions = {}): Promise<Endpoint> {
 
       if (registration.service !== undefined) {
         pool.serviceAnswered()
+        if (registration.markerOnly) {
+          await delay(timing.pollInterval)
+          continue
+        }
         const service = registration.service
         const decision = decide(service, options)
         if (decision._tag === "fail") throw decision.error
@@ -125,9 +129,12 @@ async function read(file?: string) {
 
 async function registered(file?: string, timeout?: number, markerFile?: string) {
   const info = await read(file)
-  if (info === undefined && markerFile !== undefined) return registered(markerFile, timeout)
-  if (info === undefined) return { info: undefined, service: undefined, timedOut: false }
-  return { info, ...(await probeResult(info, timeout)) }
+  if (info === undefined && markerFile !== undefined) {
+    const markerInfo = await read(markerFile)
+    if (markerInfo !== undefined) return { markerOnly: true, info: markerInfo, ...(await probeResult(markerInfo, timeout)) }
+  }
+  if (info === undefined) return { markerOnly: false, info: undefined, service: undefined, timedOut: false }
+  return { markerOnly: false, info, ...(await probeResult(info, timeout)) }
 }
 
 function signal(pid: number, name: NodeJS.Signals) {
@@ -153,8 +160,8 @@ async function waitUntilStopped(pid: number, timing: EnsureTiming) {
   return false
 }
 
-async function terminate(info: Info, options: { readonly file?: string }, timing: EnsureTiming) {
-  const current = await read(options.file)
+async function terminate(info: Info, options: { readonly file?: string }, timing: EnsureTiming, markerFile?: string) {
+  const current = (await read(options.file)) ?? (markerFile === undefined ? undefined : await read(markerFile))
   if (current === undefined || !same(current, info)) return
   signal(info.pid, "SIGTERM")
   // The registration can disappear or change hands before this process exits. Only the PID we
@@ -163,9 +170,9 @@ async function terminate(info: Info, options: { readonly file?: string }, timing
     signal(info.pid, "SIGKILL")
     if (!(await waitUntilStopped(info.pid, timing))) throw new Error(`Server process ${info.pid} is still running`)
   }
-  const latest = await read(options.file)
+  const latest = await read(markerFile ?? options.file)
   if (latest === undefined || !same(latest, info)) return
-  await rm(options.file ?? fallback(), { force: true })
+  await rm(markerFile ?? options.file ?? fallback(), { force: true })
 }
 
 function delay(milliseconds: number) {
