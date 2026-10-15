@@ -360,7 +360,11 @@ export const unsupportedContent = (
   route: string,
   role: LLMRequest["messages"][number]["role"],
   types: ReadonlyArray<ContentType>,
-) => invalidRequest(`${route} ${role} messages only support ${formatContentTypes(types)} content for now`)
+  detail?: string,
+) =>
+  invalidRequest(
+    `${route} ${role} messages only support ${formatContentTypes(types)} content for now${detail ? ` (${detail})` : ""}`,
+  )
 
 /**
  * Build a `validate` step from a Schema decoder. Replaces the per-route
