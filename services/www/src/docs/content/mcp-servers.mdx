@@ -387,14 +387,6 @@ Code Mode is the default. Set `codemode` to `false` when a server's tools must s
 }
 ```
 
-OpenCode avoids nesting a server's own Code Mode inside its own:
-
-| Server | Default adjustment |
-| --- | --- |
-| Remote with Code Mode on | Adds `?codemode=false` to the URL so the server returns raw tools. Retries without it when the server responds `400` or `404`. |
-| `executor mcp` or `https://executor.sh/<name>/mcp` | Sets `codemode` to `false` unless configured. |
-| PostHog | Sends `x-posthog-mcp-mode: tools` unless `codemode` is configured or the URL or headers already choose a mode. |
-
 Use permission actions to hide or deny tools without disconnecting their server. Match the normalized `<server>_<tool>` name:
 
 ```jsonc
