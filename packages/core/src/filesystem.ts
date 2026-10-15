@@ -126,14 +126,7 @@ const baseLayer = Layer.effect(
           Effect.catch((cause): Effect.Effect<never, DirectoryNotFoundError | DirectoryAccessDeniedError> => {
             if (cause.reason._tag === "NotFound")
               return Effect.fail(new DirectoryNotFoundError({ directory: location.directory, cause }))
-            // macOS privacy denials arrive as Unknown with an EPERM cause.
-            if (
-              cause.reason._tag === "PermissionDenied" ||
-              (cause.reason._tag === "Unknown" &&
-                cause.reason.cause instanceof Error &&
-                "code" in cause.reason.cause &&
-                cause.reason.cause.code === "EPERM")
-            )
+            if (FSUtil.isAccessDenied(cause))
               return Effect.fail(new DirectoryAccessDeniedError({ directory: location.directory, cause }))
             return Effect.die(cause)
           }),
