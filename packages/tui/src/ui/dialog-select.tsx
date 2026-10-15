@@ -19,7 +19,7 @@ import {
 } from "./dialog"
 import { Locale } from "../util/locale"
 import { getScrollAcceleration } from "../util/scroll"
-import { useConfig } from "../config"
+import { useConfig, useNewDesigns } from "../config"
 import { moveSelection, reconcileSelection } from "./select-controller"
 
 export interface DialogSelectProps<T> {
@@ -120,6 +120,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   const dialog = useDialog()
   const theme = useTheme().surface("dialog")
   const config = useConfig().data
+  const newDesigns = useNewDesigns()
   const scrollAcceleration = createMemo(() => getScrollAcceleration(config))
   const renderer = useRenderer()
 
@@ -591,8 +592,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
     return typeof item.disabled === "function" ? item.disabled(option) : item.disabled
   }
 
-  const searchInTitle = () =>
-    config.experimental?.["new-designs"] === true && props.searchInTitle === true && props.renderFilter !== false
+  const searchInTitle = () => newDesigns() && props.searchInTitle === true && props.renderFilter !== false
 
   const searchInput = () => (
     <input

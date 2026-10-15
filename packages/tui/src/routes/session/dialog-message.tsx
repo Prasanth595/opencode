@@ -8,7 +8,7 @@ import { errorMessage } from "../../util/error"
 import { DialogFork } from "./dialog-fork"
 import type { PromptInfo } from "../../prompt/history"
 import { projectedPromptInput } from "../../prompt/codec"
-import { useConfig } from "../../config"
+import { useNewDesigns } from "../../config"
 
 export function DialogMessage(props: {
   messageID: string
@@ -19,13 +19,13 @@ export function DialogMessage(props: {
   const clipboard = useClipboard()
   const toast = useToast()
   const client = useClient()
-  const config = useConfig().data
+  const newDesigns = useNewDesigns()
   const message = createMemo(() => data.session.message.get(props.sessionID, props.messageID))
 
   return (
     <DialogSelect
       title="Message Actions"
-      renderFilter={config.experimental?.["new-designs"] !== true}
+      renderFilter={!newDesigns()}
       options={[
         {
           title: "Jump to",
