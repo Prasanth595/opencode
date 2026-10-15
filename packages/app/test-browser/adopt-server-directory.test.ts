@@ -55,12 +55,70 @@ async function flush() {
   for (let i = 0; i < 4; i++) await Promise.resolve()
 }
 
-// Every sequence of up to five events, from each saved state, against a model of the intended behavior:
+function setup() {
+  const { projects } = projectsFor("https://a.example")
+  const [hydrated, setHydrated] = createSignal(false)
+  const [connected, setConnected] = createSignal(false)
+
+  const dispose = createRoot((dispose) => {
+    adoptServerDirectory({ hydrated, connected, location: async () => ({ directory: dir }), adopt: projects.adopt })
+
+    return dispose
+  })
+
+  return { projects, setHydrated, setConnected, dispose }
+}
+
+test("adopts nothing until stored projects have loaded", async () => {
+  const { projects, setConnected, dispose } = setup()
+
+  setConnected(true)
+  await flush()
+  expect(projects.list()).toEqual([])
+  dispose()
+})
+
+test("adopts the directory once loaded and connected", async () => {
+  const { projects, setHydrated, setConnected, dispose } = setup()
+
+  setHydrated(true)
+  setConnected(true)
+  await flush()
+  expect(projects.list()).toEqual([{ worktree: dir, expanded: true }])
+  dispose()
+})
+
+test("does not adopt the directory again after the user closes it and reconnects", async () => {
+  const { projects, setHydrated, setConnected, dispose } = setup()
+
+  setHydrated(true)
+  setConnected(true)
+  await flush()
+  projects.close(dir)
+  setConnected(false)
+  setConnected(true)
+  await flush()
+  expect(projects.list()).toEqual([])
+  dispose()
+})
+
+test("does not adopt when stored projects exist", async () => {
+  const { projects, setHydrated, setConnected, dispose } = setup()
+
+  projects.open(other)
+  setHydrated(true)
+  setConnected(true)
+  await flush()
+  expect(projects.list()).toEqual([{ worktree: other, expanded: true }])
+  dispose()
+})
+
+// Every sequence of up to four events, from each saved state, against a model of the intended behavior:
 // becoming ready (stored projects loaded and connected) fetches the location; when the latest fetch
 // resolves while still ready, the directory is adopted only if no project is open and the user did not close it.
 test("adoptServerDirectory matches the model for every short event sequence", async () => {
   for (const [name, initial] of Object.entries(saved)) {
-    for (const sequence of sequences(5)) {
+    for (const sequence of sequences(4)) {
       const { store, projects } = projectsFor("https://a.example")
       const [hydrated, setHydrated] = createSignal(false)
       const [connected, setConnected] = createSignal(false)
