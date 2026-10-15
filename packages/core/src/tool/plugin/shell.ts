@@ -134,15 +134,28 @@ export const Plugin = {
         }),
       )
       yield* access.authorizeExternal([target, ...directories], context)
-      if (parsed.commands.length > 0)
-        yield* permission.assert({
-          action: name,
-          resources: parsed.commands.map((command) => command.resource),
-          save: parsed.commands.map((command) => command.save),
-          sessionID: context.sessionID,
-          agent: context.agent,
-          source,
-        })
+      // Permission must never be skipped just because the scanner failed to
+      // extract command nodes (e.g. an unparseable command, or a PowerShell
+      // parse that drops the `command` node after a bare `--`). Such a command
+      // is treated as a single opaque resource so it still has to pass the
+      // rules; with no matching rule the default is "ask", not "allow".
+      // See https://github.com/anomalyco/opencode/issues/54393
+      const resources =
+        parsed.commands.length > 0
+          ? parsed.commands.map((command) => command.resource)
+          : [invocation.command]
+      const save =
+        parsed.commands.length > 0
+          ? parsed.commands.map((command) => command.save)
+          : []
+      yield* permission.assert({
+        action: name,
+        resources,
+        save,
+        sessionID: context.sessionID,
+        agent: context.agent,
+        source,
+      })
       // Approval can outlive the directory, so validate immediately before spawning.
       const workdir = yield* Environment.typeFollowing(environment.files, target.absolute).pipe(
         Effect.catchTag("Environment.NotFound", () =>
