@@ -3,13 +3,12 @@ import { Slug } from "@opencode/core/util/slug"
 import { createSignal, onMount } from "solid-js"
 import { Keymap } from "../context/keymap"
 import { useTheme } from "../context/theme"
-import { DialogHeader, useDialog, type DialogContext } from "../ui/dialog"
+import { DIALOG_INSET, DialogFooter, DialogHeader, useDialog, type DialogContext } from "../ui/dialog"
 import { useConfig } from "../config"
 
 export function DialogWorktreeName(props: { onConfirm: (name: string) => void }) {
   const dialog = useDialog()
   const theme = useTheme().surface("dialog")
-  const shortcuts = Keymap.useShortcuts()
   const config = useConfig().data
   const [inputTarget, setInputTarget] = createSignal<InputRenderable>()
   let input: InputRenderable
@@ -47,7 +46,7 @@ export function DialogWorktreeName(props: { onConfirm: (name: string) => void })
   })
 
   return (
-    <box paddingLeft={2} paddingRight={2} gap={1}>
+    <box paddingLeft={DIALOG_INSET} paddingRight={DIALOG_INSET} gap={1}>
       <DialogHeader title="Name worktree" />
       <input
         cursorStyle={config.cursor}
@@ -62,13 +61,13 @@ export function DialogWorktreeName(props: { onConfirm: (name: string) => void })
         focusedTextColor={theme.text.formfield.base}
         cursorColor={theme.text.formfield.base}
       />
-      <box paddingBottom={1} flexDirection="row" gap={2}>
-        <text fg={theme.text.base}>
-          enter <span style={{ fg: theme.text.muted }}>submit</span>
-        </text>
-        <text fg={theme.text.base}>
-          {shortcuts.get("dialog.worktree.generate")} <span style={{ fg: theme.text.muted }}>generate one</span>
-        </text>
+      <box paddingBottom={1} flexDirection="row">
+        <DialogFooter
+          actions={[
+            { title: "submit", key: "enter", onTrigger: confirm },
+            { title: "generate one", command: "dialog.worktree.generate", onTrigger: generate },
+          ]}
+        />
       </box>
     </box>
   )

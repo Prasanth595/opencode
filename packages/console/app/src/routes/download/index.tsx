@@ -422,7 +422,7 @@ export default function Download() {
             <li>
               <Faq question={i18n.t("home.faq.q7")}>
                 {i18n.t("home.faq.a7.p1")} {i18n.t("home.faq.a7.p2.beforeModels")}{" "}
-                <a href={language.route("/docs/zen/#privacy")}>{i18n.t("home.faq.a7.p2.modelsLink")}</a>.
+                <a href="/v2/docs/console/models/#privacy">{i18n.t("home.faq.a7.p2.modelsLink")}</a>.
               </Faq>
             </li>
             <li>

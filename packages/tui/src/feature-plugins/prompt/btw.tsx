@@ -8,7 +8,7 @@ import { useClipboard } from "../../context/clipboard"
 import { Keymap } from "../../context/keymap"
 import { useTheme, useThemes } from "../../context/theme"
 import { usePlugin } from "../../plugin/context"
-import { DialogHeader } from "../../ui/dialog"
+import { DIALOG_INSET, DialogFooter, DialogHeader } from "../../ui/dialog"
 import { useToast } from "../../ui/toast"
 import { getScrollAcceleration } from "../../util/scroll"
 
@@ -127,7 +127,7 @@ export function Answer(props: {
     <box gap={1} paddingBottom={1}>
       <DialogHeader
         gap={2}
-        paddingX={2}
+        newInset={DIALOG_INSET}
         titleView={
           <text attributes={TextAttributes.BOLD} fg={theme.text.base} flexShrink={0}>
             /btw
@@ -146,7 +146,7 @@ export function Answer(props: {
         scrollbarOptions={{ visible: false }}
         scrollAcceleration={getScrollAcceleration(config)}
       >
-        <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1}>
+        <box paddingLeft={DIALOG_INSET} paddingRight={DIALOG_INSET} paddingTop={1} paddingBottom={1}>
           <markdown
             syntaxStyle={syntax()}
             renderNode={props.markdown()}
@@ -159,15 +159,15 @@ export function Answer(props: {
           />
         </box>
       </scrollbox>
-      <box flexDirection="row" gap={3} paddingLeft={2} paddingRight={2}>
-        <text onMouseUp={copy}>
-          <span style={{ fg: copied() ? theme.text.feedback.success.base : theme.text.base }}>
-            <b>{copied() ? "✓ copied" : "c"}</b>
-          </span>
-          <span style={{ fg: theme.text.muted }}>{copied() ? "" : " copy"}</span>
-        </text>
-        <text fg={theme.text.muted}>j/k ↑/↓ scroll</text>
-      </box>
+      <DialogFooter
+        newInset={DIALOG_INSET}
+        actions={[
+          copied()
+            ? { title: "✓ copied", color: theme.text.feedback.success.base, onTrigger: copy }
+            : { title: "copy", key: "c", onTrigger: copy },
+          { title: "scroll", key: "j/k ↑/↓" },
+        ]}
+      />
     </box>
   )
 }
