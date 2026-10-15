@@ -15,7 +15,7 @@ import type {
 import { openUrl } from "@opencode/util/open"
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
-import { useConfig } from "../config"
+import { useNewDesigns } from "../config"
 import { useClipboard } from "../context/clipboard"
 import { useData } from "../context/data"
 import { useClient } from "../context/client"
@@ -293,11 +293,11 @@ function selectMethod(
 ) {
   if (methods.length === 1) return openMethod(integration, methods[0], location, dialog, onConnected)
   dialog.replace(() => {
-    const config = useConfig().data
+    const newDesigns = useNewDesigns()
     return (
       <DialogSelect
         title={`Connect ${integration.name}`}
-        renderFilter={config.experimental?.["new-designs"] !== true}
+        renderFilter={!newDesigns()}
         options={methods.map((method) => ({
           title: method.type === "key" ? (method.label ?? "API key") : method.label,
           value: method.type === "key" ? "key" : method.id,
