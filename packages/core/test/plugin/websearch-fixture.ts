@@ -16,26 +16,22 @@ interface WebSearchRequest {
   readonly body: unknown
 }
 
-interface WebSearchResponse {
-  readonly body: string
-  readonly status: number
-  readonly headers: Record<string, string>
-}
-
 export const requests: WebSearchRequest[] = []
 export const signals: AbortSignal[] = []
-let response: WebSearchResponse = { body: "", status: 200, headers: {} }
-let initializeResponse: WebSearchResponse | undefined
+let responseBody = ""
+let responseStatus = 200
+let responseHeaders: Record<string, string> = {}
 
 export function resetWebSearchFixture(body: string, status = 200) {
   requests.length = 0
   signals.length = 0
-  response = { body, status, headers: {} }
-  initializeResponse = undefined
+  responseBody = body
+  responseStatus = status
+  responseHeaders = {}
 }
 
-export function setInitializeResponse(body: string, status = 200, headers: Record<string, string> = {}) {
-  initializeResponse = { body, status, headers }
+export function setResponseHeaders(headers: Record<string, string>) {
+  responseHeaders = headers
 }
 
 const http = Layer.succeed(
@@ -44,16 +40,14 @@ const http = Layer.succeed(
     Effect.sync(() => {
       signals.push(signal)
       if (request.body._tag !== "Uint8Array") throw new Error(`Unexpected request body: ${request.body._tag}`)
-      const body = JSON.parse(new TextDecoder().decode(request.body.body))
       requests.push({
         url: request.url,
         headers: request.headers,
-        body,
+        body: JSON.parse(new TextDecoder().decode(request.body.body)),
       })
-      const selected = body?.method === "initialize" && initializeResponse ? initializeResponse : response
       return HttpClientResponse.fromWeb(
         request,
-        new Response(selected.body, { status: selected.status, headers: selected.headers }),
+        new Response(responseBody, { status: responseStatus, headers: responseHeaders }),
       )
     }),
   ),

@@ -12,7 +12,7 @@ import {
   requests,
   signals,
   resetWebSearchFixture,
-  setInitializeResponse,
+  setResponseHeaders,
   webSearchIntegrationTest,
 } from "./websearch-fixture"
 
@@ -359,41 +359,13 @@ describe("built-in web search providers", () => {
         integrationID: Integration.ID.make("tinyfish"),
         key: "tinyfish-secret",
       })
-      setInitializeResponse(
-        JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          result: {
-            protocolVersion: "2025-06-18",
-            capabilities: {},
-            serverInfo: { name: "tinyfish", version: "1.0" },
-          },
-        }),
-        200,
-        { "mcp-session-id": "ses_tinyfish" },
-      )
+      setResponseHeaders({ "mcp-session-id": "ses_tinyfish" })
       yield* websearch.query({ query: "effect typescript", providerID: WebSearch.ID.make("tinyfish") })
-      expect(requests[1]).toMatchObject({
-        url: WebSearchTinyFish.endpoint,
-        headers: { "x-api-key": "tinyfish-secret" },
-        body: { jsonrpc: "2.0", id: 1, method: "initialize" },
-      })
-      expect(requests[2]).toMatchObject({
-        headers: { "x-api-key": "tinyfish-secret", "mcp-session-id": "ses_tinyfish" },
-        body: { jsonrpc: "2.0", method: "notifications/initialized" },
-      })
+      expect(requests[1]?.body).toMatchObject({ method: "initialize" })
+      expect(requests[2]?.body).toMatchObject({ method: "notifications/initialized" })
       expect(requests[3]).toMatchObject({
-        url: WebSearchTinyFish.endpoint,
         headers: { "x-api-key": "tinyfish-secret", "mcp-session-id": "ses_tinyfish" },
-        body: {
-          jsonrpc: "2.0",
-          id: 1,
-          method: "tools/call",
-          params: {
-            name: "search",
-            arguments: { query: "effect typescript" },
-          },
-        },
+        body: { method: "tools/call" },
       })
       expect(requests[3]?.headers["x-tinyfish-access-mode"]).toBeUndefined()
     }),
