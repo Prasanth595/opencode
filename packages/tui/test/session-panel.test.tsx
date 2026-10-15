@@ -138,6 +138,42 @@ test("repeated fullscreen toggles retain the viewer, transcript, scroll, and rev
   expect(setup.requests.diff[0].searchParams.get("base")).toBe("refs/heads/v2")
 })
 
+test("the diff panel reopens in the presentation last chosen with the fullscreen toggle", async () => {
+  await using state = await tmpdir()
+  await using setup = await createSessionFixture(state.path)
+  await ready(setup)
+  const reopen = async () => {
+    setup.mockInput.pressKey("F6")
+    await setup.waitFor(() => setup.renderer.root.findDescendantById("session-panel") === undefined)
+    setup.mockInput.pressKey("F6")
+    await panelReady(setup)
+  }
+  setup.mockInput.pressKey("F6")
+  await panelReady(setup)
+  expect(node(setup, "session-panel").width).toBeLessThan(setup.renderer.width)
+
+  setup.mockInput.pressKey("f")
+  await setup.waitFor(() => node(setup, "session-panel").width === setup.renderer.width)
+  expect(setup.config().diffs?.fullscreen).toBe(true)
+  await reopen()
+  expect(node(setup, "session-panel").width).toBe(setup.renderer.width)
+
+  setup.mockInput.pressKey("f")
+  await setup.waitFor(() => node(setup, "session-panel").width < setup.renderer.width)
+  expect(setup.config().diffs?.fullscreen).toBe(false)
+  await reopen()
+  expect(node(setup, "session-panel").width).toBeLessThan(setup.renderer.width)
+
+  // A terminal too narrow to split forces full screen; the ignored toggle leaves the preference alone.
+  setup.resize(100, 36)
+  await setup.waitFor(() => node(setup, "session-panel").width === 100)
+  setup.mockInput.pressKey("f")
+  await setup.flush()
+  expect(setup.config().diffs?.fullscreen).toBe(false)
+  setup.resize(160, 36)
+  await setup.waitFor(() => node(setup, "session-panel").width < setup.renderer.width)
+})
+
 test("docked tree commands leave the full-screen tree preference unchanged", async () => {
   await using state = await tmpdir()
   await using setup = await createSessionFixture(state.path, { diffs: { tree: true } })

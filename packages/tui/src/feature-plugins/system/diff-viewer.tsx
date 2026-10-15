@@ -300,7 +300,7 @@ function DiffBaseDialog(props: {
   )
 }
 
-type DiffPreferences = { tree?: boolean; single?: boolean; view?: "auto" | DiffView }
+type DiffPreferences = { tree?: boolean; single?: boolean; view?: "auto" | DiffView; fullscreen?: boolean }
 
 export function DiffViewerContent(props: {
   context: Plugin.Context
@@ -746,7 +746,15 @@ export function DiffViewerContent(props: {
       title: "Toggle diff viewer full screen",
       group: "VCS",
       enabled: () => props.panel !== undefined,
-      run: () => props.panel?.toggleFullscreen(),
+      run: () => {
+        const panel = props.panel
+        if (!panel) return
+        const before = panel.presentation
+        panel.toggleFullscreen()
+        // A narrow terminal forces full screen and ignores the toggle; only a real toggle is remembered.
+        if (panel.presentation === before) return
+        props.onPreferencesChange?.({ fullscreen: panel.presentation === "fullscreen" })
+      },
     },
     {
       id: "diff.help",
@@ -1316,7 +1324,13 @@ function Commands(props: { context: Plugin.Context }) {
             props.context.ui.panel.close()
             return
           }
-          if (config.data.experimental?.["diff-panel"] === true && props.context.ui.panel.open(ROUTE)) return
+          if (
+            config.data.experimental?.["diff-panel"] === true &&
+            props.context.ui.panel.open(ROUTE, {
+              presentation: config.data.diffs?.fullscreen === true ? "fullscreen" : "panel",
+            })
+          )
+            return
           const returnRoute: Route =
             route.type === "home"
               ? { type: "home" }
