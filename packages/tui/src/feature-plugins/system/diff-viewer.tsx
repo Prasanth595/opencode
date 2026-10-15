@@ -690,7 +690,6 @@ export function DiffViewerContent(props: {
       group: "VCS",
       run() {
         const fileIndex = selectedFileIndex() ?? currentPatchFileIndex()
-        // Pressing again after completing the last file must not reopen it.
         if (fileIndex !== undefined && fileIndex === exhaustedFileIndex()) return
         toggleFileReviewed(fileIndex)
       },
