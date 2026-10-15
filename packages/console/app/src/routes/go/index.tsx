@@ -1,5 +1,5 @@
 import "./index.css"
-import { createAsync, query, useSearchParams } from "@solidjs/router"
+import { useSearchParams } from "@solidjs/router"
 import { Title, Meta } from "@solidjs/meta"
 import { For, Show } from "solid-js"
 //import { HttpHeader } from "@solidjs/start"
@@ -10,14 +10,19 @@ import { Footer } from "~/component/footer"
 import { Header } from "~/component/header"
 import { GoPlanChart } from "~/component/go-plan-chart"
 import { config } from "~/config"
-import { getLastSeenWorkspaceID } from "../workspace/common"
 import {
   IconAlibaba,
   IconAnthropic,
+  IconDeepSeek,
   IconGoogle,
+  IconHunyuan,
+  IconLongCat,
+  IconMeta,
+  IconMiMo,
   IconMiniMax,
   IconMoonshotAI,
   IconOpenAI,
+  IconStepFun,
   IconXai,
   IconZai,
 } from "~/component/icon"
@@ -26,18 +31,17 @@ import { useLanguage } from "~/context/language"
 import { LocaleLinks } from "~/component/locale-links"
 import { goUsageLimits } from "~/lib/language"
 
-const checkLoggedIn = query(async () => {
-  "use server"
-  return await getLastSeenWorkspaceID().catch(() => undefined)
-}, "checkLoggedIn.get")
-
 const models = [
-  { name: "Space Bunny Free", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
+  { name: "Space Bunny", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
   { name: "LongCat 2.5 Preview Free", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
+  { name: "Step 5 Preview Free", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
+  { name: "Cat Jam Free", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention30" },
   { name: "Grok 4.7", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention30" },
   { name: "Grok 4.6", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention30" },
   { name: "GPT 6 Luna", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention30" },
   { name: "GPT 5.6 Luna", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention30" },
+  { name: "Claude Haiku 5.5", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention30" },
+  { name: "Gemini 4 Argon Contributor", training: "go.faq.a5.used", retention: "go.faq.a5.notZdr" },
   { name: "GLM-5.3-Flash", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
   { name: "GLM-5.3", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
   { name: "GLM-5.2", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
@@ -57,14 +61,11 @@ const models = [
   { name: "Muse Spark 1.2 Contributor", training: "go.faq.a5.used", retention: "go.faq.a5.notZdr" },
   { name: "DeepSeek V4.1 Flash", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
   { name: "DeepSeek V4 Pro", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
-  { name: "DeepSeek V4 Flash", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
-  { name: "DeepSeek V4 Flash Vision Exp", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
   { name: "Hy4 preview", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
   { name: "Hy3", training: "go.faq.a5.notUsed", retention: "go.faq.a5.retention0" },
 ] as const
 
 export default function Home() {
-  const workspaceID = createAsync(() => checkLoggedIn())
   const subscribeUrl = "https://opencode.ai/console/go"
   const i18n = useI18n()
   const language = useLanguage()
@@ -90,25 +91,24 @@ export default function Home() {
         content={`${i18n.t("go.meta.description")} ${i18n.t("go.plans.plus.description")}`}
       />
       <Meta name="twitter:image" content="/social-share-black.png" />
-      <Meta name="opencode:auth" content={workspaceID() ? "true" : "false"} />
 
       <div data-component="container">
         <Header go hideGetStarted />
 
         <div data-component="content">
           <section data-component="hero">
+            <div data-component="desktop-app-banner">
+              <span data-slot="badge">{i18n.t("home.banner.badge")}</span>
+              <div data-slot="content">
+                <span data-slot="text">{i18n.t("go.promo.gemini")}</span>
+              </div>
+            </div>
             <Show when={searchParams.ref}>
               <aside data-component="referral-ended-notice" aria-label={i18n.t("go.referral.ended.label")}>
                 <strong>{i18n.t("go.referral.ended.label")}</strong>
                 <p>{i18n.t("go.referral.ended")}</p>
               </aside>
             </Show>
-            <div data-component="desktop-app-banner">
-              <span data-slot="badge">{i18n.t("home.banner.badge")}</span>
-              <div data-slot="content">
-                <span data-slot="text">{i18n.t("go.promo.spaceBunny")}</span>
-              </div>
-            </div>
             <div data-slot="hero-copy">
               <div data-slot="headline">
                 <h1>{i18n.t("go.hero.title")}</h1>
@@ -123,6 +123,12 @@ export default function Home() {
                 <IconMoonshotAI />
                 <IconZai />
                 <IconAlibaba />
+                <IconDeepSeek viewBox="-2 -2 28 28" />
+                <IconMiMo />
+                <IconLongCat />
+                <IconHunyuan />
+                <IconMeta />
+                <IconStepFun />
               </div>
               <p data-slot="tagline">{i18n.t("go.hero.tagline")}</p>
             </div>
@@ -313,6 +319,17 @@ export default function Home() {
                       .
                     </p>
                     <p>
+                      <strong>Claude Haiku 5.5:</strong> {i18n.t("go.faq.a5.retention")}:{" "}
+                      {i18n.t("go.faq.a5.retention30")}.{" "}
+                      <a href="https://docs.anthropic.com/en/docs/claude-code/data-usage">
+                        {i18n.t("go.faq.a5.learnMore")}
+                      </a>
+                      .
+                    </p>
+                    <p>
+                      <strong>Gemini 4 Argon Contributor:</strong> {i18n.t("go.faq.a5.geminiRetention")}
+                    </p>
+                    <p>
                       <strong>Muse Spark 1.3 Contributor:</strong> {i18n.t("go.faq.a5.museRetention")}{" "}
                       <a href="https://dev.meta.ai/docs/pricing-rate-limits#contributor-tier">
                         {i18n.t("go.faq.a5.learnMore")}
@@ -327,7 +344,7 @@ export default function Home() {
                       .
                     </p>
                     <p>
-                      <strong>DeepSeek V4 Flash:</strong> {i18n.t("go.faq.a5.deepseekRetention")}
+                      <strong>DeepSeek:</strong> {i18n.t("go.faq.a5.deepseekRetention")}
                     </p>
                   </div>
                 </Faq>

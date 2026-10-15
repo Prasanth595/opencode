@@ -89,6 +89,7 @@ describe("inference stat normalization", () => {
     expect(statProvider("OMEN-ALPHA-free:global", "gpt-test-model", "test-provider")).toBe("unknown")
     expect(statProvider("omen-alpha", "", "test-provider")).toBe("unknown")
     expect(statProvider("space-bunny-free", "hidden-route-model", "hidden-provider")).toBe("unknown")
+    expect(statProvider("exo-free", "gpt-test-model", "hidden-provider")).toBe("unknown")
 
     const spaceBunny = { ...aggregate("space-bunny-free", "hidden-provider"), provider_model: "hidden-route-model" }
     expect(toModelAggregate(spaceBunny)).toMatchObject([{ model: "space-bunny", provider: "unknown", requests: 1 }])
@@ -139,7 +140,13 @@ describe("inference stat normalization", () => {
   })
 
   test("renames DeepSeek Flash to V4.1 without merging V4 or vision usage", () => {
-    ;["deepseek-flash", "DEEPSEEK-FLASH-free:global", "deepseek-v4.1-flash"].forEach((model) => {
+    ;[
+      "deepseek-flash",
+      "DEEPSEEK-FLASH-free:global",
+      "deepseek-v4.1-flash",
+      "deepseek-v4.1-flash-free",
+      "deepseek-v4-1-flash-opencode-bo44an",
+    ].forEach((model) => {
       expect(statModel(model, "")).toBe("deepseek-v4.1-flash")
       expect(toModelAggregate(aggregate(model, "deepseek"))).toMatchObject([
         { model: "deepseek-v4.1-flash", provider: "deepseek" },
@@ -152,9 +159,11 @@ describe("inference stat normalization", () => {
       ])
     })
     expect(statModel("big-pickle", "deepseek/deepseek-flash")).toBe("deepseek-v4.1-flash")
+    expect(statModel("big-pickle", "radixark/deepseek-v4-1-flash-opencode-bo44an")).toBe("deepseek-v4.1-flash")
     expect(statModel("deepseek-v4-flash", "")).toBe("deepseek-v4-flash")
     expect(statModel("deepseek-v4-flash-vision-exp", "")).toBe("deepseek-v4-flash-vision-exp")
     expect(RETIRED_STAT_MODELS).toContain("deepseek-flash")
+    expect(RETIRED_STAT_MODELS).toContain("deepseek-v4-1-flash-opencode-bo44an")
     expect(RETIRED_STAT_MODELS).not.toContain("deepseek-v4.1-flash")
   })
 
@@ -269,7 +278,7 @@ describe("inference stat normalization", () => {
     queries.forEach((query) => {
       expect(query).toContain("WHERE lower(model) NOT IN ('alpha-gpt-next')")
       expect(query).toContain(
-        "CASE\n      WHEN lower(model) IN ('omen-alpha', 'space-bunny', 'union-alpha') THEN 'unknown'\n",
+        "CASE\n      WHEN lower(model) IN ('exo', 'omen-alpha', 'space-bunny', 'union-alpha') THEN 'unknown'\n",
       )
       expect(query).toContain("= 'opencode-go/union-alpha' THEN 'union-alpha'")
       expect(query).toContain("= 'opencode/union-alpha' THEN 'union-alpha'")
@@ -342,7 +351,7 @@ describe("inference stat normalization", () => {
     expect(queries[0]?.query).toContain("AND product = 'go'")
     expect(queries[0]?.query).toContain("AND lower(model) NOT IN ('alpha-gpt-next')")
     expect(queries[0]?.query).toContain(
-      "CASE\n      WHEN lower(model) IN ('omen-alpha', 'space-bunny', 'union-alpha') THEN 'unknown'\n",
+      "CASE\n      WHEN lower(model) IN ('exo', 'omen-alpha', 'space-bunny', 'union-alpha') THEN 'unknown'\n",
     )
     expect(queries[0]?.query).toContain("= 'opencode-go/union-alpha' THEN 'union-alpha'")
     expect(queries[0]?.query).toContain("= 'opencode/union-alpha' THEN 'union-alpha'")
