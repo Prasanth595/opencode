@@ -6328,25 +6328,36 @@ export type FileFindInput = {
     readonly query: string
     readonly type?: "file" | "directory" | undefined
     readonly limit?: number | undefined
+    readonly path?: string | undefined
   }["location"]
   readonly query: {
     readonly location?: { readonly directory?: string | undefined } | undefined
     readonly query: string
     readonly type?: "file" | "directory" | undefined
     readonly limit?: number | undefined
+    readonly path?: string | undefined
   }["query"]
   readonly type?: {
     readonly location?: { readonly directory?: string | undefined } | undefined
     readonly query: string
     readonly type?: "file" | "directory" | undefined
     readonly limit?: number | undefined
+    readonly path?: string | undefined
   }["type"]
   readonly limit?: {
     readonly location?: { readonly directory?: string | undefined } | undefined
     readonly query: string
     readonly type?: "file" | "directory" | undefined
     readonly limit?: number | undefined
+    readonly path?: string | undefined
   }["limit"]
+  readonly path?: {
+    readonly location?: { readonly directory?: string | undefined } | undefined
+    readonly query: string
+    readonly type?: "file" | "directory" | undefined
+    readonly limit?: number | undefined
+    readonly path?: string | undefined
+  }["path"]
 }
 
 export type FileFindOutput = { location: LocationPublicRef; data: Array<FileSystemEntry> }

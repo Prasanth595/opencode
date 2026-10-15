@@ -25,7 +25,7 @@ import { Skill } from "@opencode/schema/skill"
 import { stringWidth } from "../../util/string-width"
 import { parseFileLineRange, stripFileLineRange } from "../../prompt/parse"
 import { moveSelection, reconcileSelectionWindow, revealSelectionOffset } from "../../ui/select-controller"
-import { directoryAutocomplete, slashArgumentAutocomplete } from "../../prompt/directory-completion"
+import { directoryAutocomplete, slashArgumentAutocomplete, mentionFileSearch } from "../../prompt/directory-completion"
 
 export type AutocompleteRef = {
   onInput: (value: string) => void
@@ -245,12 +245,16 @@ export function Autocomplete(props: {
     item: FileSystemEntry,
     filePath: string,
     lineRange?: { startLine: number; endLine?: number },
+    name?: string,
   ) {
     const urlObj = pathToFileURL(filePath)
+    // Outside-directory mentions reassemble the typed text as the shown name
+    // so the prompt reflects what the user typed.
+    const text = name ?? item.path
     const filename =
       lineRange && item.type !== "directory"
-        ? `${item.path}#${lineRange.startLine}${lineRange.endLine ? `-${lineRange.endLine}` : ""}`
-        : item.path
+        ? `${text}#${lineRange.startLine}${lineRange.endLine ? `-${lineRange.endLine}` : ""}`
+        : text
 
     if (lineRange && item.type !== "directory") {
       urlObj.searchParams.set("start", String(lineRange.startLine))
@@ -358,7 +362,17 @@ export function Autocomplete(props: {
           resolved: true,
         }
       }
-      const result = await client.api.file.find({ query: base, limit: 20, location: requestLocation }).then(
+      const mention = mentionFileSearch(base)
+      const result = await (
+        mention
+          ? client.api.file.find({
+              query: mention.fragment,
+              limit: 20,
+              location: requestLocation,
+              path: mention.path,
+            })
+          : client.api.file.find({ query: base, limit: 20, location: requestLocation })
+      ).then(
         (result) => result,
         () => undefined,
       )
@@ -372,7 +386,18 @@ export function Autocomplete(props: {
 
       options.push(
         ...result.data.map((item): AutocompleteOption => {
-          const { filename, part } = createFilePart(item, path.join(result.location.directory, item.path), lineRange)
+          // Outside entries come back location-relative (possibly through
+          // `..` segments); reassemble the typed `prefix + basename` so the
+          // menu and prompt match what the user typed.
+          const name = mention
+            ? mention.prefix + path.basename(item.path) + (item.type === "directory" ? "/" : "")
+            : undefined
+          const { filename, part } = createFilePart(
+            item,
+            path.join(result.location.directory, item.path),
+            lineRange,
+            name,
+          )
           return {
             display: Locale.truncateMiddle(filename, width),
             value: filename,
@@ -659,7 +684,9 @@ export function Autocomplete(props: {
     const endCursor = input.logicalCursor
 
     input.deleteRange(startCursor.row, startCursor.col, endCursor.row, endCursor.col)
-    input.insertText("@" + selectedPath + "/")
+    // Reassembled outside entries (and location entries) already carry the
+    // trailing separator; only files still lack it while navigating deeper.
+    input.insertText("@" + (selectedPath.endsWith(path.sep) ? selectedPath : selectedPath + path.sep))
 
     setStore("selected", 0)
   }

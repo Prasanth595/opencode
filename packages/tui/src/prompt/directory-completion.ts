@@ -51,6 +51,25 @@ export function slashArgumentAutocomplete(
   }
 }
 
+// An @-mention that reaches outside the location directory (`~/…`, `/…`,
+// `../…`). Returns the split the direct-children find needs: `path` is the
+// base directory sent to the server unexpanded (the server resolves `~` and
+// `..` against itself), `prefix` is the typed base with a trailing `/` for
+// reassembling displays, and `fragment` is the basename filter. Undefined for
+// in-location queries, which keep the indexed find.
+export function mentionFileSearch(query: string) {
+  if (!query) return
+  const outside = query.startsWith("/") || query.startsWith("~") || /(?:^|\/)\.\.(?:\/|$)/.test(query)
+  if (!outside) return
+  const separator = query.lastIndexOf("/")
+  // A trailing ".." segment targets the directory itself rather than
+  // filtering, so it stays part of the base.
+  if (separator === -1 || query.slice(separator + 1) === "..")
+    return { path: query, prefix: query === "/" ? query : query + "/", fragment: "" }
+  const base = query.slice(0, separator) || "/"
+  return { path: base, prefix: base.endsWith("/") ? base : base + "/", fragment: query.slice(separator + 1) }
+}
+
 export function directoryAutocompleteSearch(query: string, directory: string, home: string) {
   if (query === "~") return { directory: home, prefix: "~/", query: "" }
   if (query.startsWith("~/")) return directorySearch(query.slice(2), home, "~/")
