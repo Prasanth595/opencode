@@ -54,7 +54,7 @@ export const discover = Effect.fn("ConfigDiscovery.discover")(function* (options
   // discovery stays infallible.
   const disableClaudeCode =
     options?.disableClaudeCode ??
-    (yield* Config.boolean("OPENCODE_DISABLE_CLAUDE_CODE").pipe(
+    (yield* Config.Boolean("OPENCODE_DISABLE_CLAUDE_CODE").pipe(
       Config.withDefault(false),
       Effect.orElseSucceed(() => false),
     ))
