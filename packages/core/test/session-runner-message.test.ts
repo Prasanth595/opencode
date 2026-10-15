@@ -1310,4 +1310,19 @@ Earlier work
     expect(text).not.toContain("�")
     expect(text).toContain("[truncated:")
   })
+
+  test("background shell results bypass the bound through their completion path", () => {
+    const output = `head-${"a".repeat(60 * 1024)}-TAIL`
+    const shell = SessionMessage.Shell.make({
+      id: id("background-large"),
+      type: "shell",
+      shellID: Shell.ID.make("sh_background_large"),
+      status: "exited",
+      command: "bun typecheck",
+      metadata: { background: true },
+      output: { output, cursor: output.length, size: output.length, truncated: false },
+      time: { created },
+    })
+    expect(toLLMMessages([shell], model)).toEqual([])
+  })
 })
