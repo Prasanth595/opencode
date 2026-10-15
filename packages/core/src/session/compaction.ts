@@ -97,6 +97,8 @@ const SHRINK_STEPS = [0.7, 0.5, 0.35]
 const RESERVE_MIN = 16_000
 /** A common window size, assumed for the compaction request when the model's window is unknown. */
 const UNKNOWN_WINDOW = 200_000
+/** The least output a summary request asks for, even when its prompt leaves no room in the window. */
+const SUMMARY_OUTPUT_MIN = 1_024
 const TOOL_OUTPUT_MAX_CHARS = 1_250
 const IMAGE_TOKEN_ESTIMATE = 1_500
 const PDF_TOKEN_ESTIMATE = 2_000
@@ -288,11 +290,17 @@ export const layer = Layer.effect(
       // template gets one reminder before it counts as a failure.
       const send = (request: LLMRequest) =>
         Effect.gen(function* () {
-          const prompted = LLMRequest.update(request, { messages: [...request.messages, Message.user(prompt)] })
+          const prompted = fitOutput(
+            LLMRequest.update(request, { messages: [...request.messages, Message.user(prompt)] }),
+            context.model.limit.context,
+          )
           const reply = yield* stream(context, prompted, prepared.options)
           if (filled(reply.text)) return { ...reply, recent: split.recent }
 
-          const nudged = LLMRequest.update(prompted, { messages: [...prompted.messages, Message.user(NUDGE)] })
+          const nudged = fitOutput(
+            LLMRequest.update(prompted, { messages: [...prompted.messages, Message.user(NUDGE)] }),
+            context.model.limit.context,
+          )
           const retry = yield* stream(context, nudged, prepared.options)
           if (filled(retry.text)) return { ...retry, recent: split.recent }
           return yield* Effect.fail<Failure>({
@@ -921,6 +929,19 @@ const hasMeasuredPrompt = (message: SessionMessage.Info, model: SessionContext.L
   !message.error &&
   message.tokens !== undefined &&
   message.tokens.input + message.tokens.cache.read + message.tokens.cache.write > 0
+
+/**
+ * `prepare` sizes the output limit for a request of `budget` tokens, but `deliver` can send a larger one when it
+ * cannot shrink the conversation further. Lower the limit to the room the request being sent leaves in the window,
+ * so the input and the requested output never exceed the window by our own estimate.
+ */
+const fitOutput = (request: LLMRequest, window: number) => {
+  const limit = request.generation?.maxTokens
+  if (limit === undefined || window <= 0) return request
+  const maxTokens = Math.min(limit, Math.max(SUMMARY_OUTPUT_MIN, window - estimateRequest(request)))
+  if (maxTokens === limit) return request
+  return LLMRequest.update(request, { generation: { ...request.generation, maxTokens } })
+}
 
 const estimateRequest = (request: Pick<LLMRequest, "system" | "tools" | "messages">) =>
   request.system.reduce((sum, part) => sum + Token.estimate(part.text), 0) +
