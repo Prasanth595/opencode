@@ -63,6 +63,8 @@ const CANCELLED = Symbol("cancelled")
 const CUSTOM = Symbol("custom")
 const OPEN = Symbol("open")
 const SUBMIT = Symbol("submit")
+// Device-flow codes such as "R283-GOUEO"; when present they are copied instead of the URL.
+const OAUTH_CODE = /[A-Z0-9]{4}-[A-Z0-9]{4,5}/
 
 export function integrationOptions(list: IntegrationInfo[]) {
   return list.toSorted(
@@ -180,6 +182,7 @@ function manageConnections(
     const toast = useToast()
     const theme = useTheme().surface("dialog")
     const shortcuts = Keymap.useShortcuts()
+    const newDesigns = useNewDesigns()
     const [deleting, setDeleting] = createSignal<string>()
     const [selected, setSelected] = createSignal(methods.length ? "add" : credentialConnections(integration)[0]?.id)
     const current = createMemo(() =>
@@ -258,7 +261,7 @@ function manageConnections(
           },
           {
             command: "dialog.integration.delete",
-            title: "delete",
+            title: newDesigns() ? "remove account" : "delete",
             hidden: selected() === "add",
             disabled: (option) => !option || option.value === "add",
             onTrigger: (option) => {
@@ -661,37 +664,32 @@ function OAuthAuto(props: {
   const client = useClient()
   const toast = useToast()
   const clipboard = useClipboard()
+  const newDesigns = useNewDesigns()
   let timer: ReturnType<typeof setTimeout> | undefined
   let settled = false
+
+  const open = () => {
+    openUrl(props.attempt.url).catch(() =>
+      toast.show({
+        message: "Could not open the browser. Copy the URL and continue manually.",
+        variant: "error",
+      }),
+    )
+  }
+
+  const copy = () => {
+    const value = props.attempt.instructions.match(OAUTH_CODE)?.[0] ?? props.attempt.url
+    clipboard
+      .write(value)
+      .then(() => toast.show({ message: "Copied to clipboard", variant: "info" }))
+      .catch(toast.error)
+  }
 
   Keymap.createLayer(() => ({
     mode: "modal",
     commands: [
-      {
-        bind: "o",
-        title: "Open authorization URL",
-        group: "Dialog",
-        run: () => {
-          openUrl(props.attempt.url).catch(() =>
-            toast.show({
-              message: "Could not open the browser. Copy the URL and continue manually.",
-              variant: "error",
-            }),
-          )
-        },
-      },
-      {
-        bind: "c",
-        title: "Copy authorization details",
-        group: "Dialog",
-        run: () => {
-          const value = props.attempt.instructions.match(/[A-Z0-9]{4}-[A-Z0-9]{4,5}/)?.[0] ?? props.attempt.url
-          clipboard
-            .write(value)
-            .then(() => toast.show({ message: "Copied to clipboard", variant: "info" }))
-            .catch(toast.error)
-        },
-      },
+      { bind: newDesigns() ? "return" : "o", title: "Open authorization URL", group: "Dialog", run: open },
+      { bind: "c", title: "Copy authorization details", group: "Dialog", run: copy },
     ],
   }))
 
@@ -740,8 +738,8 @@ function OAuthAuto(props: {
       url={props.attempt.url}
       instructions={props.attempt.instructions}
       message="Waiting for authorization…"
-      copy
-      open
+      onCopy={copy}
+      onOpen={open}
     />
   )
 }
@@ -805,19 +803,37 @@ function OAuthView(props: {
   url?: string
   instructions?: string
   message: string
-  copy?: boolean
-  open?: boolean
+  onCopy?: () => void
+  onOpen?: () => void
 }) {
   const theme = useTheme().surface("dialog")
   return (
     <DialogLayout
       header={<DialogHeader title={props.title} />}
-      footer={
+      footer={{
+        actions: {
+          primary: [
+            ...(props.onCopy
+              ? [
+                  {
+                    title: props.instructions?.match(OAUTH_CODE) ? "copy code" : "copy link",
+                    key: "c",
+                    onTrigger: props.onCopy,
+                  },
+                ]
+              : []),
+            ...(props.onOpen ? [{ title: "open link", key: "enter", onTrigger: props.onOpen }] : []),
+          ],
+        },
+      }}
+      legacyFooter={
         <DialogFooter
-          actions={[
-            ...(props.open ? [{ title: "open", key: "o" }] : []),
-            ...(props.copy ? [{ title: "copy", key: "c" }] : []),
-          ]}
+          actions={{
+            secondary: [
+              ...(props.onOpen ? [{ title: "open", key: "o" }] : []),
+              ...(props.onCopy ? [{ title: "copy", key: "c" }] : []),
+            ],
+          }}
         />
       }
     >
@@ -985,22 +1001,20 @@ function StringChoiceField(props: {
   return (
     <DialogLayout
       header={<DialogHeader title={formLabel(props.field)} onClose={() => (store.editing ? back() : dialog.clear())} />}
-      footer={
-        <DialogFooter
-          actions={
-            store.editing
-              ? [
-                  { title: "submit", key: "enter", onTrigger: () => submit(textarea()?.plainText.trim() || undefined) },
-                  { title: "back", key: "esc", onTrigger: back },
-                ]
-              : [
-                  { title: "select", key: "↑/↓" },
-                  { title: "confirm", key: "enter", onTrigger: () => select(store.selected) },
-                  { title: "cancel", key: "esc", onTrigger: () => dialog.clear() },
-                ]
-          }
-        />
-      }
+      footer={{
+        actions: {
+          secondary: store.editing
+            ? [
+                { title: "submit", key: "enter", onTrigger: () => submit(textarea()?.plainText.trim() || undefined) },
+                { title: "back", key: "esc", onTrigger: back },
+              ]
+            : [
+                { title: "select", key: "↑/↓" },
+                { title: "confirm", key: "enter", onTrigger: () => select(store.selected) },
+                { title: "cancel", key: "esc", onTrigger: () => dialog.clear() },
+              ],
+        },
+      }}
     >
       <box gap={1}>
         <Show when={props.field.description}>

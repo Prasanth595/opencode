@@ -49,6 +49,14 @@ export function DialogPrompt(props: DialogPromptProps) {
     },
   }
 
+  const extraActions = () =>
+    (props.actions ?? []).map((action) => ({
+      title: action.title,
+      command: action.command,
+      disabled: props.busy,
+      onTrigger: () => action.onTrigger(handle),
+    }))
+
   Keymap.createLayer(() => ({
     mode: "modal",
     target: textareaTarget,
@@ -127,17 +135,20 @@ export function DialogPrompt(props: DialogPromptProps) {
           }}
         />
       }
-      footer={
+      footer={{
+        actions: {
+          primary: [
+            ...extraActions(),
+            { title: "submit", command: "dialog.prompt.submit", disabled: props.busy, onTrigger: confirm },
+          ],
+        },
+      }}
+      legacyFooter={
         <Show when={!props.busy} fallback={<text fg={theme.text.muted}>processing…</text>}>
           <DialogFooter
-            actions={[
-              { title: "submit", command: "dialog.prompt.submit", onTrigger: confirm },
-              ...(props.actions ?? []).map((action) => ({
-                title: action.title,
-                command: action.command,
-                onTrigger: () => action.onTrigger(handle),
-              })),
-            ]}
+            actions={{
+              secondary: [{ title: "submit", command: "dialog.prompt.submit", onTrigger: confirm }, ...extraActions()],
+            }}
           />
         </Show>
       }

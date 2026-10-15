@@ -47,7 +47,10 @@ export interface DialogSelectProps<T> {
   footerHints?: {
     title: string
     label: string
+    /** Footer placement while the "new-designs" experiment is off. */
     side?: "left" | "right"
+    /** Footer group under the "new-designs" experiment. Defaults to `secondary`. */
+    group?: "primary" | "secondary"
   }[]
   bindings?: readonly KeymapCommand[]
   current?: T
@@ -64,7 +67,13 @@ type DialogSelectActionBase<T> = {
   command: string
   title: string
   bind?: string
+  /** Footer placement while the "new-designs" experiment is off. */
   side?: "left" | "right"
+  /**
+   * Footer group under the "new-designs" experiment. Defaults to `primary` for actions on the selected
+   * option and `secondary` for dialog-level actions (`selection: "none"`).
+   */
+  group?: "primary" | "secondary"
   hidden?: boolean
   disabled?: boolean | ((option: DialogSelectOption<T> | undefined) => boolean)
 }
@@ -561,16 +570,24 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
 
   const footerActions = createMemo(() =>
     visibleActions().map((item) => {
-      if (!isActionItem(item)) return { title: item.title, key: item.label, side: item.side }
+      if (!isActionItem(item))
+        return { side: item.side, group: item.group ?? "secondary", action: { title: item.title, key: item.label } }
       return {
-        title: item.title,
-        key: item.label,
         side: item.side,
-        disabled: isActionDisabled(item),
-        onTrigger: () => trigger(item),
+        group: item.group ?? (item.selection === "none" ? "secondary" : "primary"),
+        action: {
+          title: item.title,
+          key: item.label,
+          disabled: isActionDisabled(item),
+          onTrigger: () => trigger(item),
+        },
       }
     }),
   )
+  const footerGroup = (match: (item: ReturnType<typeof footerActions>[number]) => boolean) =>
+    footerActions()
+      .filter(match)
+      .map((item) => item.action)
 
   function trigger(item: Action | undefined) {
     if (props.locked || !item || isActionDisabled(item)) return
@@ -643,9 +660,25 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
           </Show>
         </box>
       }
-      footer={
+      footer={{
+        inset: DIALOG_LIST_INSET - DIALOG_INSET,
+        actions: {
+          secondary: footerGroup((item) => item.group === "secondary"),
+          primary: footerGroup((item) => item.group === "primary"),
+        },
+        get children() {
+          return props.footer
+        },
+      }}
+      legacyFooter={
         <Show when={props.footer || visibleActions().length} fallback={<box flexShrink={0} />}>
-          <DialogFooter inset={DIALOG_LIST_INSET - DIALOG_INSET} actions={footerActions()}>
+          <DialogFooter
+            inset={DIALOG_LIST_INSET - DIALOG_INSET}
+            actions={{
+              secondary: footerGroup((item) => item.side !== "right"),
+              primary: footerGroup((item) => item.side === "right"),
+            }}
+          >
             {props.footer}
           </DialogFooter>
         </Show>

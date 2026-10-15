@@ -691,7 +691,7 @@ export function Session(props: {
             },
           },
         ]}
-        footerHints={[{ title: "steer", label: "enter" }]}
+        footerHints={[{ title: "steer", label: "enter", group: "primary" }]}
       />
     ))
   const alignMessage = (messageID: string, top: number) => {

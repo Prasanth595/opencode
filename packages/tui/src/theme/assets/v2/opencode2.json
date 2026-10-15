@@ -152,7 +152,10 @@
         "base": "$background.raised.base",
         "action": {
           "primary": {
-            "$hovered": "$background.raised.high"
+            "$hovered": "$background.raised.max"
+          },
+          "secondary": {
+            "$hovered": "$background.raised.max"
           }
         }
       }
@@ -299,6 +302,14 @@
         "base": "$hue.neutral.800",
         "raised": {
           "high": "$hue.neutral.700"
+        },
+        "action": {
+          "primary": {
+            "$hovered": "$hue.neutral.600"
+          },
+          "secondary": {
+            "$hovered": "$hue.neutral.600"
+          }
         }
       }
     }
