@@ -73,20 +73,15 @@ async function launch(options: { unavailable?: boolean; rejected?: boolean } = {
   return { app, prompts, switches }
 }
 
-test.each(["slash", "keybind", "command"])(
+test.each(["keybind", "command"])(
   "%s queue captures the draft agent without switching the running session",
   async (mode) => {
     const { app: fixture, prompts, switches } = await launch()
     await using app = fixture
     await app.mockInput.typeText(
-      mode === "command"
-        ? "/review Review the result"
-        : mode === "keybind"
-          ? "Review the result"
-          : "/queue Review the result",
+      mode === "command" ? "/review Review the result" : "Review the result",
     )
-    if (mode === "slash") app.mockInput.pressEnter()
-    else app.mockInput.pressKey("F6")
+    app.mockInput.pressKey("F6")
     await app.waitForFrame(() => prompts.length === 1)
     await app.renderOnce()
     await app.renderOnce()
@@ -100,25 +95,25 @@ test.each(["slash", "keybind", "command"])(
   },
 )
 
-test("rejected /queue admission restores the draft", async () => {
+test("rejected queued admission restores the draft", async () => {
   const { app: fixture, prompts, switches } = await launch({ rejected: true })
   await using app = fixture
-  await app.mockInput.typeText("/queue Review the result")
-  app.mockInput.pressEnter()
+  await app.mockInput.typeText("Review the result")
+  app.mockInput.pressKey("F6")
   await app.waitForFrame(
     (frame) =>
-      prompts.length === 1 && frame.includes("Failed to send prompt") && frame.includes("/queue Review the result"),
+      prompts.length === 1 && frame.includes("Failed to send prompt") && frame.includes("Review the result"),
   )
   expect(switches).toEqual([])
 })
 
-test("/queue without an available model preserves the draft without admission", async () => {
+test("queueing without an available model preserves the draft without admission", async () => {
   const { app: fixture, prompts, switches } = await launch({ unavailable: true })
   await using app = fixture
-  await app.mockInput.typeText("/queue Review the result")
-  app.mockInput.pressEnter()
+  await app.mockInput.typeText("Review the result")
+  app.mockInput.pressKey("F6")
   await app.waitForFrame((frame) => frame.includes("Connect an integration to send prompts"))
-  expect(app.captureCharFrame()).toContain("/queue Review the result")
+  expect(app.captureCharFrame()).toContain("Review the result")
   expect(prompts).toEqual([])
   expect(switches).toEqual([])
 })
