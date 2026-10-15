@@ -1,3 +1,4 @@
+import net from "node:net"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import type { DiscoverOptions, Endpoint, Info } from "./service.js"
@@ -47,6 +48,21 @@ export function marker(file?: string) {
 /** Whether two registrations describe the same service instance. */
 export function same(left: Info, right: Info) {
   return left.id === right.id && left.version === right.version && left.url === right.url && left.pid === right.pid
+}
+
+/** Check whether the marker's endpoint still owns its listening port. */
+export function portInUse(url: string, timeout = defaultEnsureTiming.requestTimeout) {
+  const address = new URL(url)
+  return new Promise<boolean>((resolve) => {
+    const socket = net.createConnection({ host: address.hostname, port: Number(address.port) })
+    const finish = (result: boolean) => {
+      socket.destroy()
+      resolve(result)
+    }
+    socket.setTimeout(timeout, () => finish(false))
+    socket.once("connect", () => finish(true))
+    socket.once("error", () => finish(false))
+  })
 }
 
 /** Ask a registered owner for its health and classify the answer. */

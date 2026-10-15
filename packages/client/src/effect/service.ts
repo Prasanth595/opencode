@@ -4,7 +4,7 @@ import { contenderPool, spawnServiceContender } from "../service-contender.js"
 import { defaultEnsureTiming, ensureTiming, type EnsureTiming } from "../service-timing.js"
 import { matchesVersion } from "../service-version.js"
 import { PtyHandoff } from "../pty-handoff.js"
-import { decide, fallback, headers, marker, probeResult, same } from "../service-probe.js"
+import { decide, fallback, headers, marker, portInUse, probeResult, same } from "../service-probe.js"
 
 export * from "../service.js"
 export { headers }
@@ -187,6 +187,9 @@ const stopped = Effect.fnUntraced(function* (pid: number) {
   return yield* Effect.fail(new Error(`Server process ${pid} is still running`))
 })
 
+const running = (pid: number) =>
+  Effect.try({ try: () => process.kill(pid, 0), catch: () => false }).pipe(Effect.orElseSucceed(() => false))
+
 const terminate = Effect.fnUntraced(function* (
   info: Info,
   options: { readonly file?: string },
@@ -199,7 +202,13 @@ const terminate = Effect.fnUntraced(function* (
   if (current === undefined || !same(current, info)) return
   if (markerFile !== undefined) {
     const owner = yield* Effect.promise(() => probeResult(info, timing.requestTimeout))
-    if (owner.service === undefined && !owner.timedOut) return
+    if (
+      owner.service === undefined &&
+      (!owner.timedOut ||
+        !(yield* running(info.pid)) ||
+        !(yield* Effect.promise(() => portInUse(info.url, timing.requestTimeout))))
+    )
+      return
   }
   yield* signal(info.pid, "SIGTERM")
   const done = yield* stopped(info.pid).pipe(Effect.retry(poll(timing)), Effect.option)

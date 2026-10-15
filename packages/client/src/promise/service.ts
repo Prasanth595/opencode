@@ -4,7 +4,7 @@ import { contenderPool, spawnServiceContender } from "../service-contender.js"
 import { defaultEnsureTiming, ensureTiming, type EnsureTiming } from "../service-timing.js"
 import { matchesVersion } from "../service-version.js"
 import { PtyHandoff } from "../pty-handoff.js"
-import { decide, fallback, headers, marker, probeResult, same } from "../service-probe.js"
+import { decide, fallback, headers, marker, portInUse, probeResult, same } from "../service-probe.js"
 
 export * from "../service.js"
 export { headers }
@@ -152,6 +152,15 @@ function stopped(pid: number) {
   }
 }
 
+function running(pid: number) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function waitUntilStopped(pid: number, timing: EnsureTiming) {
   for (let attempt = 0; attempt <= timing.stopPollAttempts; attempt++) {
     if (stopped(pid)) return true
@@ -165,7 +174,11 @@ async function terminate(info: Info, options: { readonly file?: string }, timing
   if (current === undefined || !same(current, info)) return
   if (markerFile !== undefined) {
     const owner = await probeResult(info, timing.requestTimeout)
-    if (owner.service === undefined && !owner.timedOut) return
+    if (
+      owner.service === undefined &&
+      (!owner.timedOut || !running(info.pid) || !(await portInUse(info.url, timing.requestTimeout)))
+    )
+      return
   }
   signal(info.pid, "SIGTERM")
   // The registration can disappear or change hands before this process exits. Only the PID we
