@@ -906,6 +906,74 @@ describe("Anthropic Messages route", () => {
     }),
   )
 
+  // Session history stores any completed tool output that is not a single text
+  // part as a `content` result, so a provider-executed read of an image would
+  // otherwise JSON-encode its base64 payload into one text block.
+  it.effect("names media in a degraded content result instead of inlining base64", () =>
+    Effect.gen(function* () {
+      const prepared = yield* compileRequest(
+        LLM.request({
+          id: "req_unknown_provider_tool_content",
+          model,
+          messages: [
+            Message.assistant([
+              ToolResultPart.make({
+                id: "call_1",
+                name: "read",
+                resultType: "content",
+                result: [
+                  { type: "text", text: "Image read successfully" },
+                  { type: "file", uri: "data:image/png;base64,AAECAw==", mime: "image/png", name: "shot.png" },
+                  { type: "file", uri: "data:application/pdf;base64,JVBERi0xLjQ=", mime: "application/pdf" },
+                ],
+                providerExecuted: true,
+              }),
+            ]),
+          ],
+          cache: "none",
+        }),
+      )
+
+      expect(prepared.body.messages).toEqual([
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "Image read successfully\n[shot.png: image/png]\n[application/pdf]" },
+          ],
+        },
+      ])
+      expect(JSON.stringify(prepared.body)).not.toContain("JVBERi0xLjQ=")
+    }),
+  )
+
+  // Anthropic rejects an empty text block, so a result that degrades to nothing
+  // must be dropped rather than emitted.
+  it.effect("drops a degraded provider-executed result that has no text to carry", () =>
+    Effect.gen(function* () {
+      const prepared = yield* compileRequest(
+        LLM.request({
+          id: "req_unknown_provider_tool_empty",
+          model,
+          messages: [
+            Message.user("Read it."),
+            Message.assistant([
+              ToolResultPart.make({
+                id: "call_1",
+                name: "read",
+                resultType: "content",
+                result: [{ type: "text", text: "   " }],
+                providerExecuted: true,
+              }),
+            ]),
+          ],
+          cache: "none",
+        }),
+      )
+
+      expect(prepared.body.messages).toEqual([{ role: "user", content: [{ type: "text", text: "Read it." }] }])
+    }),
+  )
+
   it.effect("prepares the composed native continuation request", () =>
     Effect.gen(function* () {
       const prepared = yield* compileRequest(
