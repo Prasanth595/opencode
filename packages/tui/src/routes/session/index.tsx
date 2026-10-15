@@ -1638,6 +1638,7 @@ function TurnTokenUsage(props: {
           newTokens,
           cached: message.tokens.cache.read,
           total,
+          cost: message.cost,
           reuseDrop,
         },
       ]
@@ -1648,6 +1649,7 @@ function TurnTokenUsage(props: {
     newTokens: Math.max("New".length, ...steps().map((item) => item.newTokens.toLocaleString().length)),
     cached: Math.max("Cached".length, ...steps().map((item) => item.cached.toLocaleString().length)),
     total: Math.max("Total".length, ...steps().map((item) => item.total.toLocaleString().length)),
+    cost: Math.max("Cost".length, ...steps().map((item) => tokenCostDelta(item.cost).length)),
   }))
   const summary = createMemo(() => {
     const items = steps()
@@ -1657,6 +1659,8 @@ function TurnTokenUsage(props: {
       latestNewTokens: latest?.newTokens ?? 0,
       latestCached: latest?.cached ?? 0,
       latestTotal: latest?.total ?? 0,
+      totalCost: items.reduce((sum, item) => sum + (item.cost ?? 0), 0),
+      hasCost: items.some((item) => item.cost !== undefined),
       reuseDrops: items.filter((item) => item.reuseDrop !== undefined).length,
     }
   })
@@ -1680,6 +1684,9 @@ function TurnTokenUsage(props: {
               {summary().latestNewTokens.toLocaleString()} new · {summary().latestCached.toLocaleString()} cached ·{" "}
               {summary().latestTotal.toLocaleString()} total
             </span>
+            <Show when={summary().hasCost}>
+              <span> · {Locale.formatCost(summary().totalCost)} cost</span>
+            </Show>
             <Show when={summary().reuseDrops > 0}>
               <span style={{ fg: theme.text.feedback.warning.base }}>
                 {" "}
@@ -1697,6 +1704,8 @@ function TurnTokenUsage(props: {
               {"Cached".padStart(columns().cached)}
               {"  "}
               {"Total".padStart(columns().total)}
+              {"  "}
+              {Locale.padCenter("Cost", columns().cost)}
             </text>
           </box>
           <For each={steps()}>
@@ -1711,6 +1720,8 @@ function TurnTokenUsage(props: {
                   {item.cached.toLocaleString().padStart(columns().cached)}
                   {"  "}
                   {item.total.toLocaleString().padStart(columns().total)}
+                  {"  "}
+                  {tokenCostDelta(item.cost)}
                 </text>
                 <TurnTokenToolCalls tools={item.tools} />
                 <Show when={item.reuseDrop !== undefined}>
@@ -1760,6 +1771,11 @@ function turnTokenToolSummary(tool: SessionMessageAssistantTool) {
   const primary = input.find(([key]) => key === primaryKey)?.[1]
   const details = input.filter(([key]) => key !== primaryKey).map(([key, value]) => `${key}: ${String(value)}`)
   return [primary === undefined ? "" : String(primary), ...details].filter(Boolean).join("  ")
+}
+
+/** Per-step cost cell: a leading plus signals the increment this step added. */
+function tokenCostDelta(cost: number | undefined) {
+  return cost === undefined ? "—" : `+${Locale.formatCost(cost)}`
 }
 
 function BackgroundToolHint(props: { messages: SessionMessageInfo[] }) {
