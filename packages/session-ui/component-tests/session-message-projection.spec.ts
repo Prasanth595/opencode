@@ -87,3 +87,21 @@ story("renders user image, file attachment, file reference, and agent reference"
   expect(bodyBox).not.toBeNull()
   expect(bodyBox!.y - (attachmentsBox!.y + attachmentsBox!.height)).toBe(8)
 })
+
+story("renders a voice call's delegations as Voice messages", async ({ mount }) => {
+  const timeline = await mount("current-session-timeline-rows--voice-messages")
+  const framed = timeline.locator('[data-component="user-message"]').filter({ hasText: "Checking why the upload test" })
+  const continued = timeline.locator('[data-component="user-message"]').filter({ hasText: "push the changes" })
+
+  await expect(framed.locator('[data-slot="user-message-text"]')).toHaveText(
+    "Checking why the upload test fails on CI.",
+  )
+  await expect(framed.getByRole("img", { name: "Voice message" })).toBeVisible()
+  await expect(framed.getByText("Call log attached")).toHaveCount(0)
+  await expect(continued.locator('[data-slot="user-message-text"]')).toHaveText(
+    "Once the fix and verification are complete, push the changes and create a pull request for the fix.",
+  )
+  await expect(continued.getByRole("img", { name: "Voice message" })).toBeVisible()
+  await expect(continued.getByText("Call log attached", { exact: true })).toBeVisible()
+  await expect(timeline.getByText("transcript_delta")).toHaveCount(0)
+})
