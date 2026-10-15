@@ -107,10 +107,9 @@ export const ensure = Effect.fn("service.ensure")(function* (options: EnsureOpti
       return Option.none()
     }
 
-    if (info !== undefined && processAlive(info.pid)) return Option.none()
     const failed = pool.reap()
     if (failed !== undefined) return yield* Effect.fail(failed)
-    if (pool.shouldRecruit(info !== undefined && !processAlive(info.pid))) {
+    if (pool.shouldRecruit(info !== undefined)) {
       yield* announce("missing")
       pool.add(yield* spawnContender)
     }
@@ -169,15 +168,6 @@ const registered = Effect.fnUntraced(function* (file?: string, timeout?: number,
   if (info === undefined) return { info: undefined, service: undefined, timedOut: false }
   return { info, ...(yield* Effect.promise(() => probeResult(info, timeout))) }
 })
-
-function processAlive(pid: number) {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
-  }
-}
 
 // 50ms cadence bounded at ~5s, shared by stop escalation and each ensure
 // discovery window.

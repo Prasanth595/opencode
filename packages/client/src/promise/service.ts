@@ -86,7 +86,7 @@ export async function ensure(options: EnsureOptions = {}): Promise<Endpoint> {
           await stop({ file: options.file, pty: decision.pty }).catch(() => undefined)
           pool.evict(service.info.pid)
         }
-      } else if (registration.info === undefined || !processAlive(registration.info.pid)) {
+      } else {
         const failed = pool.reap()
         if (failed !== undefined) throw failed
         if (pool.shouldRecruit(registration.info !== undefined)) {
@@ -128,15 +128,6 @@ async function registered(file?: string, timeout?: number, markerFile?: string) 
   if (info === undefined && markerFile !== undefined) return registered(markerFile, timeout)
   if (info === undefined) return { info: undefined, service: undefined, timedOut: false }
   return { info, ...(await probeResult(info, timeout)) }
-}
-
-function processAlive(pid: number) {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
-  }
 }
 
 function signal(pid: number, name: NodeJS.Signals) {
