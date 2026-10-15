@@ -257,8 +257,8 @@ function normalizeMcp(input: Record<string, unknown>, encoded: Record<string, un
       ["experimental", "mcp_timeout"],
       diagnostics,
     )
+    // V1 never applied this to connecting, unlike a per-server timeout.
     if (value !== undefined) {
-      timeout.startup = value
       timeout.catalog = value
       timeout.execution = value
     }

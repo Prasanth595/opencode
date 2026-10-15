@@ -1817,7 +1817,7 @@ describe("Config", () => {
               buffer: 10000,
             })
             expect(documents[0]?.info.mcp).toMatchObject({
-              timeout: { startup: 5000, catalog: 5000, execution: 5000 },
+              timeout: { catalog: 5000, execution: 5000 },
               servers: {
                 local: {
                   type: "local",
