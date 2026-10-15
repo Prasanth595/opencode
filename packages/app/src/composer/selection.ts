@@ -10,7 +10,6 @@ import { useModels } from "@/providers/models/models"
 import { cycleModelVariant, getConfiguredAgentVariant, resolveModelVariant } from "@/providers/models/variant"
 import { useComposerState } from "./persistence"
 import { useConfiguredModel } from "@/providers/models/configured"
-import { ModelDefault } from "@opencode/util/model-default"
 
 export function createComposerControls(input: { model?: ModelSelection } = {}) {
   const local = useLocal()
@@ -72,19 +71,12 @@ export function createComposerModelSelection(input: {
 
   const recent = () => models.recent.list().find(valid)
 
-  const fallback = () => {
-    const free = ModelDefault.freeOnly(
-      providers.connected().flatMap((provider) => Object.values(provider.models)),
-      (model) => model.cost.input === 0,
-    )
-    if (free) return { providerID: free.providerID, modelID: free.id }
-
-    return providers.connected().flatMap((provider) => {
+  const fallback = () =>
+    providers.connected().flatMap((provider) => {
       const modelID = Object.values(provider.models)[0]?.id
 
       return modelID ? [{ providerID: provider.id, modelID }] : []
     })[0]
-  }
 
   const current = () => {
     if (!configuredModel.ready()) return

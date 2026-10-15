@@ -584,6 +584,10 @@ describe("Provider and Model", () => {
         })
       })
 
+      expect((yield* models.available()).map((model) => model.id)).toEqual([
+        Model.ID.make("big-pickle"),
+        Model.ID.make("new-free"),
+      ])
       expect((yield* models.default())?.id).toBe(Model.ID.make("big-pickle"))
     }),
   )
