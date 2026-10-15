@@ -30,6 +30,22 @@ const SearchResponse = Schema.fromJsonString(
 )
 const decodeSearchResponse = Schema.decodeUnknownOption(SearchResponse)
 
+const InitializeRequest = Schema.Struct({
+  jsonrpc: Schema.Literal("2.0"),
+  id: Schema.Literal(1),
+  method: Schema.Literal("initialize"),
+  params: Schema.Struct({
+    protocolVersion: Schema.String,
+    capabilities: Schema.Struct({}),
+    clientInfo: Schema.Struct({ name: Schema.String, version: Schema.String }),
+  }),
+})
+
+const InitializedNotification = Schema.Struct({
+  jsonrpc: Schema.Literal("2.0"),
+  method: Schema.Literal("notifications/initialized"),
+})
+
 export const Plugin = define<HttpClient.HttpClient | Scope.Scope>({
   id: "opencode.websearch.tinyfish",
   effect: Effect.fn("WebSearchTinyFish.Plugin")(function* (ctx) {
@@ -61,8 +77,6 @@ export const Plugin = define<HttpClient.HttpClient | Scope.Scope>({
             }
             // Keyed requests are rejected without the `Mcp-Session-Id` returned by `initialize`; keyless ones are not.
             const session = credential?.type === "key" ? yield* initialize(http, headers) : undefined
-            if (credential?.type === "key" && session === undefined)
-              return yield* Effect.fail(new Error("TinyFish MCP initialize did not return an Mcp-Session-Id header"))
             const result = yield* WebSearchMcp.call(
               http,
               endpoint,
@@ -90,36 +104,38 @@ export const Plugin = define<HttpClient.HttpClient | Scope.Scope>({
 const initialize = (http: HttpClient.HttpClient, headers: Record<string, string>) =>
   Effect.gen(function* () {
     const client = HttpClient.withScope(HttpClient.filterStatusOk(http))
-    const response = yield* client.execute(
-      HttpClientRequest.post(endpoint).pipe(
-        HttpClientRequest.accept("application/json, text/event-stream"),
-        HttpClientRequest.setHeaders(headers),
-        HttpClientRequest.bodyJsonUnsafe({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "initialize",
-          params: {
-            protocolVersion: "2025-06-18",
-            capabilities: {},
-            clientInfo: { name: "opencode", version: "1.0" },
-          },
-        }),
-      ),
+    const request = yield* HttpClientRequest.post(endpoint).pipe(
+      HttpClientRequest.accept("application/json, text/event-stream"),
+      HttpClientRequest.setHeaders(headers),
+      HttpClientRequest.schemaBodyJson(InitializeRequest)({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-06-18",
+          capabilities: {},
+          clientInfo: { name: "opencode", version: "1.0" },
+        },
+      }),
     )
+    const response = yield* client.execute(request)
     yield* collectBoundedResponseBody(
       response,
       WebSearchMcp.MAX_RESPONSE_BYTES,
       () => new Error(`initialize response exceeded ${WebSearchMcp.MAX_RESPONSE_BYTES} bytes`),
     )
     const session = response.headers["mcp-session-id"]
-    if (session === undefined) return undefined
-    yield* client.execute(
-      HttpClientRequest.post(endpoint).pipe(
-        HttpClientRequest.accept("application/json, text/event-stream"),
-        HttpClientRequest.setHeaders({ ...headers, "Mcp-Session-Id": session }),
-        HttpClientRequest.bodyJsonUnsafe({ jsonrpc: "2.0", method: "notifications/initialized" }),
-      ),
+    if (session === undefined)
+      return yield* Effect.fail(new Error("TinyFish MCP initialize did not return an Mcp-Session-Id header"))
+    const notification = yield* HttpClientRequest.post(endpoint).pipe(
+      HttpClientRequest.accept("application/json, text/event-stream"),
+      HttpClientRequest.setHeaders({ ...headers, "Mcp-Session-Id": session }),
+      HttpClientRequest.schemaBodyJson(InitializedNotification)({
+        jsonrpc: "2.0",
+        method: "notifications/initialized",
+      }),
     )
+    yield* client.execute(notification)
     return session
   }).pipe(
     Effect.scoped,
