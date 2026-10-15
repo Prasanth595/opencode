@@ -756,6 +756,7 @@ function OAuthCode(props: {
   const client = useClient()
   const toast = useToast()
   const theme = useTheme().surface("dialog")
+  const newDesigns = useNewDesigns()
   const [error, setError] = createSignal<string>()
   let settled = false
 
@@ -771,6 +772,7 @@ function OAuthCode(props: {
   return (
     <DialogPrompt
       title={props.title}
+      subtitle={props.attempt.instructions}
       placeholder="Authorization code"
       onConfirm={(code) => {
         if (!code) return
@@ -789,7 +791,9 @@ function OAuthCode(props: {
       }}
       description={() => (
         <box gap={1}>
-          <text fg={theme.text.muted}>{props.attempt.instructions}</text>
+          <Show when={!newDesigns()}>
+            <text fg={theme.text.muted}>{props.attempt.instructions}</text>
+          </Show>
           <Link href={props.attempt.url} fg={theme.markdown.link} />
           <Show when={error()}>{(value) => <text fg={theme.text.feedback.error.base}>{value()}</text>}</Show>
         </box>

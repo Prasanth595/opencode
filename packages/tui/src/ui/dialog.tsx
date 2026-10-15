@@ -96,22 +96,39 @@ export function DialogHeader(
     closeLabel?: string
     onClose?: () => void
     gap?: number
+    /** Faint line below the title. Shown only under the "new-designs" experiment. */
+    description?: string
   }>,
 ) {
   const dialog = useDialog()
   const theme = useTheme().surface("dialog")
-  return (
+  const newDesigns = useNewDesigns()
+  const row = () => (
     <box flexDirection="row" justifyContent="space-between" gap={props.gap}>
       {props.titleView ?? (
-        <text attributes={TextAttributes.BOLD} fg={theme.text.base}>
+        <text attributes={newDesigns() ? undefined : TextAttributes.BOLD} fg={theme.text.base}>
           {props.title}
         </text>
       )}
       {props.children}
-      <text fg={theme.text.muted} flexShrink={0} onMouseUp={() => (props.onClose ?? dialog.clear)()}>
+      <text
+        fg={newDesigns() ? theme.text.faint : theme.text.muted}
+        flexShrink={0}
+        onMouseUp={() => (props.onClose ?? dialog.clear)()}
+      >
         {props.closeLabel ?? "esc"}
       </text>
     </box>
+  )
+  return (
+    <Show when={newDesigns() && props.description} fallback={row()}>
+      <box>
+        {row()}
+        <text fg={theme.text.faint} wrapMode="word">
+          {props.description}
+        </text>
+      </box>
+    </Show>
   )
 }
 

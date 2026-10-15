@@ -631,7 +631,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
         })
       }}
       focusedBackgroundColor={theme.background.formfield.focused}
-      cursorColor={theme.text.formfield.focused}
+      cursorColor={newDesigns() ? theme.text.base : theme.text.formfield.focused}
       cursorStyle={config.cursor}
       focusedTextColor={theme.text.formfield.focused}
       ref={(r) => {
@@ -644,7 +644,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
         }, 1)
       }}
       placeholder={(searchInTitle() ? props.titlePlaceholder : undefined) ?? props.placeholder ?? "Search"}
-      placeholderColor={theme.text.muted}
+      placeholderColor={newDesigns() ? theme.text.faint : theme.text.muted}
     />
   )
 

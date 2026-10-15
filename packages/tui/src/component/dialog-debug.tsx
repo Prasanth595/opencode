@@ -62,10 +62,11 @@ export function DialogDebug() {
 
   return (
     <DialogLayout
-      header={<DialogHeader title="Debug" />}
+      header={<DialogHeader title="Debug" description="Share this when reporting an issue" />}
       footer={{
         actions: { primary: [copyAction()] },
         get children() {
+          if (newDesigns()) return undefined
           return <text fg={theme.text.muted}>Share this when reporting an issue.</text>
         },
       }}
