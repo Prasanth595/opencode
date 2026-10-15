@@ -59,9 +59,7 @@ export const Plugin = define<HttpClient.HttpClient | Scope.Scope>({
                 ? { "X-API-Key": credential.key }
                 : { "X-TinyFish-Access-Mode": "keyless" }),
             }
-            // Authenticated MCP mode mints an `Mcp-Session-Id` on `initialize` and rejects every
-            // post-initialize request without it (HTTP 400 "Missing required Mcp-Session-Id header").
-            // Keyless mode is stateless and answers a bare `tools/call`.
+            // Keyed requests are rejected without the `Mcp-Session-Id` returned by `initialize`; keyless ones are not.
             const session = credential?.type === "key" ? yield* initialize(http, headers) : undefined
             if (credential?.type === "key" && session === undefined)
               return yield* Effect.fail(new Error("TinyFish MCP initialize did not return an Mcp-Session-Id header"))

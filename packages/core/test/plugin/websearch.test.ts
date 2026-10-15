@@ -373,7 +373,6 @@ describe("built-in web search providers", () => {
         { "mcp-session-id": "ses_tinyfish" },
       )
       yield* websearch.query({ query: "effect typescript", providerID: WebSearch.ID.make("tinyfish") })
-      // Authenticated mode mints a session on initialize, then carries it on the search call.
       expect(requests[1]).toMatchObject({
         url: WebSearchTinyFish.endpoint,
         headers: { "x-api-key": "tinyfish-secret" },

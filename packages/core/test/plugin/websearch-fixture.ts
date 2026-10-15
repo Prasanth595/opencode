@@ -34,7 +34,6 @@ export function resetWebSearchFixture(body: string, status = 200) {
   initializeResponse = undefined
 }
 
-/** Answer an MCP `initialize` handshake separately from `tools/call`, for session-minting providers. */
 export function setInitializeResponse(body: string, status = 200, headers: Record<string, string> = {}) {
   initializeResponse = { body, status, headers }
 }
