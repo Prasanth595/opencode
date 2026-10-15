@@ -1,6 +1,7 @@
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import {
   batch,
+  children,
   createContext,
   createEffect,
   For,
@@ -16,7 +17,7 @@ import { InputRenderable, MouseButton, Renderable, RGBA, TextAttributes } from "
 import { createStore } from "solid-js/store"
 import { useToast } from "./toast"
 import { useClipboard } from "../context/clipboard"
-import { useConfig } from "../config"
+import { useConfig, useNewDesigns } from "../config"
 import { copy, copyOnSelectRelease } from "../util/selection"
 
 export type DialogSize = "medium" | "large" | "xlarge"
@@ -169,6 +170,8 @@ export function DialogFooter(
 ) {
   const dimensions = useTerminalDimensions()
   const shortcuts = Keymap.useShortcuts()
+  const theme = useTheme().surface("dialog")
+  const newDesigns = useNewDesigns()
   const narrow = () => dimensions().width < 60
   const actions = () =>
     (props.actions ?? []).flatMap((action) => {
@@ -178,16 +181,26 @@ export function DialogFooter(
     })
   const left = () => actions().filter((action) => action.side !== "right")
   const right = () => actions().filter((action) => action.side === "right")
+  const content = children(() => props.children)
+  // The raised band bleeds across the parent's DIALOG_INSET padding and the layout's bottom row,
+  // so it spans the dialog edge to edge and sits flush with its bottom.
+  const band = () => newDesigns() && (actions().length > 0 || content.toArray().length > 0)
   return (
     <box
-      paddingLeft={props.inset}
-      paddingRight={props.inset}
+      marginLeft={band() ? -DIALOG_INSET : undefined}
+      marginRight={band() ? -DIALOG_INSET : undefined}
+      marginBottom={band() ? -1 : undefined}
+      paddingLeft={band() ? DIALOG_INSET + (props.inset ?? 0) : props.inset}
+      paddingRight={band() ? DIALOG_INSET + (props.inset ?? 0) : props.inset}
+      paddingTop={band() ? 1 : undefined}
+      paddingBottom={band() ? 1 : undefined}
+      backgroundColor={band() ? theme.background.raised.high : undefined}
       flexDirection="row"
       justifyContent="space-between"
       flexShrink={0}
     >
       <box flexDirection={narrow() ? "column" : "row"} gap={narrow() ? 0 : 2}>
-        {props.children}
+        {content()}
         <For each={left()}>{(action) => <DialogFooterItem action={action} />}</For>
       </box>
       <box flexDirection="row" gap={2}>

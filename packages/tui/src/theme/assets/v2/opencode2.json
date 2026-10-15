@@ -293,6 +293,14 @@
       "image": "#3b7dd8",
       "imageText": "#318795",
       "codeBlock": "#1a1a1a"
+    },
+    "@dialog": {
+      "background": {
+        "base": "$hue.neutral.800",
+        "raised": {
+          "high": "$hue.neutral.700"
+        }
+      }
     }
   },
   "dark": {
