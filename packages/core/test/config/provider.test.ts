@@ -762,6 +762,48 @@ describe("ConfigProviderPlugin.Plugin", () => {
     }),
   )
 
+  it.effect("builds variants from configured reasoning and overlays configured variants", () =>
+    Effect.gen(function* () {
+      const models = yield* Model.Service
+      const providerID = Provider.ID.make("custom")
+      yield* addPlugin([
+        new Document({
+          type: "document",
+          info: decode({
+            providers: {
+              custom: {
+                package: "aisdk:@ai-sdk/openai",
+                models: {
+                  effort: {
+                    capabilities: { reasoning: { supported: true, effort: ["default", "low", "high"] } },
+                    variants: [{ id: "high", headers: { "x-tier": "high" } }],
+                  },
+                  fixed: { capabilities: { reasoning: { supported: true } } },
+                  plain: { capabilities: { reasoning: { supported: false } } },
+                },
+              },
+            },
+          }),
+        }),
+      ])
+
+      const effort = required(yield* models.get(providerID, Model.ID.make("effort")))
+      expect(effort.variants).toEqual([
+        {
+          id: Model.VariantID.make("low"),
+          settings: { reasoningEffort: "low", reasoningSummary: "auto", include: ["reasoning.encrypted_content"] },
+        },
+        {
+          id: Model.VariantID.make("high"),
+          settings: { reasoningEffort: "high", reasoningSummary: "auto", include: ["reasoning.encrypted_content"] },
+          headers: { "x-tier": "high" },
+        },
+      ])
+      expect(required(yield* models.get(providerID, Model.ID.make("fixed"))).variants).toEqual([])
+      expect(required(yield* models.get(providerID, Model.ID.make("plain"))).variants).toEqual([])
+    }),
+  )
+
   it.effect("keeps configured model variant bodies unchanged", () =>
     Effect.gen(function* () {
       const models = yield* Model.Service

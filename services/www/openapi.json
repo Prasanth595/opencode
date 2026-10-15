@@ -14163,6 +14163,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "reasoning": {
+            "$ref": "#/components/schemas/Config.Model.Reasoning"
           }
         },
         "additionalProperties": false
@@ -14205,6 +14208,53 @@
         },
         "required": ["input", "output"],
         "additionalProperties": false
+      },
+      "Config.Model.Reasoning": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "supported": {
+                "type": "boolean",
+                "enum": [false]
+              }
+            },
+            "required": ["supported"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "supported": {
+                "type": "boolean",
+                "enum": [true]
+              },
+              "toggle": {
+                "type": "boolean"
+              },
+              "effort": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "budget": {
+                "type": "object",
+                "properties": {
+                  "min": {
+                    "type": "integer"
+                  },
+                  "max": {
+                    "type": "integer"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": ["supported"],
+            "additionalProperties": false
+          }
+        ]
       },
       "Config.Model.Settings": {
         "type": "object",
