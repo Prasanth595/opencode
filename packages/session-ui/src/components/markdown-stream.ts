@@ -61,6 +61,20 @@ function heal(text: string) {
   return remend(text, { linkMode: "text-only" })
 }
 
+// `heal` (remend) scans the whole string, so running it over a live tail that
+// spans several blocks can rewrite already-complete earlier blocks (for example
+// remend turns a leading escaped `\[` into an incomplete link and strips its
+// bracket). Only the segment after the last blank-line boundary is still live;
+// keep the completed head byte-for-byte and heal only the active tail.
+function liveSource(raw: string) {
+  const boundary = raw.lastIndexOf("\n\n")
+
+  if (boundary < 0) return heal(raw)
+  const head = raw.slice(0, boundary + 2)
+
+  return head + heal(raw.slice(head.length))
+}
+
 export function stream(text: string, live: boolean): Block[] {
   if (!live) return completedProjection(text).blocks
 
@@ -93,10 +107,13 @@ export function stream(text: string, live: boolean): Block[] {
     result.push({ raw, src: raw, mode: "full" })
   }
 
-  const raw = tokens
-    .slice(tail)
-    .map((token) => token.raw)
-    .join("")
+  // Marked normalizes some incomplete trailing tokens (a bare list marker such
+  // as `1. ` becomes `1.\n`) and drops leading whitespace into a `space` token.
+  // Rebuild the tail from the source text so the returned blocks always
+  // reconstruct `text` exactly. `project` appends later deltas to this `raw`,
+  // so a normalized value here would corrupt every subsequent projection.
+  const start = tokens.slice(0, tail).reduce((length, token) => length + token.raw.length, 0)
+  const raw = text.slice(start)
 
   if (last.type !== "code") return [...result, { raw, src: heal(raw), mode: "live" }]
 
@@ -131,6 +148,19 @@ function opensFence(raw: string) {
   return /(?:^|\n)[ \t]{0,3}(?:`{3,}|~{3,})/.test(raw)
 }
 
+// A display math block is bounded by a line that is only `$` or `$$` and can
+// span blank lines, so the renderer's markdown lexer treats it as one token.
+// While the block is still open the lexer cannot recognize it and freezes the
+// paragraphs inside it; growing those frozen blocks in place corrupts the
+// projection, and the split is only repaired by a full re-lex once the block
+// closes. Detect a frozen block that carries a display-math delimiter and re-lex
+// from scratch, so the projection matches a fresh lex of the current text.
+function hasFrozenDisplayMath(blocks: Block[]) {
+  return blocks.some(
+    (block) => block.mode === "full" && block.raw.includes("$") && /^[ \t]*\${1,2}[ \t]*$/m.test(block.raw),
+  )
+}
+
 export function project(previous: Projection | undefined, text: string, live: boolean): Projection {
   if (!live) {
     const current =
@@ -160,6 +190,9 @@ export function project(previous: Projection | undefined, text: string, live: bo
 
   if (!suffix) return previous
 
+  if (previous.text.includes("$") && hasFrozenDisplayMath(previous.blocks))
+    return { text, blocks: stream(text, live) }
+
   if (tail?.mode === "live") {
     // Reference definitions resolve against the whole document. When one arrives
     // after earlier blocks were frozen, fall back to a full re-lex so it can
@@ -173,7 +206,7 @@ export function project(previous: Projection | undefined, text: string, live: bo
     if (opensFence(raw)) return { text, blocks: [...previous.blocks.slice(0, -1), ...stream(raw, true)] }
 
     if (raw.length <= LIVE_TAIL_MAX || !hasBlockBoundary(suffix))
-      return { text, blocks: [...previous.blocks.slice(0, -1), { ...tail, raw, src: heal(raw) }] }
+      return { text, blocks: [...previous.blocks.slice(0, -1), { ...tail, raw, src: liveSource(raw) }] }
 
     return { text, blocks: [...previous.blocks.slice(0, -1), ...stream(raw, true)] }
   }

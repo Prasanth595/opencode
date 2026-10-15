@@ -455,4 +455,61 @@ describe("markdown stream", () => {
       expect(previous.blocks.map((block) => block.raw).join("")).toBe(text)
     }
   })
+
+  test("keeps a bare list marker verbatim instead of marked's normalized form", () => {
+    // `raw` must reconstruct the source; `src` is still healed (trailing space trimmed).
+    expect(stream("1. ", true)).toEqual([{ raw: "1. ", src: "1.", mode: "live" }])
+    expect(stream("- ", true)).toEqual([{ raw: "- ", src: "-", mode: "live" }])
+  })
+
+  test("does not accumulate a normalized list marker across appended deltas", () => {
+    let grown = project(undefined, "1. ", true)
+    grown = project(grown, `${grown.text}first`, true)
+    grown = project(grown, `${grown.text}\n2. second`, true)
+
+    expect(grown.blocks.map((block) => block.raw).join("")).toBe(grown.text)
+    expect(grown.blocks).toEqual([{ raw: "1. first\n2. second", src: "1. first\n2. second", mode: "live" }])
+  })
+
+  test("repairs a display math block that was frozen while it was still open", () => {
+    const text = "$$\na + b\n\nc + d\n$$\n\nafter math"
+    const opened = project(undefined, "$$\na + b\n\nc +", true)
+
+    // The first slice cannot see the closing `$$`, so it freezes the opening
+    // paragraphs. The next delta must re-lex instead of growing that split.
+    expect(stream(opened.text, true).some((block) => block.mode === "full")).toBe(true)
+
+    const closed = project(opened, text, true)
+
+    expect(closed.blocks).toEqual(stream(text, true))
+  })
+
+  test("repairs a split display math block across many small deltas", () => {
+    const text = "$$\na + b\n\nc + d\n$$\n\nafter math"
+    let previous: ReturnType<typeof project> | undefined
+    let current = ""
+
+    for (const delta of ["$$\na + b\n\nc", " + d\n$$\n", "\nafter ", "math"]) {
+      current += delta
+      previous = project(previous, current, true)
+
+      expect(previous.blocks.map((block) => block.raw).join("")).toBe(current)
+    }
+
+    // The math stays in one live block and is never cut by a leftover delimiter.
+    expect(previous!.blocks).toHaveLength(1)
+    expect(previous!.blocks[0]!.raw).toBe(text)
+    expect(previous!.blocks[0]!.src).toBe(text)
+  })
+
+  test("does not heal completed content before the active tail", () => {
+    let previous = project(undefined, "Escaped \\[ bracket", true)
+    previous = project(previous, `${previous.text}\n\nMore`, true)
+
+    // `heal` misreads the leading `\[` as an incomplete link and strips the
+    // bracket; only the active tail may be healed.
+    expect(previous.blocks).toEqual([
+      { raw: "Escaped \\[ bracket\n\nMore", src: "Escaped \\[ bracket\n\nMore", mode: "live" },
+    ])
+  })
 })
