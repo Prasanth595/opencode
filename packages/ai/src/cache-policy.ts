@@ -13,6 +13,8 @@
 import { CacheHint, type CachePolicy, type CachePolicyObject } from "./schema/options.js"
 import { LLMRequest, Message, ToolDefinition, type ContentPart, type ToolEntry } from "./schema/messages.js"
 import { effortUpdate } from "./effort-updates.js"
+import { Result } from "effect"
+import { BedrockCache } from "./protocols/utils/bedrock-cache.js"
 
 const AUTO: CachePolicyObject = {
   tools: true,
@@ -65,6 +67,26 @@ const gatewayPolicy = (modelID: string): CachePolicyObject => {
   if (id.startsWith("anthropic/")) return AUTO
   if (id.startsWith("qwen/") || id.startsWith("alibaba/qwen")) return QWEN
   return NONE
+}
+
+function automaticCachePolicy(model: LLMRequest["model"]): CachePolicyObject {
+  if (!RESPECTS_INLINE_HINTS.has(model.route.id)) return NONE
+  if (model.route.id === "openrouter" || model.route.id === "vercel-ai-gateway-messages") return gatewayPolicy(model.id)
+  if (model.route.id === "alibaba-chat") return model.id.toLowerCase().startsWith("qwen") ? QWEN : NONE
+  return AUTO
+}
+
+/** Reuse automatic placements, but reject a requested TTL that lowering would drop or shorten. */
+export function withCacheTTL(model: LLMRequest["model"], ttlSeconds: number) {
+  const policy = automaticCachePolicy(model)
+  if (!policy.tools && !policy.system && !policy.messages)
+    return Result.fail(`Route ${model.route.id} does not support cache_control for ${model.id}`)
+  if (model.route.id === "bedrock-converse") {
+    const supported = BedrockCache.breakpoints(model.id)
+    if (!supported.supported || (ttlSeconds === 3600 && !supported.ttl1h))
+      return Result.fail(`Bedrock cache_control TTL ${ttlSeconds}s is not supported for ${model.id}`)
+  }
+  return Result.succeed({ ...policy, ttlSeconds })
 }
 
 const makeHint = (ttlSeconds: number | undefined): CacheHint =>
