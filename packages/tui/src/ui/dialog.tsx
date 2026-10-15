@@ -21,8 +21,6 @@ import { copy, copyOnSelectRelease } from "../util/selection"
 
 export type DialogSize = "medium" | "large" | "xlarge"
 
-export const DIALOG_PADDING_X = 4
-
 export const DIALOG_INSET = 3
 // List rows reserve a 1-cell gutter for the ▌ bar / ● marker.
 export const DIALOG_LIST_INSET = DIALOG_INSET + 1
@@ -48,42 +46,42 @@ export function Dialog(
   return (
     <ThemeContextProvider context="dialog">
       <box
-      onMouseDown={() => {
-        dismiss = !!renderer.getSelection()
-      }}
-      onMouseUp={() => {
-        if (dismiss) {
-          dismiss = false
-          return
-        }
-        props.onClose?.()
-      }}
-      width={dimensions().width}
-      height={dimensions().height}
-      alignItems="center"
-      justifyContent={props.centered ? "center" : undefined}
-      position="absolute"
-      zIndex={3000}
-      paddingTop={props.centered ? 0 : dimensions().height / 4}
-      left={0}
-      top={0}
-      backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
-    >
-      <box
-        onMouseUp={(e: { stopPropagation(): void }) => {
-          // A selection release must bubble up to the copy-on-select handler in
-          // DialogProvider; the backdrop's dismiss flag keeps it from closing the dialog.
-          if (renderer.getSelection()?.getSelectedText()) return
-          dismiss = false
-          e.stopPropagation()
+        onMouseDown={() => {
+          dismiss = !!renderer.getSelection()
         }}
-        width={dialogWidth(props.size ?? "medium")}
-        maxWidth={dimensions().width - 2}
-        backgroundColor={theme.background.base}
-        paddingTop={1}
+        onMouseUp={() => {
+          if (dismiss) {
+            dismiss = false
+            return
+          }
+          props.onClose?.()
+        }}
+        width={dimensions().width}
+        height={dimensions().height}
+        alignItems="center"
+        justifyContent={props.centered ? "center" : undefined}
+        position="absolute"
+        zIndex={3000}
+        paddingTop={props.centered ? 0 : dimensions().height / 4}
+        left={0}
+        top={0}
+        backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
       >
-        {props.children}
-      </box>
+        <box
+          onMouseUp={(e: { stopPropagation(): void }) => {
+            // A selection release must bubble up to the copy-on-select handler in
+            // DialogProvider; the backdrop's dismiss flag keeps it from closing the dialog.
+            if (renderer.getSelection()?.getSelectedText()) return
+            dismiss = false
+            e.stopPropagation()
+          }}
+          width={dialogWidth(props.size ?? "medium")}
+          maxWidth={dimensions().width - 2}
+          backgroundColor={theme.background.base}
+          paddingTop={1}
+        >
+          {props.children}
+        </box>
       </box>
     </ThemeContextProvider>
   )
@@ -96,20 +94,12 @@ export function DialogHeader(
     closeLabel?: string
     onClose?: () => void
     gap?: number
-    inset?: boolean
-    newInset?: number
   }>,
 ) {
   const dialog = useDialog()
   const theme = useTheme().surface("dialog")
   return (
-    <box
-      flexDirection="row"
-      justifyContent="space-between"
-      gap={props.gap}
-      paddingLeft={props.newInset ?? (props.inset ? DIALOG_PADDING_X : undefined)}
-      paddingRight={props.newInset ?? (props.inset ? DIALOG_PADDING_X : undefined)}
-    >
+    <box flexDirection="row" justifyContent="space-between" gap={props.gap}>
       {props.titleView ?? (
         <text attributes={TextAttributes.BOLD} fg={theme.text.base}>
           {props.title}
@@ -134,13 +124,25 @@ export function DialogLayout(
     header: JSX.Element
     /** Usually a `DialogFooter` or a row of buttons. */
     footer?: JSX.Element
+    /** Side padding in cells. Defaults to DIALOG_INSET. */
+    inset?: number
   }>,
 ) {
+  const inset = () => props.inset ?? DIALOG_INSET
   return (
-    <box id={props.id} paddingLeft={DIALOG_INSET} paddingRight={DIALOG_INSET} paddingBottom={1} gap={1}>
+    <box id={props.id} paddingLeft={inset()} paddingRight={inset()} paddingBottom={1} gap={1}>
       {props.header}
       <box>{props.children}</box>
       {props.footer}
+    </box>
+  )
+}
+
+/** Stretches a raised band inside a `DialogLayout` across the side padding; its content re-applies `DIALOG_INSET`. */
+export function DialogBleed(props: ParentProps) {
+  return (
+    <box marginLeft={-DIALOG_INSET} marginRight={-DIALOG_INSET}>
+      {props.children}
     </box>
   )
 }
@@ -161,8 +163,8 @@ export type DialogFooterAction = {
 export function DialogFooter(
   props: ParentProps<{
     actions?: DialogFooterAction[]
-    inset?: boolean
-    newInset?: number
+    /** Side padding in cells, e.g. DIALOG_INSET or DIALOG_LIST_INSET. Omit when the parent already pads. */
+    inset?: number
   }>,
 ) {
   const dimensions = useTerminalDimensions()
@@ -178,8 +180,8 @@ export function DialogFooter(
   const right = () => actions().filter((action) => action.side === "right")
   return (
     <box
-      paddingLeft={props.newInset ?? (props.inset ? DIALOG_PADDING_X : undefined)}
-      paddingRight={props.newInset ?? (props.inset ? DIALOG_PADDING_X : undefined)}
+      paddingLeft={props.inset}
+      paddingRight={props.inset}
       flexDirection="row"
       justifyContent="space-between"
       flexShrink={0}
@@ -223,7 +225,7 @@ function DialogFooterItem(props: { action: DialogFooterAction }) {
 function init() {
   const [store, setStore] = createStore({
     stack: [] as {
-      element: JSX.Element
+      element: () => JSX.Element
       onClose?: () => void
       key?: unknown
     }[],
@@ -314,7 +316,7 @@ function init() {
       })
       refocus()
     },
-    replace(input: any, onClose?: () => void, options?: { key?: unknown; size?: DialogSize }) {
+    replace(input: () => JSX.Element, onClose?: () => void, options?: { key?: unknown; size?: DialogSize }) {
       if (store.stack.length === 0) {
         focus = renderer.currentFocusedRenderable
         focus?.blur()
@@ -388,7 +390,11 @@ export function DialogProvider(props: ParentProps) {
       >
         <Show when={value.stack.length}>
           <Dialog onClose={() => value.clear()} size={value.size} centered={value.centered}>
-            {value.stack.at(-1)!.element}
+            {/* Render each entry once: inserting the element function directly would re-run it, remounting
+                the dialog with fresh state, whenever a signal it reads at its root (e.g. a top-level <Show>) changes. */}
+            <Show when={value.stack.at(-1)} keyed>
+              {(item) => item.element()}
+            </Show>
           </Dialog>
         </Show>
       </box>
