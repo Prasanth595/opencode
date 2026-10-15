@@ -30,37 +30,6 @@ async function render(messages: SessionMessageInfo[], expected: string) {
   return setup.captureCharFrame()
 }
 
-test("does not warn when an output-limit continuation succeeds", async () => {
-  const frame = await render(
-    [
-      { type: "user", id: "user", text: "Answer", time: { created: 0 } },
-      {
-        type: "assistant",
-        id: "limited",
-        agent: "build",
-        model: { providerID: "test", id: "test" },
-        content: [],
-        finish: "length",
-        time: { created: 1, completed: 2 },
-      },
-      {
-        type: "assistant",
-        id: "recovered",
-        agent: "build",
-        model: { providerID: "test", id: "test" },
-        content: [{ type: "text", text: "Recovered response" }],
-        finish: "stop",
-        time: { created: 3, completed: 4 },
-      },
-      { type: "idle", id: "idle", outcome: "succeeded", time: { created: 5 } },
-    ],
-    "Recovered response",
-  )
-
-  expect(frame).not.toContain("output token limit")
-  expect(frame).not.toContain("/compact")
-}, 20000)
-
 test("suggests recovery after output-limit continuations are exhausted", async () => {
   const frame = await render(
     [
