@@ -2,7 +2,7 @@ import { CliRenderEvents, InputRenderable, RGBA, ScrollBoxRenderable, TextAttrib
 import { Keymap, type KeymapCommand } from "../context/keymap"
 import { useTheme } from "../context/theme"
 import { entries, filter, flatMap, groupBy, pipe } from "remeda"
-import { batch, createEffect, createMemo, For, Show, type JSX, on, onCleanup, onMount } from "solid-js"
+import { batch, createEffect, createMemo, createSignal, For, Show, type JSX, on, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import * as fuzzysort from "fuzzysort"
@@ -246,7 +246,15 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   })
 
   const dimensions = useTerminalDimensions()
-  const height = createMemo(() => Math.min(rows(), Math.floor(dimensions().height / 2) - 6))
+  const limit = createMemo(() => Math.floor(dimensions().height / 2) - 6)
+  // Under new designs an overflowing list gives its last row to a "…" indicator.
+  const overflows = createMemo(() => newDesigns() && rows() > limit())
+  const height = createMemo(() => Math.min(rows(), limit()) - (overflows() ? 1 : 0))
+  const [moreBelow, setMoreBelow] = createSignal(false)
+  function updateMoreBelow() {
+    if (!scroll || scroll.isDestroyed) return
+    setMoreBelow(scroll.scrollTop + scroll.viewport.height < scroll.scrollHeight)
+  }
 
   const selected = createMemo(() => flat()[store.selected])
 
@@ -713,7 +721,12 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
             paddingRight={newDesigns() ? 0 : 1}
             scrollbarOptions={{ visible: false }}
             scrollAcceleration={scrollAcceleration()}
-            ref={(r: ScrollBoxRenderable) => (scroll = r)}
+            ref={(r: ScrollBoxRenderable) => {
+              scroll = r
+              r.verticalScrollBar.on("change", updateMoreBelow)
+              r.content.on("resize", updateMoreBelow)
+              r.viewport.on("resize", updateMoreBelow)
+            }}
             maxHeight={height()}
           >
             <For each={grouped()}>
@@ -774,6 +787,11 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
               )}
             </For>
           </scrollbox>
+          <Show when={overflows()}>
+            <box paddingLeft={DIALOG_LIST_INSET} flexShrink={0}>
+              <text fg={theme.text.faint}>{moreBelow() ? "…" : " "}</text>
+            </box>
+          </Show>
         </Show>
       </DialogBleed>
     </DialogLayout>
