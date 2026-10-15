@@ -20154,8 +20154,8 @@
             "type": "string",
             "enum": ["added", "deleted", "modified"]
           },
-          "code": {
-            "type": "string"
+          "untracked": {
+            "type": "boolean"
           }
         },
         "required": ["file", "additions", "deletions", "status"],

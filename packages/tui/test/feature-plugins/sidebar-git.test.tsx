@@ -11,7 +11,7 @@ function context(options?: {
     additions: number
     deletions: number
     status: "added" | "deleted" | "modified"
-    code?: string
+    untracked?: boolean
   }>
   ahead?: number
   behind?: number
@@ -79,8 +79,8 @@ test("sidebar git shows changed, untracked, sync, and line stats", async () => {
       <SidebarGit
         context={context({
           files: [
-            { file: "a.ts", additions: 10, deletions: 2, status: "modified", code: " M" },
-            { file: "b.ts", additions: 5, deletions: 0, status: "added", code: "??" },
+            { file: "a.ts", additions: 10, deletions: 2, status: "modified" },
+            { file: "b.ts", additions: 5, deletions: 0, status: "added", untracked: true },
           ],
           ahead: 1,
           behind: 2,

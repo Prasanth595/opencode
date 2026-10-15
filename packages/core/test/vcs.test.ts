@@ -573,9 +573,9 @@ describe("Vcs", () => {
         const vcs = yield* Vcs.Service
         const status = yield* vcs.status()
         expect(status).toEqual([
-          { file: "gone.txt", additions: 0, deletions: 1, status: "deleted", code: " D" },
-          { file: "keep.txt", additions: 1, deletions: 1, status: "modified", code: " M" },
-          { file: "new.txt", additions: 2, deletions: 0, status: "added", code: "??" },
+          { file: "gone.txt", additions: 0, deletions: 1, status: "deleted" },
+          { file: "keep.txt", additions: 1, deletions: 1, status: "modified" },
+          { file: "new.txt", additions: 2, deletions: 0, status: "added", untracked: true },
         ])
       }),
     ),
@@ -751,7 +751,7 @@ describe("Vcs", () => {
           await fs.writeFile(path.join(directory, "new.txt"), "hello\n")
         })
         const vcs = yield* Vcs.Service
-        expect(yield* vcs.status()).toEqual([{ file: "new.txt", additions: 1, deletions: 0, status: "added", code: "??" }])
+        expect(yield* vcs.status()).toEqual([{ file: "new.txt", additions: 1, deletions: 0, status: "added", untracked: true }])
         const diff = yield* vcs.diff("working")
         expect(diff).toHaveLength(1)
         expect(diff[0].patch).toContain("+hello")

@@ -48,7 +48,7 @@ export function SidebarGit(props: { context: Plugin.Context; sessionID: string }
 
   const files = createMemo(() => data()?.files ?? [])
   const changed = createMemo(() => files().length)
-  const untracked = createMemo(() => files().filter((item) => item.code === "??").length)
+  const untracked = createMemo(() => files().filter((item) => item.untracked).length)
   const insertions = createMemo(() => files().reduce((total, item) => total + item.additions, 0))
   const deletions = createMemo(() => files().reduce((total, item) => total + item.deletions, 0))
   const ahead = createMemo(() => data()?.ahead ?? 0)

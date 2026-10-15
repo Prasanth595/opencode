@@ -36,14 +36,14 @@ test("vcs info decodes optional ahead and behind counts", () => {
   })
 })
 
-test("file status decodes optional porcelain code", () => {
+test("file status decodes optional untracked flag", () => {
   expect(Vcs.FileStatus.ast.annotations?.identifier).toBe("Vcs.FileStatus")
   const parsed = Schema.decodeUnknownSync(Vcs.FileStatus)({
     file: "test.ts",
     additions: 10,
     deletions: 2,
     status: "modified",
-    code: " M",
+    untracked: true,
   })
-  expect(parsed.code).toBe(" M")
+  expect(parsed.untracked).toBe(true)
 })

@@ -110,7 +110,7 @@ function make(proc: AppProcess.Interface, input: { directory: string; worktree: 
               additions: stat?.additions ?? 0,
               deletions: stat?.deletions ?? 0,
               status: item.status,
-              ...(item.code !== undefined ? { code: item.code } : {}),
+              ...(item.code === "??" ? { untracked: true } : {}),
             } satisfies FileStatus
           }),
       )

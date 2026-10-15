@@ -282,7 +282,7 @@ export type VcsFileStatus = {
   additions: number
   deletions: number
   status: "added" | "deleted" | "modified"
-  code?: string
+  untracked?: boolean
 }
 
 export type VcsBranchList = Array<string>

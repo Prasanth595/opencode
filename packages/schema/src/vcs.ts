@@ -35,6 +35,6 @@ export const FileStatus = Schema.Struct({
   additions: NonNegativeInt,
   deletions: NonNegativeInt,
   status: Schema.Literals(["added", "deleted", "modified"]),
-  code: optional(Schema.String),
+  untracked: optional(Schema.Boolean),
 }).annotate({ identifier: "Vcs.FileStatus" })
 export interface FileStatus extends Schema.Schema.Type<typeof FileStatus> {}
