@@ -848,8 +848,9 @@ export function DiffViewerContent(props: {
           paddingLeft={2}
           // Compact, the header lines up with the card text below it; the card edge row supplies the gap underneath.
           paddingRight={compact() ? 1 : 2}
-          paddingTop={compact() ? 1 : 0}
-          height={compact() ? 2 : 1}
+          // Only the docked panel leaves a row above the header; full screen starts at the top edge.
+          paddingTop={docked() ? 1 : 0}
+          height={docked() ? 2 : 1}
           flexShrink={0}
           flexDirection="row"
           gap={1}
@@ -1113,18 +1114,19 @@ export function DiffViewerContent(props: {
         </Switch>
       </box>
       <Show when={compact()}>
-        {/* The footer sits on the terminal background, eased in by a half-cell like the prompt. */}
+        {/* Docked, the footer sits on the terminal background, eased in by a half-cell like the prompt. */}
         <box id="diff-footer" flexShrink={0} backgroundColor={theme.background.base}>
-          <box
-            height={1}
-            flexShrink={0}
-            border={["bottom"]}
-            borderColor={surface()}
-            backgroundColor={theme.background.base}
-            customBorderChars={{ ...EmptyBorder, horizontal: "▀" }}
-          />
-          {/* Docked, the hints sit beside the session prompt; full screen lines them up with the header. */}
-          <box height={1} flexShrink={0} flexDirection="row" paddingLeft={docked() ? 0 : 2} paddingRight={1}>
+          <Show when={docked()}>
+            <box
+              height={1}
+              flexShrink={0}
+              border={["bottom"]}
+              borderColor={surface()}
+              backgroundColor={theme.background.base}
+              customBorderChars={{ ...EmptyBorder, horizontal: "▀" }}
+            />
+          </Show>
+          <box height={1} flexShrink={0} flexDirection="row" paddingLeft={2} paddingRight={1}>
             <text
               fg={focused() ? theme.background.action.primary.focused : theme.text.action.primary.disabled}
               attributes={focused() ? 0 : TextAttributes.DIM}
@@ -1147,7 +1149,9 @@ export function DiffViewerContent(props: {
               <HelpShortcut label="see all" muted={!focused()} />
             </box>
           </box>
-          <box height={1} flexShrink={0} />
+          <Show when={docked()}>
+            <box height={1} flexShrink={0} />
+          </Show>
         </box>
       </Show>
       <Show when={!showFileTree() && !compact()}>

@@ -264,7 +264,7 @@ test("narrow terminals show the panel full screen, then compact, and dock again 
   retained()
   expect(setup.renderer.root.findDescendantById("diff-files")).toBeUndefined()
   expect(text(setup, "diff-review-count")).toBe("1/4")
-  expect(text(setup, "diff-footer")).toMatch(/\nescape close\s+\? see all$/)
+  expect(text(setup, "diff-footer")).toMatch(/^escape close\s+\? see all$/)
   expect(text(setup, "diff-footer")).not.toContain("focus prompt")
   focus(setup, "left")
   await setup.flush()

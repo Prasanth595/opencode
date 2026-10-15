@@ -322,12 +322,11 @@ test.each([50, 80, 160])(
       const header = viewer.app.renderer.root.findDescendantById("diff-source-header")!
       const source = viewer.app.renderer.root.findDescendantById("diff-source-switch")!
       const count = viewer.app.renderer.root.findDescendantById("diff-review-count")!
-      // The compact layout pads its header down to line up with the flush cards below it.
-      const row = width < 88 ? header.y + 1 : header.y
-      expect(header.height).toBe(width < 88 ? 2 : 1)
-      expect(source.y).toBe(row)
-      expect(count.y).toBe(row)
-      expect(viewer.app.captureCharFrame().split("\n")[row]).toMatch(/All · vs release\s+0\/1/)
+      // Full screen keeps the header on its top row, compact or not.
+      expect(header.height).toBe(1)
+      expect(source.y).toBe(header.y)
+      expect(count.y).toBe(header.y)
+      expect(viewer.app.captureCharFrame().split("\n")[header.y]).toMatch(/All · vs release\s+0\/1/)
       expect(viewer.app.captureCharFrame()).not.toContain("reviewed")
       expect(viewer.vcsDiffInput()).toMatchObject({ base: "refs/remotes/origin/release" })
       await viewer.app.mockMouse.click(source.x, source.y)
@@ -347,7 +346,7 @@ test.each([50, 80, 160])(
       await viewer.app.waitForFrame((frame) => !frame.includes("Diff source"))
       viewer.commands.get("diff.mark_reviewed")!.run()
       await viewer.app.flush()
-      expect(viewer.app.captureCharFrame().split("\n")[row]).toMatch(/All · vs release\s+1\/1/)
+      expect(viewer.app.captureCharFrame().split("\n")[header.y]).toMatch(/All · vs release\s+1\/1/)
       await chooseSource(viewer, 2)
       await viewer.app.waitForFrame((frame) => frame.includes("Uncommitted · vs HEAD"))
       viewer.app.mockInput.pressKey("d")
@@ -374,7 +373,7 @@ test.each([50, 80, 100, 160])(
       const count = viewer.app.renderer.root.findDescendantById("diff-review-count")!
       const y = header.y + header.height - 1
       const row = viewer.app.captureCharFrame().split("\n")[y]
-      expect(header.height).toBe(width < 88 ? 2 : 1)
+      expect(header.height).toBe(1)
       expect(row).toContain("Committed · vs")
       expect(row).toContain("0/1")
       expect(row).not.toContain("release/very-long-comparison-branch-name-that-does-not-fit-in-the-header")
@@ -384,7 +383,7 @@ test.each([50, 80, 100, 160])(
       const scroll = findScrollBox(viewer.app.renderer.root)!
       if (width < 88) {
         // The compact layout moves help from the header row into its footer.
-        expect(hint.y).toBe(viewer.app.renderer.root.findDescendantById("diff-footer")!.y + 1)
+        expect(hint.y).toBe(viewer.app.renderer.root.findDescendantById("diff-footer")!.y)
         expect(hint.y).toBeGreaterThanOrEqual(scroll.viewport.y + scroll.viewport.height)
         expect(scroll.viewport.y).toBeGreaterThan(y)
       }
@@ -1042,8 +1041,8 @@ test.each([100, 160])("shared pane edges align headings and stay fixed at %i col
     await viewer.app.flush()
     expect(viewer.app.renderer.root.findDescendantById("diff-tree-top-edge")).toBeUndefined()
     expect(viewer.app.renderer.root.findDescendantById("diff-patch-top-edge")).toBeDefined()
-    // The compact header takes two rows above the shared pane edge.
-    expect(viewer.app.captureCharFrame().split("\n")[title + 2]).toContain("file01.txt")
+    // The compact full screen header is one row, directly above the shared pane edge.
+    expect(viewer.app.captureCharFrame().split("\n")[title + 1]).toContain("file01.txt")
   } finally {
     viewer.app.renderer.destroy()
   }
@@ -1186,11 +1185,13 @@ test("compact gutter help leaves the full patch viewport available when the side
     await viewer.app.flush()
     const footer = viewer.app.renderer.root.findDescendantById("diff-footer")!
     expect(viewer.app.renderer.root.findDescendantById("diff-files")).toBeUndefined()
-    expect(viewer.app.renderer.root.findDescendantById("diff-help-shortcut")!.y).toBe(footer.y + 1)
+    expect(viewer.app.renderer.root.findDescendantById("diff-help-shortcut")!.y).toBe(footer.y)
     expect(scroll.viewport.y + scroll.viewport.height).toBe(footer.y)
     expect(viewer.app.captureCharFrame()).not.toContain("? help")
-    expect(viewer.app.captureCharFrame().split("\n")[0].trim()).toBe("")
-    expect(viewer.app.captureCharFrame().split("\n")[footer.y + 1]).toMatch(/^  escape close\s+\? see all $/)
+    // No padding: the header and footer sit on the first and last rows.
+    expect(viewer.app.captureCharFrame().split("\n")[0]).toContain("All")
+    expect(footer.y).toBe(23)
+    expect(viewer.app.captureCharFrame().split("\n")[footer.y]).toMatch(/^  escape close\s+\? see all $/)
     viewer.app.mockInput.pressKey("d")
     await viewer.app.waitForFrame((frame) => frame.includes("Diff source"))
     viewer.app.mockInput.pressEscape()
@@ -1225,9 +1226,9 @@ test("full screen keeps its tree down to 88 columns and uses the compact layout 
         .captureSpans()
         .lines[second.y - 1].spans.flatMap((span) => Array.from({ length: span.width }, () => span.fg)),
     ).toEqual(Array.from({ length: 87 }, () => second.backgroundColor))
-    expect(viewer.app.renderer.root.findDescendantById("diff-review-count")!.y).toBe(1)
+    expect(viewer.app.renderer.root.findDescendantById("diff-review-count")!.y).toBe(0)
     const footer = viewer.app.renderer.root.findDescendantById("diff-footer")!
-    expect(viewer.app.captureCharFrame().split("\n")[footer.y + 1]).toMatch(/^  escape close\s+\? see all $/)
+    expect(viewer.app.captureCharFrame().split("\n")[footer.y]).toMatch(/^  escape close\s+\? see all $/)
     expect(viewer.app.captureCharFrame()).toContain("1/3")
     viewer.app.mockInput.pressKey("b")
     await viewer.app.flush()
