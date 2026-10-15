@@ -2,10 +2,12 @@ import type { FileSystem } from "@opencode/core/filesystem"
 import fs from "fs/promises"
 import path from "path"
 import { describe, expect } from "bun:test"
-import { Config } from "@opencode/schema/config"
+import { Config } from "@opencode/core/config"
+import { Event } from "@opencode/schema/config"
 import { Money } from "@opencode/schema/money"
 import {
   Cause,
+  Context,
   DateTime,
   Deferred,
   Duration,
@@ -28,6 +30,7 @@ import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Global } from "@opencode/util/global"
 import { LocationServiceMap, type LocationServices } from "@opencode/core/location-services"
+import { LocationLifecycle } from "@opencode/core/location-lifecycle"
 import { LocationActivity } from "@opencode/core/location-activity"
 import { Location } from "@opencode/core/location"
 import { LocationWatcher } from "@opencode/core/filesystem/location-watcher"
@@ -322,6 +325,63 @@ describe("LocationServiceMap", () => {
     ),
   )
 
+  for (const removal of ["replace", "delete"] as const) {
+    for (const access of ["get", "contextEffect", "contextEffectOption"] as const) {
+      it.live(`refreshes a recreated directory through ${access} after ${removal}`, () =>
+        Effect.gen(function* () {
+          const dir = yield* tmpdirScoped()
+          const directory = path.join(dir.path, "recreated")
+          yield* Effect.promise(() => fs.mkdir(directory))
+          yield* Effect.promise(() =>
+            fs.writeFile(path.join(directory, "opencode.json"), JSON.stringify({ username: "old-directory" })),
+          )
+          const ref = Location.Ref.make({ directory: AbsolutePath.make(directory) })
+          const locations = yield* LocationServiceMap.Service
+          const first = yield* locations.contextEffect(ref)
+          expect(Config.latest(yield* Context.get(first, Config.Service).entries(), "username")).toBe("old-directory")
+
+          if (removal === "replace") {
+            // Keep the old inode allocated to make same-path replacement deterministic.
+            yield* Effect.promise(() => fs.rename(directory, path.join(dir.path, "retired")))
+          }
+          if (removal === "delete") {
+            yield* Effect.promise(() => fs.rm(directory, { recursive: true }))
+            yield* Effect.sleep("20 millis")
+          }
+          yield* Effect.promise(() => fs.mkdir(directory))
+          yield* Effect.promise(() =>
+            fs.writeFile(path.join(directory, "opencode.json"), JSON.stringify({ username: "new-directory" })),
+          )
+          if (access === "contextEffectOption") {
+            expect(yield* locations.contextEffectOption(ref)).toEqual(Option.none())
+          }
+          const second =
+            access === "get"
+              ? yield* Effect.context<LocationServices>().pipe(Effect.provide(locations.get(ref)))
+              : yield* locations.contextEffect(ref)
+          expect(Context.get(second, Config.Service)).not.toBe(Context.get(first, Config.Service))
+          expect(Config.latest(yield* Context.get(second, Config.Service).entries(), "username")).toBe("new-directory")
+          expect(Context.get(first, LocationLifecycle.Service).isClosed()).toBe(true)
+          expect(Context.get(yield* locations.contextEffect(ref), Config.Service)).toBe(
+            Context.get(second, Config.Service),
+          )
+        }),
+      )
+    }
+  }
+
+  it.live("keeps a cached graph when files change in the same directory", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      const ref = Location.Ref.make({ directory: AbsolutePath.make(dir.path) })
+      const locations = yield* LocationServiceMap.Service
+      const first = yield* locations.contextEffect(ref)
+      yield* Effect.promise(() => fs.writeFile(path.join(dir.path, "new-file.txt"), "changed"))
+      expect(yield* locations.contextEffect(ref)).toBe(first)
+      expect(Context.get(first, LocationLifecycle.Service).isClosed()).toBe(false)
+    }),
+  )
+
   it.live("keeps a workspace location admitted when its directory does not exist locally", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),
@@ -366,19 +426,19 @@ describe("LocationServiceMap", () => {
             const firstContext = yield* locations.contextEffect(firstRef)
             const secondContext = yield* locations.contextEffect(secondRef)
             const received = { first: 0, second: 0 }
-            yield* bus.subscribe(Config.Event.Updated).pipe(
+            yield* bus.subscribe(Event.Updated).pipe(
               Stream.runForEach(() => Effect.sync(() => received.first++)),
               Effect.provideContext(firstContext),
               Effect.forkScoped({ startImmediately: true }),
             )
-            yield* bus.subscribe(Config.Event.Updated).pipe(
+            yield* bus.subscribe(Event.Updated).pipe(
               Stream.runForEach(() => Effect.sync(() => received.second++)),
               Effect.provideContext(secondContext),
               Effect.forkScoped({ startImmediately: true }),
             )
             yield* Effect.sleep("10 millis")
 
-            yield* bus.publish(Config.Event.Updated, {}, { location: firstRef })
+            yield* bus.publish(Event.Updated, {}, { location: firstRef })
             yield* Effect.sleep("10 millis")
 
             expect(received).toEqual({ first: 1, second: 0 })
