@@ -14212,6 +14212,9 @@
           "modelID": {
             "type": "string"
           },
+          "base": {
+            "type": "string"
+          },
           "family": {
             "type": "string"
           },
