@@ -643,8 +643,8 @@ describe("ConfigInstructionPlugin.Plugin", () => {
   })
 
   it.effect("skips discovered files a sandbox denies and keeps the rest available", () => {
-    const denied = AbsolutePath.make("/repo/AGENTS.md")
-    const readable = AbsolutePath.make("/repo/packages/AGENTS.md")
+    const denied = path.resolve("/repo/AGENTS.md")
+    const readable = path.resolve("/repo/packages/AGENTS.md")
     const sandboxedFS = Layer.effect(
       FSUtil.Service,
       FSUtil.Service.pipe(

@@ -123,6 +123,8 @@ const baseLayer = Layer.effect(
     const root = location.workspaceID
       ? location.directory
       : yield* fs.realPath(location.directory).pipe(
+          // Linux realpath succeeds on an unreadable directory, so probe readability explicitly.
+          Effect.tap((real) => fs.access(real, { readable: true })),
           Effect.catch((cause): Effect.Effect<never, DirectoryNotFoundError | DirectoryAccessDeniedError> => {
             if (cause.reason._tag === "NotFound")
               return Effect.fail(new DirectoryNotFoundError({ directory: location.directory, cause }))
