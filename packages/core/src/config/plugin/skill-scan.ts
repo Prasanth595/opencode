@@ -6,7 +6,7 @@ import { Effect } from "effect"
 
 const MAX_DEPTH = 6
 
-export const ignore = ["**/.*", "**/.*/**", "**/node_modules/**", "node_modules"]
+export const ignore = [...FSUtil.ignoreGlobs, "**/.*", "**/.*/**"]
 
 export const scan = Effect.fn("SkillScan.scan")(function* (root: string) {
   const fs = yield* FSUtil.Service
@@ -15,7 +15,7 @@ export const scan = Effect.fn("SkillScan.scan")(function* (root: string) {
   for (const item of queue) {
     const entries = yield* fs.readDirectoryEntries(item.directory).pipe(Effect.orElseSucceed(() => []))
     const children = yield* Effect.forEach(
-      entries.filter((entry) => !entry.name.startsWith(".") && entry.name !== "node_modules"),
+      entries.filter((entry) => !entry.name.startsWith(".") && !FSUtil.ignoredDirectories.includes(entry.name)),
       (entry) => {
         const target = path.join(item.directory, entry.name)
         if (entry.type !== "symlink") return Effect.succeed({ name: entry.name, path: target, type: entry.type })

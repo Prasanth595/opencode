@@ -206,7 +206,7 @@ describe("ConfigSkillPlugin.Plugin", () => {
             { claude: [AbsolutePath.make(claude)], agents: [AbsolutePath.make(agents)] },
           )
           const watcher = yield* Watcher.Test
-          expect(yield* watcher.subscriptions()).toEqual(expected.map((item) => ({ path: item, type: "directory", ignore: SkillScan.ignore })))
+          expect(yield* watcher.subscriptions()).toEqual(expected.map((item) => ({ path: item, type: "directory", ignore: SkillScan.ignore.toSorted() })))
         }),
       ),
     ),
@@ -382,7 +382,7 @@ describe("ConfigSkillPlugin.Plugin", () => {
           const watcher = yield* Watcher.Test
           expect((yield* skill.list()).find((item) => item.id === "bro")?.description).toBe("First")
           expect(yield* watcher.subscriptions()).toEqual([
-            { path: first, type: "directory", ignore: SkillScan.ignore },
+            { path: first, type: "directory", ignore: SkillScan.ignore.toSorted() },
             { path: source, type: "file" },
           ])
 
@@ -394,9 +394,9 @@ describe("ConfigSkillPlugin.Plugin", () => {
 
           expect((yield* skill.list()).find((item) => item.id === "bro")?.description).toBe("Second")
           expect(yield* watcher.subscriptions()).toEqual([
-            { path: first, type: "directory", ignore: SkillScan.ignore },
+            { path: first, type: "directory", ignore: SkillScan.ignore.toSorted() },
             { path: source, type: "file" },
-            { path: second, type: "directory", ignore: SkillScan.ignore },
+            { path: second, type: "directory", ignore: SkillScan.ignore.toSorted() },
             { path: source, type: "file" },
           ])
         }),

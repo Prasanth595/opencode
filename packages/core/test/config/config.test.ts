@@ -1272,7 +1272,7 @@ describe("Config", () => {
               {
                 type: "directory",
                 path: AbsolutePath.make(path.join(tmp.path, "global")),
-                ignore: ["**/{node_modules,.git}/**", ".git", "node_modules"],
+                ignore: FSUtil.ignoreGlobs.toSorted(),
               },
               {
                 type: "entries",
