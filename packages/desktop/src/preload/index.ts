@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from "electron"
 import {
   DragCancelEvent,
   IpcTransportPort,
+  ValidateProviderKeyChannel,
   WindowSnapshotChannel,
   storageSnapshotNames,
   type WindowSnapshot,
@@ -29,4 +30,6 @@ contextBridge.exposeInMainWorld("electron", {
   storageSnapshot: snapshot.then((snapshot) => snapshot.storage),
   extensions: snapshot.then((snapshot) => snapshot.extensions),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
+  validateProviderKey: (providerID: string, key: string) =>
+    ipcRenderer.invoke(ValidateProviderKeyChannel, { providerID, key }),
 })

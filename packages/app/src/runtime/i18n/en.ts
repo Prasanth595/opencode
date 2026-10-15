@@ -1046,6 +1046,55 @@ export const dict = {
   "workspace.delete.confirm": "Delete “{{name}}”?",
   "workspace.delete.location": "Location",
   "workspace.delete.button": "Delete worktree",
+
+  "firstRun.dialog.label": "First-run setup",
+  "firstRun.progress": "Step {{current}} of {{total}}",
+  "firstRun.skip": "Skip for now",
+  "firstRun.back": "Back",
+  "firstRun.continue": "Continue",
+  "firstRun.close": "Close setup",
+  "firstRun.step1.title": "Welcome to Ember",
+  "firstRun.step1.body":
+    "Ember is your friendly AI helper. Describe what you want in plain words, and it takes care of the technical bits.",
+  "firstRun.step2.title": "Connect your AI",
+  "firstRun.step2.body":
+    "Ember needs an AI service to think with. Paste an API key below — it's a secret code from your AI provider that lets Ember work for you.",
+  "firstRun.step2.providerLabel": "Choose your AI provider",
+  "firstRun.step2.keyLabel": "API key",
+  "firstRun.step2.keyPlaceholder": "Paste your key here",
+  "firstRun.step2.keyHelpTitle": "Where do I get one?",
+  "firstRun.step2.keyHelpBody":
+    "Sign in to your AI provider's website and look for “API keys” in its settings. Copy the key and paste it here — Ember keeps it safe on this computer.",
+  "firstRun.step2.keyHelpLink": "Open {{provider}} key settings",
+  "firstRun.step2.connect": "Connect",
+  "firstRun.step2.connecting": "Connecting…",
+  "firstRun.step2.error.empty": "Please paste your API key first.",
+  "firstRun.step2.error.failed":
+    "That didn't work. Double-check the key and try again — keys are long, and it's easy to miss a character.",
+  "firstRun.step2.error.noKeyMethod":
+    "This provider connects a different way. Pick another above, or connect it later in Settings.",
+  "firstRun.step2.error.invalidKey":
+    "That key wasn't accepted. Check for typos or extra spaces and try again, or grab a fresh key from the link above.",
+  "firstRun.step3.title": "You're all set!",
+  "firstRun.step3.body": "Ember is ready to help. Just describe what you want in plain words.",
+  "firstRun.step3.start": "Start chatting",
+  "spend.title": "Spending",
+  "spend.today": "Today",
+  "spend.thisWeek": "This week",
+  "spend.last14Days": "Last 14 days",
+  "spend.recentActivity": "Recent activity",
+  "spend.day.today": "Today",
+  "spend.day.yesterday": "Yesterday",
+  "spend.session.time.today": "Today, {{time}}",
+  "spend.session.time.yesterday": "Yesterday, {{time}}",
+  "spend.session.time.date": "{{date}}, {{time}}",
+  "spend.empty.title": "Nothing here yet",
+  "spend.empty.body": "Your spending will show up here once you start chatting with Ember.",
+  "spend.loading": "Loading your spending…",
+  "spend.error": "Couldn't load your spending. Check your connection and try again.",
+  "spend.retry": "Try again",
+  "spend.noServer": "Connect to a server to see your spending.",
+  "command.spend.open": "View spending",
 }
 
 export default dict

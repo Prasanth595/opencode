@@ -1,5 +1,6 @@
 import { useDialog } from "@opencode/ui/context/dialog"
 import { useSettingsCommand } from "@/settings/command"
+import { useSpendCommand } from "@/spend/command"
 import { useCommand } from "@/shell/commands/command"
 import { useLanguage } from "@/runtime/i18n/language"
 
@@ -19,6 +20,7 @@ export function useNewSessionCommands(input: {
   const language = useLanguage()
 
   useSettingsCommand()
+  useSpendCommand()
   command.register("new-session", () => [
     {
       id: "command.palette",

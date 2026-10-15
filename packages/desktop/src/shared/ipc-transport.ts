@@ -6,6 +6,8 @@ export const DragCancelEvent = "opencode:drag-cancel"
 
 export const WindowSnapshotChannel = "desktop-window-snapshot"
 
+export const ValidateProviderKeyChannel = "ember-validate-provider-key"
+
 // The main process decodes RPC payloads with the JSON codec, and JSON has no undefined: an
 // optional field the caller left as `undefined` decodes only when its key is absent. Structured
 // clone keeps the key, so drop such fields the way JSON.stringify would, leaving bytes untouched.

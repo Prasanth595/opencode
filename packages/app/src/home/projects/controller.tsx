@@ -1,6 +1,7 @@
 import { useDirectoryPicker } from "@/workspaces/selection/picker"
 import { useServerActionsController } from "@/servers/registry/controller"
 import { useSettingsCommand } from "@/settings/command"
+import { useSpendCommand } from "@/spend/command"
 import { useSettingsSurface } from "@/settings/surface"
 import { type LocalProject } from "@/shell/state/layout"
 import { useLanguage } from "@/runtime/i18n/language"
@@ -28,6 +29,7 @@ export function createHomeProjectsController(home: HomeController) {
   const dialog = useDialog()
   const language = useLanguage()
   const openSettings = useSettingsCommand()
+  useSpendCommand()
   const settings = useSettingsSurface()
   const serverManagement = useServerActionsController()
   const global = useGlobal()

@@ -5,7 +5,7 @@
 //                            [--fresh] [--offline] [--seed <userData dir>] [--profile-main] [--profile-renderer]
 //                            [--trace] [--out <dir>] [--home <dir>] [--window-at x,y]
 //
-// The app runs in an isolated home directory (its own %APPDATA%, XDG dirs, OpenCode DB, config and
+// The app runs in an isolated home directory (its own %APPDATA%, XDG dirs, Ember DB, config and
 // service registration) with the developer's OPENCODE_* / OTEL_* environment stripped, so it never
 // attaches to, restarts or reads the developer's live service or state and does not inherit their
 // telemetry configuration. `warm` starts one service from the bundled CLI before the runs and lets
@@ -126,7 +126,7 @@ const env = {
   OPENCODE_DB: paths.db,
   OPENCODE_CONFIG_DIR: paths.config,
   // Beta and prod builds check for updates on start; a closed proxy port fails that fast and offline.
-  ...(args.values.offline || appId !== "ai.opencode.desktop.dev" ? { HTTPS_PROXY: "http://127.0.0.1:9" } : {}),
+  ...(args.values.offline || appId !== "ai.ember.desktop.dev" ? { HTTPS_PROXY: "http://127.0.0.1:9" } : {}),
 }
 
 const cdpPort = await freePort()
@@ -563,20 +563,20 @@ async function mainBootTiming() {
 function defaultExe() {
   const unpacked = join(packageDir, "dist", process.platform === "win32" ? "win-unpacked" : process.platform === "darwin" ? "mac" : "linux-unpacked")
 
-  if (!existsSync(unpacked)) return join(unpacked, "OpenCode Dev.exe")
+  if (!existsSync(unpacked)) return join(unpacked, "Ember Dev.exe")
   const candidate = readdirSync(unpacked).find((f) => (process.platform === "win32" ? f.endsWith(".exe") : f.endsWith(".app") || !f.includes(".")))
 
-  return join(unpacked, candidate ?? "OpenCode Dev.exe")
+  return join(unpacked, candidate ?? "Ember Dev.exe")
 }
 
 function appIdFor(executable: string) {
   const name = basename(executable, ".exe")
 
-  if (/beta/i.test(name)) return "ai.opencode.desktop.beta"
+  if (/beta/i.test(name)) return "ai.ember.desktop.beta"
 
-  if (/dev/i.test(name)) return "ai.opencode.desktop.dev"
+  if (/dev/i.test(name)) return "ai.ember.desktop.dev"
 
-  return "ai.opencode.desktop"
+  return "ai.ember.desktop"
 }
 
 function prepareHome() {
