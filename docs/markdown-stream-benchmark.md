@@ -20,24 +20,24 @@ quadratic to near-linear in response length.
 
 ## Environment and runtime
 
-| | |
-| --- | --- |
-| Host | Linux 6.8.0-147-generic x86_64, Ubuntu 24.04.5 LTS |
-| CPU | AMD Ryzen Threadripper 1920X (12 cores / 24 threads) |
-| RAM | 64 GB |
-| Runtime | Bun 1.4.2 |
-| Marked | 18.0.11 (workspace catalog) |
-| Remend | 1.3.1 |
+|         |                                                      |
+| ------- | ---------------------------------------------------- |
+| Host    | Linux 6.8.0-147-generic x86_64, Ubuntu 24.04.5 LTS   |
+| CPU     | AMD Ryzen Threadripper 1920X (12 cores / 24 threads) |
+| RAM     | 64 GB                                                |
+| Runtime | Bun 1.4.2                                            |
+| Marked  | 18.0.11 (workspace catalog)                          |
+| Remend  | 1.3.1                                                |
 
 Both revisions were measured on the same machine, in the same Bun runtime, with
 the same harness, in the same session, back to back.
 
 ## Revisions
 
-| | Revision | `markdown-stream.ts` blob |
-| --- | --- | --- |
+|                                     | Revision                                   | `markdown-stream.ts` blob                  |
+| ----------------------------------- | ------------------------------------------ | ------------------------------------------ |
 | Baseline (`origin/dev`, unmodified) | `d0732eadf883bdc64c0b0ea91e9c4ee0fe51d8c3` | `4879a09f5022cfaba12b7167e37d804b5e82a84c` |
-| Feature branch (implementation) | `e2260534d13d7d60f4fe23f304c1fce08e2ab240` | `049402b93ab29b2a44a415ccae331892469b212e` |
+| Feature branch (implementation)     | `e2260534d13d7d60f4fe23f304c1fce08e2ab240` | `049402b93ab29b2a44a415ccae331892469b212e` |
 
 The implementation is the two commits on top of the port-plan doc:
 `ab76b878ce` (grow live tail in place) and `e2260534d1` (correct edge cases:
@@ -74,29 +74,29 @@ emits tokens. It calls `project()` directly — no Solid store, no worker, no DO
 
 ### Workloads and input sizes
 
-| Workload | Deltas | Final chars | Delta size | Shape |
-| --- | --- | --- | --- | --- |
-| `many-paragraph-deltas` | 200 | 9,251 | ~46 chars (a short paragraph + blank line) | every delta adds a block boundary |
-| `one-long-paragraph` | 2,000 | 12,626 | one word + space | boundary-less; grows the live tail |
-| `completed-head-live-tail` | 500 | 5,233 | one word + space | 40 completed paragraphs delivered as a prefix, then a growing tail |
-| `mixed-long-response` | 1,282 | 10,254 | 8-char chunks | headings, prose, lists, a table, and TypeScript fences — a representative long response |
-| `growing-list` | 300 | 12,272 | one item | list items appended |
-| `growing-table` | 302 | 8,601 | one row | table rows appended |
-| `open-code-fence` | 401 | 8,186 | one line | open `ts` fence streamed |
+| Workload                   | Deltas | Final chars | Delta size                                 | Shape                                                                                   |
+| -------------------------- | ------ | ----------- | ------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `many-paragraph-deltas`    | 200    | 9,251       | ~46 chars (a short paragraph + blank line) | every delta adds a block boundary                                                       |
+| `one-long-paragraph`       | 2,000  | 12,626      | one word + space                           | boundary-less; grows the live tail                                                      |
+| `completed-head-live-tail` | 500    | 5,233       | one word + space                           | 40 completed paragraphs delivered as a prefix, then a growing tail                      |
+| `mixed-long-response`      | 1,282  | 10,254      | 8-char chunks                              | headings, prose, lists, a table, and TypeScript fences — a representative long response |
+| `growing-list`             | 300    | 12,272      | one item                                   | list items appended                                                                     |
+| `growing-table`            | 302    | 8,601       | one row                                    | table rows appended                                                                     |
+| `open-code-fence`          | 401    | 8,186       | one line                                   | open `ts` fence streamed                                                                |
 
 ## Results
 
 ### Main workloads (median of 5 passes)
 
-| Workload | Baseline total | Modified total | Speedup | Baseline lex calls | Modified lex calls | Baseline lex chars | Modified lex chars |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `many-paragraph-deltas` | 155.5 ms | 3.5 ms | 44.7× | 1,000 | 25 | 4,640,465 | 41,710 |
-| `one-long-paragraph` | 10,827.6 ms | 90.7 ms | 119× | 10,000 | 5 | 63,152,630 | 20 |
-| `completed-head-live-tail` | 265.0 ms | 7.8 ms | 33.9× | 2,500 | 0 | 9,151,035 | 0 |
-| `mixed-long-response` | 902.9 ms | 21.4 ms | 42.2× | 6,010 | 105 | 30,741,870 | 316,520 |
-| `growing-list` | 416.9 ms | 18.4 ms | 22.6× | 1,500 | 5 | 9,164,700 | 170 |
-| `growing-table` | 164.9 ms | 13.2 ms | 12.5× | 1,510 | 5 | 6,421,720 | 50 |
-| `open-code-fence` | 1.4 ms | 0.8 ms | 1.8× | 5 | 5 | 30 | 30 |
+| Workload                   | Baseline total | Modified total | Speedup | Baseline lex calls | Modified lex calls | Baseline lex chars | Modified lex chars |
+| -------------------------- | -------------- | -------------- | ------- | ------------------ | ------------------ | ------------------ | ------------------ |
+| `many-paragraph-deltas`    | 155.5 ms       | 3.5 ms         | 44.7×   | 1,000              | 25                 | 4,640,465          | 41,710             |
+| `one-long-paragraph`       | 10,827.6 ms    | 90.7 ms        | 119×    | 10,000             | 5                  | 63,152,630         | 20                 |
+| `completed-head-live-tail` | 265.0 ms       | 7.8 ms         | 33.9×   | 2,500              | 0                  | 9,151,035          | 0                  |
+| `mixed-long-response`      | 902.9 ms       | 21.4 ms        | 42.2×   | 6,010              | 105                | 30,741,870         | 316,520            |
+| `growing-list`             | 416.9 ms       | 18.4 ms        | 22.6×   | 1,500              | 5                  | 9,164,700          | 170                |
+| `growing-table`            | 164.9 ms       | 13.2 ms        | 12.5×   | 1,510              | 5                  | 6,421,720          | 50                 |
+| `open-code-fence`          | 1.4 ms         | 0.8 ms         | 1.8×    | 5                  | 5                  | 30                 | 30                 |
 
 Lexer call counts are totals across the 5 measured passes. The baseline re-lexes
 the entire accumulated message once per non-code delta, so its lexer characters
@@ -110,15 +110,15 @@ included to show the change does not regress that path.
 
 ### Per-update latency (p95 of all measured updates)
 
-| Workload | Baseline p95 | Modified p95 |
-| --- | --- | --- |
-| `many-paragraph-deltas` | 1,445 µs | 16 µs |
-| `one-long-paragraph` | 31,698 µs | 85 µs |
-| `completed-head-live-tail` | 697 µs | 24 µs |
-| `mixed-long-response` | 1,436 µs | 16 µs |
-| `growing-list` | 2,695 µs | 114 µs |
-| `growing-table` | 1,092 µs | 81 µs |
-| `open-code-fence` | 8 µs | 4 µs |
+| Workload                   | Baseline p95 | Modified p95 |
+| -------------------------- | ------------ | ------------ |
+| `many-paragraph-deltas`    | 1,445 µs     | 16 µs        |
+| `one-long-paragraph`       | 31,698 µs    | 85 µs        |
+| `completed-head-live-tail` | 697 µs       | 24 µs        |
+| `mixed-long-response`      | 1,436 µs     | 16 µs        |
+| `growing-list`             | 2,695 µs     | 114 µs       |
+| `growing-table`            | 1,092 µs     | 81 µs        |
+| `open-code-fence`          | 8 µs         | 4 µs         |
 
 Per-pass totals were tight (for example `one-long-paragraph` baseline
 min/median/max = 10,776 / 10,828 / 10,848 ms; modified = 87.7 / 90.7 / 93.4 ms),
@@ -128,12 +128,12 @@ so the differences are far outside run-to-run noise.
 
 This is the quadratic evidence. Each size is one measured pass after JIT priming.
 
-| Words | Chars | Baseline total | Modified total | Baseline lex chars | Modified lex chars |
-| --- | --- | --- | --- | --- | --- |
-| 250 | 1,576 | 31 ms | 4.7 ms | 197,240 | 4 |
-| 500 | 3,151 | 104 ms | 9.5 ms | 789,207 | 4 |
-| 1,000 | 6,316 | 391 ms | 29.7 ms | 3,157,346 | 4 |
-| 2,000 | 12,626 | 10,793 ms | 94.4 ms | 12,630,526 | 4 |
+| Words | Chars  | Baseline total | Modified total | Baseline lex chars | Modified lex chars |
+| ----- | ------ | -------------- | -------------- | ------------------ | ------------------ |
+| 250   | 1,576  | 31 ms          | 4.7 ms         | 197,240            | 4                  |
+| 500   | 3,151  | 104 ms         | 9.5 ms         | 789,207            | 4                  |
+| 1,000 | 6,316  | 391 ms         | 29.7 ms        | 3,157,346          | 4                  |
+| 2,000 | 12,626 | 10,793 ms      | 94.4 ms        | 12,630,526         | 4                  |
 
 Baseline lexer characters scale as O(n²): doubling the response roughly
 quadruples them. Modified lexer characters are constant (4 — the initial lex

@@ -57,7 +57,7 @@ that for a still-open **`code`** tail:
 const tail = previous.blocks.at(-1)
 const suffix = text.slice(previous.text.length)
 if (!suffix || tail?.mode !== "code" || tail.complete || closesFence(tail.raw, suffix))
-  return { text, blocks: stream(text, live) }   // <-- full lex of `text`
+  return { text, blocks: stream(text, live) } // <-- full lex of `text`
 return { text, blocks: [...previous.blocks.slice(0, -1), { ...tail, raw: tail.raw + suffix, src: tail.src + suffix }] }
 ```
 
@@ -147,7 +147,9 @@ All changes confined to `markdown-stream.ts`:
        return { text, blocks: [...previous.blocks.slice(0, -1), { ...tail, raw, src: heal(raw) }] }
      return { text, blocks: [...previous.blocks.slice(0, -1), ...stream(raw, true)] }
    }
-   if (tail?.mode === "code" && !tail.complete && !closesFence(tail.raw, suffix)) { /* existing code append */ }
+   if (tail?.mode === "code" && !tail.complete && !closesFence(tail.raw, suffix)) {
+     /* existing code append */
+   }
    return { text, blocks: stream(text, live) }
    ```
 
@@ -180,7 +182,7 @@ in place.
 
 ## 4. Correctness risks and fallback conditions
 
-1. **Late reference definitions (highest risk).** `stream()` calls `refs(text)` on the *whole* text and, if
+1. **Late reference definitions (highest risk).** `stream()` calls `refs(text)` on the _whole_ text and, if
    true, collapses everything into one `live` block. The incremental path grows the tail in place and never
    re-checks `refs`, so a `[x]:` definition appended after earlier blocks were frozen will not merge the
    definition with its earlier uses. The re-lex also runs `stream(raw)` on the tail **only**, so it cannot

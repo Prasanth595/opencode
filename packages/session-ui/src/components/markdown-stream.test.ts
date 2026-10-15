@@ -273,6 +273,7 @@ describe("markdown stream", () => {
   test("boundedly re-lexes the live tail once it exceeds the cap", () => {
     const unit = "para\n\n"
     let grown = project(undefined, unit, true)
+
     for (let index = 0; index < 400; index++) grown = project(grown, `${grown.text}${unit}`, true)
 
     expect(grown.blocks.at(-1)!.mode).toBe("live")
@@ -283,6 +284,7 @@ describe("markdown stream", () => {
   test("grows a boundary-less oversized tail in place without splitting", () => {
     const word = "word "
     let grown = project(undefined, word, true)
+
     for (let index = 0; index < 600; index++) grown = project(grown, `${grown.text}${word}`, true)
 
     expect(grown.blocks).toHaveLength(1)
@@ -423,9 +425,11 @@ describe("markdown stream", () => {
 
   test("final incremental projection matches a full projection", () => {
     let previous = project(undefined, "The quick", true)
+
     for (const delta of [" brown", " fox", " jumps", " over", " the", " lazy", " dog"]) {
       previous = project(previous, `${previous.text}${delta}`, true)
     }
+
     const final = project(previous, previous.text, false)
 
     expect(final.blocks).toEqual(completedProjection(previous.text).blocks)
@@ -445,6 +449,7 @@ describe("markdown stream", () => {
       "js\n",
       "const x = 1",
     ]
+
     let text = ""
     let previous: ReturnType<typeof project> | undefined
 

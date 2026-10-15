@@ -190,8 +190,7 @@ export function project(previous: Projection | undefined, text: string, live: bo
 
   if (!suffix) return previous
 
-  if (previous.text.includes("$") && hasFrozenDisplayMath(previous.blocks))
-    return { text, blocks: stream(text, live) }
+  if (previous.text.includes("$") && hasFrozenDisplayMath(previous.blocks)) return { text, blocks: stream(text, live) }
 
   if (tail?.mode === "live") {
     // Reference definitions resolve against the whole document. When one arrives

@@ -66,7 +66,13 @@ function execute(words: number) {
     totalNs += Bun.nanoseconds() - before
   }
 
-  return { words, chars: text.length, totalMs: totalNs / 1e6, lexCalls: lexCalls - startCalls, lexChars: lexChars - startChars }
+  return {
+    words,
+    chars: text.length,
+    totalMs: totalNs / 1e6,
+    lexCalls: lexCalls - startCalls,
+    lexChars: lexChars - startChars,
+  }
 }
 
 // Prime the JIT with a small run before measuring the sweep.
@@ -76,7 +82,11 @@ const sizes = [250, 500, 1000, 2000]
 
 const results = sizes.map((size) => execute(size))
 
-const report = { generator: "packages/session-ui/performance/markdown-stream/scale.bench.ts", bun: Bun.version, results }
+const report = {
+  generator: "packages/session-ui/performance/markdown-stream/scale.bench.ts",
+  bun: Bun.version,
+  results,
+}
 
 console.log(JSON.stringify(report, null, 2))
 

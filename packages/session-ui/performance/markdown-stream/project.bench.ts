@@ -141,10 +141,27 @@ function makeWorkloads(): Workload[] {
   for (let index = 0; index < 400; index++) codeDeltas.push(`const value${index} = ${index}\n`)
 
   return [
-    { name: "many-paragraph-deltas", description: "200 short paragraphs, each a delta with a blank-line boundary", deltas: manyParagraphs },
-    { name: "one-long-paragraph", description: "one boundary-less paragraph, one word per delta", deltas: oneParagraph },
-    { name: "completed-head-live-tail", description: "40 completed paragraphs then a growing 500-word tail", prefix: completedHead, deltas: liveTail },
-    { name: "mixed-long-response", description: "representative mixed markdown streamed in 8-char chunks", deltas: mixedDeltas },
+    {
+      name: "many-paragraph-deltas",
+      description: "200 short paragraphs, each a delta with a blank-line boundary",
+      deltas: manyParagraphs,
+    },
+    {
+      name: "one-long-paragraph",
+      description: "one boundary-less paragraph, one word per delta",
+      deltas: oneParagraph,
+    },
+    {
+      name: "completed-head-live-tail",
+      description: "40 completed paragraphs then a growing 500-word tail",
+      prefix: completedHead,
+      deltas: liveTail,
+    },
+    {
+      name: "mixed-long-response",
+      description: "representative mixed markdown streamed in 8-char chunks",
+      deltas: mixedDeltas,
+    },
     { name: "growing-list", description: "300 list items appended", deltas: listDeltas },
     { name: "growing-table", description: "300 table rows appended", deltas: tableDeltas },
     { name: "open-code-fence", description: "open code fence streamed 400 lines", deltas: codeDeltas },
