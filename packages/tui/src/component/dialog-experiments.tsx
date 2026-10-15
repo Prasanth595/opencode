@@ -20,6 +20,11 @@ export const experiments: Experiment[] = [
     title: "Diff side panel",
     description: "Open /diff in a panel beside the session instead of full screen",
   },
+  {
+    id: "new-designs",
+    title: "New designs",
+    description: "Preview the new TUI designs",
+  },
 ]
 
 export function DialogExperiments() {
