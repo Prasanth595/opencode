@@ -162,6 +162,14 @@ export type SessionMessageToolStateRunning1 = {
 
 export type SessionInterruptResponse = { interrupted: boolean }
 
+export type SessionGoalTodoItem = {
+  position: number | "Infinity" | "-Infinity" | "NaN"
+  content: string
+  status: "pending" | "in_progress" | "completed" | "cancelled"
+  acceptance?: string
+  feedback?: string
+}
+
 export type FormID = string
 
 export type FormMetadata = { [x: string]: JsonValue }
@@ -571,6 +579,15 @@ export type SessionGoalSnapshot = {
   phase: "active" | "paused" | "blocked" | "complete"
   blockedReason?: SessionGoalReason
   maxGoalRounds: number
+}
+
+export type SessionGoalSnapshot1 = {
+  id: SessionGoalID
+  revision: number | "Infinity" | "-Infinity" | "NaN"
+  objective: string
+  phase: "active" | "paused" | "blocked" | "complete"
+  blockedReason?: SessionGoalReason
+  maxGoalRounds: number | "Infinity" | "-Infinity" | "NaN"
 }
 
 export type SessionMessageAssistantText1 = { type: "text"; text: string; state?: SessionMessageProviderState1 }
@@ -1925,6 +1942,15 @@ export type SessionGoalUpdated = {
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
   data: { sessionID: SessionID; snapshot: SessionGoalSnapshot }
+}
+
+export type SessionGoalState = {
+  goal?: SessionGoalSnapshot1
+  createdAt?: number | "Infinity" | "-Infinity" | "NaN"
+  rounds: number | "Infinity" | "-Infinity" | "NaN"
+  maxGoalRounds: number | "Infinity" | "-Infinity" | "NaN"
+  armed: boolean
+  todo: Array<SessionGoalTodoItem>
 }
 
 export type SessionToolSuccess = {
@@ -4861,6 +4887,44 @@ export type SessionInterruptOutput = SessionInterruptResponse
 export type SessionBackgroundInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
 export type SessionBackgroundOutput = void
+
+export type SessionGoalGetInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+
+export type SessionGoalGetOutput = { data: SessionGoalState }["data"]
+
+export type SessionGoalUpdateInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly action: {
+    readonly action: "set" | "clear" | "edit" | "pause" | "resume"
+    readonly objective?: string | undefined
+    readonly expectedRevision?: number | undefined
+  }["action"]
+  readonly objective?: {
+    readonly action: "set" | "clear" | "edit" | "pause" | "resume"
+    readonly objective?: string | undefined
+    readonly expectedRevision?: number | undefined
+  }["objective"]
+  readonly expectedRevision?: {
+    readonly action: "set" | "clear" | "edit" | "pause" | "resume"
+    readonly objective?: string | undefined
+    readonly expectedRevision?: number | undefined
+  }["expectedRevision"]
+}
+
+export type SessionGoalUpdateOutput = { data: SessionGoalSnapshot1 }["data"]
+
+export type SessionTodoReplaceInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly todos: {
+    readonly todos: ReadonlyArray<{
+      readonly content: string
+      readonly status: "pending" | "in_progress" | "completed" | "cancelled"
+      readonly acceptance?: string
+    }>
+  }["todos"]
+}
+
+export type SessionTodoReplaceOutput = void
 
 export type SessionMessageGetInput = {
   readonly sessionID: { readonly sessionID: string; readonly messageID: string }["sessionID"]
