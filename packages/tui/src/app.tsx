@@ -245,6 +245,12 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
         autoFocus: false,
         openConsoleOnError: false,
         useMouse: config.mouse,
+        // Leaving the alternate screen during teardown takes the host console down with the
+        // process on Windows ConPTY: the terminal window, or a zellij pane, exits on our
+        // shutdown. Measured 0 of 6 runs surviving on alternate-screen against 6 of 6 on
+        // main-screen, across `/exit` and Ctrl+C, in Alacritty alone and in Alacritty with
+        // zellij. Other platforms keep OpenTUI's default, where this does not happen.
+        screenMode: process.platform === "win32" ? "main-screen" : undefined,
         consoleOptions: {
           keyBindings: [{ name: "y", ctrl: true, action: "copy-selection" }],
         },
