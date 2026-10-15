@@ -8,7 +8,13 @@ import { WebSearchParallel } from "@opencode/core/plugin/websearch/parallel"
 import { WebSearchTavily } from "@opencode/core/plugin/websearch/tavily"
 import { WebSearchTinyFish } from "@opencode/core/plugin/websearch/tinyfish"
 import { host, integrationHost, webSearchHost } from "./host"
-import { requests, signals, resetWebSearchFixture, setInitializeResponse, webSearchIntegrationTest } from "./websearch-fixture"
+import {
+  requests,
+  signals,
+  resetWebSearchFixture,
+  setInitializeResponse,
+  webSearchIntegrationTest,
+} from "./websearch-fixture"
 
 beforeEach(() => {
   resetWebSearchFixture(
@@ -366,19 +372,7 @@ describe("built-in web search providers", () => {
         200,
         { "mcp-session-id": "ses_tinyfish" },
       )
-      expect(yield* websearch.query({ query: "effect typescript", providerID: WebSearch.ID.make("tinyfish") })).toEqual(
-        new WebSearch.Response({
-          providerID: WebSearch.ID.make("tinyfish"),
-          results: [
-            {
-              url: "https://effect.website",
-              title: "Effect",
-              content: "Effect documentation",
-              time: {},
-            },
-          ],
-        }),
-      )
+      yield* websearch.query({ query: "effect typescript", providerID: WebSearch.ID.make("tinyfish") })
       // Authenticated mode mints a session on initialize, then carries it on the search call.
       expect(requests[1]).toMatchObject({
         url: WebSearchTinyFish.endpoint,

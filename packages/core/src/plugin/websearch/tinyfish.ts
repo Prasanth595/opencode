@@ -64,9 +64,7 @@ export const Plugin = define<HttpClient.HttpClient | Scope.Scope>({
             // Keyless mode is stateless and answers a bare `tools/call`.
             const session = credential?.type === "key" ? yield* initialize(http, headers) : undefined
             if (credential?.type === "key" && session === undefined)
-              return yield* Effect.fail(
-                new Error("TinyFish MCP initialize did not return an Mcp-Session-Id header"),
-              )
+              return yield* Effect.fail(new Error("TinyFish MCP initialize did not return an Mcp-Session-Id header"))
             const result = yield* WebSearchMcp.call(
               http,
               endpoint,

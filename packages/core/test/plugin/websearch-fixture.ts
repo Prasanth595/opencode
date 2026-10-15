@@ -27,10 +27,10 @@ export const signals: AbortSignal[] = []
 let response: WebSearchResponse = { body: "", status: 200, headers: {} }
 let initializeResponse: WebSearchResponse | undefined
 
-export function resetWebSearchFixture(body: string, status = 200, headers: Record<string, string> = {}) {
+export function resetWebSearchFixture(body: string, status = 200) {
   requests.length = 0
   signals.length = 0
-  response = { body, status, headers }
+  response = { body, status, headers: {} }
   initializeResponse = undefined
 }
 
