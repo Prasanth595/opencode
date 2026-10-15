@@ -13,7 +13,7 @@ import { SessionError } from "@opencode/schema/session-error"
 import { Money } from "@opencode/schema/money"
 import { SessionUsage } from "../usage.js"
 import { contentFilterError } from "../to-session-error.js"
-import type { Tool } from "../../tool.js"
+import { Tool } from "../../tool.js"
 
 type Input = {
   readonly sessionID: SessionSchema.ID
@@ -620,14 +620,18 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
     if (tool.name !== name)
       return yield* Effect.die(new Error(`Tool execution name changed for ${id}: ${tool.name} -> ${name}`))
     if (tool.settled) return yield* Effect.die(new Error(`Duplicate tool execution: ${id}`))
+    // The settled flag gates every later sweep, so it must never be set without a
+    // durable terminal event behind it. An execution without content fails through
+    // Tool.Error, which the step loop publishes as Tool.Failed; a die here would
+    // strand the call as eternally running.
+    if (!isReadonlyArrayNonEmpty(result.content))
+      return yield* new Tool.Error({ message: `Tool execution has no content: ${id}` })
     tool.settled = true
-    const content = result.content
-    if (!isReadonlyArrayNonEmpty(content)) return yield* Effect.die(new Error(`Tool execution has no content: ${id}`))
     yield* bus.publish(SessionEvent.Tool.Success, {
       sessionID: input.sessionID,
       assistantMessageID,
       id,
-      content,
+      content: result.content,
       ...(result.metadata === undefined ? {} : { metadata: result.metadata }),
       executed: tool.providerExecuted,
     })

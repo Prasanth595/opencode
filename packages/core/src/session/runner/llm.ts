@@ -69,7 +69,7 @@ const layer = Layer.effect(
       }
       yield* plugins.awaitActivation
       yield* settleStaleCompactions(sessionID)
-      yield* settleStaleToolCalls(sessionID)
+      yield* settleStaleToolCalls(yield* store.context(sessionID), sessionID)
 
       const advanceToStep = Effect.fn("SessionRunner.advanceToStep")(() =>
         Effect.uninterruptibleMask((restore) =>
@@ -205,6 +205,15 @@ const layer = Layer.effect(
       return selected
     })
 
+    // A tool call left non-terminal by an earlier attempt must be settled durably
+    // BEFORE the next request's history is loaded: the provider would otherwise
+    // receive a call with no result at all instead of a real failure outcome.
+    const refreshStepContext = Effect.fn("SessionRunner.refreshStepContext")(function* (sessionID: SessionSchema.ID) {
+      const selected = yield* prepareContext(sessionID)
+      yield* settleStaleToolCalls(yield* store.context(sessionID), sessionID)
+      return yield* context.load(selected)
+    })
+
     /** Owns logical Step policy; each attempt owns its streaming, tools, and durable settlement. */
     const runStep = Effect.fn("SessionRunner.runStep")(function* (first: SessionContext.Loaded, step: number) {
       const sessionID = first.session.id
@@ -215,7 +224,7 @@ const layer = Layer.effect(
       let recoverContinuation = true
       while (true) {
         // Reuse boundary preparation once; retries refresh context without delivering more input.
-        const loaded = initial ?? (yield* prepareContext(sessionID).pipe(Effect.flatMap(context.load)))
+        const loaded = initial ?? (yield* refreshStepContext(sessionID))
         initial = undefined
         const compacted = yield* compaction.compact({ reason: "auto", context: loaded })
         if (compacted.status === "failed") return yield* new StepFailedError({ error: compacted.error })
@@ -360,9 +369,10 @@ const layer = Layer.effect(
     })
 
     const settleStaleToolCalls = Effect.fn("SessionRunner.settleStaleToolCalls")(function* (
+      messages: readonly SessionMessage.Info[],
       sessionID: SessionSchema.ID,
     ) {
-      for (const message of yield* store.context(sessionID)) {
+      for (const message of messages) {
         if (message.type !== "assistant") continue
         for (const tool of message.content) {
           if (tool.type !== "tool" || (tool.state.status !== "streaming" && tool.state.status !== "running")) continue

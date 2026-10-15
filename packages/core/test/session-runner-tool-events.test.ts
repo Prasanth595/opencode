@@ -219,6 +219,19 @@ testEffect(
   }),
 )
 
+test("empty-content execution fails through Tool.Error instead of settling nothing", async () => {
+  const { published, publisher } = capture()
+  await Effect.runPromise(publisher.publish(call))
+  const exit = await Effect.runPromiseExit(publisher.toolExecution(call.id, call.name, { content: [] }))
+
+  expect(Exit.isFailure(exit)).toBe(true)
+  expect(published.find((event) => event.type === "session.tool.success.2")).toBeUndefined()
+  // The call stays unsettled so the step loop's Tool.Error handling publishes the
+  // durable failure; it must never look already-settled to the later sweeps.
+  await Effect.runPromise(publisher.failUnsettledTools({ type: "aborted", message: "Tool execution interrupted" }))
+  expect(published.find((event) => event.type === "session.tool.failed.2")).toBeDefined()
+})
+
 test("interrupted progress metadata remains in the terminal failure snapshot", async () => {
   const { published, publisher } = capture("anthropic", { interruptProgress: true })
   await Effect.runPromise(publisher.publish(call))

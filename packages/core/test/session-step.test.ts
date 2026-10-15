@@ -158,3 +158,84 @@ for (const fixture of [
     }),
   )
 }
+
+it.effect("settles an execution without content as a durable failure, not a dangling call", () =>
+  Effect.gen(function* () {
+    const db = (yield* Database.Service).db
+    const llm = yield* TestLLM.Test
+    const sessionID = Session.ID.create()
+    const assistantMessageID = SessionMessage.ID.create()
+    const steps = yield* SessionStep.make.pipe(
+      Effect.provide(
+        Layer.mock(Snapshot.Service)({
+          capture: () => Effect.succeed(undefined),
+          files: () => Effect.succeed([]),
+        }),
+      ),
+    )
+    yield* db
+      .insert(ProjectTable)
+      .values({ id: Project.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
+      .run()
+    yield* db
+      .insert(SessionTable)
+      .values({
+        id: sessionID,
+        project_id: Project.ID.global,
+        slug: "empty-content",
+        directory: "/project",
+        version: "test",
+      })
+      .run()
+    const model = SessionRunnerModel.resolved(
+      LanguageModel.make({ id: "test-model", provider: "test", route: OpenAIChat.route }),
+      {
+        capabilities: { tools: true, input: ["text"], output: ["text"] },
+        limit: { context: 100_000, output: 1_000 },
+        cost: [],
+      },
+    )
+    yield* llm.push(
+      TestLLM.complete(
+        { reason: { normalized: "stop" }, usage: { inputTokens: 15, outputTokens: 6 } },
+        LLMEvent.toolCall({ id: "call-empty", name: "test", input: {} }),
+      ),
+    )
+    const result = yield* steps
+      .attempt({
+        isLocationClosed: () => false,
+        sessionID,
+        assistantMessageID,
+        agent: Agent.defaultID,
+        model,
+        prepared: {
+          retry: () => Effect.void,
+          request: LLM.request({ model: model.model, prompt: "Run one tool" }),
+          options: {},
+          executeTool: () => Effect.succeed({ content: [] }),
+        },
+        retry: () => Effect.succeed({ retry: false }),
+        recoverContinuation: true,
+        recoverOverflow: Effect.succeed(false),
+      })
+      .pipe(Effect.exit)
+    expect(Exit.isSuccess(result)).toBe(true)
+    if (Exit.isSuccess(result)) expect(result.value).toEqual(SessionStep.Outcome.Completed({ needsContinuation: true }))
+    const message = yield* db
+      .select()
+      .from(SessionMessageTable)
+      .where(eq(SessionMessageTable.id, assistantMessageID))
+      .get()
+    expect(message?.data).toMatchObject({
+      content: [
+        {
+          type: "tool",
+          state: {
+            status: "error",
+            error: { message: expect.stringContaining("no content") },
+          },
+        },
+      ],
+    })
+  }),
+)
