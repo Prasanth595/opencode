@@ -14,18 +14,21 @@ type EditorStdio = "inherit" | "pipe" | "ignore" | number | Stream
 export async function openEditor(input: { value: string; renderer: CliRenderer; cwd?: string; stdin?: EditorStdio }) {
   const editor = process.env.VISUAL || process.env.EDITOR
   if (!editor) return
-  const file = path.join(os.tmpdir(), `${Date.now()}.md`)
+  const file = path.join(os.tmpdir(), `OpenCode${Date.now()}.md`)
   await writeFile(file, input.value)
   input.renderer.suspend()
   input.renderer.currentRenderBuffer.clear()
   try {
     await new Promise<void>((resolve, reject) => {
-      const parts = editor.split(" ")
-      const child = spawn(parts[0]!, [...parts.slice(1), file], {
-        cwd: input.cwd && existsSync(input.cwd) ? input.cwd : process.cwd(),
-        stdio: [input.stdin ?? "inherit", "inherit", "inherit"],
-        shell: process.platform === "win32",
-      })
+      // shell in https://github.com/oven-sh/bun/blob/bun-v1.4.3/src/js/node/child_process.ts#L1025
+      const child = spawn(
+        editor.includes("=FILE_OUT=") ? editor.replaceAll("=FILE_OUT=", `"${file}"`) : `${editor} "${file}"`,
+        {
+          cwd: input.cwd && existsSync(input.cwd) ? input.cwd : process.cwd(),
+          stdio: [input.stdin ?? "inherit", "inherit", "inherit"],
+          shell: process.env.SHELL || true,
+        },
+      )
       child.on("error", reject)
       child.on("exit", (code, signal) => {
         if (code === 0) return resolve()
