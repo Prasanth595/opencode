@@ -69,6 +69,21 @@ describe("FileAccess.authorizeRead", () => {
     }).pipe(provide(requests))
   })
 
+  it.live("resolves a ./ project path to the relative resource a deny rule must match", () => {
+    const requests: Permission.AssertInput[] = []
+    return Effect.gen(function* () {
+      const access = yield* FileAccess.Service
+      const target = yield* access.resolve({ path: "./Workshop/Checklist.md", kind: "file" })
+      expect(target.resource).toBe("Workshop/Checklist.md")
+      expect(
+        Permission.evaluate("read", target.resource, [
+          { action: "read", resource: "*", effect: "allow" },
+          { action: "read", resource: "./Workshop/Checklist.md", effect: "deny" },
+        ]).effect,
+      ).toBe("deny")
+    }).pipe(provide(requests))
+  })
+
   it.live("authorizes an external directory before the file's read rules", () => {
     const requests: Permission.AssertInput[] = []
     return Effect.gen(function* () {
