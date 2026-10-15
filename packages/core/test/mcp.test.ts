@@ -1,5 +1,6 @@
 import path from "node:path"
 import fs from "node:fs/promises"
+import os from "node:os"
 import { describe, expect, test } from "bun:test"
 import { Client, InMemoryTransport, StreamableHTTPClientTransport } from "@modelcontextprotocol/client"
 import {
@@ -248,6 +249,9 @@ function resourceServer(
       return {
         state,
         url: http.url.toString(),
+        // The code mode hint is never sent to loopback hosts, so hint tests reach the server
+        // through this machine's network address instead.
+        hostedUrl: hostedUrl(http.url),
         clientVersion: () => current.protocol.getClientVersion(),
         sendResourceListChanged: () =>
           modern ? Promise.resolve(modern.notify.resourcesChanged()) : current.protocol.sendResourceListChanged(),
@@ -265,6 +269,16 @@ function resourceServer(
     }),
     (server) => Effect.promise(server.close),
   )
+}
+
+function hostedUrl(url: URL) {
+  const address = Object.values(os.networkInterfaces())
+    .flat()
+    .find((entry) => entry?.family === "IPv4" && !entry.internal)?.address
+  if (!address) throw new Error("MCP code mode hint tests need a non-loopback IPv4 network interface")
+  const hosted = new URL(url)
+  hosted.hostname = address
+  return hosted.toString()
 }
 
 function resourceMcpLayer(
@@ -1003,13 +1017,15 @@ for (const entry of [
   { name: "explicit remote code mode", query: "?codemode=true", codemode: undefined, expected: "?codemode=true" },
   { name: "explicit remote opt-out", query: "?codemode=false", codemode: undefined, expected: "?codemode=false" },
   { name: "portal opt-out", query: "?codemode=off", codemode: undefined, expected: "?codemode=off" },
+  { name: "loopback", query: "", codemode: undefined, expected: "", loopback: true },
 ]) {
   testEffect(Layer.empty).live(`remote MCP code mode preference: ${entry.name}`, () =>
     Effect.gen(function* () {
       const server = yield* resourceServer()
+      const url = entry.loopback ? server.url : server.hostedUrl
       const config = new ConfigMCP.Remote({
         type: "remote",
-        url: server.url + entry.query,
+        url: url + entry.query,
         oauth: false,
         codemode: entry.codemode,
       })
@@ -1018,8 +1034,8 @@ for (const entry of [
       expect(server.state.initializations).toBe(1)
       expect(server.state.toolLists).toBe(1)
       expect(server.state.urls.length).toBeGreaterThanOrEqual(3)
-      expect(new Set(server.state.urls)).toEqual(new Set([server.url + entry.expected]))
-      expect(config.url).toBe(server.url + entry.query)
+      expect(new Set(server.state.urls)).toEqual(new Set([url + entry.expected]))
+      expect(config.url).toBe(url + entry.query)
     }),
   )
 }
@@ -1038,7 +1054,7 @@ for (const { status, query } of [400, 404].flatMap((status) =>
       })
       const config = new ConfigMCP.Remote({
         type: "remote",
-        url: server.url + query,
+        url: server.hostedUrl + query,
         headers: { "x-mcp-test": "preserved" },
         oauth: false,
       })
@@ -1052,7 +1068,7 @@ for (const { status, query } of [400, 404].flatMap((status) =>
       expect(new Set(headers)).toEqual(new Set(["preserved"]))
       expect(server.state.toolLists).toBe(1)
       expect(server.state.resourceLists).toBe(1)
-      expect(config.url).toBe(server.url + query)
+      expect(config.url).toBe(server.hostedUrl + query)
     }),
   )
 }
@@ -1079,7 +1095,7 @@ for (const entry of [
       })
       const config = new ConfigMCP.Remote({
         type: "remote",
-        url: server.url + entry.query,
+        url: server.hostedUrl + entry.query,
         codemode: entry.codemode,
         oauth: false,
       })
@@ -1101,7 +1117,7 @@ for (const status of [400, 404]) {
       const server = yield* resourceServer({
         respond: (request) => (expired && request.method === "POST" ? new Response(null, { status }) : undefined),
       })
-      const config = new ConfigMCP.Remote({ type: "remote", url: server.url, oauth: false })
+      const config = new ConfigMCP.Remote({ type: "remote", url: server.hostedUrl, oauth: false })
       const connection = yield* connect("resources", config, import.meta.dir)
       expired = true
       const error = yield* connection.tools().pipe(Effect.flip)
@@ -1111,7 +1127,7 @@ for (const status of [400, 404]) {
       if (status === 404) expect(error).toBeInstanceOf(McpClient.SessionExpiredError)
       else expect(error).not.toBeInstanceOf(McpClient.SessionExpiredError)
       expect(server.state.initializations).toBe(1)
-      expect(new Set(server.state.urls)).toEqual(new Set([server.url + "?codemode=false"]))
+      expect(new Set(server.state.urls)).toEqual(new Set([server.hostedUrl + "?codemode=false"]))
       expect(server.state.toolLists).toBe(0)
     }),
   )

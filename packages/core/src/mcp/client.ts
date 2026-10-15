@@ -397,8 +397,8 @@ function rejectsUnknownQuery(url: URL) {
   if (url.hostname.endsWith(".googleapis.com")) return true
   // Zoho MCP gateways (zohomcp.com, zohomcp.eu, ...) return 400.
   if (/(^|\.)zohomcp\.[a-z.]+$/.test(url.hostname)) return true
-  // Figma Desktop's Dev Mode MCP server listens on this fixed port and returns 404.
-  return (url.hostname === "127.0.0.1" || url.hostname === "localhost") && url.port === "3845"
+  // Loopback servers run on this machine (Figma Desktop's Dev Mode MCP returns 404), so they are not hosted Code Mode servers.
+  return url.hostname === "localhost" || url.hostname === "[::1]" || /^127(\.\d+){3}$/.test(url.hostname)
 }
 
 // Absent config is legacy: the SDK sends the plain initialize handshake with no discover probe.
