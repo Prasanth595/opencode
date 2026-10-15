@@ -534,6 +534,37 @@ export function Session() {
       },
     },
     {
+      title: "Toggle ephemeral session",
+      value: "session.temp",
+      category: "Session",
+      slash: {
+        name: "temp",
+      },
+      run: async () => {
+        const current = session()?.temp ?? false
+        await sdk.client.session
+          .update({
+            sessionID: route.sessionID,
+            temp: !current,
+          })
+          .then(() =>
+            toast.show({
+              message: !current
+                ? "Session marked as ephemeral: it will be deleted when opencode shuts down"
+                : "Session is no longer ephemeral",
+              variant: "success",
+            }),
+          )
+          .catch((error) => {
+            toast.show({
+              message: error instanceof Error ? error.message : "Failed to update session",
+              variant: "error",
+            })
+          })
+        dialog.clear()
+      },
+    },
+    {
       title: "Rename session",
       value: "session.rename",
       category: "Session",

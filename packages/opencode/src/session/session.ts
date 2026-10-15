@@ -492,6 +492,7 @@ export interface Interface {
   readonly get: (id: SessionID) => Effect.Effect<Info, NotFound>
   readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
   readonly setArchived: (input: { sessionID: SessionID; time?: number }) => Effect.Effect<void>
+  readonly setTemp: (input: { sessionID: SessionID; temp: boolean }) => Effect.Effect<void>
   readonly setMetadata: (input: typeof SetMetadataInput.Type) => Effect.Effect<void>
   readonly setPermission: (input: { sessionID: SessionID; permission: PermissionV1.Ruleset }) => Effect.Effect<void>
   readonly setRevert: (input: {
@@ -841,6 +842,10 @@ export const layer: Layer.Layer<
       yield* patch(input.sessionID, { time: { archived: input.time } }).pipe(Effect.orDie)
     })
 
+    const setTemp = Effect.fn("Session.setTemp")(function* (input: { sessionID: SessionID; temp: boolean }) {
+      yield* patch(input.sessionID, { temp: input.temp }).pipe(Effect.orDie)
+    })
+
     const setMetadata = Effect.fn("Session.setMetadata")(function* (input: typeof SetMetadataInput.Type) {
       yield* patch(input.sessionID, { metadata: input.metadata, time: { updated: Date.now() } }).pipe(Effect.orDie)
     })
@@ -982,6 +987,7 @@ export const layer: Layer.Layer<
       get,
       setTitle,
       setArchived,
+      setTemp,
       setMetadata,
       setPermission,
       setRevert,

@@ -7901,6 +7901,7 @@ export type SessionGetResponse = SessionGetResponses[keyof SessionGetResponses]
 export type SessionUpdateData = {
   body?: {
     title?: string
+    temp?: boolean
     metadata?: {
       [key: string]: unknown
     }
