@@ -2215,6 +2215,7 @@ function ShellMessage(props: { message: Extract<SessionMessageInfo, { type: "she
 
 function UserMessage(props: { message: SessionMessageUser }) {
   const ctx = use()
+  const config = useConfig().data
   const data = useData()
   const local = useLocal()
   const files = createMemo(() => deduplicateVisibleImages(props.message.files ?? []))
@@ -2260,6 +2261,7 @@ function UserMessage(props: { message: SessionMessageUser }) {
               dialog.replace(() => (
                 <DialogSelect
                   title="Pending steer"
+                  renderFilter={config.experimental?.["new-designs"] !== true}
                   options={[
                     { title: "Move to queue", value: "queue" as const },
                     { title: "Delete", value: "cancel" as const },
