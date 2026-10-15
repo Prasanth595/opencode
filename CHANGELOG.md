@@ -37,3 +37,11 @@ Release notes for OpenCode V2, newest first.
 - Fixed transcript links not opening when clicked, including URLs wrapped across multiple rows. ([#53903](https://github.com/anomalyco/opencode/pull/53903))
 - Kept activity summaries in place when expanding or collapsing details with `session.verbosity: "low"`. ([#52357](https://github.com/anomalyco/opencode/pull/52357))
 - Prevented the home-screen version footer from overlapping keyboard hints in short terminals. Thanks [@fihaaade](https://github.com/fihaaade). ([#53891](https://github.com/anomalyco/opencode/pull/53891))
+
+## v2.0.25 — 2026-10-08
+
+### Core
+
+#### Changes
+
+- **Breaking:** Agents no longer ask before accessing paths outside the project. The default `external_directory` rule changed from `ask` to `allow`, so reads and edits outside the Location and worktree proceed without a prompt. To restore the prompt, add `{ "action": "external_directory", "resource": "*", "effect": "ask" }` to `permissions`. ([#53585](https://github.com/anomalyco/opencode/pull/53585))
