@@ -569,6 +569,25 @@ describe("Provider and Model", () => {
     }),
   )
 
+  it.effect("prefers the internal priority over a newer model when no default is configured", () =>
+    Effect.gen(function* () {
+      const providers = yield* Provider.Service
+      const models = yield* Model.Service
+      const providerID = Provider.ID.make("opencode")
+      yield* providers.transform((editor) => {
+        editor.update(providerID, () => {})
+        editor.models.update(providerID, Model.ID.make("big-pickle"), (model) => {
+          model.time.released = 1000
+        })
+        editor.models.update(providerID, Model.ID.make("new-free"), (model) => {
+          model.time.released = 2000
+        })
+      })
+
+      expect((yield* models.default())?.id).toBe(Model.ID.make("big-pickle"))
+    }),
+  )
+
   it.effect("uses a transform-provided default model until that transform is replaced", () =>
     Effect.gen(function* () {
       const providers = yield* Provider.Service

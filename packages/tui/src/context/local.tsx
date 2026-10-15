@@ -25,6 +25,7 @@ import { useData } from "./data"
 import { usePermission } from "./permission"
 import { useLocation } from "./location"
 import { parse } from "../util/model"
+import { ModelDefault } from "@opencode/util/model-default"
 
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   name: "Local",
@@ -198,7 +199,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           }
         }
 
-        const model = models()?.[0]
+        const model = ModelDefault.pick(models() ?? [])
         if (!model) return undefined
         return {
           providerID: model.providerID,

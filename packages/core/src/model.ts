@@ -3,6 +3,7 @@ import { Provider } from "./provider.js"
 import type { DeepMutable } from "./schema.js"
 import { Context, Effect, Layer, Stream } from "effect"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
+import { ModelDefault } from "@opencode/util/model-default"
 import { Bus } from "./bus.js"
 import { State } from "./state.js"
 import { Location } from "./location.js"
@@ -265,7 +266,7 @@ const layer = Layer.effect(
         const value = yield* read()
         const requested = value.data.defaultModel
         const model = requested && value.byProvider.get(requested.providerID)?.get(requested.modelID)
-        return model?.enabled ? model : value.available.find(supportsText)
+        return model?.enabled ? model : ModelDefault.pick(value.available.filter(supportsText))
       }),
       small: Effect.fn("Model.small")(function* (providerID) {
         const value = yield* read()
