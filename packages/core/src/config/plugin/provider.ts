@@ -15,6 +15,7 @@ export const Plugin = define({
   id: "opencode.config.provider",
   effect: Effect.fn(function* (ctx) {
     const config = yield* Config.Service
+    const runSync = Effect.runSyncWith(yield* Effect.context<never>())
     const loaded = yield* ConfigEntryObserver.observe(
       config,
       ctx.event,
@@ -74,7 +75,12 @@ export const Plugin = define({
         })
         const definitions = new Map<string, { readonly inherit: boolean; readonly base?: Model.Info }>()
         for (const [id, config] of Object.entries(item.models ?? {})) {
-          const base = source?.models.get(config.base ?? config.modelID ?? id) ?? source?.models.get(id)
+          const named = source?.models.get(config.base ?? config.modelID ?? id)
+          if (config.base !== undefined && !named)
+            runSync(
+              Effect.logWarning("configured base model not found", { providerID, modelID: id, base: config.base }),
+            )
+          const base = named ?? source?.models.get(id)
           const inherit = changed || !current?.models.has(id)
           // Bind the source at this point in the provider fold. Later source edits/removal
           // and its credential availability must not change an already-defined alias.

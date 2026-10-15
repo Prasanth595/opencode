@@ -1,7 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Money } from "@opencode/schema/money"
 import { Document, Info, type Entry } from "@opencode/schema/config"
-import { Effect, Schema } from "effect"
+import { Effect, Logger, Schema } from "effect"
 import { Config } from "@opencode/core/config"
 import { ConfigProviderPlugin } from "@opencode/core/config/plugin/provider"
 import { ConfigNormalize } from "@opencode/core/config/normalize"
@@ -475,6 +475,11 @@ describe("ConfigProviderPlugin.Plugin", () => {
           ]
         })
       })
+      const warnings: unknown[] = []
+      const logger = Logger.map(Logger.formatStructured, (entry) => {
+        if (Array.isArray(entry.message) && entry.message[0] === "configured base model not found")
+          warnings.push(entry.message[1])
+      })
       yield* addPlugin([
         new Document({
           type: "document",
@@ -489,7 +494,7 @@ describe("ConfigProviderPlugin.Plugin", () => {
             },
           }),
         }),
-      ])
+      ]).pipe(Effect.provide(Logger.layer([logger])))
 
       const alias = required(yield* models.get(providerID, Model.ID.make("vmc/alias")))
       expect(alias.id).toBe(Model.ID.make("vmc/alias"))
@@ -504,6 +509,8 @@ describe("ConfigProviderPlugin.Plugin", () => {
       const unknown = required(yield* models.get(providerID, Model.ID.make("vmc/unknown")))
       expect(unknown.modelID).toBe(Model.ID.make("vmc/unknown"))
       expect(unknown.limit).toEqual({ context: 200000, output: 32000 })
+      expect(warnings).toContainEqual({ providerID, modelID: "vmc/unknown", base: "anthropic/missing" })
+      expect(warnings).toHaveLength(1)
 
       const original = required(yield* models.get(providerID, baseID))
       expect(original.id).toBe(baseID)
