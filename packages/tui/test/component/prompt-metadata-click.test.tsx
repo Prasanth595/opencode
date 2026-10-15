@@ -75,8 +75,7 @@ test("releasing a transcript selection over the labels does not pick a target", 
     await app.waitForFrame((frame) => frame.includes("Sonnet"))
     const row = app.captureCharFrame().split("\n")[0] ?? ""
 
-    await app.mockMouse.pressDown(0, 1)
-    await app.mockMouse.release(row.indexOf("Build"), 0)
+    await app.mockMouse.drag(0, 1, row.indexOf("Build"), 0)
     expect(picked).toEqual([])
 
     await app.mockMouse.click(row.indexOf("Build"), 0)
@@ -86,7 +85,7 @@ test("releasing a transcript selection over the labels does not pick a target", 
   }
 })
 
-test("pressing a label and releasing off it does not pick a target", async () => {
+test("dragging from one label onto another does not pick a target", async () => {
   const picked: PromptMetadataTarget[] = []
   const app = await renderRow((target) => picked.push(target))
   try {
@@ -94,8 +93,22 @@ test("pressing a label and releasing off it does not pick a target", async () =>
     await app.waitForFrame((frame) => frame.includes("Sonnet"))
     const row = app.captureCharFrame().split("\n")[0] ?? ""
 
-    await app.mockMouse.pressDown(row.indexOf("Build"), 0)
-    await app.mockMouse.release(row.indexOf("Sonnet"), 0)
+    await app.mockMouse.drag(row.indexOf("Build"), 0, row.indexOf("Sonnet"), 0)
+    expect(picked).toEqual([])
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
+test("shift-clicking a label does not pick a target", async () => {
+  const picked: PromptMetadataTarget[] = []
+  const app = await renderRow((target) => picked.push(target))
+  try {
+    app.renderer.start()
+    await app.waitForFrame((frame) => frame.includes("Sonnet"))
+    const row = app.captureCharFrame().split("\n")[0] ?? ""
+
+    await app.mockMouse.click(row.indexOf("Build"), 0, undefined, { modifiers: { shift: true } })
     expect(picked).toEqual([])
   } finally {
     app.renderer.destroy()
