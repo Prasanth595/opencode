@@ -507,15 +507,7 @@ const lowerToolMessages = Effect.fnUntraced(function* (
   const attachments: OpenAIChatUserContent[] = []
   for (const [partIndex, part] of message.content.entries()) {
     if (!ProviderShared.supportsContent(part, ["tool-result"])) {
-      const id = "id" in part ? part.id : undefined
-      const detail = [
-        messageIndex === undefined ? undefined : `message #${messageIndex}`,
-        `part #${partIndex}`,
-        `type=${part.type}`,
-        typeof id === "string" ? `tool_call_id=${id}` : undefined,
-      ]
-        .filter((segment) => segment !== undefined)
-        .join(" ")
+      const detail = ProviderShared.contentLocation(part, messageIndex, partIndex)
       return yield* ProviderShared.unsupportedContent("OpenAI Chat", "tool", ["tool-result"], detail)
     }
     if (part.result.type !== "content") {

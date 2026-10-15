@@ -11,6 +11,8 @@ import {
   LLMResponse,
   Message,
   LanguageModel,
+  CompactionPart,
+  ProviderID,
   ToolCallPart,
   ToolDefinition,
   Usage,
@@ -490,6 +492,54 @@ describe("OpenAI Chat route", () => {
       expect(error.message).toContain("message #2")
       expect(error.message).toContain("part #0")
       expect(error.message).toContain("type=text")
+    }),
+  )
+
+  it.effect("does not label a compaction checkpoint id as a tool call id", () =>
+    Effect.gen(function* () {
+      const error = yield* compileRequest(
+        LLM.request({
+          id: "req_tool_compaction",
+          model,
+          messages: [
+            Message.user("What is the weather?"),
+            Message.make({
+              role: "tool",
+              content: [
+                CompactionPart.make({ provider: ProviderID.make("anthropic"), id: "ckpt_1", text: "summary" }),
+              ],
+            }),
+          ],
+        }),
+      ).pipe(Effect.flip)
+
+      expect(error.message).toContain("message #1")
+      expect(error.message).toContain("part #0")
+      expect(error.message).toContain("type=compaction")
+      expect(error.message).not.toContain("tool_call_id")
+    }),
+  )
+
+  it.effect("labels the tool call id when the unsupported part is a tool call", () =>
+    Effect.gen(function* () {
+      const error = yield* compileRequest(
+        LLM.request({
+          id: "req_tool_call_unsupported",
+          model,
+          messages: [
+            Message.user("What is the weather?"),
+            Message.make({
+              role: "tool",
+              content: [ToolCallPart.make({ id: "call_1", name: "lookup", input: { query: "weather" } })],
+            }),
+          ],
+        }),
+      ).pipe(Effect.flip)
+
+      expect(error.message).toContain("message #1")
+      expect(error.message).toContain("part #0")
+      expect(error.message).toContain("type=tool-call")
+      expect(error.message).toContain("tool_call_id=call_1")
     }),
   )
 
