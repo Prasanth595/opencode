@@ -140,6 +140,8 @@ export function DialogModel(props: { providerID?: string }) {
 
   return (
     <DialogSelect<ReturnType<typeof options>[number]["value"]>
+      searchInTitle
+      titlePlaceholder="Search models"
       options={options()}
       actions={[
         {
