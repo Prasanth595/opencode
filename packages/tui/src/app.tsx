@@ -458,7 +458,6 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
 
 function App() {
   const app = useTuiApp()
-  const paths = useTuiPaths()
   const startup = useTuiStartup()
   const config = useConfig()
   const devtools = createMemo(() => config.data.debug?.devtools ?? app.channel === "local")
@@ -483,7 +482,6 @@ function App() {
   const plugins = usePlugin()
   const clipboard = useClipboard()
   const terminalEnvironment = useTuiTerminalEnvironment()
-  const linkBase = () => location.current?.directory || paths.cwd
   let paletteTimer: ReturnType<typeof setTimeout> | undefined
   const afterFrame = () => {
     // The native writer can still be flushing the frame when FRAME fires. Keep OSC probes behind visible app output.
@@ -695,6 +693,7 @@ function App() {
   // Opens the release highlights once after an update, but only into an idle home screen during startup.
   const storage = useStorage()
   const paths = useTuiPaths()
+  const linkBase = () => location.current?.directory || paths.cwd
   let highlighted = false
   createEffect(() => {
     if (highlighted || !plugins.ready() || client.connection.status() !== "connected") return
