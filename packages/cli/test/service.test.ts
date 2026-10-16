@@ -3,7 +3,7 @@ import { validateRoutes } from "@opentunnel/client/effect"
 import { Service, type Info } from "@opencode/client/effect/service"
 import { Global } from "@opencode/util/global"
 import { OPENCODE_VERSION } from "../src/version"
-import { expect, test } from "bun:test"
+import { afterEach, expect, mock, spyOn, test } from "bun:test"
 import { Deferred, Effect, FileSystem, Schedule, Schema } from "effect"
 import { NetAddress } from "effect/net"
 import { TestClock } from "effect/testing"
@@ -16,6 +16,10 @@ import { isolatedEnv, transpilerCache } from "./fixture/environment"
 import { testEffect } from "../../core/test/lib/effect"
 
 const it = testEffect(NodeFileSystem.layer)
+
+// spyOn touches the shared Service module object, so restore after every
+// test: mock.module would leak into every other file in this package's suite.
+afterEach(() => mock.restore())
 
 test("managed service ports are stable per installation channel", () => {
   expect(ServiceConfig.defaultPort("latest", "linux")).toBe(0xc0de)
@@ -192,6 +196,60 @@ test("service config manages environment variables", async () => {
   }
 })
 
+// The config change is written before the service is stopped, so an
+// interrupted stop (Ctrl-C, crash, the caller's session dying with the
+// server it just killed) still leaves the new config on disk for the next start.
+test("service set persists env before stopping, even when the stop is interrupted", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-service-set-env-persist-"))
+  const layer = Global.layerWith({ config: path.join(root, "config"), state: path.join(root, "state") })
+  const run = <A, E>(effect: Effect.Effect<A, E, Global.Service | FileSystem.FileSystem>) =>
+    Effect.runPromise(effect.pipe(Effect.provide(layer), Effect.provide(NodeFileSystem.layer)))
+  const file = path.join(root, "config", ServiceConfig.filename())
+  spyOn(Service, "stop").mockImplementation(() => Effect.fail(new Error("service stop interrupted")) as never)
+  try {
+    await expect(run(ServiceConfig.set("env", "OPENCODE_SET_ENV_TEST", "kept"))).rejects.toThrow(
+      "service stop interrupted",
+    )
+    expect(await Bun.file(file).json()).toEqual({ env: { OPENCODE_SET_ENV_TEST: "kept" } })
+    expect(await run(ServiceConfig.get("env", "OPENCODE_SET_ENV_TEST"))).toBe("kept")
+  } finally {
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
+
+test("service set persists scalar settings before stopping, even when the stop is interrupted", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-service-set-scalar-persist-"))
+  const layer = Global.layerWith({ config: path.join(root, "config"), state: path.join(root, "state") })
+  const run = <A, E>(effect: Effect.Effect<A, E, Global.Service | FileSystem.FileSystem>) =>
+    Effect.runPromise(effect.pipe(Effect.provide(layer), Effect.provide(NodeFileSystem.layer)))
+  const file = path.join(root, "config", ServiceConfig.filename())
+  spyOn(Service, "stop").mockImplementation(() => Effect.fail(new Error("service stop interrupted")) as never)
+  try {
+    await expect(run(ServiceConfig.set("hostname", "127.0.0.2"))).rejects.toThrow("service stop interrupted")
+    expect(await Bun.file(file).json()).toEqual({ hostname: "127.0.0.2" })
+  } finally {
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
+
+test("service unset persists env removal before stopping, even when the stop is interrupted", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-service-unset-env-persist-"))
+  const layer = Global.layerWith({ config: path.join(root, "config"), state: path.join(root, "state") })
+  const run = <A, E>(effect: Effect.Effect<A, E, Global.Service | FileSystem.FileSystem>) =>
+    Effect.runPromise(effect.pipe(Effect.provide(layer), Effect.provide(NodeFileSystem.layer)))
+  const file = path.join(root, "config", ServiceConfig.filename())
+  await fs.mkdir(path.dirname(file), { recursive: true })
+  await Bun.write(file, JSON.stringify({ env: { OPENCODE_UNSET_ENV_TEST: "stale", OTHER: "kept" } }))
+  spyOn(Service, "stop").mockImplementation(() => Effect.fail(new Error("service stop interrupted")) as never)
+  try {
+    await expect(run(ServiceConfig.unset("env", "OPENCODE_UNSET_ENV_TEST"))).rejects.toThrow(
+      "service stop interrupted",
+    )
+    expect(await Bun.file(file).json()).toEqual({ env: { OTHER: "kept" } })
+  } finally {
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
 test("managed service loads configured environment", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-service-env-"))
   const registration = path.join(root, "state", "opencode", ServiceConfig.filename())
