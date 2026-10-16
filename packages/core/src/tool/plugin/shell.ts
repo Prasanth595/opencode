@@ -134,7 +134,7 @@ export const Plugin = {
         }),
       )
       yield* access.authorizeExternal([target, ...directories], context)
-      if (parsed.commands.length > 0)
+      if (parsed.commands.length > 0) {
         yield* permission.assert({
           action: name,
           resources: parsed.commands.map((command) => command.resource),
@@ -143,6 +143,19 @@ export const Plugin = {
           agent: context.agent,
           source,
         })
+      } else if (parsed.directories.length === 0 && invocation.command.trim() !== "") {
+        // The scanner found no command or directory nodes: gate the raw text
+        // instead of skipping the permission check.
+        const resource = invocation.command.trim()
+        yield* permission.assert({
+          action: name,
+          resources: [resource],
+          save: [resource],
+          sessionID: context.sessionID,
+          agent: context.agent,
+          source,
+        })
+      }
       // Approval can outlive the directory, so validate immediately before spawning.
       const workdir = yield* Environment.typeFollowing(environment.files, target.absolute).pipe(
         Effect.catchTag("Environment.NotFound", () =>

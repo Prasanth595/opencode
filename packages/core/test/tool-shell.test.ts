@@ -806,6 +806,46 @@ describe("ShellTool ordinary shell syntax", () => {
           pwsh ?? "pwsh",
         ))
     }
+
+    test(`PowerShell ${portable ? "native" : "legacy"}: a bare -- command cannot skip the shell permission check`, () =>
+      withScanner(
+        portable,
+        (registry, directory) =>
+          Effect.gen(function* () {
+            const command = "git rev-parse HEAD --"
+            const marker = path.join(directory.active, "marker")
+            const asked = yield* runPermissionCommand(registry, command, marker, ["reject"])
+            expect(asked.requests).toMatchObject([
+              {
+                action: "shell",
+                resources: [command],
+                save: portable ? ["git rev-parse *"] : [command],
+              },
+            ])
+            expect(Exit.isFailure(asked.exit)).toBe(true)
+            if (Exit.isFailure(asked.exit))
+              expect(
+                asked.exit.cause.reasons.some(
+                  (reason) => Cause.isDieReason(reason) && reason.defect instanceof Permission.DeclinedError,
+                ),
+              ).toBe(true)
+
+            const agents = yield* Agent.Service
+            yield* agents.transform((editor) =>
+              editor.update(toolIdentity.agent, (agent) => {
+                agent.permissions = [{ action: "shell", resource: "*", effect: "deny" }]
+              }),
+            )
+            const denied = yield* runPermissionCommand(registry, command, marker, [])
+            expect(denied.requests).toEqual([])
+            expect(denied.exit).toMatchObject({
+              _tag: "Success",
+              value: { status: "error", error: { message: expect.stringContaining("Permission denied: shell") } },
+            })
+            expect(yield* Effect.promise(() => Bun.file(marker).exists())).toBe(false)
+          }),
+        pwsh ?? "pwsh",
+      ))
   }
 
   for (const [command, pattern] of [
