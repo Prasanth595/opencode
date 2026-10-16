@@ -1,7 +1,18 @@
 import { describe, expect } from "bun:test"
 import { Deferred, Effect, Fiber } from "effect"
 import * as TestClock from "effect/testing/TestClock"
-import { LLM, AIError, LLMEvent, LLMRequest, Message, ToolCallPart, ToolDefinition, Usage, Media } from "../../src/index.js"
+import {
+  LLM,
+  AIError,
+  LLMEvent,
+  LLMRequest,
+  Message,
+  ToolCallPart,
+  ToolDefinition,
+  ToolNamespace,
+  Usage,
+  Media,
+} from "../../src/index.js"
 import { Auth, LLMClient } from "../../src/route.js"
 import { compileRequest } from "../../src/route/client.js"
 import * as Gemini from "../../src/protocols/gemini.js"
@@ -32,6 +43,30 @@ const request = LLM.request({
 })
 
 describe("Gemini route", () => {
+  it.effect("flattens a namespaced forced tool choice", () =>
+    Effect.gen(function* () {
+      const prepared = yield* compileRequest(
+        LLM.request({
+          model,
+          prompt: "Look up a customer.",
+          tools: [
+            ToolNamespace.make({
+              name: "crm",
+              tools: [ToolDefinition.make({ name: "lookup", description: "Look up a customer", inputSchema: {} })],
+            }),
+          ],
+          toolChoice: "crm.lookup",
+        }),
+      )
+
+      expect(prepared.body.tools).toMatchObject([{ functionDeclarations: [{ name: "crm_lookup" }] }])
+      expect(prepared.body.toolConfig?.functionCallingConfig).toEqual({
+        mode: "ANY",
+        allowedFunctionNames: ["crm_lookup"],
+      })
+    }),
+  )
+
   it.effect("prepares Gemini target", () =>
     Effect.gen(function* () {
       const prepared = yield* compileRequest(request)
