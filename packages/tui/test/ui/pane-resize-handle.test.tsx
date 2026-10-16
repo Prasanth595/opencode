@@ -12,7 +12,7 @@ import { TestTuiContexts } from "../fixture/tui-environment"
 import { createTuiResolvedConfig } from "../fixture/tui-runtime"
 
 for (const mode of ["dark", "light"] as const) {
-  test(`${mode} pane resize handle renders themed hover and keeps parent-owned dragging and reset`, async () => {
+  test(`${mode} pane resize handle renders themed hover and resize pointer and keeps parent-owned dragging and reset`, async () => {
     const [value, setValue] = createSignal(20)
     const commits: number[] = []
     let resize!: ReturnType<typeof createPaneResize>
@@ -57,6 +57,9 @@ for (const mode of ["dark", "light"] as const) {
       { width: 60, height: 5 },
     )
 
+    const pointers: string[] = []
+    app.renderer.setMousePointer = (style) => pointers.push(style)
+
     try {
       app.renderer.start()
       await app.waitForFrame(() => parent?.height === 5)
@@ -66,6 +69,7 @@ for (const mode of ["dark", "light"] as const) {
       expect(line).toMatchObject({ x: 19, y: 0, width: 1, height: 5 })
       expect(line.backgroundColor.a).toBe(0)
       expect(handle.backgroundColor.a).toBe(0)
+      expect(pointers).toEqual([])
 
       setValue(24)
       await app.renderOnce()
@@ -80,6 +84,7 @@ for (const mode of ["dark", "light"] as const) {
       expect(resize.resizing()).toBe(false)
       expect(line.backgroundColor.toInts()).toEqual(theme.background.raised.high.toInts())
       expect(handle.backgroundColor.a).toBe(0)
+      expect(pointers).toEqual(["ew-resize"])
       for (const row of app.captureSpans().lines) {
         const colors = row.spans.flatMap((span) => Array.from({ length: span.width }, () => span.bg.toInts()))
         expect(colors[23]).toEqual(theme.background.raised.high.toInts())
@@ -90,6 +95,7 @@ for (const mode of ["dark", "light"] as const) {
       await app.renderOnce()
       expect(resize.hovered()).toBe(false)
       expect(line.backgroundColor.a).toBe(0)
+      expect(pointers).toEqual(["ew-resize", "default"])
 
       await app.mockMouse.pressDown(24, 2)
       expect(resize.resizing()).toBe(true)
@@ -108,6 +114,7 @@ for (const mode of ["dark", "light"] as const) {
       expect(resize.hovered()).toBe(false)
       expect(resize.resizing()).toBe(true)
       expect(line.backgroundColor.toInts()).toEqual(theme.background.raised.high.toInts())
+      expect(pointers.at(-1)).toBe("ew-resize")
       expect(commits).toEqual([])
 
       await app.mockMouse.release(55, 2)
@@ -117,6 +124,7 @@ for (const mode of ["dark", "light"] as const) {
       expect(line.backgroundColor.a).toBe(0)
       expect(value()).toBe(40)
       expect(commits).toEqual([40])
+      expect(pointers).toEqual(["ew-resize", "default", "ew-resize", "default"])
 
       await app.mockMouse.doubleClick(40, 2)
       await app.renderOnce()
@@ -127,6 +135,7 @@ for (const mode of ["dark", "light"] as const) {
       expect(resize.hovered()).toBe(false)
       expect(line.backgroundColor.a).toBe(0)
       expect(commits).toEqual([40, 16])
+      expect(pointers.at(-1)).toBe("default")
     } finally {
       app.renderer.destroy()
     }
