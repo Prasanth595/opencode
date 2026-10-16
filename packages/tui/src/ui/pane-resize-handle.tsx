@@ -21,8 +21,18 @@ export function PaneResizeHandle(props: {
     renderer.requestRender()
   }
 
-  // Show the terminal's resize pointer while hovering or dragging, as GUI split panes do.
-  createEffect(on(active, (value) => renderer.setMousePointer(value ? "ew-resize" : "default"), { defer: true }))
+  // Show the terminal's resize pointer while hovering or dragging, as GUI split panes do, and repaint
+  // the line and grip, which no prop change would redraw.
+  createEffect(
+    on(
+      active,
+      (value) => {
+        renderer.setMousePointer(value ? "ew-resize" : "default")
+        renderer.requestRender()
+      },
+      { defer: true },
+    ),
+  )
   onCleanup(() => {
     if (active()) renderer.setMousePointer("default")
   })

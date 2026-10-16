@@ -65,6 +65,12 @@ for (const mode of ["dark", "light"] as const) {
         .split("\n")
         .flatMap((row, y) => [...row].flatMap((char, x) => (char === "⋮" ? [[x, y]] : [])))
     app.renderer.setMousePointer = (style) => pointers.push(style)
+    let renders = 0
+    const requestRender = app.renderer.requestRender.bind(app.renderer)
+    app.renderer.requestRender = () => {
+      renders++
+      requestRender()
+    }
 
     try {
       app.renderer.start()
@@ -118,7 +124,10 @@ for (const mode of ["dark", "light"] as const) {
         expect(colors[24]).not.toEqual(colors[23])
       }
 
+      // The line and grip are painted rather than element props, so leaving has to ask for a repaint.
+      renders = 0
       await app.mockMouse.moveTo(5, 2)
+      expect(renders).toBeGreaterThan(0)
       await app.renderOnce()
       expect(resize.hovered()).toBe(false)
       expect(lit()).toEqual([])
