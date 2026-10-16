@@ -612,4 +612,95 @@ describe("OpenRouter", () => {
       ])
     }),
   )
+
+  it.effect("continues image tool results as a trailing user message", () =>
+    Effect.gen(function* () {
+      const prepared = yield* compileRequest(
+        LLM.request({
+          model: OpenRouter.configure({ apiKey: "test-key" }).model("google/gemini-4-argon"),
+          cache: "none",
+          messages: [
+            Message.user("Read the image"),
+            Message.assistant([{ type: "tool-call", id: "call_1", name: "read", input: { path: "pixel.png" } }]),
+            Message.tool({
+              id: "call_1",
+              name: "read",
+              resultType: "content",
+              result: [
+                { type: "text", text: "Image read successfully" },
+                { type: "file", mime: "image/png", uri: "data:image/png;base64,AAEC" },
+              ],
+            }),
+          ],
+        }),
+      )
+
+      // Google rejects requests that end on a model turn; the tool result plus
+      // its hoisted image attachment must close on the user-side messages.
+      expect(prepared.body.messages).toMatchObject([
+        { role: "user" },
+        { role: "assistant", tool_calls: [{ id: "call_1" }] },
+        { role: "tool", tool_call_id: "call_1", content: "Image read successfully" },
+        { role: "user", content: [{ type: "image_url", image_url: { url: "data:image/png;base64,AAEC" } }] },
+      ])
+      expect(prepared.body.messages.at(-1)?.role).toBe("user")
+    }),
+  )
+
+  it.effect("surfaces the upstream error inside OpenRouter metadata.raw", () =>
+    Effect.gen(function* () {
+      const body = JSON.stringify({
+        error: {
+          code: 400,
+          message: "Provider returned error",
+          metadata: {
+            provider_name: "Google",
+            raw: JSON.stringify({
+              error: { code: 400, message: "Requests ending with a model turn are not supported." },
+            }),
+          },
+        },
+      })
+      const error = yield* LLMClient.generate(
+        LLM.request({
+          model: OpenRouter.configure({ apiKey: "test-key" }).model("google/gemini-4-argon"),
+          prompt: "Say hello.",
+        }),
+      ).pipe(Effect.provide(fixedResponse(body, { status: 400 })), Effect.flip)
+
+      expect(error.reason._tag).toBe("InvalidRequest")
+      expect(error.message).toContain("Requests ending with a model turn are not supported")
+    }),
+  )
+
+  it.effect("surfaces the upstream message from a mid-stream OpenRouter error", () =>
+    Effect.gen(function* () {
+      const error = yield* LLMClient.generate(
+        LLM.request({
+          model: OpenRouter.configure({ apiKey: "test-key" }).model("google/gemini-4-argon"),
+          prompt: "Say hello.",
+        }),
+      ).pipe(
+        Effect.provide(
+          fixedResponse(
+            sseEvents({
+              error: {
+                code: 400,
+                message: "Provider returned error",
+                metadata: {
+                  provider_name: "Google",
+                  raw: JSON.stringify({
+                    error: { code: 400, message: "Requests ending with a model turn are not supported." },
+                  }),
+                },
+              },
+            }),
+          ),
+        ),
+        Effect.flip,
+      )
+
+      expect(error.message).toContain("Requests ending with a model turn are not supported")
+    }),
+  )
 })
