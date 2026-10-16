@@ -1,4 +1,3 @@
-import { RealtimeClient } from "@opencode/ai/experimental"
 import { LLMClient, RequestExecutor } from "@opencode/ai/route"
 import { Effect, Layer } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
@@ -26,12 +25,6 @@ export const requestExecutor = makeGlobalNode({
 })
 
 export const llmClient = makeGlobalNode({ service: LLMClient.Service, layer: LLMClient.layer, deps: [requestExecutor] })
-
-export const realtimeClient = makeGlobalNode({
-  service: RealtimeClient.Service,
-  layer: RealtimeClient.layer,
-  deps: [requestExecutor],
-})
 
 export const webSocketConstructor = makeGlobalNode({
   service: Socket.WebSocketConstructor,

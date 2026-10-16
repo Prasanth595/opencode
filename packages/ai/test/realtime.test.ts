@@ -1,266 +1,114 @@
 import { describe, expect } from "bun:test"
-import { Effect, Layer } from "effect"
+import { Effect } from "effect"
 import { HttpClientRequest } from "effect/http"
-import { OpenAILive, OpenAIRealtime, Realtime, RealtimeClient, XAIRealtime } from "../src/experimental.js"
+import { Realtime } from "../src/experimental.js"
 import { it } from "./lib/effect.js"
 import { dynamicResponse } from "./lib/http.js"
 
 describe("experimental Realtime", () => {
-  it.effect("creates an OpenAI GPT-Live WebRTC session", () =>
+  it.effect("connects OpenAI GPT-Live, OpenAI Realtime (WebRTC + WebSocket), and xAI Grok Voice", () =>
     Effect.gen(function* () {
-      const response = yield* Realtime.connect({
-        model: OpenAILive.model({
-          id: "gpt-live-1",
-          apiKey: "test-openai-key",
-          baseURL: "https://openai.test/v1/",
-        }),
-        session: {
-          instructions: "Be concise.",
-          voice: "marin",
-          delegation: { type: "responses", responses: { model: "gpt-5.4" } },
-        },
-        transport: {
-          type: "webrtc",
-          sdp: "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\n",
-          dcid: 4,
-        },
+      const live = yield* Realtime.connect({
+        model: "gpt-live-1",
+        apiKey: "sk-openai",
+        session: { instructions: "Be concise.", voice: "marin" },
+        transport: { type: "webrtc", sdp: "v=0\r\no=offer\r\n", dcid: 4 },
       })
+      expect(live).toEqual({ type: "webrtc", sdp: "v=0\r\no=live-answer\r\n" })
 
-      expect(response.model).toBe("gpt-live-1")
-      expect(response.transport).toEqual({
-        type: "webrtc",
-        sdp: "v=0\r\no=openai 1 1 IN IP4 127.0.0.1\r\n",
+      const realtimeRtc = yield* Realtime.connect({
+        model: "gpt-realtime-2.1",
+        apiKey: "sk-openai",
+        session: { type: "realtime", instructions: "Brief." },
+        transport: { type: "webrtc", sdp: "v=0\r\no=offer\r\n", dcid: 4 },
       })
-      expect(response.providerMetadata).toEqual({
-        openai: { sessionId: "sess_live_123" },
-      })
-    }).pipe(
-      Effect.provide(
-        RealtimeClient.layer.pipe(
-          Layer.provide(
-            dynamicResponse((input) =>
-              Effect.gen(function* () {
-                const request = yield* HttpClientRequest.toWeb(input.request).pipe(Effect.orDie)
-                expect(request.url).toBe("https://openai.test/v1/live/sessions")
-                expect(request.headers.get("authorization")).toBe("Bearer test-openai-key")
-                expect(request.headers.get("content-type")).toBe("application/json")
-                expect(JSON.parse(input.text)).toEqual({
-                  session: {
-                    instructions: "Be concise.",
-                    voice: "marin",
-                    delegation: { type: "responses", responses: { model: "gpt-5.4" } },
-                    model: "gpt-live-1",
-                  },
-                  transport: {
-                    type: "webrtc",
-                    sdp: "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\n",
-                    dcid: 4,
-                  },
-                })
-                return input.respond(
-                  JSON.stringify({
-                    session: { id: "sess_live_123" },
-                    transport: { sdp: "v=0\r\no=openai 1 1 IN IP4 127.0.0.1\r\n" },
-                  }),
-                  { headers: { "content-type": "application/json" } },
-                )
-              }),
-            ),
-          ),
-        ),
-      ),
-    ),
-  )
+      expect(realtimeRtc).toEqual({ type: "webrtc", sdp: "v=0\r\no=rtc-answer\r\n" })
 
-  it.effect("rejects WebSocket transport on OpenAI GPT-Live", () =>
-    Effect.gen(function* () {
-      const error = yield* Realtime.connect({
-        model: OpenAILive.model({ id: "gpt-live-1", apiKey: "test-openai-key" }),
-        transport: { type: "websocket" },
-      }).pipe(Effect.flip)
-      expect(error.reason._tag).toBe("InvalidRequest")
-    }).pipe(
-      Effect.provide(
-        RealtimeClient.layer.pipe(
-          Layer.provide(dynamicResponse(() => Effect.die("unsupported transport reached the network"))),
-        ),
-      ),
-    ),
-  )
-
-  it.effect("creates an OpenAI Realtime WebRTC call via multipart form", () =>
-    Effect.gen(function* () {
-      const response = yield* Realtime.connect({
-        model: OpenAIRealtime.model({
-          id: "gpt-realtime-2.1",
-          apiKey: "test-openai-key",
-          baseURL: "https://openai.test/v1",
-        }),
-        session: {
-          type: "realtime",
-          instructions: "Keep answers brief.",
-        },
-        transport: {
-          type: "webrtc",
-          sdp: "v=0\r\no=offer\r\n",
-          dcid: 4,
-        },
-      })
-
-      expect(response.model).toBe("gpt-realtime-2.1")
-      expect(response.transport).toEqual({
-        type: "webrtc",
-        sdp: "v=0\r\no=answer\r\n",
-      })
-    }).pipe(
-      Effect.provide(
-        RealtimeClient.layer.pipe(
-          Layer.provide(
-            dynamicResponse((input) =>
-              Effect.gen(function* () {
-                const request = yield* HttpClientRequest.toWeb(input.request).pipe(Effect.orDie)
-                expect(request.url).toBe("https://openai.test/v1/realtime/calls?dcid=4")
-                expect(request.headers.get("authorization")).toBe("Bearer test-openai-key")
-                expect(request.headers.get("content-type")).toStartWith("multipart/form-data; boundary=")
-                const boundary = input.text.slice(2, input.text.indexOf("\r\n"))
-                const form = yield* Effect.promise(() =>
-                  new Response(input.text, {
-                    headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
-                  }).formData(),
-                )
-                expect(form.get("sdp")).toBe("v=0\r\no=offer\r\n")
-                expect(JSON.parse(String(form.get("session")))).toEqual({
-                  type: "realtime",
-                  instructions: "Keep answers brief.",
-                  model: "gpt-realtime-2.1",
-                })
-                return input.respond("v=0\r\no=answer\r\n", {
-                  headers: { "content-type": "application/sdp" },
-                })
-              }),
-            ),
-          ),
-        ),
-      ),
-    ),
-  )
-
-  it.effect("creates an OpenAI Realtime WebSocket ephemeral token", () =>
-    Effect.gen(function* () {
-      const response = yield* Realtime.connect({
-        model: OpenAIRealtime.model({
-          id: "gpt-realtime-2.1",
-          apiKey: "test-openai-key",
-          baseURL: "https://openai.test/v1",
-        }),
-        session: {
-          type: "realtime",
-          instructions: "Keep answers brief.",
-        },
+      const realtimeWs = yield* Realtime.connect({
+        model: "gpt-realtime-2.1",
+        apiKey: "sk-openai",
+        session: { type: "realtime", instructions: "Brief." },
         transport: { type: "websocket" },
       })
-
-      expect(response.model).toBe("gpt-realtime-2.1")
-      expect(response.transport).toEqual({
+      expect(realtimeWs).toEqual({
         type: "websocket",
-        url: "wss://openai.test/v1/realtime?model=gpt-realtime-2.1",
-        token: "ek_openai_123",
+        url: "wss://api.openai.com/v1/realtime?model=gpt-realtime-2.1",
+        token: "ek_1",
         expiresAt: 1760000060,
       })
-    }).pipe(
-      Effect.provide(
-        RealtimeClient.layer.pipe(
-          Layer.provide(
-            dynamicResponse((input) =>
-              Effect.gen(function* () {
-                const request = yield* HttpClientRequest.toWeb(input.request).pipe(Effect.orDie)
-                expect(request.url).toBe("https://openai.test/v1/realtime/client_secrets")
-                expect(request.headers.get("authorization")).toBe("Bearer test-openai-key")
-                expect(JSON.parse(input.text)).toEqual({
-                  expires_after: { seconds: 60 },
-                  session: {
-                    type: "realtime",
-                    instructions: "Keep answers brief.",
-                    model: "gpt-realtime-2.1",
-                  },
-                })
-                return input.respond(
-                  JSON.stringify({
-                    value: "ek_openai_123",
-                    expires_at: 1760000060,
-                  }),
-                  { headers: { "content-type": "application/json" } },
-                )
-              }),
-            ),
-          ),
-        ),
-      ),
-    ),
-  )
 
-  it.effect("creates an xAI Grok Voice WebSocket ephemeral token", () =>
-    Effect.gen(function* () {
-      const response = yield* Realtime.connect({
-        model: XAIRealtime.model({
-          id: "grok-voice-3.0",
-          apiKey: "test-xai-key",
-          baseURL: "https://xai.test/v1",
-        }),
-        session: {
-          voice: "ara",
-          instructions: "Ignored by client_secrets, sent by client over WS",
-        },
+      const grokWs = yield* Realtime.connect({
+        model: "grok-voice-3.0",
+        apiKey: "xai-key",
+        session: { voice: "ara" },
         transport: { type: "websocket" },
       })
-
-      expect(response.model).toBe("grok-voice-3.0")
-      expect(response.transport).toEqual({
+      expect(grokWs).toEqual({
         type: "websocket",
-        url: "wss://xai.test/v1/realtime?model=grok-voice-3.0",
-        token: "ek_xai_456",
+        url: "wss://api.x.ai/v1/realtime?model=grok-voice-3.0",
+        token: "ek_2",
         expiresAt: 1760000120,
       })
     }).pipe(
       Effect.provide(
-        RealtimeClient.layer.pipe(
-          Layer.provide(
-            dynamicResponse((input) =>
-              Effect.gen(function* () {
-                const request = yield* HttpClientRequest.toWeb(input.request).pipe(Effect.orDie)
-                expect(request.url).toBe("https://xai.test/v1/realtime/client_secrets")
-                expect(request.headers.get("authorization")).toBe("Bearer test-xai-key")
-                expect(JSON.parse(input.text)).toEqual({
-                  expires_after: { seconds: 60 },
-                })
-                return input.respond(
-                  JSON.stringify({
-                    value: "ek_xai_456",
-                    expires_at: 1760000120,
-                  }),
-                  { headers: { "content-type": "application/json" } },
-                )
-              }),
-            ),
-          ),
+        dynamicResponse((input) =>
+          Effect.gen(function* () {
+            const req = yield* HttpClientRequest.toWeb(input.request).pipe(Effect.orDie)
+            if (req.url === "https://api.openai.com/v1/live/sessions") {
+              expect(req.headers.get("authorization")).toBe("Bearer sk-openai")
+              expect(JSON.parse(input.text)).toEqual({
+                session: { instructions: "Be concise.", voice: "marin", model: "gpt-live-1" },
+                transport: { type: "webrtc", sdp: "v=0\r\no=offer\r\n", dcid: 4 },
+              })
+              return input.respond(JSON.stringify({ session: { id: "s1" }, transport: { sdp: "v=0\r\no=live-answer\r\n" } }))
+            }
+            if (req.url === "https://api.openai.com/v1/realtime/calls?dcid=4") {
+              expect(req.headers.get("authorization")).toBe("Bearer sk-openai")
+              const boundary = input.text.slice(2, input.text.indexOf("\r\n"))
+              const form = yield* Effect.promise(() =>
+                new Response(input.text, { headers: { "content-type": `multipart/form-data; boundary=${boundary}` } }).formData(),
+              )
+              expect(form.get("sdp")).toBe("v=0\r\no=offer\r\n")
+              expect(JSON.parse(String(form.get("session")))).toEqual({
+                type: "realtime",
+                instructions: "Brief.",
+                model: "gpt-realtime-2.1",
+              })
+              return input.respond("v=0\r\no=rtc-answer\r\n", { headers: { "content-type": "application/sdp" } })
+            }
+            if (req.url === "https://api.openai.com/v1/realtime/client_secrets") {
+              expect(req.headers.get("authorization")).toBe("Bearer sk-openai")
+              expect(JSON.parse(input.text)).toEqual({
+                expires_after: { seconds: 60 },
+                session: { type: "realtime", instructions: "Brief.", model: "gpt-realtime-2.1" },
+              })
+              return input.respond(JSON.stringify({ value: "ek_1", expires_at: 1760000060 }))
+            }
+            expect(req.url).toBe("https://api.x.ai/v1/realtime/client_secrets")
+            expect(req.headers.get("authorization")).toBe("Bearer xai-key")
+            expect(JSON.parse(input.text)).toEqual({ expires_after: { seconds: 60 } })
+            return input.respond(JSON.stringify({ value: "ek_2", expires_at: 1760000120 }))
+          }),
         ),
       ),
     ),
   )
 
-  it.effect("rejects WebRTC transport on xAI Grok Voice", () =>
+  it.effect("rejects unsupported transports before network I/O", () =>
     Effect.gen(function* () {
-      const error = yield* Realtime.connect({
-        model: XAIRealtime.model({ id: "grok-voice-3.0", apiKey: "test-xai-key" }),
-        transport: { type: "webrtc", sdp: "v=0\r\n" },
+      const liveWs = yield* Realtime.connect({
+        model: "gpt-live-1",
+        apiKey: "test",
+        transport: { type: "websocket" },
       }).pipe(Effect.flip)
-      expect(error.reason._tag).toBe("InvalidRequest")
-    }).pipe(
-      Effect.provide(
-        RealtimeClient.layer.pipe(
-          Layer.provide(dynamicResponse(() => Effect.die("unsupported transport reached the network"))),
-        ),
-      ),
-    ),
+      expect(liveWs.reason._tag).toBe("InvalidRequest")
+
+      const grokRtc = yield* Realtime.connect({
+        model: "grok-voice-3.0",
+        apiKey: "test",
+        transport: { type: "webrtc", sdp: "v=0" },
+      }).pipe(Effect.flip)
+      expect(grokRtc.reason._tag).toBe("InvalidRequest")
+    }).pipe(Effect.provide(dynamicResponse(() => Effect.die("unsupported transport reached the network")))),
   )
 })

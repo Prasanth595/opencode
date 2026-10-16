@@ -14,12 +14,10 @@ const voice = makeLocationNode({
     Voice.Service,
     Voice.Service.of({
       session: (input) => {
-        if (input.model === "invalid") {
+        if (input.model === "invalid")
           return Effect.fail(new Voice.InvalidRequestError({ message: "Unsupported voice model" }))
-        }
-        if (input.model === "unavailable") {
+        if (input.model === "unavailable")
           return Effect.fail(new Voice.UnavailableError({ message: "OpenAI API key is required", service: "openai" }))
-        }
         return Effect.succeed(
           input.transport.type === "webrtc"
             ? { type: "webrtc" as const, sdp: `answer:${input.model}:${input.transport.sdp}` }
@@ -50,44 +48,28 @@ it.live("routes POST /api/experimental/voice/session and maps errors", () =>
       },
       { overrides: [Voice.node.replace(voice)] },
     )
-
-    const url = new URL("http://opencode.local/api/experimental/voice/session")
-
-    const rtcRes = yield* Effect.promise(() =>
-      handler(
-        new Request(url, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            model: "gpt-live-1",
-            session: { voice: "marin" },
-            transport: { type: "webrtc", sdp: "v=0", dcid: 4 },
+    const post = (body: unknown) =>
+      Effect.promise(() =>
+        handler(
+          new Request("http://opencode.local/api/experimental/voice/session", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(body),
           }),
-        }),
-      ),
-    )
+        ),
+      )
+
+    const rtcRes = yield* post({
+      model: "gpt-live-1",
+      session: { voice: "marin" },
+      transport: { type: "webrtc", sdp: "v=0", dcid: 4 },
+    })
     expect(rtcRes.status).toBe(200)
     expect(yield* Effect.promise(() => rtcRes.json())).toEqual({
-      data: {
-        transport: {
-          type: "webrtc",
-          sdp: "answer:gpt-live-1:v=0",
-        },
-      },
+      data: { transport: { type: "webrtc", sdp: "answer:gpt-live-1:v=0" } },
     })
 
-    const wsRes = yield* Effect.promise(() =>
-      handler(
-        new Request(url, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            model: "grok-voice-3.0",
-            transport: { type: "websocket" },
-          }),
-        }),
-      ),
-    )
+    const wsRes = yield* post({ model: "grok-voice-3.0", transport: { type: "websocket" } })
     expect(wsRes.status).toBe(200)
     expect(yield* Effect.promise(() => wsRes.json())).toEqual({
       data: {
@@ -100,32 +82,7 @@ it.live("routes POST /api/experimental/voice/session and maps errors", () =>
       },
     })
 
-    const invalidRes = yield* Effect.promise(() =>
-      handler(
-        new Request(url, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            model: "invalid",
-            transport: { type: "websocket" },
-          }),
-        }),
-      ),
-    )
-    expect(invalidRes.status).toBe(400)
-
-    const unavailableRes = yield* Effect.promise(() =>
-      handler(
-        new Request(url, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            model: "unavailable",
-            transport: { type: "websocket" },
-          }),
-        }),
-      ),
-    )
-    expect(unavailableRes.status).toBe(503)
+    expect((yield* post({ model: "invalid", transport: { type: "websocket" } })).status).toBe(400)
+    expect((yield* post({ model: "unavailable", transport: { type: "websocket" } })).status).toBe(503)
   }),
 )

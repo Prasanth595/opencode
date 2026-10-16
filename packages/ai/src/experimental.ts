@@ -27,22 +27,10 @@ export type {
   EvaluationResponseFor,
   EvaluationRoute,
 } from "./experimental/evaluation.js"
-export { OpenAILive } from "./experimental/openai-live.js"
-export { OpenAIRealtime } from "./experimental/openai-realtime.js"
-export { RealtimeClient } from "./experimental/realtime-client.js"
-export {
-  Realtime,
-  RealtimeModel,
-  RealtimeModelSchema,
-  RealtimeRequest,
-  RealtimeResponse,
+export { Realtime } from "./experimental/realtime.js"
+export type {
+  RealtimeConnectInput,
   RealtimeSession,
   RealtimeTransport,
   RealtimeTransportInput,
-  RealtimeWebRTCTransport,
-  RealtimeWebRTCTransportInput,
-  RealtimeWebSocketTransport,
-  RealtimeWebSocketTransportInput,
 } from "./experimental/realtime.js"
-export type { RealtimeRequestInput, RealtimeRoute } from "./experimental/realtime.js"
-export { XAIRealtime } from "./experimental/xai-realtime.js"

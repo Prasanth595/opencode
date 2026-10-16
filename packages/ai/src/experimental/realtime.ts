@@ -1,144 +1,144 @@
 import { Effect, Schema } from "effect"
-import {
-  AIError,
-  HttpOptions,
-  InvalidRequestError,
-  ModelID,
-  ProviderID,
-  ProviderMetadata,
-} from "../schema/index.js"
-import { RealtimeClient, Service, type Execute } from "./realtime-client.js"
+import { HttpClientRequest } from "effect/http"
+import { RequestExecutor } from "../route/executor.js"
+import { AIError, HttpContext, InvalidProviderOutputError, InvalidRequestError } from "../schema/index.js"
+import { encodeJson } from "../utils/json.js"
 
-export const RealtimeWebRTCTransportInput = Schema.Struct({
-  type: Schema.Literal("webrtc"),
-  sdp: Schema.String,
-  dcid: Schema.optional(Schema.Number),
+const OPENAI_BASE_URL = "https://api.openai.com/v1"
+const XAI_BASE_URL = "https://api.x.ai/v1"
+
+export type RealtimeTransportInput =
+  | { readonly type: "webrtc"; readonly sdp: string; readonly dcid?: number }
+  | { readonly type: "websocket" }
+
+export type RealtimeTransport =
+  | { readonly type: "webrtc"; readonly sdp: string }
+  | { readonly type: "websocket"; readonly url: string; readonly token: string; readonly expiresAt: number }
+
+export type RealtimeSession = Readonly<Record<string, unknown>>
+
+export interface RealtimeConnectInput {
+  readonly model: string
+  readonly apiKey: string
+  readonly session?: RealtimeSession
+  readonly transport: RealtimeTransportInput
+}
+
+const LiveSessionResponse = Schema.Struct({
+  session: Schema.Struct({ id: Schema.String }),
+  transport: Schema.Struct({ sdp: Schema.String }),
 })
-export type RealtimeWebRTCTransportInput = Schema.Schema.Type<typeof RealtimeWebRTCTransportInput>
 
-export const RealtimeWebSocketTransportInput = Schema.Struct({
-  type: Schema.Literal("websocket"),
+// xAI's ephemeral-token docs (https://docs.x.ai/developers/model-capabilities/audio/ephemeral-tokens)
+// document the request body (`{ expires_after: { seconds } }`) but not the response payload; we assume
+// it mirrors OpenAI's `{ value, expires_at }` response shape.
+const ClientSecretResponse = Schema.Struct({
+  value: Schema.String,
+  expires_at: Schema.Number,
 })
-export type RealtimeWebSocketTransportInput = Schema.Schema.Type<typeof RealtimeWebSocketTransportInput>
 
-export const RealtimeTransportInput = Schema.Union([
-  RealtimeWebRTCTransportInput,
-  RealtimeWebSocketTransportInput,
-]).pipe(Schema.toTaggedUnion("type"))
-export type RealtimeTransportInput = Schema.Schema.Type<typeof RealtimeTransportInput>
+export const engine = (model: string) => {
+  if (model.startsWith("gpt-live-"))
+    return { id: "openai-live" as const, provider: "openai" as const, env: "OPENAI_API_KEY" as const }
+  if (model.startsWith("gpt-realtime-"))
+    return { id: "openai-realtime" as const, provider: "openai" as const, env: "OPENAI_API_KEY" as const }
+  if (model.startsWith("grok-voice-"))
+    return { id: "xai-realtime" as const, provider: "xai" as const, env: "XAI_API_KEY" as const }
+  return undefined
+}
 
-export const RealtimeWebRTCTransport = Schema.Struct({
-  type: Schema.Literal("webrtc"),
-  sdp: Schema.String,
+const invalidRequest = (message: string) => new AIError({ reason: new InvalidRequestError({ message }) })
+
+const post = Effect.fnUntraced(function* (
+  route: string,
+  url: string,
+  apiKey: string,
+  body: Record<string, unknown> | FormData,
+) {
+  const executor = yield* RequestExecutor.Service
+  const res = yield* executor.execute(
+    HttpClientRequest.post(url).pipe(
+      HttpClientRequest.bearerToken(apiKey),
+      body instanceof FormData
+        ? HttpClientRequest.bodyFormData(body)
+        : HttpClientRequest.bodyText(encodeJson(body), "application/json"),
+    ),
+  )
+  const http = new HttpContext({ url: res.request.url, status: res.status, headers: res.headers })
+  const fail = (message: string, cause?: unknown, raw?: string) =>
+    new AIError({ reason: new InvalidProviderOutputError({ route, message, body: raw, http, cause }) })
+  const text = yield* res.text.pipe(Effect.mapError((cause) => fail(`Failed to read ${route} response`, cause)))
+  return { text, fail }
 })
-export type RealtimeWebRTCTransport = Schema.Schema.Type<typeof RealtimeWebRTCTransport>
 
-export const RealtimeWebSocketTransport = Schema.Struct({
-  type: Schema.Literal("websocket"),
-  url: Schema.String,
-  token: Schema.String,
-  expiresAt: Schema.Number,
-})
-export type RealtimeWebSocketTransport = Schema.Schema.Type<typeof RealtimeWebSocketTransport>
-
-export const RealtimeTransport = Schema.Union([RealtimeWebRTCTransport, RealtimeWebSocketTransport]).pipe(
-  Schema.toTaggedUnion("type"),
-)
-export type RealtimeTransport = Schema.Schema.Type<typeof RealtimeTransport>
-
-export const RealtimeSession = Schema.Record(Schema.String, Schema.Unknown)
-export type RealtimeSession = Schema.Schema.Type<typeof RealtimeSession>
-
-export interface RealtimeRoute {
-  readonly id: string
-  readonly connect: (request: RealtimeRequest, execute: Execute) => Effect.Effect<RealtimeResponse, AIError>
-}
-
-export class RealtimeModel {
-  readonly id: ModelID
-  readonly provider: ProviderID
-  readonly route: RealtimeRoute
-  readonly http?: HttpOptions
-
-  constructor(input: RealtimeModel.Input) {
-    this.id = input.id
-    this.provider = input.provider
-    this.route = input.route
-    this.http = input.http
-  }
-
-  static make(input: RealtimeModel.MakeInput) {
-    return new RealtimeModel({
-      id: ModelID.make(input.id),
-      provider: ProviderID.make(input.provider),
-      route: input.route,
-      http: input.http,
-    })
-  }
-}
-
-export namespace RealtimeModel {
-  export interface Input {
-    readonly id: ModelID
-    readonly provider: ProviderID
-    readonly route: RealtimeRoute
-    readonly http?: HttpOptions
-  }
-
-  export interface MakeInput extends Omit<Input, "id" | "provider"> {
-    readonly id: string | ModelID
-    readonly provider: string | ProviderID
-  }
-}
-
-export const RealtimeModelSchema = Schema.declare(
-  (value): value is RealtimeModel => value instanceof RealtimeModel,
-  {
-    expected: "Realtime.Model",
-  },
-)
-
-export class RealtimeRequest extends Schema.Class<RealtimeRequest>("Realtime.Request")({
-  model: RealtimeModelSchema,
-  session: Schema.optional(RealtimeSession),
-  transport: RealtimeTransportInput,
-  http: Schema.optional(HttpOptions),
-}) {
-  declare protected readonly _RealtimeRequest: void
-}
-
-export type RealtimeRequestInput = Omit<ConstructorParameters<typeof RealtimeRequest>[0], "http"> & {
-  readonly http?: HttpOptions.Input
-}
-
-export class RealtimeResponse extends Schema.Class<RealtimeResponse>("Realtime.Response")({
-  model: ModelID,
-  transport: RealtimeTransport,
-  providerMetadata: Schema.optional(ProviderMetadata),
-}) {}
-
-export function request(input: RealtimeRequest | RealtimeRequestInput): RealtimeRequest {
-  if (input instanceof RealtimeRequest) return input
-  return new RealtimeRequest({
-    ...input,
-    http: HttpOptions.make(input.http),
-  })
-}
-
-export function connect(input: RealtimeRequest | RealtimeRequestInput): Effect.Effect<RealtimeResponse, AIError, Service> {
-  return Effect.try({
-    try: () => (input instanceof RealtimeRequest ? input : request(input)),
-    catch: (cause) =>
-      new AIError({
-        reason: new InvalidRequestError({
-          message: cause instanceof Error ? cause.message : String(cause),
-          cause,
-        }),
+const clientSecret = (
+  route: string,
+  baseURL: string,
+  model: string,
+  apiKey: string,
+  session?: Record<string, unknown>,
+) =>
+  post(route, `${baseURL}/realtime/client_secrets`, apiKey, {
+    expires_after: { seconds: 60 },
+    ...(session === undefined ? {} : { session }),
+  }).pipe(
+    Effect.flatMap(({ text, fail }) =>
+      Schema.decodeUnknownEffect(Schema.fromJsonString(ClientSecretResponse))(text).pipe(
+        Effect.mapError((cause) => fail(`${route} returned an invalid response`, cause, text)),
+      ),
+    ),
+    Effect.map(
+      (data): RealtimeTransport => ({
+        type: "websocket",
+        url: `${baseURL.replace(/^http/, "ws")}/realtime?model=${encodeURIComponent(model)}`,
+        token: data.value,
+        expiresAt: data.expires_at,
       }),
-  }).pipe(Effect.flatMap(RealtimeClient.connect))
-}
+    ),
+  )
+
+export const connect = Effect.fn("Realtime.connect")(function* (input: RealtimeConnectInput) {
+  const resolved = engine(input.model)
+  if (!resolved) return yield* invalidRequest(`Unsupported voice model: ${input.model}`)
+  const session = { ...input.session, model: input.model }
+
+  switch (resolved.id) {
+    case "openai-live": {
+      if (input.transport.type !== "webrtc")
+        return yield* invalidRequest("OpenAI GPT-Live only supports WebRTC transport")
+      const { text, fail } = yield* post(resolved.id, `${OPENAI_BASE_URL}/live/sessions`, input.apiKey, {
+        session,
+        transport: {
+          type: "webrtc",
+          sdp: input.transport.sdp,
+          ...(input.transport.dcid === undefined ? {} : { dcid: input.transport.dcid }),
+        },
+      })
+      const data = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(LiveSessionResponse))(text).pipe(
+        Effect.mapError((cause) => fail("openai-live returned an invalid response", cause, text)),
+      )
+      return { type: "webrtc" as const, sdp: data.transport.sdp }
+    }
+    case "openai-realtime": {
+      if (input.transport.type === "websocket")
+        return yield* clientSecret(resolved.id, OPENAI_BASE_URL, input.model, input.apiKey, session)
+      const form = new FormData()
+      form.append("sdp", input.transport.sdp)
+      form.append("session", encodeJson(session))
+      const query = input.transport.dcid === undefined ? "" : `?dcid=${input.transport.dcid}`
+      const { text, fail } = yield* post(resolved.id, `${OPENAI_BASE_URL}/realtime/calls${query}`, input.apiKey, form)
+      if (!text.trim()) return yield* fail("OpenAI Realtime returned an empty SDP answer", undefined, text)
+      return { type: "webrtc" as const, sdp: text }
+    }
+    case "xai-realtime": {
+      if (input.transport.type !== "websocket")
+        return yield* invalidRequest("xAI Grok Voice only supports WebSocket transport")
+      return yield* clientSecret(resolved.id, XAI_BASE_URL, input.model, input.apiKey)
+    }
+  }
+})
 
 export const Realtime = {
-  request,
+  engine,
   connect,
 } as const
