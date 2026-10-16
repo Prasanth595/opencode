@@ -16,7 +16,7 @@ import { InputRenderable, MouseButton, Renderable, RGBA, TextAttributes } from "
 import { createStore } from "solid-js/store"
 import { useToast } from "./toast"
 import { useClipboard } from "../context/clipboard"
-import { useConfig } from "../config"
+import { copyMode, useConfig } from "../config"
 import { copy, copyOnSelectRelease } from "../util/selection"
 
 export type DialogSize = "medium" | "large" | "xlarge"
@@ -367,8 +367,7 @@ export function DialogProvider(props: ParentProps) {
   const toast = useToast()
   const clipboard = useClipboard()
   const config = useConfig()
-  const copyOnSelectEnabled = () =>
-    (config.data.terminal?.copy ?? (process.platform === "win32" ? "manual" : "select")) === "select"
+  const copyOnSelectEnabled = () => ["select", "both"].includes(copyMode(config.data))
 
   return (
     <ctx.Provider value={value}>
@@ -385,7 +384,9 @@ export function DialogProvider(props: ParentProps) {
           evt.stopPropagation()
         }}
         onMouseUp={
-          copyOnSelectEnabled() ? (event) => copyOnSelectRelease(event, renderer, toast, clipboard) : undefined
+          copyMode(config.data) === "manual"
+            ? undefined
+            : (event) => copyOnSelectRelease(event, renderer, toast, clipboard, copyMode(config.data))
         }
       >
         <Show when={value.stack.length}>
