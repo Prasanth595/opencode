@@ -161,7 +161,12 @@ const layer = Layer.effect(
     })
 
     const load = Effect.fn("SessionContext.load")(function* (selection: Selection) {
-      const model = yield* resolveModel(selection.session)
+      // The session's own selection is explicit, so it wins; an agent's configured model stands in for a
+      // session that has none, which would otherwise fall through to the catalog default.
+      const configured = selection.session.model ?? selection.agent.info.model
+      const model = yield* resolveModel(
+        configured === undefined ? selection.session : { ...selection.session, model: configured },
+      )
       const history = yield* SessionHistory.entriesForRunner(
         db,
         selection.session.id,
