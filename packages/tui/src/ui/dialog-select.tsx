@@ -114,8 +114,9 @@ export interface DialogSelectOption<T = any> {
   gutter?: (color: RGBA) => JSX.Element
   margin?: JSX.Element
   /**
-   * Shown below the list while this option is selected, under the "new-designs" experiment. A function is called
-   * each time the option becomes selected, because a rendered element cannot be shown again once it is removed.
+   * Shown below the list while this option is selected, under the "new-designs" experiment. A string is shown in muted
+   * text. A function is called each time the option becomes selected, because a rendered element cannot be shown again
+   * once it is removed.
    */
   detail?: string | (() => JSX.Element)
   onSelect?: (ctx: DialogContext) => void
@@ -833,7 +834,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                 when={detailView()}
                 keyed
                 fallback={
-                  <text fg={theme.text.faint} wrapMode="word">
+                  <text fg={theme.text.muted} wrapMode="word">
                     {detailText() || " "}
                   </text>
                 }
