@@ -21,4 +21,13 @@ export function session() {
   )
 }
 
+// Managed service environment (`service set env`). The service owns its config, so a contender
+// started without it (Desktop, a manual `serve --service`, a stale client) adopts it at boot.
+// Managed values win, matching the spawn merge in `spawnServiceContender`.
+export function adoptManaged(env: Readonly<Record<string, string>>) {
+  Object.entries(env).forEach(([key, value]) => {
+    process.env[key] = value
+  })
+}
+
 export * as Env from "./env"

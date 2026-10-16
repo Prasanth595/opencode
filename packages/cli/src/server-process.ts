@@ -64,6 +64,9 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
       const foreground = options.mode === "default"
       const serviceOptions = options.mode === "service" ? yield* ServiceConfig.options() : undefined
       const config = options.mode === "service" ? yield* ServiceConfig.read() : {}
+      // Contenders spawned without managed env still serve it: adopt the on-disk
+      // environment into our own process before booting (see #55065).
+      if (options.mode === "service") Env.adoptManaged(config.env ?? {})
       const hostname = options.hostname ?? config.hostname ?? "127.0.0.1"
       const port = options.port ?? config.port ?? (options.mode === "service" ? ServiceConfig.defaultPort() : undefined)
       const findIncumbent =
