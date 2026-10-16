@@ -25,7 +25,6 @@ export interface RealtimeConnectInput {
 }
 
 const LiveSessionResponse = Schema.Struct({
-  session: Schema.Struct({ id: Schema.String }),
   transport: Schema.Struct({ sdp: Schema.String }),
 })
 
@@ -37,15 +36,13 @@ const ClientSecretResponse = Schema.Struct({
   expires_at: Schema.Number,
 })
 
-export const engine = (model: string) => {
-  if (model.startsWith("gpt-live-"))
-    return { id: "openai-live" as const, provider: "openai" as const, env: "OPENAI_API_KEY" as const }
-  if (model.startsWith("gpt-realtime-"))
-    return { id: "openai-realtime" as const, provider: "openai" as const, env: "OPENAI_API_KEY" as const }
-  if (model.startsWith("grok-voice-"))
-    return { id: "xai-realtime" as const, provider: "xai" as const, env: "XAI_API_KEY" as const }
-  return undefined
-}
+const engines = [
+  { prefix: "gpt-live-", id: "openai-live", provider: "openai", env: "OPENAI_API_KEY" },
+  { prefix: "gpt-realtime-", id: "openai-realtime", provider: "openai", env: "OPENAI_API_KEY" },
+  { prefix: "grok-voice-", id: "xai-realtime", provider: "xai", env: "XAI_API_KEY" },
+] as const
+
+export const engine = (model: string) => engines.find((item) => model.startsWith(item.prefix))
 
 const invalidRequest = (message: string) => new AIError({ reason: new InvalidRequestError({ message }) })
 
@@ -80,7 +77,7 @@ const clientSecret = (
 ) =>
   post(route, `${baseURL}/realtime/client_secrets`, apiKey, {
     expires_after: { seconds: 60 },
-    ...(session === undefined ? {} : { session }),
+    session,
   }).pipe(
     Effect.flatMap(({ text, fail }) =>
       Schema.decodeUnknownEffect(Schema.fromJsonString(ClientSecretResponse))(text).pipe(
@@ -108,11 +105,7 @@ export const connect = Effect.fn("Realtime.connect")(function* (input: RealtimeC
         return yield* invalidRequest("OpenAI GPT-Live only supports WebRTC transport")
       const { text, fail } = yield* post(resolved.id, `${OPENAI_BASE_URL}/live/sessions`, input.apiKey, {
         session,
-        transport: {
-          type: "webrtc",
-          sdp: input.transport.sdp,
-          ...(input.transport.dcid === undefined ? {} : { dcid: input.transport.dcid }),
-        },
+        transport: input.transport,
       })
       const data = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(LiveSessionResponse))(text).pipe(
         Effect.mapError((cause) => fail("openai-live returned an invalid response", cause, text)),
@@ -126,8 +119,7 @@ export const connect = Effect.fn("Realtime.connect")(function* (input: RealtimeC
       form.append("sdp", input.transport.sdp)
       form.append("session", encodeJson(session))
       const query = input.transport.dcid === undefined ? "" : `?dcid=${input.transport.dcid}`
-      const { text, fail } = yield* post(resolved.id, `${OPENAI_BASE_URL}/realtime/calls${query}`, input.apiKey, form)
-      if (!text.trim()) return yield* fail("OpenAI Realtime returned an empty SDP answer", undefined, text)
+      const { text } = yield* post(resolved.id, `${OPENAI_BASE_URL}/realtime/calls${query}`, input.apiKey, form)
       return { type: "webrtc" as const, sdp: text }
     }
     case "xai-realtime": {
