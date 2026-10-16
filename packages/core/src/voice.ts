@@ -9,8 +9,7 @@ import {
 } from "@opencode/ai/experimental"
 import { RequestExecutor } from "@opencode/ai/route"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
-import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { Credential } from "./credential.js"
+import { Context, Effect, Layer, Redacted, Schema } from "effect"
 import { requestExecutor } from "./effect/app-node-platform.js"
 import { Integration } from "./integration.js"
 
@@ -41,26 +40,24 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const executor = yield* RequestExecutor.Service
-    const credentials = yield* Credential.Service
+    const integrations = yield* Integration.Service
 
     const session = Effect.fn("Voice.session")(function* (input: SessionInput) {
       const engine = Realtime.engine(input.model)
       if (!engine) return yield* new InvalidRequestError({ message: `Unsupported voice model: ${input.model}` })
 
-      // `Credential.list` returns stored rows ordered `asc(active), asc(time_created)`, so `findLast`
-      // selects the active credential when it is a key, or else the newest stored key credential.
-      const saved = yield* credentials.list(Integration.ID.make(engine.provider))
-      const stored = saved.findLast(
-        (item): item is Credential.Info & { readonly value: Credential.Key } =>
-          item.value.type === "key" && Boolean(item.value.key),
+      // Integration lists the active credential first, then newer stored credentials, then its env vars.
+      const connection = (yield* integrations.get(Integration.ID.make(engine.provider)))?.connections.find(
+        (item) => item.type === "env" || item.method === "key",
       )
-      const apiKey = stored
-        ? Option.some(Redacted.make(stored.value.key))
-        : yield* Config.option(Config.Redacted(engine.env)).pipe(
-            Effect.map(Option.filter((key) => Redacted.value(key) !== "")),
-            Effect.mapError((error) => new UnavailableError({ service: engine.provider, message: error.message })),
-          )
-      if (Option.isNone(apiKey))
+      const credential = connection
+        ? yield* integrations.connection
+            .resolve(connection)
+            .pipe(
+              Effect.mapError((error) => new UnavailableError({ service: engine.provider, message: error.message })),
+            )
+        : undefined
+      if (credential?.type !== "key")
         return yield* new UnavailableError({
           service: engine.provider,
           message:
@@ -69,7 +66,7 @@ export const layer = Layer.effect(
               : "Voice needs an xAI API key on the server (a stored key or XAI_API_KEY).",
         })
 
-      return yield* Realtime.connect({ ...input, apiKey: apiKey.value }).pipe(
+      return yield* Realtime.connect({ ...input, apiKey: Redacted.make(credential.key) }).pipe(
         Effect.provideService(RequestExecutor.Service, executor),
         Effect.mapError(
           (error: AIError): Error =>
@@ -87,5 +84,5 @@ export const layer = Layer.effect(
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [Credential.node, requestExecutor],
+  deps: [Integration.node, requestExecutor],
 })

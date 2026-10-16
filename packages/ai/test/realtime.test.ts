@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Effect, Redacted } from "effect"
 import { HttpClientRequest } from "effect/http"
 import { Realtime } from "../src/experimental.js"
@@ -101,6 +101,13 @@ describe("experimental Realtime", () => {
       ),
     ),
   )
+
+  test("routes bare and versioned model names to their engine", () => {
+    expect(
+      ["gpt-realtime", "gpt-realtime-2.1", "gpt-live", "grok-voice-latest"].map((model) => Realtime.engine(model)?.id),
+    ).toEqual(["openai-realtime", "openai-realtime", "openai-live", "xai-realtime"])
+    expect(Realtime.engine("gpt-realtimex")).toBeUndefined()
+  })
 
   it.effect("rejects unsupported transports before network I/O", () =>
     Effect.gen(function* () {

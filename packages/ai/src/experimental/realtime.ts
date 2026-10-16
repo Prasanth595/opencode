@@ -25,12 +25,14 @@ export interface RealtimeConnectInput {
 }
 
 const engines = [
-  { prefix: "gpt-live-", id: "openai-live", provider: "openai", env: "OPENAI_API_KEY" },
-  { prefix: "gpt-realtime-", id: "openai-realtime", provider: "openai", env: "OPENAI_API_KEY" },
-  { prefix: "grok-voice-", id: "xai-realtime", provider: "xai", env: "XAI_API_KEY" },
+  { family: "gpt-live", id: "openai-live", provider: "openai" },
+  { family: "gpt-realtime", id: "openai-realtime", provider: "openai" },
+  { family: "grok-voice", id: "xai-realtime", provider: "xai" },
 ] as const
 
-export const engine = (model: string) => engines.find((item) => model.startsWith(item.prefix))
+// Matches the bare family name (`gpt-realtime`) and its versions (`gpt-realtime-2.1`, `gpt-realtime-mini`).
+export const engine = (model: string) =>
+  engines.find((item) => model === item.family || model.startsWith(`${item.family}-`))
 
 export const connect = Effect.fn("Realtime.connect")(function* (input: RealtimeConnectInput) {
   const resolved = engine(input.model)

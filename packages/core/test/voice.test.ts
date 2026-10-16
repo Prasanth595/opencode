@@ -3,41 +3,25 @@ import { RequestExecutor } from "@opencode/ai/route"
 import { Credential } from "@opencode/core/credential"
 import { Integration } from "@opencode/core/integration"
 import { Voice } from "@opencode/core/voice"
-import { ConfigProvider, Effect, Layer } from "effect"
+import { Effect, Layer } from "effect"
 import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/http"
 import { testEffect } from "./lib/effect"
 
 const it = testEffect(Layer.empty)
 
-const keyCred = (id: string, key: string) =>
-  new Credential.Info({
-    id: Credential.ID.make(id),
-    integrationID: Integration.ID.make("openai"),
-    label: id,
-    value: Credential.Key.make({ type: "key", key }),
-  })
-
-const oauthCred = new Credential.Info({
-  id: Credential.ID.make("oauth"),
-  integrationID: Integration.ID.make("openai"),
-  label: "ChatGPT",
-  value: Credential.OAuth.make({
-    type: "oauth",
-    methodID: Integration.MethodID.make("chatgpt"),
-    refresh: "rt",
-    access: "at_oauth",
-    expires: Date.now() + 3600_000,
-  }),
+const credential = (id: string, method: "key" | "oauth") => ({
+  type: "credential" as const,
+  id: Credential.ID.make(id),
+  label: id,
+  method,
 })
 
-it.effect("resolves credentials (active key, stored key over OAuth, env fallback, unavailable error)", () =>
+const keys: Record<string, string> = { active: "sk-active", stored: "sk-stored", XAI_API_KEY: "xai-env-key" }
+
+it.effect("uses the first key or env connection Integration lists and never a ChatGPT sign-in", () =>
   Effect.gen(function* () {
     const auths: string[] = []
-    const record = (req: HttpClientRequest.HttpClientRequest) => {
-      auths.push(req.headers.authorization ?? "")
-      return Response.json({ session: { id: "s1" }, transport: { sdp: "v=0\r\no=answer\r\n" } })
-    }
-    const call = (model: string, stored: ReadonlyArray<Credential.Info>, onReq = record) =>
+    const call = (model: string, connections: Integration.Info["connections"]) =>
       Effect.flatMap(Voice.Service, (voice) =>
         voice.session({
           model,
@@ -48,12 +32,54 @@ it.effect("resolves credentials (active key, stored key over OAuth, env fallback
           Voice.layer.pipe(
             Layer.provide(
               Layer.merge(
-                Layer.mock(Credential.Service, { list: () => Effect.succeed([...stored]) }),
+                Layer.mock(Integration.Service, {
+                  revision: () => 0,
+                  get: (id) => Effect.succeed({ id, name: id, methods: [], connections }),
+                  connection: {
+                    active: () => Effect.die("unused"),
+                    resolve: (connection) =>
+                      connection.type === "credential" && connection.method === "oauth"
+                        ? Effect.die("a ChatGPT sign-in was resolved")
+                        : Effect.succeed(
+                            Credential.Key.make({
+                              type: "key",
+                              key: keys[connection.type === "env" ? connection.name : connection.id],
+                            }),
+                          ),
+                    key: () => Effect.die("unused"),
+                    external: () => Effect.die("unused"),
+                    activate: () => Effect.die("unused"),
+                    update: () => Effect.die("unused"),
+                    remove: () => Effect.die("unused"),
+                    status: () => Effect.die("unused"),
+                  },
+                  oauth: {
+                    connect: () => Effect.die("unused"),
+                    status: () => Effect.die("unused"),
+                    complete: () => Effect.die("unused"),
+                    cancel: () => Effect.die("unused"),
+                  },
+                  command: {
+                    connect: () => Effect.die("unused"),
+                    status: () => Effect.die("unused"),
+                    cancel: () => Effect.die("unused"),
+                  },
+                }),
                 RequestExecutor.layer.pipe(
                   Layer.provide(
                     Layer.succeed(
                       HttpClient.HttpClient,
-                      HttpClient.make((req) => Effect.sync(() => HttpClientResponse.fromWeb(req, onReq(req)))),
+                      HttpClient.make((req: HttpClientRequest.HttpClientRequest) =>
+                        Effect.sync(() => {
+                          auths.push(req.headers.authorization ?? "")
+                          return HttpClientResponse.fromWeb(
+                            req,
+                            model.startsWith("grok-")
+                              ? Response.json({ value: "ek_xai", expires_at: 1760000999 })
+                              : Response.json({ transport: { sdp: "v=0\r\no=answer\r\n" } }),
+                          )
+                        }),
+                      ),
                     ),
                   ),
                 ),
@@ -63,25 +89,19 @@ it.effect("resolves credentials (active key, stored key over OAuth, env fallback
         ),
       )
 
-    // Active credential is last in `Credential.list`: active key wins, and OAuth is skipped for stored key.
-    yield* call("gpt-live-1", [keyCred("old", "sk-old"), keyCred("active", "sk-active")])
-    yield* call("gpt-live-1", [keyCred("stored", "sk-stored"), oauthCred])
-    expect(auths).toEqual(["Bearer sk-active", "Bearer sk-stored"])
-
-    const oauthOnly = yield* call("gpt-live-1", [oauthCred]).pipe(Effect.flip)
-    expect(oauthOnly._tag).toBe("Voice.UnavailableError")
-    expect(oauthOnly.message).toContain("OpenAI API key")
-
-    const grok = yield* call("grok-voice-3.0", [], (req) => {
-      auths.push(req.headers.authorization ?? "")
-      return Response.json({ value: "ek_xai", expires_at: 1760000999 })
-    })
-    expect(auths.at(-1)).toBe("Bearer xai-env-key")
+    yield* call("gpt-live-1", [credential("active", "key"), credential("stored", "key")])
+    yield* call("gpt-live-1", [credential("chatgpt", "oauth"), credential("stored", "key")])
+    const grok = yield* call("grok-voice-3.0", [{ type: "env", name: "XAI_API_KEY" }])
+    expect(auths).toEqual(["Bearer sk-active", "Bearer sk-stored", "Bearer xai-env-key"])
     expect(grok).toEqual({
       type: "websocket",
       url: "wss://api.x.ai/v1/realtime?model=grok-voice-3.0",
       token: "ek_xai",
       expiresAt: 1760000999,
     })
-  }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: { XAI_API_KEY: "xai-env-key" } })))),
+
+    const signInOnly = yield* call("gpt-live-1", [credential("chatgpt", "oauth")]).pipe(Effect.flip)
+    expect(signInOnly._tag).toBe("Voice.UnavailableError")
+    expect(signInOnly.message).toContain("OpenAI API key")
+  }),
 )
