@@ -195,27 +195,6 @@ You can override existing variants or add your own:
 }
 ```
 
-### Reasoning options
-
-To replace a model's built-in reasoning variants, list the reasoning controls it accepts in `reasoning_options`, using the [models.dev](https://models.dev) format. OpenCode builds the variants from them, then applies `variants` on top:
-
-```jsonc title="opencode.jsonc"
-{
-  "$schema": "https://opencode.ai/config.json",
-  "provider": {
-    "openai": {
-      "models": {
-        "gpt-5": {
-          "reasoning_options": [{ "type": "effort", "values": ["low", "medium", "high"] }],
-        },
-      },
-    },
-  },
-}
-```
-
-Each option is `{ "type": "effort", "values": [...] }`, `{ "type": "budget_tokens", "min": ..., "max": ... }`, or `{ "type": "toggle" }`. Effort levels win over a budget. An empty list means the model has no reasoning variants.
-
 ### Cycle variants
 
 Use the keybind `variant_cycle` to quickly switch between variants. [Learn more](/docs/keybinds).
