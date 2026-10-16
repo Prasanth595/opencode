@@ -309,13 +309,13 @@ function createWorkspace(input: { storage: Storage; server: ServerRef; directory
     clear() {
       stored.set({ active: undefined, all: [] })
     },
-    new() {
+    new(directory?: string) {
       const nextNumber = pickNextTerminalNumber()
       const focusRequest = requestFocus(undefined, true)
 
       const doCreate = async () => {
         return input.server.client.pty
-          .create({ location, title: defaultTitle(nextNumber) })
+          .create({ location: directory ? { directory } : location, title: defaultTitle(nextNumber) })
           .then((result) => result.data)
       }
 

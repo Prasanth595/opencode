@@ -31,8 +31,6 @@ const WINDOWS_OPEN_APPS = [
   { id: "vscode", label: "open.app.vscode", icon: "vscode", openWith: "code" },
   { id: "cursor", label: "open.app.cursor", icon: "cursor", openWith: "cursor" },
   { id: "zed", label: "open.app.zed", icon: "zed", openWith: "zed" },
-  // Opens a tab in the app's own terminal dock instead of launching anything; `openWith` is only what the list checks.
-  { id: "terminal", label: "open.app.terminal", icon: "terminal", openWith: "powershell" },
   { id: "powershell", label: "open.app.powershell", icon: "powershell", openWith: "powershell" },
   { id: "sublime-text", label: "open.app.sublimeText", icon: "sublime-text", openWith: "Sublime Text" },
 ] as const
@@ -43,6 +41,13 @@ const LINUX_OPEN_APPS = [
   { id: "zed", label: "open.app.zed", icon: "zed", openWith: "zed" },
   { id: "sublime-text", label: "open.app.sublimeText", icon: "sublime-text", openWith: "Sublime Text" },
 ] as const
+
+// The app's own terminal dock, offered on every OS because it needs no program from the system.
+const INTEGRATED_TERMINAL = {
+  id: "integrated-terminal",
+  label: "open.app.integratedTerminal",
+  icon: "terminal",
+} as const
 
 function openAppsForOS(os: OS) {
   if (os === "macos") return MAC_OPEN_APPS
@@ -103,8 +108,12 @@ export function useOpenInApp(input: { session: MountedSession; path: () => strin
   )
 
   const options = createMemo(() => {
+    const terminal = shared.terminal()
+
     return [
       { id: "finder", label: ctx.t(fileManager().label), icon: fileManager().icon },
+      // The dock is part of the app, so it is listed right after the file manager wherever the terminal extension is on.
+      ...(terminal.status === "active" ? [{ ...INTEGRATED_TERMINAL, label: ctx.t(INTEGRATED_TERMINAL.label) }] : []),
       ...apps()
         .filter((app) => installed.latest?.get(app.id))
         .map((app) => ({ ...app, label: ctx.t(app.label) })),
@@ -118,11 +127,14 @@ export function useOpenInApp(input: { session: MountedSession; path: () => strin
 
   const canOpen = createMemo(() => !!desktop && input.session.server.local)
 
-  // On Windows the main button opens the in-app terminal unless an editor was picked; the external PowerShell window stays a menu item.
+  // A stored choice always wins here, the file manager included, so picking one keeps the main button on it.
+  // Only a Windows install with no stored choice opens the app's own terminal from that button.
   const preferred = () => {
     const app = shared.app?.current()
 
-    return os() === "windows" && (app === undefined || app === "finder" || app === "powershell") ? "terminal" : app
+    if (app !== undefined) return app
+
+    return os() === "windows" && shared.terminal().status === "active" ? INTEGRATED_TERMINAL.id : undefined
   }
 
   const current = createMemo(
@@ -139,15 +151,15 @@ export function useOpenInApp(input: { session: MountedSession; path: () => strin
     shared.app?.set(app)
   }
 
-  const openPath = (app: OpenApp | "finder", target = input.path(), reveal = false) => {
+  const openPath = (app: OpenApp | "finder", target = input.path(), reveal = false, directory?: string) => {
     if (opening() || !canOpen() || !desktop) return
 
     if (!target) return
 
-    if (app === "terminal" && os() === "windows") {
+    if (app === INTEGRATED_TERMINAL.id) {
       const terminal = shared.terminal()
 
-      if (terminal.status === "active") terminal.value.open(input.session)
+      if (terminal.status === "active") terminal.value.open(input.session, directory)
       else showRequestError(ctx, ctx.t("open.terminalUnavailable"))
 
       return
@@ -262,6 +274,8 @@ export default function OpenInAppButton(props: { session: MountedSession; screen
 function OpenInAppMenuItemsV2(props: {
   state: OpenInAppState
   path?: () => string
+  // The folder the menu is about, when the caller knows it: the terminal starts there instead of in the session folder.
+  directory?: () => string | undefined
   reveal?: boolean
   selection?: boolean
   close?: () => void
@@ -283,7 +297,7 @@ function OpenInAppMenuItemsV2(props: {
                   onSelect={() => {
                     props.state.selectApp(option.id)
                     props.close?.()
-                    props.state.openPath(option.id, path(), props.reveal)
+                    props.state.openPath(option.id, path(), props.reveal, props.directory?.())
                   }}
                 >
                   <AppIcon id={option.icon} />
@@ -310,7 +324,7 @@ function OpenInAppMenuItemsV2(props: {
                   onSelect={() => {
                     props.state.selectApp(option.id)
                     props.close?.()
-                    props.state.openPath(option.id, path(), props.reveal)
+                    props.state.openPath(option.id, path(), props.reveal, props.directory?.())
                   }}
                 >
                   <AppIcon id={option.icon} />
@@ -362,6 +376,8 @@ export function OpenInAppContextMenuV2(
             <OpenInAppMenuItemsV2
               state={state}
               path={props.path}
+              // These menus only wrap files, so the terminal starts in the folder holding the file.
+              directory={() => openInAppParentPath(props.path())}
               reveal
               selection={false}
               close={() => setOpen(false)}

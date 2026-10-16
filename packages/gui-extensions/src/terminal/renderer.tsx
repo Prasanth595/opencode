@@ -107,13 +107,12 @@ const setup: Setup<typeof TerminalExtension> = (ctx) => {
   )
 
   ctx.provide(Terminal, {
-    open(session) {
+    open(session, directory) {
       const terminal = model.load(session)
 
       layout.open(DOCK, session)
-
-      // The dock creates the first terminal itself; a workspace that has some needs an explicit new tab.
-      if (terminal.all().length > 0) terminal.new()
+      // Creating the tab here rather than leaving the dock's first one to do it is what starts it in `directory`.
+      terminal.new(directory)
     },
   })
 

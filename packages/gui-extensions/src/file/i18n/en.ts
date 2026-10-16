@@ -30,6 +30,7 @@ export default {
   "open.app.textmate": "TextMate",
   "open.app.antigravity": "Antigravity",
   "open.app.terminal": "Terminal",
+  "open.app.integratedTerminal": "Integrated Terminal",
   "open.app.iterm2": "iTerm2",
   "open.app.ghostty": "Ghostty",
   "open.app.warp": "Warp",
