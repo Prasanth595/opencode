@@ -86,7 +86,7 @@ export function normalizeProviderList(
         // 目录里显式标了值就以目录为准。
         reasoning:
           model.capabilities.reasoning ??
-          (model.compatibility?.reasoningField !== undefined || model.variants.length > 0),
+          (model.compatibility?.reasoningField !== undefined || model.variants.some((variant) => variant.id !== "none")),
         attachment: model.capabilities.input.some((item) => item !== "text"),
         toolcall: model.capabilities.tools,
         input: {
