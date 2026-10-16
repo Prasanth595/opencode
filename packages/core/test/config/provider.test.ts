@@ -729,10 +729,73 @@ describe("ConfigProviderPlugin.Plugin", () => {
 
       const model = required(yield* models.get(providerID, modelID))
       expect(model.package).toBe("@opencode/ai/providers/amazon-bedrock/mantle/messages")
-      expect(model.variants.find((variant) => variant.id === "high")).toEqual({
-        id: Model.VariantID.make("high"),
-        settings: { effort: "high", thinking: { type: "adaptive", display: "summarized" } },
+      expect(model.variants).toEqual([
+        {
+          id: Model.VariantID.make("high"),
+          settings: { effort: "high", thinking: { type: "adaptive", display: "summarized" } },
+        },
+      ])
+    }),
+  )
+
+  it.effect("keeps a moved catalog model without reasoning variants free of variants", () =>
+    Effect.gen(function* () {
+      const providers = yield* Provider.Service
+      const models = yield* Model.Service
+      const providerID = Provider.ID.make("bedrock")
+      const modelID = Model.ID.make("anthropic.claude-plain")
+      yield* providers.transform((editor) => {
+        editor.models.update(providerID, modelID, (model) => {
+          model.package = "@opencode/ai/providers/amazon-bedrock"
+        })
       })
+      yield* addPlugin([
+        new Document({
+          type: "document",
+          info: decode({
+            providers: {
+              bedrock: { models: { [modelID]: { package: "@opencode/ai/providers/amazon-bedrock/mantle" } } },
+            },
+          }),
+        }),
+      ])
+
+      expect(required(yield* models.get(providerID, modelID)).variants).toEqual([])
+    }),
+  )
+
+  it.effect("respells inherited variants when config changes the provider package", () =>
+    Effect.gen(function* () {
+      const providers = yield* Provider.Service
+      const models = yield* Model.Service
+      const providerID = Provider.ID.make("zai")
+      const modelID = Model.ID.make("glm-5.3")
+      yield* providers.transform((editor) => {
+        editor.update(providerID, (provider) => {
+          provider.package = "@opencode/ai/providers/zai/chat"
+        })
+        editor.models.update(providerID, modelID, (model) => {
+          model.variants = [
+            {
+              id: Model.VariantID.make("low"),
+              settings: { thinking: { type: "enabled", clear_thinking: false }, reasoningEffort: "low" },
+            },
+          ]
+        })
+      })
+      yield* addPlugin([
+        new Document({
+          type: "document",
+          info: decode({ providers: { zai: { package: "@opencode/ai/providers/anthropic" } } }),
+        }),
+      ])
+
+      expect(required(yield* models.get(providerID, modelID)).variants).toEqual([
+        {
+          id: Model.VariantID.make("low"),
+          settings: { effort: "low", thinking: { type: "adaptive", display: "summarized" } },
+        },
+      ])
     }),
   )
 

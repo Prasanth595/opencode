@@ -47,6 +47,7 @@ export const Plugin = define({
         ConfigProvider.Info,
         {
           readonly providerID: string
+          readonly inheritedPackage?: string
           readonly models: ReadonlyMap<string, { readonly inherit: boolean; readonly base?: Model.Info }>
         }
       >(),
@@ -58,6 +59,7 @@ export const Plugin = define({
         const current = providers.get(providerID)
         const source = providers.get(item.canonical ?? current?.provider.canonical ?? providerID)
         const changed = item.canonical !== undefined && item.canonical !== current?.provider.canonical
+        const inheritedPackage = source?.provider.package
         providers.update(providerID, (provider) => {
           if (changed && source && source.provider !== provider)
             Object.assign(provider, structuredClone(source.provider), {
@@ -88,7 +90,7 @@ export const Plugin = define({
             if (item.settings?.baseURL !== undefined && model.settings) delete model.settings.baseURL
           })
         }
-        next.set(item, { providerID, models: definitions })
+        next.set(item, { providerID, inheritedPackage, models: definitions })
       }
       for (const [item, definition] of next) {
         for (const [id, config] of Object.entries(item.models ?? {})) {
@@ -158,9 +160,7 @@ export const Plugin = define({
             if (config.disabled !== undefined) model.enabled = !config.disabled
             if (config.limit !== undefined) model.limit = { ...model.limit, ...config.limit }
           })
-          // Inherited variants are spelled for the base model's package, so a package override needs fresh ones.
-          const repackaged = source?.base !== undefined && models.get(providerID, id)?.package !== source.base.package
-          if (config.variants === undefined && (!source?.base || repackaged))
+          if (config.variants === undefined && !source?.base)
             models.update(providerID, id, (model) => {
               model.variants = [
                 ...Variant.resolve({
@@ -170,10 +170,36 @@ export const Plugin = define({
               ]
             })
         }
+        // Inherited variants are spelled for the package they came with, so a model whose effective package
+        // changed gets fresh variants for the levels it already offered.
+        const providerPackage = models.provider.get(providerID)?.provider.package
+        for (const model of models.list(providerID)) {
+          const config = item.models?.[model.id]
+          if (config?.variants !== undefined) continue
+          if (config === undefined && item.package === undefined) continue
+          const base = config === undefined ? model : definition.models.get(model.id)?.base
+          if (base === undefined) continue
+          const repackaged = model.package ?? providerPackage
+          if (repackaged === (base.package ?? definition.inheritedPackage)) continue
+          const supports = inheritedSupports(base.variants)
+          models.update(providerID, model.id, (draft) => {
+            draft.variants = [...Variant.resolve({ ...draft, package: repackaged }, supports)]
+          })
+        }
       }
     })
   }),
 })
+
+// Generated variant IDs are the effort levels and thinking toggle the catalog supported for the model.
+function inheritedSupports(variants: Model.Info["variants"]): Variant.Support[] {
+  const ids = variants.map((variant) => String(variant.id))
+  const levels = ids.filter((id) => id !== "thinking")
+  return [
+    ...(levels.some((id) => id !== "none") ? [{ type: "effort" as const, values: levels }] : []),
+    ...(ids.includes("none") || ids.includes("thinking") ? [{ type: "toggle" as const }] : []),
+  ]
+}
 
 function configuredProviders(entries: readonly Entry[]) {
   return entries
