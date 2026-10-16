@@ -248,44 +248,45 @@ export const set = Effect.fn("cli.service-config.set")(function* (key: string, v
   switch (selected) {
     case "disabled": {
       if (value !== "true" && value !== "false") throw new Error("Disabled must be true or false")
-      if (value === "true") yield* Service.stop(yield* options())
       yield* write({ ...(yield* read()), disabled: value === "true" })
+      if (value === "true") yield* Service.stop(yield* options())
       return
     }
     case "remote": {
       if (value !== "true" && value !== "false") throw new Error("Remote must be true or false")
       // A tunnel that cannot be created leaves remote access off instead of a service that keeps retrying.
       if (value === "true") yield* RemoteTunnel.ensure()
-      yield* Service.stop(yield* options())
       if (value === "true") {
         yield* remote()
+        yield* Service.stop(yield* options())
         return
       }
       yield* disableRemote()
+      yield* Service.stop(yield* options())
       return
     }
     case "hostname": {
-      yield* Service.stop(yield* options())
       yield* write({ ...(yield* read()), hostname: value })
+      yield* Service.stop(yield* options())
       return
     }
     case "port": {
       const port = Number(value)
       if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error("Port must be between 1 and 65535")
-      yield* Service.stop(yield* options())
       yield* write({ ...(yield* read()), port })
+      yield* Service.stop(yield* options())
       return
     }
     case "password": {
-      yield* Service.stop(yield* options())
       yield* password(value)
+      yield* Service.stop(yield* options())
       return
     }
     case "env": {
       if (nestedValue === undefined) throw new Error("Usage: opencode service set env <key> <value>")
-      yield* Service.stop(yield* options())
       const existing = yield* read()
       yield* write({ ...existing, env: { ...existing.env, [value]: nestedValue } })
+      yield* Service.stop(yield* options())
       return
     }
     case "cors": {
@@ -297,8 +298,8 @@ export const set = Effect.fn("cli.service-config.set")(function* (key: string, v
         })
       )
         throw new Error("CORS must be a comma-separated list of HTTP(S) origins without paths or trailing slashes")
-      yield* Service.stop(yield* options())
       yield* write({ ...(yield* read()), cors })
+      yield* Service.stop(yield* options())
       return
     }
   }
@@ -314,41 +315,41 @@ export const unset = Effect.fn("cli.service-config.unset")(function* (key: strin
       return
     }
     case "remote": {
-      yield* Service.stop(yield* options())
       yield* disableRemote()
+      yield* Service.stop(yield* options())
       return
     }
     case "hostname": {
-      yield* Service.stop(yield* options())
       const { hostname: _hostname, ...next } = yield* read()
       yield* write(next)
+      yield* Service.stop(yield* options())
       return
     }
     case "port": {
-      yield* Service.stop(yield* options())
       const { port: _port, ...next } = yield* read()
       yield* write(next)
+      yield* Service.stop(yield* options())
       return
     }
     case "password": {
-      yield* Service.stop(yield* options())
       const { password: _password, ...next } = yield* read()
       yield* write(next)
+      yield* Service.stop(yield* options())
       return
     }
     case "env": {
       if (name === undefined) throw new Error("Usage: opencode service unset env <key>")
-      yield* Service.stop(yield* options())
       const existing = yield* read()
       const { [name]: _removed, ...env } = existing.env ?? {}
       const { env: _existingEnv, ...rest } = existing
       yield* write(Object.keys(env).length === 0 ? rest : { ...rest, env })
+      yield* Service.stop(yield* options())
       return
     }
     case "cors": {
-      yield* Service.stop(yield* options())
       const { cors: _cors, ...next } = yield* read()
       yield* write(next)
+      yield* Service.stop(yield* options())
       return
     }
   }
