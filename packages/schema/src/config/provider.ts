@@ -88,6 +88,9 @@ class Model extends Schema.Class<Model>("Config.Model")({
   modelID: ID.pipe(optional),
   family: Family.pipe(optional),
   name: Schema.String.pipe(optional),
+  releaseDate: Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}(-\d{2})?$/u))
+    .annotate({ description: "Release date as YYYY-MM-DD or YYYY-MM" })
+    .pipe(optional),
   compatibility: Compatibility.pipe(optional),
   package: Schema.String.pipe(optional),
   ...ModelOverlays,
@@ -96,6 +99,7 @@ class Model extends Schema.Class<Model>("Config.Model")({
     tools: optional(fields.tools),
     input: optional(fields.input),
     output: optional(fields.output),
+    temperature: fields.temperature,
     reasoning: Reasoning.pipe(optional),
   }))
     .annotate({ identifier: "Config.Model.Capabilities" })

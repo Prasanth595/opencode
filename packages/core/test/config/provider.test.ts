@@ -804,6 +804,36 @@ describe("ConfigProviderPlugin.Plugin", () => {
     }),
   )
 
+  it.effect("applies configured release date, temperature support, and reasoning field", () =>
+    Effect.gen(function* () {
+      const models = yield* Model.Service
+      yield* addPlugin([
+        new Document({
+          type: "document",
+          info: decode({
+            providers: {
+              custom: {
+                package: "aisdk:@ai-sdk/openai-compatible",
+                models: {
+                  reasoner: {
+                    releaseDate: "2026-02-03",
+                    capabilities: { temperature: false },
+                    compatibility: { reasoningField: "reasoning_content" },
+                  },
+                },
+              },
+            },
+          }),
+        }),
+      ])
+
+      const model = required(yield* models.get(Provider.ID.make("custom"), Model.ID.make("reasoner")))
+      expect(model.time.released).toBe(Date.UTC(2026, 1, 3))
+      expect(model.capabilities.temperature).toBe(false)
+      expect(model.compatibility?.reasoningField).toBe("reasoning_content")
+    }),
+  )
+
   it.effect("keeps configured model variant bodies unchanged", () =>
     Effect.gen(function* () {
       const models = yield* Model.Service
