@@ -18,7 +18,11 @@ export type ProjectID = string
 
 export type AgentID = string
 
+export type ModelID = string
+
 export type ProviderID = string
+
+export type ModelVariantID = string
 
 export type ProviderCompaction = { type: "summary" } | { type: "native" }
 
@@ -29,6 +33,8 @@ export type ProviderEncoding = "zstd" | "gzip" | "none"
 export type AgentColor = string
 
 export type PermissionEffect = "allow" | "deny" | "ask"
+
+export type PluginID = string
 
 export type PluginSource =
   | { type: "builtin" }
@@ -317,8 +323,6 @@ export type LocationPublicInfo = {
   project: { id: ProjectID; directory: AbsolutePath; canonical: AbsolutePath }
 }
 
-export type ModelRef = { id: string; providerID: ProviderID; variant?: string }
-
 export type SessionProviderContextProvenance = {
   providerID: ProviderID
   provider: string
@@ -327,6 +331,8 @@ export type SessionProviderContextProvenance = {
   protocol: string
   endpoint: string
 }
+
+export type ModelRef = { id: ModelID; providerID: ProviderID; variant?: ModelVariantID }
 
 export type ProviderSettings = {
   timeout?: number | false
@@ -354,7 +360,7 @@ export type ConfigModelSettings = { compaction?: ProviderCompaction; encoding?: 
 
 export type PermissionRule = { action: string; resource: string; effect: PermissionEffect }
 
-export type PluginInfo = { id?: string; source: PluginSource; features: PluginFeatures; state: PluginState }
+export type PluginInfo = { id?: PluginID; source: PluginSource; features: PluginFeatures; state: PluginState }
 
 export type SessionForkBoundary =
   | { type: "before"; messageID: SessionMessageID }
@@ -880,6 +886,8 @@ export type ReferenceSource = ReferenceLocalSource | ReferenceGitSource
 
 export type WorktreeList = Array<WorktreeDirectory>
 
+export type SessionProviderContext = { version: 1; provenance: SessionProviderContextProvenance; messages: JsonValue }
+
 export type SessionStatsModelUsage = { model: ModelRef; steps: number; tokens: TokenUsageInfo; cost: MoneyUSD }
 
 export type SessionMessageModelSelected = {
@@ -891,8 +899,6 @@ export type SessionMessageModelSelected = {
   previous?: ModelRef
 }
 
-export type SessionProviderContext = { version: 1; provenance: SessionProviderContextProvenance; messages: JsonValue }
-
 export type ProviderRequest = {
   settings: ProviderSettings
   headers: { [x: string]: string }
@@ -900,7 +906,7 @@ export type ProviderRequest = {
 }
 
 export type ModelVariant = {
-  id: string
+  id: ModelVariantID
   settings?: ModelSettings
   headers?: { [x: string]: string }
   body?: { [x: string]: any }
@@ -2001,21 +2007,6 @@ export type ReferenceInfo = {
   source: ReferenceSource
 }
 
-export type SessionStatsInfo = {
-  range: { from: number; to: number }
-  sessions: number
-  subagents: number
-  prompts: number
-  steps: number
-  tokens: TokenUsageInfo
-  cost: MoneyUSD
-  tools: SessionStatsTools
-  activeDays: number
-  streak: number
-  activity: Array<SessionStatsActivity>
-  models: Array<SessionStatsModelUsage>
-}
-
 export type SessionMessageCompactionCompleted = {
   type: "compaction"
   id: SessionMessageID
@@ -2052,9 +2043,24 @@ export type SessionCompactionEnded = {
   }
 }
 
+export type SessionStatsInfo = {
+  range: { from: number; to: number }
+  sessions: number
+  subagents: number
+  prompts: number
+  steps: number
+  tokens: TokenUsageInfo
+  cost: MoneyUSD
+  tools: SessionStatsTools
+  activeDays: number
+  streak: number
+  activity: Array<SessionStatsActivity>
+  models: Array<SessionStatsModelUsage>
+}
+
 export type ModelInfo = {
-  id: string
-  modelID: string
+  id: ModelID
+  modelID: ModelID
   providerID: ProviderID
   canonical?: ProviderID
   family?: string
@@ -2271,7 +2277,7 @@ export type ConfigEntry =
             body?: { [x: string]: JsonValue }
             models?: {
               [x: string]: {
-                modelID?: string
+                modelID?: ModelID
                 family?: string
                 name?: string
                 compatibility?: ModelCompatibility
@@ -2281,7 +2287,7 @@ export type ConfigEntry =
                 body?: { [x: string]: JsonValue }
                 capabilities?: ConfigModelCapabilities
                 variants?: Array<{
-                  id: string
+                  id: ModelVariantID
                   settings?: ConfigModelSettings
                   headers?: { [x: string]: string }
                   body?: { [x: string]: JsonValue }

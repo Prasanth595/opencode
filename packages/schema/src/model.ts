@@ -7,13 +7,16 @@ import { Compatibility, MaxTokensField, ReasoningField } from "./model-compatibi
 import { Money } from "./money.js"
 import { ephemeral, inventory } from "./event.js"
 
-export const ID = Schema.String.pipe(Schema.brand("Model.ID"))
+export const ID = Schema.String.pipe(Schema.brand("Model.ID"), Schema.annotate({ identifier: "Model.ID" }))
 export type ID = typeof ID.Type
 
 const Updated = ephemeral({ type: "model.updated", schema: {} })
 export const Event = { Updated, Definitions: inventory(Updated) }
 
-export const VariantID = Schema.String.pipe(Schema.brand("Model.VariantID"))
+export const VariantID = Schema.String.pipe(
+  Schema.brand("Model.VariantID"),
+  Schema.annotate({ identifier: "Model.VariantID" }),
+)
 export type VariantID = typeof VariantID.Type
 
 export const Ref = Schema.Struct({

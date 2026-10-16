@@ -14234,7 +14234,7 @@
         "type": "object",
         "properties": {
           "modelID": {
-            "type": "string"
+            "$ref": "#/components/schemas/Model.ID"
           },
           "family": {
             "type": "string"
@@ -14269,7 +14269,7 @@
               "type": "object",
               "properties": {
                 "id": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/Model.VariantID"
                 },
                 "settings": {
                   "$ref": "#/components/schemas/Config.Model.Settings"
@@ -16726,14 +16726,17 @@
         "required": ["input", "output", "cache"],
         "additionalProperties": false
       },
+      "Model.ID": {
+        "type": "string"
+      },
       "Model.Info": {
         "type": "object",
         "properties": {
           "id": {
-            "type": "string"
+            "$ref": "#/components/schemas/Model.ID"
           },
           "modelID": {
-            "type": "string"
+            "$ref": "#/components/schemas/Model.ID"
           },
           "providerID": {
             "$ref": "#/components/schemas/Provider.ID"
@@ -16848,13 +16851,13 @@
         "type": "object",
         "properties": {
           "id": {
-            "type": "string"
+            "$ref": "#/components/schemas/Model.ID"
           },
           "providerID": {
             "$ref": "#/components/schemas/Provider.ID"
           },
           "variant": {
-            "type": "string"
+            "$ref": "#/components/schemas/Model.VariantID"
           }
         },
         "required": ["id", "providerID"],
@@ -16881,7 +16884,7 @@
         "type": "object",
         "properties": {
           "id": {
-            "type": "string"
+            "$ref": "#/components/schemas/Model.VariantID"
           },
           "settings": {
             "$ref": "#/components/schemas/Model.Settings"
@@ -16898,6 +16901,9 @@
         },
         "required": ["id"],
         "additionalProperties": false
+      },
+      "Model.VariantID": {
+        "type": "string"
       },
       "Money.USD": {
         "type": "number"
@@ -17372,11 +17378,14 @@
         },
         "additionalProperties": false
       },
+      "Plugin.ID": {
+        "type": "string"
+      },
       "Plugin.Info": {
         "type": "object",
         "properties": {
           "id": {
-            "type": "string"
+            "$ref": "#/components/schemas/Plugin.ID"
           },
           "source": {
             "$ref": "#/components/schemas/Plugin.Source"
