@@ -3,7 +3,6 @@
 import { Script } from "@opencode-ai/script"
 import { $ } from "bun"
 import { fileURLToPath } from "url"
-import { UpdateArtifact } from "./update-artifact"
 
 console.log("=== publishing ===\n")
 
@@ -69,16 +68,4 @@ if (Script.release && !Script.preview) {
 if (Script.release) {
   // OpenCode 1 clients resolve updates through GitHub's Latest release, so keep it on 1.x explicitly.
   await $`gh release edit ${tag} --draft=false --latest --repo ${process.env.GH_REPO}`
-}
-
-if (Script.release && !Script.preview) {
-  console.log("\n=== update service ===\n")
-  // OpenCode 1 clients and the installer discover releases through the update service's v1 channel.
-  // Publish after the GitHub release so the installer can download its assets.
-  for (const artifact of [
-    { distribution: "github", metadata: { tag } },
-    { distribution: "npm", metadata: { package: "opencode-ai" } },
-    { distribution: "homebrew", metadata: { package: "anomalyco/tap/opencode" } },
-  ])
-    await UpdateArtifact.publish({ channel: "v1", name: "cli", version: Script.version, ...artifact })
 }

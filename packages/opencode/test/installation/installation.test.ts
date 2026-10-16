@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { makeGlobalNode } from "@opencode-ai/core/effect/app-node"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
-import { Effect, Fiber, Layer, Stream } from "effect"
+import { Effect, Exit, Fiber, Layer, Stream } from "effect"
 import * as TestClock from "effect/testing/TestClock"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
@@ -95,170 +95,104 @@ describe("installation", () => {
   })
 
   describe("latest", () => {
-    const service = `${Installation.UPDATE_URL}?current=${InstallationVersion}`
     const npm = "https://registry.npmjs.org/opencode-ai/latest"
+    const choco = "https://community.chocolatey.org/api/v2/Packages"
+    const tap = (cmd: string, args: readonly string[]) =>
+      cmd === "brew" && args.join(" ") === "list --formula anomalyco/tap/opencode" ? "opencode" : ""
+    const core = (cmd: string, args: readonly string[]) =>
+      cmd === "brew" && args.join(" ") === "list --formula opencode" ? "opencode" : ""
+    const registry = (version: string, calls: string[], feed: string[] = [version]) =>
+      testLayer((request) => {
+        calls.push(request.url)
+        if (request.url.startsWith(choco))
+          return jsonResponse({
+            d: { results: feed.filter((v) => request.url.includes(`%27${v}%27`)).map((Version) => ({ Version })) },
+          })
+        return jsonResponse({ version })
+      })
 
-    for (const method of ["curl", "yarn", "unknown"] as const) {
+    const methods = ["curl", "yarn", "unknown", "npm", "bun", "pnpm", "scoop", "choco"] as const
+    for (const method of methods) {
       const calls: string[] = []
-      testEffect(
-        testLayer((request) => {
-          calls.push(request.url)
-          return jsonResponse({ version: "1.19.1" })
-        }),
-      ).effect(`reads ${method} versions from the update service v1 channel`, () =>
+      testEffect(registry("1.19.2", calls)).effect(`reads ${method} versions from the opencode-ai npm package`, () =>
         Effect.gen(function* () {
           calls.length = 0
-          expect(yield* Installation.use.latest(method)).toBe("1.19.1")
-          expect(calls).toEqual([service])
+          expect(yield* Installation.use.latest(method)).toBe("1.19.2")
+          expect(calls[0]).toBe(npm)
+          expect(calls.slice(1).every((url) => url.startsWith(choco))).toBe(true)
+        }),
+      )
+
+      testEffect(registry("2.0.27", [])).effect(`ignores OpenCode 2 versions for ${method}`, () =>
+        Effect.gen(function* () {
+          expect(yield* Installation.use.latest(method)).toBe(InstallationVersion)
         }),
       )
     }
 
-    const fallbackCalls: string[] = []
+    const tapCalls: string[] = []
     testEffect(
       testLayer((request) => {
-        fallbackCalls.push(request.url)
-        if (request.url.startsWith(Installation.UPDATE_URL)) return new Response("unavailable", { status: 503 })
+        tapCalls.push(request.url)
         return jsonResponse({ version: "1.19.2" })
-      }),
-    ).effect("falls back to the npm registry when the update service fails", () =>
+      }, tap),
+    ).effect("reads Homebrew tap versions from the opencode-ai npm package", () =>
       Effect.gen(function* () {
-        fallbackCalls.length = 0
-        expect(yield* Installation.use.latest("curl")).toBe("1.19.2")
-        expect(fallbackCalls.at(-1)).toBe(npm)
-        expect(fallbackCalls.some((url) => url.includes("api.github.com"))).toBe(false)
+        tapCalls.length = 0
+        expect(yield* Installation.use.latest("brew")).toBe("1.19.2")
+        expect(tapCalls).toEqual([npm])
       }),
     )
 
-    testEffect(
-      testLayer((request) =>
-        request.url.startsWith(Installation.UPDATE_URL) ? undefined : jsonResponse({ version: "1.19.4" }),
-      ),
-    ).effect("falls back to the npm registry when the update service times out", () =>
-      Effect.gen(function* () {
-        const fiber = yield* Installation.use.latest("curl").pipe(Effect.forkChild)
-        yield* TestClock.adjust("10 seconds")
-        expect(yield* Fiber.join(fiber)).toBe("1.19.4")
-      }),
-    )
-
-    const invalidCalls: string[] = []
+    const coreCalls: string[] = []
     testEffect(
       testLayer((request) => {
-        invalidCalls.push(request.url)
-        if (request.url.startsWith(Installation.UPDATE_URL)) return jsonResponse({ error: "Channel not found" })
-        return jsonResponse({ version: "1.19.3" })
-      }),
-    ).effect("falls back to the npm registry when the update service has no v1 release", () =>
+        coreCalls.push(request.url)
+        return jsonResponse({ version: "1.19.2" })
+      }, core),
+    ).effect("never offers an OpenCode 1 update Homebrew Core can't install", () =>
       Effect.gen(function* () {
-        invalidCalls.length = 0
-        expect(yield* Installation.use.latest("curl")).toBe("1.19.3")
-        expect(invalidCalls.at(-1)).toBe(npm)
+        coreCalls.length = 0
+        expect(yield* Installation.use.latest("brew")).toBe(InstallationVersion)
+        expect(coreCalls).toEqual([])
       }),
     )
 
-    testEffect(testLayer(() => jsonResponse({ version: "2.0.27" }))).effect(
-      "ignores OpenCode 2 releases from the update service",
-      () =>
-        Effect.gen(function* () {
-          expect(yield* Installation.use.latest("curl")).toBe(InstallationVersion)
-        }),
-    )
-
-    for (const method of ["npm", "bun", "pnpm"] as const) {
-      const calls: string[] = []
-      testEffect(
-        testLayer((request) => {
-          calls.push(request.url)
-          return jsonResponse({ version: "1.5.0" })
-        }),
-      ).effect(`reads ${method} versions via registry`, () =>
-        Effect.gen(function* () {
-          calls.length = 0
-          expect(yield* Installation.use.latest(method)).toBe("1.5.0")
-          expect(calls).toEqual([npm])
-        }),
-      )
-
-      testEffect(testLayer(() => jsonResponse({ version: "2.0.0" }))).effect(
-        `ignores OpenCode 2 releases from ${method}`,
-        () =>
-          Effect.gen(function* () {
-            expect(yield* Installation.use.latest(method)).toBe(InstallationVersion)
-          }),
-      )
-    }
-
-    testEffect(testLayer(() => jsonResponse({ version: "1.3.4" }))).effect("reads scoop manifest versions", () =>
+    testEffect(registry("1.19.2", [], ["1.19.1"])).effect("waits until Chocolatey has published the npm version", () =>
       Effect.gen(function* () {
-        expect(yield* Installation.use.latest("scoop")).toBe("1.3.4")
+        expect(yield* Installation.use.latest("choco")).toBe(InstallationVersion)
       }),
     )
 
-    testEffect(testLayer(() => jsonResponse({ version: "2.3.4" }))).effect(
-      "ignores OpenCode 2 releases from scoop",
-      () =>
-        Effect.gen(function* () {
-          expect(yield* Installation.use.latest("scoop")).toBe(InstallationVersion)
-        }),
-    )
-
-    testEffect(testLayer(() => jsonResponse({ d: { results: [{ Version: "1.4.5" }] } }))).effect(
-      "reads chocolatey feed versions",
-      () =>
-        Effect.gen(function* () {
-          expect(yield* Installation.use.latest("choco")).toBe("1.4.5")
-        }),
-    )
-
-    testEffect(testLayer(() => jsonResponse({ d: { results: [{ Version: "2.0.0" }] } }))).effect(
-      "ignores OpenCode 2 releases from chocolatey",
-      () =>
-        Effect.gen(function* () {
-          expect(yield* Installation.use.latest("choco")).toBe(InstallationVersion)
-        }),
-    )
-
-    const brewCore = (cmd: string, args: readonly string[]) => {
-      // getBrewFormula: return core formula (no tap)
-      if (cmd === "brew" && args.includes("--formula") && args.includes("anomalyco/tap/opencode")) return ""
-      if (cmd === "brew" && args.includes("--formula") && args.includes("opencode")) return "opencode"
-      return ""
-    }
-    testEffect(testLayer(() => jsonResponse({ versions: { stable: "1.8.0" } }), brewCore)).effect(
-      "reads brew formulae API versions",
-      () =>
-        Effect.gen(function* () {
-          expect(yield* Installation.use.latest("brew")).toBe("1.8.0")
-        }),
-    )
-
-    testEffect(testLayer(() => jsonResponse({ versions: { stable: "2.0.25" } }), brewCore)).effect(
-      "ignores OpenCode 2 in Homebrew Core",
-      () =>
-        Effect.gen(function* () {
-          expect(yield* Installation.use.latest("brew")).toBe(InstallationVersion)
-        }),
-    )
-
-    const brewTap = (stable: string) => (cmd: string, args: readonly string[]) => {
-      if (cmd === "brew" && args.includes("anomalyco/tap/opencode") && args.includes("--formula")) return "opencode"
-      if (cmd === "brew" && args.includes("--json=v2")) return JSON.stringify({ formulae: [{ versions: { stable } }] })
-      return ""
-    }
-    // HTTP is not used for the tap formula.
-    testEffect(testLayer(() => jsonResponse({}), brewTap("1.9.0"))).effect("reads brew tap info JSON via CLI", () =>
+    const errorCalls: string[] = []
+    testEffect(
+      testLayer((request) => {
+        errorCalls.push(request.url)
+        return new Response("unavailable", { status: 503 })
+      }),
+    ).live("fails when the npm registry fails, without consulting GitHub", () =>
       Effect.gen(function* () {
-        expect(yield* Installation.use.latest("brew")).toBe("1.9.0")
+        errorCalls.length = 0
+        expect(Exit.isFailure(yield* Installation.use.latest("curl").pipe(Effect.exit))).toBe(true)
+        expect(errorCalls.length).toBeGreaterThan(0)
+        expect(errorCalls.every((url) => url === npm)).toBe(true)
       }),
     )
 
-    testEffect(testLayer(() => jsonResponse({}), brewTap("2.1.0"))).effect(
-      "ignores OpenCode 2 in the Homebrew tap",
+    testEffect(testLayer(() => jsonResponse({ name: "opencode-ai" }))).effect(
+      "fails when the npm registry returns no version",
       () =>
         Effect.gen(function* () {
-          expect(yield* Installation.use.latest("brew")).toBe(InstallationVersion)
+          expect(Exit.isFailure(yield* Installation.use.latest("npm").pipe(Effect.exit))).toBe(true)
         }),
+    )
+
+    testEffect(testLayer(() => undefined)).effect("gives up when the npm registry doesn't answer in time", () =>
+      Effect.gen(function* () {
+        const fiber = yield* Installation.use.latest("curl").pipe(Effect.exit, Effect.forkChild)
+        yield* TestClock.adjust("10 seconds")
+        expect(Exit.isFailure(yield* Fiber.join(fiber))).toBe(true)
+      }),
     )
   })
 
@@ -273,7 +207,7 @@ describe("installation", () => {
       ),
     ).effect("returns sanitized typed errors for failed package upgrades", () =>
       Effect.gen(function* () {
-        const error = yield* Effect.flip(Installation.use.upgrade("npm", "9.9.9"))
+        const error = yield* Effect.flip(Installation.use.upgrade("npm", "1.99.9"))
         expect(error).toBeInstanceOf(Installation.UpgradeFailedError)
         expect(error.stderr).toBe("Upgrade failed for npm (exit code 1).")
         expect(error.message).toBe(error.stderr)
@@ -293,7 +227,7 @@ describe("installation", () => {
       ),
     ).effect("returns sanitized typed errors when the curl install script fails", () =>
       Effect.gen(function* () {
-        const error = yield* Effect.flip(Installation.use.upgrade("curl", "9.9.9"))
+        const error = yield* Effect.flip(Installation.use.upgrade("curl", "1.99.9"))
         expect(error).toBeInstanceOf(Installation.UpgradeFailedError)
         expect(error.stderr).toBe("Upgrade failed for curl (exit code 1).")
         expect(error.message).toBe(error.stderr)
@@ -314,9 +248,103 @@ describe("installation", () => {
       ),
     ).effect("falls back to sh when bash is unavailable during curl upgrade", () =>
       Effect.gen(function* () {
-        yield* Installation.use.upgrade("curl", "9.9.9")
+        yield* Installation.use.upgrade("curl", "1.99.9")
       }),
     )
+  })
+
+  describe("upgrade per method", () => {
+    const packageCalls: string[] = []
+    testEffect(
+      testLayer(
+        () => jsonResponse({}),
+        (cmd, args) => {
+          packageCalls.push([cmd, ...args].join(" "))
+          return ""
+        },
+      ),
+    ).effect("installs the OpenCode 1 package with each package manager", () =>
+      Effect.gen(function* () {
+        for (const method of ["npm", "pnpm", "bun", "yarn"] as const) {
+          packageCalls.length = 0
+          yield* Installation.use.upgrade(method, "1.19.2")
+          expect(packageCalls[0]).toContain("opencode-ai@1.19.2")
+        }
+      }),
+    )
+
+    const majorCalls: string[] = []
+    testEffect(
+      testLayer(
+        () => jsonResponse({}),
+        (cmd, args) => {
+          majorCalls.push([cmd, ...args].join(" "))
+          return ""
+        },
+      ),
+    ).effect("refuses OpenCode 2 targets for every method", () =>
+      Effect.gen(function* () {
+        for (const method of ["curl", "npm", "pnpm", "bun", "yarn", "brew", "choco", "scoop"] as const) {
+          majorCalls.length = 0
+          const error = yield* Effect.flip(Installation.use.upgrade(method, "2.0.27"))
+          expect(error.stderr).toContain("opencode upgrade --major")
+          expect(majorCalls).toEqual([])
+        }
+      }),
+    )
+
+    const coreCalls: string[] = []
+    testEffect(
+      testLayer(
+        () => jsonResponse({}),
+        (cmd, args) => {
+          coreCalls.push([cmd, ...args].join(" "))
+          if (args.join(" ") === "list --formula opencode") return "opencode"
+          return ""
+        },
+      ),
+    ).effect("never runs brew upgrade for Homebrew Core, whose formula is OpenCode 2", () =>
+      Effect.gen(function* () {
+        coreCalls.length = 0
+        const error = yield* Effect.flip(Installation.use.upgrade("brew", "1.19.2"))
+        expect(error.stderr).toContain("Homebrew Core")
+        expect(coreCalls.some((call) => call.startsWith("brew upgrade"))).toBe(false)
+      }),
+    )
+
+    const tap = (stable: string, calls: string[]) =>
+      testLayer(
+        () => jsonResponse({}),
+        (cmd, args) => {
+          calls.push([cmd, ...args].join(" "))
+          if (args.join(" ") === "list --formula anomalyco/tap/opencode") return "opencode"
+          if (args.join(" ") === "--repo anomalyco/tap") return "/tmp/opencode-test-tap"
+          if (args.includes("--json=v2")) return JSON.stringify({ formulae: [{ versions: { stable } }] })
+          return ""
+        },
+      )
+
+    const tapCalls: string[] = []
+    testEffect(tap("1.19.2", tapCalls)).effect("upgrades the Homebrew tap once it has the version", () =>
+      Effect.gen(function* () {
+        tapCalls.length = 0
+        yield* Installation.use.upgrade("brew", "1.19.2")
+        expect(tapCalls).toContain("git pull --ff-only")
+        expect(tapCalls).toContain("brew upgrade anomalyco/tap/opencode")
+      }),
+    )
+
+    for (const stable of ["1.19.1", "2.0.0"]) {
+      const calls: string[] = []
+      testEffect(tap(stable, calls)).effect(`asks to retry when the Homebrew tap is at ${stable}`, () =>
+        Effect.gen(function* () {
+          calls.length = 0
+          const error = yield* Effect.flip(Installation.use.upgrade("brew", "1.19.2"))
+          expect(error.stderr).toContain("Try again in a few minutes")
+          expect(calls.some((call) => call.startsWith("brew upgrade"))).toBe(false)
+        }),
+      )
+    }
   })
 
   describe("upgradeMajor", () => {

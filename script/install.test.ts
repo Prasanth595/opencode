@@ -8,24 +8,27 @@ const script = path.resolve(import.meta.dir, "../install")
 const root = await mkdtemp(path.join(os.tmpdir(), "opencode-install-test-"))
 afterAll(() => rm(root, { recursive: true, force: true }))
 
-// Stands in for curl: answers the update service, the GitHub release list, and release downloads.
+// Stands in for curl: answers the npm registry, the GitHub release list, and release downloads.
+// HEAD requests for a release asset report ASSET_STATUS (200 by default).
 const curl = `#!/usr/bin/env bash
 echo "$*" >> "$CURL_LOG"
 out=""
 url=""
+head=false
 while [ $# -gt 0 ]; do
   case "$1" in
     -o) out="$2"; shift 2 ;;
     -w|--max-time) shift 2 ;;
+    -I|-sI|-sIL) head=true; shift ;;
     -*) shift ;;
     *) url="$1"; shift ;;
   esac
 done
 case "$url" in
-  https://opencode.ai/update/api/v1/cli/github) [ -n "$SERVICE_BODY" ] || exit 22; printf '%s' "$SERVICE_BODY" ;;
+  https://registry.npmjs.org/opencode-ai/latest) [ -n "$NPM_BODY" ] || exit 22; printf '%s' "$NPM_BODY" ;;
   https://api.github.com/repos/anomalyco/opencode/releases*) printf '%s' "$GITHUB_BODY" ;;
-  https://github.com/anomalyco/opencode/releases/tag/*) printf 200 ;;
-  https://github.com/anomalyco/opencode/releases/download/*) cp "$ARCHIVE" "$out" ;;
+  https://github.com/anomalyco/opencode/releases/download/*)
+    if [ "$head" = true ]; then printf '%s' "\${ASSET_STATUS:-200}"; else cp "$ARCHIVE" "$out"; fi ;;
   *) exit 22 ;;
 esac
 `
@@ -92,32 +95,48 @@ describe("install script", () => {
     expect(result.curl.at(-1)).toContain("releases/download/v1.18.35/")
   })
 
-  test.skipIf(process.platform !== "linux")("reads the version from the update service v1 channel", async () => {
+  test.skipIf(process.platform !== "linux")("reads the version from npm", async () => {
     const result = await install({
-      env: { SERVICE_BODY: '{"channel":"v1","name":"cli","distribution":"github","version":"1.19.1","metadata":{}}' },
+      env: { NPM_BODY: '{"name":"opencode-ai","_npmVersion":"11.0.0","version":"1.19.2"}' },
     })
     expect(result.code).toBe(0)
-    expect(result.output).toContain("version: \x1b[0m1.19.1")
+    expect(result.output).toContain("version: \x1b[0m1.19.2")
     expect(result.curl.some((line) => line.includes("api.github.com"))).toBe(false)
-    expect(result.curl.at(-1)).toContain("releases/download/v1.19.1/")
+    expect(result.curl.at(-1)).toContain("releases/download/v1.19.2/")
+  })
+
+  test.skipIf(process.platform !== "linux")("falls back to the newest v1 GitHub release when npm fails", async () => {
+    const result = await install({
+      env: { GITHUB_BODY: '[{"tag_name": "v2.0.28"},{"tag_name": "v1.19.0"},{"tag_name": "v1.18.35"}]' },
+    })
+    expect(result.code).toBe(0)
+    expect(result.curl.some((line) => line.includes("releases/latest"))).toBe(false)
+    expect(result.curl.at(-1)).toContain("releases/download/v1.19.0/")
   })
 
   test.skipIf(process.platform !== "linux")(
-    "falls back to the newest v1 GitHub release when the service fails",
+    "falls back to GitHub while the npm version's release is still publishing",
     async () => {
       const result = await install({
-        env: { GITHUB_BODY: '[{"tag_name": "v2.0.28"},{"tag_name": "v1.19.0"},{"tag_name": "v1.18.35"}]' },
+        env: { NPM_BODY: '{"version":"1.19.2"}', ASSET_STATUS: "404", GITHUB_BODY: '[{"tag_name": "v1.19.1"}]' },
       })
       expect(result.code).toBe(0)
-      expect(result.curl.at(-1)).toContain("releases/download/v1.19.0/")
+      expect(result.curl.at(-1)).toContain("releases/download/v1.19.1/")
     },
   )
 
-  test.skipIf(process.platform !== "linux")("ignores an OpenCode 2 response from the service", async () => {
+  test.skipIf(process.platform !== "linux")("ignores an OpenCode 2 version from npm", async () => {
     const result = await install({
-      env: { SERVICE_BODY: '{"version":"2.0.27"}', GITHUB_BODY: '[{"tag_name": "v1.19.0"}]' },
+      env: { NPM_BODY: '{"version":"2.0.27"}', GITHUB_BODY: '[{"tag_name": "v1.19.0"}]' },
     })
     expect(result.code).toBe(0)
     expect(result.curl.at(-1)).toContain("releases/download/v1.19.0/")
+  })
+
+  test("reports a missing explicit release", async () => {
+    const result = await install({ env: { VERSION: "1.19.9", ASSET_STATUS: "404" } })
+    expect(result.code).toBe(1)
+    expect(result.output).toContain("Release v1.19.9 not found")
+    expect(result.installed).toBe(false)
   })
 })
