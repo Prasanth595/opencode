@@ -80,6 +80,7 @@ import { createPaneResize } from "./ui/pane-resize"
 import { PaneResizeHandle } from "./ui/pane-resize-handle"
 import { clickedLink } from "./ui/link"
 import { ThemeErrorToast } from "./component/theme-error-toast"
+import { LaunchLocationFailure } from "./component/launch-location-failure"
 import { createThemeSource, ThemeProvider, useTheme, useThemes } from "./context/theme"
 import { Home } from "./routes/home"
 import { PromptHistoryProvider } from "./prompt/history"
@@ -215,11 +216,18 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
   })
   const options = { baseUrl: input.server.endpoint.url, headers: Service.headers(input.server.endpoint) }
   const api = OpenCode.make(options)
-  const location = yield* Effect.tryPromise(() => api.file.list({ location: { directory: process.cwd() } })).pipe(
-    Effect.map((response) => response.location),
-    Effect.catch(() => Effect.tryPromise(() => api.location.get())),
+  // The server default keeps the TUI usable when the requested directory's location cannot be
+  // resolved, but opening another location in its place hides why the request failed -- usually a
+  // project configuration error -- so the failure travels with it to be reported in the shell.
+  const launch = yield* Effect.tryPromise(() => api.file.list({ location: { directory: process.cwd() } })).pipe(
+    Effect.map((response) => ({ location: response.location, failure: undefined as unknown })),
+    Effect.catch((cause) =>
+      Effect.tryPromise(() => api.location.get()).pipe(
+        Effect.map((response) => ({ location: response, failure: cause as unknown })),
+      ),
+    ),
   )
-  const directory = location.directory
+  const directory = launch.location.directory
   const pluginDirectories = yield* Effect.promise(() => localPluginDirectories(process.cwd(), global.config))
   const handoff = input.terminalHandoff ? yield* Effect.promise(input.terminalHandoff) : undefined
   const managed = input.server.service
@@ -387,6 +395,11 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                           source={createThemeSource(global.config)}
                                                         >
                                                           <ThemeErrorToast />
+                                                          <LaunchLocationFailure
+                                                            directory={process.cwd()}
+                                                            fallback={directory}
+                                                            cause={launch.failure}
+                                                          />
                                                           <LocalProvider>
                                                             <PromptStashProvider>
                                                               <DialogProvider>
