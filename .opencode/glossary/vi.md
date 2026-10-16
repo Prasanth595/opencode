@@ -44,6 +44,14 @@
 | local models               | `mô hình chạy cục bộ` |                                                          |
 | prompt                     | `lời nhắc`            |                                                          |
 | token                      | `token`               | Keep in English; do not use `mã thông báo`               |
+| skill                      | `kỹ năng`             | Matches the app UI label for the skills tab              |
+| plugin                     | `tiện ích mở rộng`    | Matches the app UI label for extensions                  |
+| command                    | `lệnh`                |                                                          |
+| theme                      | `giao diện`           |                                                          |
+| formatter                  | `trình định dạng`     |                                                          |
+| compaction                 | `nén`                 |                                                          |
+| attachment                 | `tệp đính kèm`        |                                                          |
+| data                       | `dữ liệu`             |                                                          |
 
 ## Guidance
 
