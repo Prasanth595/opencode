@@ -8,42 +8,46 @@ import { dynamicResponse } from "./lib/http.js"
 describe("experimental Realtime", () => {
   it.effect("connects OpenAI GPT-Live, OpenAI Realtime (WebRTC + WebSocket), and xAI Grok Voice", () =>
     Effect.gen(function* () {
-      const live = yield* Realtime.connect({
-        model: "gpt-live-1",
-        apiKey: "sk-openai",
-        session: { instructions: "Be concise.", voice: "marin" },
-        transport: { type: "webrtc", sdp: "v=0\r\no=offer\r\n", dcid: 4 },
-      })
-      expect(live).toEqual({ type: "webrtc", sdp: "v=0\r\no=live-answer\r\n" })
+      expect(
+        yield* Realtime.connect({
+          model: "gpt-live-1",
+          apiKey: "sk-openai",
+          session: { instructions: "Be concise.", voice: "marin" },
+          transport: { type: "webrtc", sdp: "v=0\r\no=offer\r\n", dcid: 4 },
+        }),
+      ).toEqual({ type: "webrtc", sdp: "v=0\r\no=live-answer\r\n" })
 
-      const realtimeRtc = yield* Realtime.connect({
-        model: "gpt-realtime-2.1",
-        apiKey: "sk-openai",
-        session: { type: "realtime", instructions: "Brief." },
-        transport: { type: "webrtc", sdp: "v=0\r\no=offer\r\n", dcid: 4 },
-      })
-      expect(realtimeRtc).toEqual({ type: "webrtc", sdp: "v=0\r\no=rtc-answer\r\n" })
+      expect(
+        yield* Realtime.connect({
+          model: "gpt-realtime-2.1",
+          apiKey: "sk-openai",
+          session: { type: "realtime", instructions: "Brief." },
+          transport: { type: "webrtc", sdp: "v=0\r\no=offer\r\n", dcid: 4 },
+        }),
+      ).toEqual({ type: "webrtc", sdp: "v=0\r\no=rtc-answer\r\n" })
 
-      const realtimeWs = yield* Realtime.connect({
-        model: "gpt-realtime-2.1",
-        apiKey: "sk-openai",
-        session: { type: "realtime", instructions: "Brief." },
-        transport: { type: "websocket" },
-      })
-      expect(realtimeWs).toEqual({
+      expect(
+        yield* Realtime.connect({
+          model: "gpt-realtime-2.1",
+          apiKey: "sk-openai",
+          session: { type: "realtime", instructions: "Brief." },
+          transport: { type: "websocket" },
+        }),
+      ).toEqual({
         type: "websocket",
         url: "wss://api.openai.com/v1/realtime?model=gpt-realtime-2.1",
         token: "ek_1",
         expiresAt: 1760000060,
       })
 
-      const grokWs = yield* Realtime.connect({
-        model: "grok-voice-3.0",
-        apiKey: "xai-key",
-        session: { voice: "ara" },
-        transport: { type: "websocket" },
-      })
-      expect(grokWs).toEqual({
+      expect(
+        yield* Realtime.connect({
+          model: "grok-voice-3.0",
+          apiKey: "xai-key",
+          session: { voice: "ara" },
+          transport: { type: "websocket" },
+        }),
+      ).toEqual({
         type: "websocket",
         url: "wss://api.x.ai/v1/realtime?model=grok-voice-3.0",
         token: "ek_2",
@@ -96,19 +100,9 @@ describe("experimental Realtime", () => {
 
   it.effect("rejects unsupported transports before network I/O", () =>
     Effect.gen(function* () {
-      const liveWs = yield* Realtime.connect({
-        model: "gpt-live-1",
-        apiKey: "test",
-        transport: { type: "websocket" },
-      }).pipe(Effect.flip)
-      expect(liveWs.reason._tag).toBe("InvalidRequest")
-
-      const grokRtc = yield* Realtime.connect({
-        model: "grok-voice-3.0",
-        apiKey: "test",
-        transport: { type: "webrtc", sdp: "v=0" },
-      }).pipe(Effect.flip)
-      expect(grokRtc.reason._tag).toBe("InvalidRequest")
+      const liveWs = yield* Realtime.connect({ model: "gpt-live-1", apiKey: "k", transport: { type: "websocket" } }).pipe(Effect.flip)
+      const grokRtc = yield* Realtime.connect({ model: "grok-voice-3.0", apiKey: "k", transport: { type: "webrtc", sdp: "v=0" } }).pipe(Effect.flip)
+      expect([liveWs.reason._tag, grokRtc.reason._tag]).toEqual(["InvalidRequest", "InvalidRequest"])
     }).pipe(Effect.provide(dynamicResponse(() => Effect.die("unsupported transport reached the network")))),
   )
 })

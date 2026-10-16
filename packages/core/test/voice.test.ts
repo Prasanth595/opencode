@@ -9,25 +9,6 @@ import { testEffect } from "./lib/effect"
 
 const it = testEffect(Layer.empty)
 
-function makeVoiceLayer(
-  stored: ReadonlyArray<Credential.Info>,
-  onRequest?: (request: HttpClientRequest.HttpClientRequest) => Response,
-) {
-  const credentials = Layer.mock(Credential.Service, { list: () => Effect.succeed([...stored]) })
-  const http = Layer.succeed(
-    HttpClient.HttpClient,
-    HttpClient.make((req) =>
-      Effect.sync(() =>
-        HttpClientResponse.fromWeb(
-          req,
-          onRequest ? onRequest(req) : Response.json({ session: { id: "s1" }, transport: { sdp: "v=0\r\no=answer\r\n" } }),
-        ),
-      ),
-    ),
-  )
-  return Voice.layer.pipe(Layer.provide(Layer.merge(credentials, RequestExecutor.layer.pipe(Layer.provide(http)))))
-}
-
 const keyCred = (id: string, key: string) =>
   new Credential.Info({
     id: Credential.ID.make(id),
@@ -57,13 +38,30 @@ it.effect("resolves credentials (active key, stored key over OAuth, env fallback
       return Response.json({ session: { id: "s1" }, transport: { sdp: "v=0\r\no=answer\r\n" } })
     }
     const call = (model: string, stored: ReadonlyArray<Credential.Info>, onReq = record) =>
-      Effect.gen(function* () {
-        const voice = yield* Voice.Service
-        return yield* voice.session({
+      Effect.flatMap(Voice.Service, (voice) =>
+        voice.session({
           model,
           transport: model.startsWith("grok-") ? { type: "websocket" } : { type: "webrtc", sdp: "v=0" },
-        })
-      }).pipe(Effect.provide(makeVoiceLayer(stored, onReq)))
+        }),
+      ).pipe(
+        Effect.provide(
+          Voice.layer.pipe(
+            Layer.provide(
+              Layer.merge(
+                Layer.mock(Credential.Service, { list: () => Effect.succeed([...stored]) }),
+                RequestExecutor.layer.pipe(
+                  Layer.provide(
+                    Layer.succeed(
+                      HttpClient.HttpClient,
+                      HttpClient.make((req) => Effect.sync(() => HttpClientResponse.fromWeb(req, onReq(req)))),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      )
 
     // Active credential is last in `Credential.list`: active key wins, and OAuth is skipped for stored key.
     yield* call("gpt-live-1", [keyCred("old", "sk-old"), keyCred("active", "sk-active")])

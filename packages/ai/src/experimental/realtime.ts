@@ -24,18 +24,6 @@ export interface RealtimeConnectInput {
   readonly transport: RealtimeTransportInput
 }
 
-const LiveSessionResponse = Schema.Struct({
-  transport: Schema.Struct({ sdp: Schema.String }),
-})
-
-// xAI's ephemeral-token docs (https://docs.x.ai/developers/model-capabilities/audio/ephemeral-tokens)
-// document the request body (`{ expires_after: { seconds } }`) but not the response payload; we assume
-// it mirrors OpenAI's `{ value, expires_at }` response shape.
-const ClientSecretResponse = Schema.Struct({
-  value: Schema.String,
-  expires_at: Schema.Number,
-})
-
 const engines = [
   { prefix: "gpt-live-", id: "openai-live", provider: "openai", env: "OPENAI_API_KEY" },
   { prefix: "gpt-realtime-", id: "openai-realtime", provider: "openai", env: "OPENAI_API_KEY" },
@@ -43,56 +31,6 @@ const engines = [
 ] as const
 
 export const engine = (model: string) => engines.find((item) => model.startsWith(item.prefix))
-
-const invalidRequest = (message: string) => new AIError({ reason: new InvalidRequestError({ message }) })
-
-const post = Effect.fnUntraced(function* (
-  route: string,
-  url: string,
-  apiKey: string,
-  body: Record<string, unknown> | FormData,
-) {
-  const executor = yield* RequestExecutor.Service
-  const res = yield* executor.execute(
-    HttpClientRequest.post(url).pipe(
-      HttpClientRequest.bearerToken(apiKey),
-      body instanceof FormData
-        ? HttpClientRequest.bodyFormData(body)
-        : HttpClientRequest.bodyText(encodeJson(body), "application/json"),
-    ),
-  )
-  const http = new HttpContext({ url: res.request.url, status: res.status, headers: res.headers })
-  const fail = (message: string, cause?: unknown, raw?: string) =>
-    new AIError({ reason: new InvalidProviderOutputError({ route, message, body: raw, http, cause }) })
-  const text = yield* res.text.pipe(Effect.mapError((cause) => fail(`Failed to read ${route} response`, cause)))
-  return { text, fail }
-})
-
-const clientSecret = (
-  route: string,
-  baseURL: string,
-  model: string,
-  apiKey: string,
-  session?: Record<string, unknown>,
-) =>
-  post(route, `${baseURL}/realtime/client_secrets`, apiKey, {
-    expires_after: { seconds: 60 },
-    session,
-  }).pipe(
-    Effect.flatMap(({ text, fail }) =>
-      Schema.decodeUnknownEffect(Schema.fromJsonString(ClientSecretResponse))(text).pipe(
-        Effect.mapError((cause) => fail(`${route} returned an invalid response`, cause, text)),
-      ),
-    ),
-    Effect.map(
-      (data): RealtimeTransport => ({
-        type: "websocket",
-        url: `${baseURL.replace(/^http/, "ws")}/realtime?model=${encodeURIComponent(model)}`,
-        token: data.value,
-        expiresAt: data.expires_at,
-      }),
-    ),
-  )
 
 export const connect = Effect.fn("Realtime.connect")(function* (input: RealtimeConnectInput) {
   const resolved = engine(input.model)
@@ -103,12 +41,12 @@ export const connect = Effect.fn("Realtime.connect")(function* (input: RealtimeC
     case "openai-live": {
       if (input.transport.type !== "webrtc")
         return yield* invalidRequest("OpenAI GPT-Live only supports WebRTC transport")
-      const { text, fail } = yield* post(resolved.id, `${OPENAI_BASE_URL}/live/sessions`, input.apiKey, {
-        session,
-        transport: input.transport,
-      })
-      const data = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(LiveSessionResponse))(text).pipe(
-        Effect.mapError((cause) => fail("openai-live returned an invalid response", cause, text)),
+      const data = yield* post(
+        resolved.id,
+        `${OPENAI_BASE_URL}/live/sessions`,
+        input.apiKey,
+        { session, transport: input.transport },
+        LiveSessionResponse,
       )
       return { type: "webrtc" as const, sdp: data.transport.sdp }
     }
@@ -119,8 +57,8 @@ export const connect = Effect.fn("Realtime.connect")(function* (input: RealtimeC
       form.append("sdp", input.transport.sdp)
       form.append("session", encodeJson(session))
       const query = input.transport.dcid === undefined ? "" : `?dcid=${input.transport.dcid}`
-      const { text } = yield* post(resolved.id, `${OPENAI_BASE_URL}/realtime/calls${query}`, input.apiKey, form)
-      return { type: "webrtc" as const, sdp: text }
+      const sdp = yield* post(resolved.id, `${OPENAI_BASE_URL}/realtime/calls${query}`, input.apiKey, form)
+      return { type: "webrtc" as const, sdp }
     }
     case "xai-realtime": {
       if (input.transport.type !== "websocket")
@@ -134,3 +72,82 @@ export const Realtime = {
   engine,
   connect,
 } as const
+
+const LiveSessionResponse = Schema.Struct({
+  transport: Schema.Struct({ sdp: Schema.String }),
+})
+
+// xAI's ephemeral-token docs (https://docs.x.ai/developers/model-capabilities/audio/ephemeral-tokens)
+// document the request body (`{ expires_after: { seconds } }`) but not the response payload; we assume
+// it mirrors OpenAI's `{ value, expires_at }` response shape.
+const ClientSecretResponse = Schema.Struct({
+  value: Schema.String,
+  expires_at: Schema.Number,
+})
+
+const invalidRequest = (message: string) => new AIError({ reason: new InvalidRequestError({ message }) })
+
+function post(
+  route: string,
+  url: string,
+  apiKey: string,
+  body: Record<string, unknown> | FormData,
+): Effect.Effect<string, AIError, RequestExecutor.Service>
+function post<A>(
+  route: string,
+  url: string,
+  apiKey: string,
+  body: Record<string, unknown> | FormData,
+  schema: Schema.Codec<A, unknown>,
+): Effect.Effect<A, AIError, RequestExecutor.Service>
+function post<A>(
+  route: string,
+  url: string,
+  apiKey: string,
+  body: Record<string, unknown> | FormData,
+  schema?: Schema.Codec<A, unknown>,
+) {
+  return Effect.gen(function* () {
+    const executor = yield* RequestExecutor.Service
+    const res = yield* executor.execute(
+      HttpClientRequest.post(url).pipe(
+        HttpClientRequest.bearerToken(apiKey),
+        body instanceof FormData
+          ? HttpClientRequest.bodyFormData(body)
+          : HttpClientRequest.bodyText(encodeJson(body), "application/json"),
+      ),
+    )
+    const http = new HttpContext({ url: res.request.url, status: res.status, headers: res.headers })
+    const fail = (message: string, cause?: unknown, raw?: string) =>
+      new AIError({ reason: new InvalidProviderOutputError({ route, message, body: raw, http, cause }) })
+    const text = yield* res.text.pipe(Effect.mapError((cause) => fail(`Failed to read ${route} response`, cause)))
+    if (!schema) return text
+    return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(text).pipe(
+      Effect.mapError((cause) => fail(`${route} returned an invalid response`, cause, text)),
+    )
+  })
+}
+
+const clientSecret = (
+  route: string,
+  baseURL: string,
+  model: string,
+  apiKey: string,
+  session?: Record<string, unknown>,
+) =>
+  post(
+    route,
+    `${baseURL}/realtime/client_secrets`,
+    apiKey,
+    { expires_after: { seconds: 60 }, session },
+    ClientSecretResponse,
+  ).pipe(
+    Effect.map(
+      (data): RealtimeTransport => ({
+        type: "websocket",
+        url: `${baseURL.replace(/^http/, "ws")}/realtime?model=${encodeURIComponent(model)}`,
+        token: data.value,
+        expiresAt: data.expires_at,
+      }),
+    ),
+  )
