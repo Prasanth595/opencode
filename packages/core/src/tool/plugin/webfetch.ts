@@ -5,6 +5,7 @@ import { ToolFailure } from "@opencode/ai"
 import { Duration, Effect, Schema } from "effect"
 import { HttpClient, type HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { Parser } from "htmlparser2"
+import { mainContent } from "../main-content.js"
 import { Permission } from "../../permission.js"
 import { convertHTMLToMarkdown, MAX_MARKDOWN_BYTES } from "../html-markdown.js"
 import { collectBoundedResponseBody } from "../http-body.js"
@@ -16,7 +17,7 @@ export const MAX_TIMEOUT_SECONDS = 120
 
 export const description = `Fetch content from an HTTP or HTTPS URL and return it as text, markdown, or HTML. Markdown is the default.
 
-Use a more targeted tool when one is available. This tool is read-only. Large text results may be replaced with a preview while the complete output is retained in managed storage.`
+Use a more targeted tool when one is available. This tool is read-only. GitHub HTML in markdown format defaults to focus "main", omitting navigation and footer; set focus "full" when site chrome is needed. Set focus "main" for other documentation sites when only primary content is needed. Large text results may be replaced with a preview while the complete output is retained in managed storage.`
 
 const Timeout = Schema.Finite.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(MAX_TIMEOUT_SECONDS))
 
@@ -27,6 +28,9 @@ export const Input = Schema.Struct({
     .pipe(Schema.withDecodingDefaultKey(Effect.succeed("markdown" as const))),
   timeout: Schema.optionalKey(Timeout).annotate({
     description: `Optional timeout in seconds (maximum: ${MAX_TIMEOUT_SECONDS})`,
+  }),
+  focus: Schema.optionalKey(Schema.Literals(["full", "main"])).annotate({
+    description: "Use main for primary HTML content only, full for the entire page; defaults to main for GitHub HTML Markdown, full otherwise.",
   }),
 })
 
@@ -149,8 +153,9 @@ export const Plugin = {
                 }),
               )
               const content = new TextDecoder().decode(body)
+              const focus = input.focus ?? (input.format === "markdown" && new URL(input.url).hostname === "github.com" ? "main" : "full")
               const output = yield* Effect.try({
-                try: () => convert(content, contentType, input.format),
+                try: () => convert(focus === "main" && contentType.includes("text/html") ? mainContent(content) : content, contentType, input.format),
                 catch: (error) => error,
               })
               const result = {

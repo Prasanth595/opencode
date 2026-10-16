@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "@opencode/ai"
+import { repair } from "./input-repair.js"
 import { emptyInputJsonSchema } from "@opencode/ai/tool"
 import { Tool } from "@opencode/schema/tool"
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/spec"
@@ -63,9 +64,15 @@ export const execute = (tool: Tool.Info<any, any>, input: unknown, context: Tool
 const decodeInput = (tool: Tool.Info<any, any>, value: unknown) =>
   Effect.gen(function* () {
     const result = yield* validateInput(tool.input, value)
-    if (result.issues)
-      return yield* new Tool.Error({ message: formatInputIssues(effectiveName(tool), result.issues, value) })
-    return result.value
+    if (!result.issues) return result.value
+    // Do not coerce valid inputs. Retry only lossless, schema-guided repairs
+    // before returning the original validation error and arguments.
+    const adjusted = repair(value, inputJsonSchema(tool.input))
+    if (adjusted !== value) {
+      const retried = yield* validateInput(tool.input, adjusted)
+      if (!retried.issues) return retried.value
+    }
+    return yield* new Tool.Error({ message: formatInputIssues(effectiveName(tool), result.issues, value) })
   })
 
 const validateInput = (

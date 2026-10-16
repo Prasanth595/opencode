@@ -1,0 +1,121 @@
+rank,kind,line,chars,input_chars,output_chars,category,action
+1,webfetch,41,25842,123,25719,Fetched page / site chrome,Focus main content; retain full-page escape hatch
+2,webfetch,960,20872,172,20700,Fetched page / site chrome,Focus main content; retain full-page escape hatch
+3,Assistant,7276,18170,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+4,shell,6715,16726,346,16380,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+5,Assistant,6573,14005,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+6,webfetch,3135,12778,115,12663,Fetched page / site chrome,Focus main content; retain full-page escape hatch
+7,shell,1761,10181,228,9953,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+8,shell,2722,8017,385,7632,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+9,Assistant,4430,7920,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+10,Assistant,2765,7551,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+11,shell,4293,7051,385,6666,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+12,Assistant,4590,6976,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+13,Assistant,7151,6945,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+14,Assistant,5984,6817,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+15,Assistant,3618,6443,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+16,Assistant,1255,6315,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+17,Assistant,5877,6314,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+18,Assistant,7644,5666,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+19,Assistant,3844,5538,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+20,Assistant,4230,5404,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+21,shell,743,5057,314,4743,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+22,shell,5473,4923,228,4695,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+23,shell,2869,4744,328,4416,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+24,shell,1541,4692,230,4462,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+25,shell,1415,4456,263,4193,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+26,Assistant,2388,4372,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+27,Assistant,4000,4278,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+28,write,5183,4166,4074,92,Tool arguments or responses,Review individually; edits and writes must remain byte-exact
+29,shell,3751,4110,351,3759,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+30,shell,3908,4014,363,3651,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+31,Assistant,5655,3892,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+32,shell,2017,3649,237,3412,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+33,Assistant,6423,3600,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+34,Assistant,2510,3441,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+35,Assistant,5384,3270,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+36,shell,6331,3268,2638,630,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+37,shell,2207,3236,289,2947,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+38,shell,6379,3202,1578,1624,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+39,shell,1681,3146,309,2837,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+40,read,4524,3078,233,2845,File inspection results,Narrow search/read scope; deduplicate exact repeated results
+41,shell,4050,3028,507,2521,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+42,Assistant,7745,2908,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+43,shell,5270,2890,2507,383,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+44,shell,6967,2848,374,2474,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+45,read,7060,2789,154,2635,File inspection results,Narrow search/read scope; deduplicate exact repeated results
+46,shell,2329,2785,282,2503,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+47,Assistant,2588,2724,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+48,shell,5009,2600,369,2231,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+49,write,6179,2586,2515,71,Tool arguments or responses,Review individually; edits and writes must remain byte-exact
+50,shell,4151,2580,307,2273,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+51,Assistant,4119,2542,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+52,shell,4879,2514,285,2229,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+53,edit,6476,2455,2367,88,Tool arguments or responses,Review individually; edits and writes must remain byte-exact
+54,shell,1494,2443,395,2048,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+55,shell,2278,2296,277,2019,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+56,Assistant,5078,2257,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+57,Assistant,5219,2238,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+58,shell,4814,2233,397,1836,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+59,Assistant,5332,2220,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+60,shell,7241,2166,423,1743,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+61,Assistant,3031,2125,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+62,shell,5434,2118,437,1681,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+63,shell,2053,2083,378,1705,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+64,shell,5734,2056,442,1614,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+65,shell,5783,2056,464,1592,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+66,Assistant,6265,2000,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+67,shell,2079,1840,216,1624,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+68,write,5120,1816,1743,73,Tool arguments or responses,Review individually; edits and writes must remain byte-exact
+69,Assistant,2662,1783,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+70,Assistant,5152,1752,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+71,shell,6096,1617,433,1184,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+72,write,6363,1471,1405,66,Tool arguments or responses,Review individually; edits and writes must remain byte-exact
+73,shell,4954,1414,502,912,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+74,Assistant,5586,1385,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+75,shell,3683,1370,403,967,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+76,shell,2456,1365,216,1149,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+77,edit,7535,1355,1267,88,Tool arguments or responses,Review individually; edits and writes must remain byte-exact
+78,Assistant,1738,1332,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+79,shell,7612,1317,866,451,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+80,shell,1516,1307,304,1003,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+81,write,2574,1303,1220,83,Tool arguments or responses,Review individually; edits and writes must remain byte-exact
+82,edit,6510,1303,1215,88,Tool arguments or responses,Review individually; edits and writes must remain byte-exact
+83,shell,1371,1246,402,844,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+84,shell,697,1167,266,901,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+85,edit,4760,1145,981,164,Tool arguments or responses,Review individually; edits and writes must remain byte-exact
+86,Assistant,5294,1136,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+87,write,7552,1126,1071,55,Tool arguments or responses,Review individually; edits and writes must remain byte-exact
+88,Assistant,7014,1078,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+89,shell,2175,1062,239,823,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+90,shell,2689,1004,292,712,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+91,edit,6162,982,818,164,Tool arguments or responses,Review individually; edits and writes must remain byte-exact
+92,read,6134,972,233,739,File inspection results,Narrow search/read scope; deduplicate exact repeated results
+93,Assistant,4991,956,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+94,Assistant,2004,941,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+95,edit,6314,918,830,88,Tool arguments or responses,Review individually; edits and writes must remain byte-exact
+96,shell,4192,890,312,578,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+97,Assistant,7589,883,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+98,shell,5714,870,643,227,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+99,shell,5627,868,323,545,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+100,Assistant,3714,854,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+101,Assistant,6491,839,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+102,shell,2306,832,255,577,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+103,shell,2157,831,371,460,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+104,shell,7717,822,326,496,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+105,grep,7028,808,239,569,File inspection results,Narrow search/read scope; deduplicate exact repeated results
+106,shell,2135,801,382,419,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+107,shell,3061,783,233,550,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+108,Assistant,4940,750,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+109,edit,4787,744,580,164,Tool arguments or responses,Review individually; edits and writes must remain byte-exact
+110,Assistant,27,728,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+111,edit,4743,725,561,164,Tool arguments or responses,Review individually; edits and writes must remain byte-exact
+112,shell,7568,704,517,187,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+113,Assistant,3105,696,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+114,shell,3726,651,591,60,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+115,Assistant,3741,642,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+116,Assistant,4802,610,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+117,Assistant,2045,608,0,0,Assistant reasoning and commentary,Reduce unnecessary investigation loops; harness trimming cannot eliminate generated reasoning
+118,shell,3119,604,322,282,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+119,shell,1351,602,280,322,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines
+120,shell,5199,600,252,348,Command output / repeated inspection,Bound previews; preserve initial context and final diagnostic lines

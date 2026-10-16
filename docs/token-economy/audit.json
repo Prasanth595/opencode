@@ -1,0 +1,43 @@
+{
+  "raw_characters": 413830,
+  "raw_bytes": 415055,
+  "sections": 169,
+  "ranking_length": 120,
+  "by_type": {
+    "Assistant": {
+      "sections": 81,
+      "chars": 167028,
+      "outputs": 0
+    },
+    "edit": {
+      "sections": 12,
+      "chars": 11477,
+      "outputs": 1341
+    },
+    "grep": {
+      "sections": 1,
+      "chars": 808,
+      "outputs": 569
+    },
+    "read": {
+      "sections": 3,
+      "chars": 6839,
+      "outputs": 6219
+    },
+    "shell": {
+      "sections": 63,
+      "chars": 154882,
+      "outputs": 127797
+    },
+    "webfetch": {
+      "sections": 3,
+      "chars": 59492,
+      "outputs": 59082
+    },
+    "write": {
+      "sections": 6,
+      "chars": 12468,
+      "outputs": 440
+    }
+  }
+}

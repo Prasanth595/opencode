@@ -1,6 +1,7 @@
 export * as ToolOutput from "./tool-output.js"
 
 import path from "path"
+import { headTail } from "./tool/preview.js"
 import type { Tool } from "./tool.js"
 import { Context, Duration, Effect, Layer, Schedule } from "effect"
 import { makeGlobalNode, makeLocationNode } from "@opencode/util/effect/app-node"
@@ -88,6 +89,17 @@ const layer = Layer.effect(
       yield* fs.writeFileString(file, text).pipe(Effect.orDie)
       const shown = kept.length > 0 ? `lines 1-${kept.length}` : "0 lines"
       const marker = `[showing ${shown} of ${lines.length}; full output saved to ${file}]`
+      // Pi-inspired dual-end preview: lengthy test/build/web outputs often place the
+      // actionable failure at the end. Keep full output on disk for exact retrieval.
+      const preview = content.length === 1 && content[0]?.type === "text"
+        ? headTail(text, limits.maxLines, limits.maxBytes, file)
+        : undefined
+      if (preview !== undefined)
+        return {
+          ...result,
+          content: [{ type: "text" as const, text: preview }],
+          metadata: { ...result.metadata, truncated: true, outputPath: file },
+        }
       const bounded: Tool.Content[] = []
       let remaining = kept.join("\n").length
       let seenText = false

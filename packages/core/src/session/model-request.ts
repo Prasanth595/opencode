@@ -38,6 +38,8 @@ import { SessionRunnerModel } from "./runner/model.js"
 import { SessionSchema } from "./schema.js"
 import { SessionSystemPrompt } from "./system-prompt.js"
 import { toLLMMessages } from "./runner/to-llm-message.js"
+import { dedupe } from "./runner/dedupe-tool-results.js"
+import { promptCacheKey } from "./runner/cache-key.js"
 import type { SessionMessage } from "./message.js"
 
 const IMAGE_BYTES_TRIGGER = 25 * 1024 * 1024 // 25 MiB
@@ -116,7 +118,7 @@ export const baseTranscript = (input: {
     ]
       .filter((part) => part.length > 0)
       .map(SystemPart.make),
-    messages: toLLMMessages(input.messages, input.model.ref, providerMetadataKey),
+    messages: dedupe(toLLMMessages(input.messages, input.model.ref, providerMetadataKey)),
   }
 }
 
@@ -293,7 +295,7 @@ export const layer = Layer.effect(
           },
         },
         // TODO: Persist cache lineage so nested forks reuse the root session's cache key.
-        promptCacheKey: /^ses_[0-9a-f]{64}$/.test(affinity) ? affinity.slice(4) : affinity,
+        promptCacheKey: promptCacheKey(affinity, kind),
         system: shaped.system,
         messages: boundImages(unsupportedParts(shaped.messages, model.capabilities, model.model.provider)),
         tools: Array.from(hooked, ([name, t]) => ({ ...t, name })),
