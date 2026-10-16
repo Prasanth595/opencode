@@ -26,6 +26,8 @@ import { moveSelection, reconcileSelection } from "./select-controller"
 export interface DialogSelectProps<T> {
   title: string
   titleView?: JSX.Element
+  /** Faint line below the title, under the "new-designs" experiment. Not shown with `searchInTitle`. */
+  description?: string
   placeholder?: string
   footer?: JSX.Element
   emptyView?: JSX.Element
@@ -676,7 +678,12 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
             when={searchInTitle()}
             fallback={
               <>
-                <DialogHeader title={props.title} titleView={props.titleView} onClose={props.onCancel} />
+                <DialogHeader
+                  title={props.title}
+                  titleView={props.titleView}
+                  description={props.description}
+                  onClose={props.onCancel}
+                />
                 <Show when={props.renderFilter !== false}>
                   <box paddingTop={1}>{searchInput()}</box>
                 </Show>
