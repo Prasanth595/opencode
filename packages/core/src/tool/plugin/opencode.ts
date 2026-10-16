@@ -10,6 +10,7 @@ import { Effect, Schema } from "effect"
 import { FileAccess } from "../../file-access.js"
 import { Git } from "../../git.js"
 import { Permission } from "../../permission.js"
+import { SessionMove } from "../../session/move.js"
 import { Worktree } from "../../worktree.js"
 
 export const RenameInput = Schema.Struct({
@@ -93,7 +94,7 @@ export const Plugin = {
       Effect.sync(() => {
         event.system.push(
           SystemPart.make(
-            "When you create a worktree outside the current working directory and intend to use it as your primary working directory, consider using `execute` to call `tools.opencode.session_move` and make the worktree the session's working directory.",
+            "When you create a worktree outside the current working directory and intend to use it as your primary working directory, consider using `execute` to call `tools.opencode.session_move` and make the worktree the session's working directory. Call it once the command that creates the worktree has finished, not in parallel with it.",
           ),
         )
       })
@@ -130,7 +131,7 @@ export const Plugin = {
         draft.add({
           name: "session_move",
           description:
-            "Move a session to another directory, or omit sessionID to move the current session. The current session moves at the next safe boundary; do not run destination-dependent tools in the same execute call.",
+            "Move a session to another directory, or omit sessionID to move the current session. The directory must already exist. The current session moves at the next safe boundary; do not run destination-dependent tools in the same execute call.",
           input: MoveInput,
           output: MoveOutput,
           options: { namespace: "opencode", codemode: true, pinned: true },
@@ -147,9 +148,7 @@ export const Plugin = {
                 content: `Moved session ${sessionID} to ${input.directory}.`,
               }
             }).pipe(
-              Effect.mapError(
-                (error) => new ToolFailure({ message: `Unable to move session to ${input.directory}`, error }),
-              ),
+              Effect.mapError((error) => new ToolFailure({ message: moveFailure(input.directory, error), error })),
             ),
         })
         draft.add({
@@ -286,6 +285,16 @@ export const Plugin = {
 }
 
 // Worktree errors carry no model-facing message, and Git's own text suggests forcing removal.
+function moveFailure(directory: string, error: unknown) {
+  if (error instanceof SessionMove.DestinationNotFoundError)
+    return `Unable to move session to ${directory}: the directory does not exist. Create it first, then call session_move again.`
+  if (error instanceof SessionMove.DestinationNotDirectoryError)
+    return `Unable to move session to ${directory}: it is not a directory.`
+  if (error instanceof SessionMove.DestinationUnavailableError)
+    return `Unable to move session to ${directory}: the directory is unavailable.`
+  return `Unable to move session to ${directory}.`
+}
+
 function removeFailure(directory: string, error: unknown) {
   if (error instanceof Worktree.DirectoryUnavailableError)
     return `Unable to remove worktree ${directory}: the directory does not exist or is not a directory.`

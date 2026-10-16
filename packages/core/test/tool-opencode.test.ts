@@ -144,6 +144,45 @@ it.effect("groups available models by provider with paging", () =>
   }),
 )
 
+it.effect("says why session_move failed", () =>
+  Effect.gen(function* () {
+    const plugins = yield* Plugin.Service
+    const sessions = yield* Session.Service
+    const location = yield* Location.Service
+    yield* OpenCodeTools.Plugin.effect(yield* PluginHost.make(plugins))
+    const session = yield* sessions.create({ location: Location.Ref.make({ directory: location.directory }) })
+    const registry = yield* Tool.Service
+    const move = (directory: string) =>
+      executeTool(registry, {
+        sessionID: session.id,
+        ...toolIdentity,
+        call: {
+          type: "tool-call",
+          id: `call-move-${directory}`,
+          name: "execute",
+          input: { code: `return await tools.opencode.session_move(${JSON.stringify({ directory })})` },
+        },
+      })
+
+    const missing = path.join(location.directory, "not-created-yet")
+    expect(yield* move(missing)).toMatchObject({
+      content: [
+        {
+          type: "text",
+          text: `Unable to move session to ${missing}: the directory does not exist. Create it first, then call session_move again.`,
+        },
+      ],
+      metadata: { error: true },
+    })
+
+    const file = path.join(location.directory, "notes.txt")
+    yield* Effect.promise(() => fs.writeFile(file, "notes"))
+    expect(yield* move(file)).toMatchObject({
+      content: [{ type: "text", text: `Unable to move session to ${file}: it is not a directory.` }],
+    })
+  }),
+)
+
 const approvals = { assertions: [] as Permission.AssertInput[], denyEdit: false }
 const worktreeIt = testEffect(
   makePluginTestLayer(
