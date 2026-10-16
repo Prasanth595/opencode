@@ -31,7 +31,11 @@ export function SessionErrorFallback(props: { error: unknown; sessionID?: string
       fallback={<ServerUnavailablePanel reason="incompatible" onClose={props.sessionID ? closeSession : undefined} />}
     >
       <Show
-        when={isCurrentSessionNotFoundError(props.error, props.sessionID)}
+        when={
+          props.sessionID &&
+          (isSessionNotFoundError(props.error, props.sessionID) ||
+            isLocalSessionNotFoundError(props.error, props.sessionID))
+        }
         fallback={<ErrorPage error={props.error} />}
       >
         <div class="flex-1 min-h-0 overflow-hidden">
@@ -68,10 +72,4 @@ export function SessionErrorFallback(props: { error: unknown; sessionID?: string
       </Show>
     </Show>
   )
-}
-
-function isCurrentSessionNotFoundError(error: unknown, sessionID: string | undefined) {
-  if (!sessionID) return false
-
-  return isSessionNotFoundError(error, sessionID) || isLocalSessionNotFoundError(error, sessionID)
 }

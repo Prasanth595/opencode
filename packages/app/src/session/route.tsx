@@ -127,6 +127,7 @@ function ResolvedTargetSessionRoute() {
   )
 
   const directory = createMemo(() => current()?.location.directory)
+
   // Only a failed health check: a version mismatch has its own panel, and a rejected credential is not an outage.
   const unreachable = () => {
     const health = server.health
