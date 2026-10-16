@@ -78,10 +78,43 @@ describe("normalizeProviderList", () => {
     expect(result.all.get("openai")?.models["gpt-5"]).toMatchObject({
       id: "gpt-5",
       providerID: "openai",
-      capabilities: { toolcall: true, attachment: true },
+      capabilities: { toolcall: true, attachment: true, reasoning: true },
       cost: { input: 1, output: 2 },
       variants: { high: {} },
     })
+  })
+
+  test("derives reasoning support from usable variants or a reasoning field", () => {
+    const makeModel = (id: string, variants: Array<{ id: string }>, compatibility?: { reasoningField: string }) => ({
+      id,
+      modelID: id,
+      providerID: "groq",
+      name: id,
+      capabilities: { tools: true, input: ["text"], output: ["text"] },
+      ...(compatibility ? { compatibility } : {}),
+      variants,
+      time: { released: 1 },
+      cost: [],
+      status: "active",
+      enabled: true,
+      limit: { context: 128_000, output: 8_192 },
+    })
+    const result = normalizeProviderList(
+      [{ id: "groq", name: "Groq" }] as ProviderListOutput["data"],
+      [
+        makeModel("no-variants", []),
+        makeModel("disabled-only", [{ id: "none" }]),
+        makeModel("reasoning-effort", [{ id: "none" }, { id: "high" }]),
+        makeModel("thinking-toggle", [{ id: "thinking" }]),
+        makeModel("reasoning-field", [], { reasoningField: "reasoning_content" }),
+      ] as ModelListOutput["data"],
+    )
+    const models = result.all.get("groq")?.models
+    expect(models?.["no-variants"]?.capabilities.reasoning).toBe(false)
+    expect(models?.["disabled-only"]?.capabilities.reasoning).toBe(false)
+    expect(models?.["reasoning-effort"]?.capabilities.reasoning).toBe(true)
+    expect(models?.["thinking-toggle"]?.capabilities.reasoning).toBe(true)
+    expect(models?.["reasoning-field"]?.capabilities.reasoning).toBe(true)
   })
 })
 
