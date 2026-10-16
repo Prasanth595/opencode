@@ -1064,21 +1064,42 @@ function App() {
                     await new Promise((resolve) => setTimeout(resolve, 2000))
                   }
                 }
-                const waitForDecision = () =>
-                  new Promise<"now" | "idle" | "cancel">((resolve, reject) => {
-                    const timer = setTimeout(() => reject(new Error("Restart request expired with no approver")), 120000)
-                    const dispose = event.on("server.restart.resolved", (evt) => {
-                      clearTimeout(timer)
-                      dispose()
-                      resolve(evt.data.decision)
-                    })
+                const watchDecision = () => {
+                  let armed = false
+                  let pending: "now" | "idle" | "cancel" | undefined
+                  let settle: ((decision: "now" | "idle" | "cancel") => void) | undefined
+                  const dispose = event.on("server.restart.resolved", (evt) => {
+                    if (!armed) return
+                    pending ??= evt.data.decision
+                    settle?.(evt.data.decision)
                   })
+                  return {
+                    arm() {
+                      armed = true
+                    },
+                    wait() {
+                      return new Promise<"now" | "idle" | "cancel">((resolve, reject) => {
+                        if (pending !== undefined) return resolve(pending)
+                        const timer = setTimeout(
+                          () => reject(new Error("Restart request expired with no approver")),
+                          120000,
+                        )
+                        settle = (decision) => {
+                          clearTimeout(timer)
+                          resolve(decision)
+                        }
+                      })
+                    },
+                    dispose,
+                  }
+                }
                 const active = await client.api.session.active().catch(() => undefined)
                 if (!active || Object.keys(active).length === 0) {
                   await restartNow()
                   return
                 }
                 let requested
+                const watch = watchDecision()
                 try {
                   requested = await client.api.server.restart.request()
                 } catch {
@@ -1090,6 +1111,7 @@ function App() {
                   await restartNow()
                   return
                 }
+                watch.arm()
                 if (Object.keys(requested.active).length === 0) {
                   await restartNow()
                   return
@@ -1099,10 +1121,15 @@ function App() {
                   message: `Waiting for restart approval (${Object.keys(requested.active).length} running)…`,
                   duration: 120000,
                 })
-                const winner = await waitForDecision().catch(async () => {
+                let winner: "now" | "idle" | "cancel"
+                try {
+                  winner = await watch.wait()
+                } catch {
                   await client.api.server.restart.resolve({ decision: "cancel" }).catch(() => undefined)
-                  return "cancel" as const
-                })
+                  winner = "cancel"
+                } finally {
+                  watch.dispose()
+                }
                 if (winner === "now") await restartNow()
                 else if (winner === "idle") {
                   toast.show({ variant: "info", message: "Restart queued; waiting for sessions to finish…" })

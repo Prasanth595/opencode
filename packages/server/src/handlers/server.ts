@@ -46,12 +46,14 @@ export const ServerHandler = HttpApiBuilder.group(Api, "server.server", (handler
       .handle(
         "server.restart.resolve",
         Effect.fn(function* (ctx) {
-          const winner = yield* intent.resolve(ctx.payload.decision)
-          if (winner === undefined) {
+          const settled = yield* intent.resolve(ctx.payload.decision)
+          if (settled === undefined) {
             return yield* new InvalidRequestError({ message: "No pending service restart request" })
           }
-          yield* bus.publish(ServiceEvent.Resolved, { decision: winner }, { global: true })
-          return { decision: winner }
+          if (settled.fresh) {
+            yield* bus.publish(ServiceEvent.Resolved, { decision: settled.winner }, { global: true })
+          }
+          return { decision: settled.winner }
         }),
       )
       .handle(

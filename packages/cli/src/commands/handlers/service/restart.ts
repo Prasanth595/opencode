@@ -1,8 +1,8 @@
 import { select } from "@clack/prompts"
-import { EOL } from "os"
+import { EOL } from "node:os"
 import { Effect } from "effect"
 import { Service } from "@opencode/client/effect/service"
-import { OpenCode, type OpenCodeClient } from "@opencode/client/promise"
+import { OpenCode, isInvalidRequestError, type OpenCodeClient } from "@opencode/client/promise"
 import { Commands } from "../../commands"
 import { Runtime } from "../../../framework/runtime"
 import { ServiceConfig } from "../../../services/service-config"
@@ -39,16 +39,18 @@ export type RestartApprovalDecision = "now" | "idle" | "cancel"
 export type RestartApprovalDeps = {
   readonly force: boolean
   readonly interactive: boolean
-  readonly ask: (active: ReadonlyArray<string>) => Effect.Effect<RestartApprovalDecision, unknown>
+  readonly ask: (active: ReadonlyArray<string>) => Effect.Effect<RestartApprovalDecision, unknown, never>
   readonly resolveTimeoutMs: number
   readonly idlePollMs: number
   readonly onWaiting: (active: ReadonlyArray<string>) => void
 }
 
-// Approval gate for restarting a managed server with running sessions. Resolves to the winning
-// decision ("now" when nothing needs approval); "cancel" and approval timeouts fail instead of
-// restarting. The server counts the first resolve as the winner, so a local pick is adopted
-// from the resolve response rather than trusted blindly.
+// Approval gate for restarting a managed server with running sessions. The event
+// subscription starts before the intent request so a resolution cannot slip
+// through between them; only decisions recorded after the request count.
+// Resolves to the winning decision ("now" when nothing needs approval); "cancel"
+// and approval timeouts fail instead of restarting. A local pick is adopted from
+// the resolve response, falling back to the broadcast winner on a lost race.
 export const resolveRestartApproval = Effect.fn("cli.service.restart.approval")(function* (
   client: OpenCodeClient,
   deps: RestartApprovalDeps,
@@ -60,50 +62,75 @@ export const resolveRestartApproval = Effect.fn("cli.service.restart.approval")(
   const ids = Object.keys(active)
   if (ids.length === 0) return "now"
   if (deps.force) return "now"
-  yield* Effect.tryPromise({
-    try: () => client.server.restart.request(),
-    catch: (cause) => new Error("Could not reach server to request restart approval", { cause }),
+  const watcher = watchResolved(client)
+  const approval = Effect.gen(function* () {
+    yield* Effect.tryPromise({
+      try: () => client.server.restart.request(),
+      catch: (cause) => new Error("Could not reach server to request restart approval", { cause }),
+    })
+    watcher.arm()
+    const winner = deps.interactive
+      ? yield* resolveInteractive(client, deps, watcher, ids)
+      : yield* resolveRemote(client, deps, watcher)
+    if (winner === "cancel") return yield* Effect.fail(restartAborted(ids, deps.interactive))
+    if (winner === "idle") yield* waitForIdle(client, deps)
+    return winner
   })
-  const winner = deps.interactive ? yield* resolveInteractive(client, deps, ids) : yield* resolveRemote(client, deps)
-  if (winner === "cancel") return yield* Effect.fail(restartAborted(ids))
-  if (winner === "idle") yield* waitForIdle(client, deps, ids)
-  return winner
+  return yield* approval.pipe(Effect.ensuring(Effect.sync(() => watcher.dispose())))
 })
 
 const resolveInteractive = Effect.fn("cli.service.restart.approval.interactive")(function* (
   client: OpenCodeClient,
   deps: RestartApprovalDeps,
+  watcher: ResolvedWatcher,
   active: ReadonlyArray<string>,
 ) {
   const picked = yield* deps.ask(active)
-  const resolved = yield* Effect.tryPromise({
+  return yield* Effect.tryPromise({
+    // Pass the rejection through unchanged so catchIf can read its `_tag`.
     try: () => client.server.restart.resolve({ decision: picked }),
-    catch: (cause) => new Error("Could not reach server to resolve restart approval", { cause }),
-  })
-  return resolved.decision
+    catch: (cause) => cause,
+  }).pipe(
+    Effect.map((resolved) => resolved.decision),
+    // Another surface won the race; adopt the broadcast winner instead.
+    Effect.catchIf(isInvalidRequestError, () => awaitWinner(client, watcher, deps)),
+    Effect.mapError((cause) => new Error("Could not reach server to resolve restart approval", { cause })),
+  )
 })
 
 const resolveRemote = Effect.fn("cli.service.restart.approval.remote")(function* (
   client: OpenCodeClient,
   deps: RestartApprovalDeps,
+  watcher: ResolvedWatcher,
 ) {
-  return yield* Effect.tryPromise({
-    try: () => waitForResolvedEvent(client, deps.resolveTimeoutMs),
-    catch: (cause) =>
-      cause instanceof RestartApprovalTimeout
-        ? new Error(
-            "Timed out waiting for restart approval; no connected client approved the restart. Re-run with --force to restart immediately.",
-          )
-        : new Error("Lost connection to the server while waiting for restart approval", { cause }),
-  })
+  return yield* awaitWinner(client, watcher, deps)
 })
 
+const awaitWinner = Effect.fn("cli.service.restart.approval.wait")(function* (
+  client: OpenCodeClient,
+  watcher: ResolvedWatcher,
+  deps: RestartApprovalDeps,
+) {
+  return yield* Effect.tryPromise({
+    try: () => watcher.wait(deps.resolveTimeoutMs),
+    catch: (cause) =>
+      cause instanceof RestartApprovalTimeout
+        ? new Error("Timed out waiting for restart approval with sessions still running.")
+        : new Error("Lost connection to the server while waiting for restart approval", { cause }),
+  }).pipe(
+    Effect.tapError(() =>
+      // Release TUIs stuck on our intent; a settled intent replays its winner.
+      Effect.tryPromise(() => client.server.restart.resolve({ decision: "cancel" })).pipe(Effect.ignore),
+    ),
+  )
+})
+
+// The requesting session blocks on this command, so it can never go idle while
+// watched. Exclude it from the drain set; approval itself still required it.
 const waitForIdle = Effect.fn("cli.service.restart.approval.idle")(function* (
   client: OpenCodeClient,
   deps: RestartApprovalDeps,
-  initial: ReadonlyArray<string>,
 ) {
-  deps.onWaiting(initial)
   while (true) {
     yield* Effect.sleep(deps.idlePollMs)
     const active = yield* Effect.tryPromise({
@@ -111,16 +138,18 @@ const waitForIdle = Effect.fn("cli.service.restart.approval.idle")(function* (
       catch: (cause) =>
         new Error("Lost connection to the server while waiting for sessions to finish", { cause }),
     })
-    const ids = Object.keys(active)
+    const ids = Object.keys(active).filter((id) => id !== process.env.OPENCODE_SESSION_ID)
     if (ids.length === 0) return
     deps.onWaiting(ids)
   }
 })
 
-function restartAborted(active: ReadonlyArray<string>) {
-  return new Error(
-    `Restart cancelled with ${active.length} active session(s); re-run with --force to restart immediately.`,
-  )
+function restartAborted(active: ReadonlyArray<string>, interactive: boolean) {
+  return interactive
+    ? new Error(
+        `Restart cancelled with ${active.length} active session(s); re-run with --force to restart immediately.`,
+      )
+    : new Error("Restart cancelled with active session(s) still running.")
 }
 
 class RestartApprovalTimeout extends Error {
@@ -130,31 +159,58 @@ class RestartApprovalTimeout extends Error {
   }
 }
 
-function waitForResolvedEvent(client: OpenCodeClient, timeoutMs: number): Promise<RestartApprovalDecision> {
-  return (async () => {
-    const controller = new AbortController()
-    let timedOut = false
-    const timer = setTimeout(() => {
-      timedOut = true
-      controller.abort()
-    }, timeoutMs)
+export type ResolvedWatcher = {
+  readonly arm: () => void
+  readonly wait: (timeoutMs: number) => Promise<RestartApprovalDecision>
+  readonly dispose: () => void
+}
+
+export function watchResolved(client: OpenCodeClient): ResolvedWatcher {
+  const controller = new AbortController()
+  let armed = false
+  let pending: RestartApprovalDecision | undefined
+  let settle: ((decision: RestartApprovalDecision) => void) | undefined
+  let failure: unknown | undefined
+  const fail = (cause: unknown) => {
+    failure ??= cause
+    settle = undefined
+  }
+  void (async () => {
     try {
       const stream = client.event.subscribe({ signal: controller.signal })[Symbol.asyncIterator]()
-      while (true) {
+      for (;;) {
         const next = await stream.next()
         if (next.done) break
-        if (next.value.type === "server.restart.resolved") return next.value.data.decision
+        if (armed && next.value.type === "server.restart.resolved") {
+          const decision = next.value.data.decision
+          pending ??= decision
+          settle?.(decision)
+        }
       }
-      if (timedOut) throw new RestartApprovalTimeout()
-      throw new Error("Event stream disconnected while waiting for restart approval")
+      fail(new Error("Event stream disconnected while waiting for restart approval"))
     } catch (cause) {
-      if (timedOut) throw new RestartApprovalTimeout()
-      throw cause
-    } finally {
-      clearTimeout(timer)
-      controller.abort()
+      fail(cause)
     }
   })()
+  return {
+    arm() {
+      armed = true
+    },
+    wait(timeoutMs: number) {
+      return new Promise<RestartApprovalDecision>((resolve, reject) => {
+        if (pending !== undefined) return resolve(pending)
+        if (failure !== undefined) return reject(failure)
+        const timer = setTimeout(() => reject(new RestartApprovalTimeout()), timeoutMs)
+        settle = (decision) => {
+          clearTimeout(timer)
+          resolve(decision)
+        }
+      })
+    },
+    dispose() {
+      controller.abort()
+    },
+  }
 }
 
 const askRestartDecision = (active: ReadonlyArray<string>) =>

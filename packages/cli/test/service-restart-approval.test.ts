@@ -14,8 +14,10 @@ type StubState = {
   activeFails: boolean
   requests: number
   resolves: Array<string>
+  resolveFirstFails: boolean
   winner: RestartApprovalDecision | undefined
   sseConnections: number
+  order: Array<string>
 }
 
 function startStub(initial: Partial<StubState> = {}) {
@@ -25,25 +27,27 @@ function startStub(initial: Partial<StubState> = {}) {
     activeFails: false,
     requests: 0,
     resolves: [],
+    resolveFirstFails: false,
     winner: undefined,
     sseConnections: 0,
+    order: [],
     ...initial,
   }
   const controllers = new Set<ReadableStreamDefaultController<Uint8Array>>()
-  const broadcast = (event: unknown) => {
-    const chunk = new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`)
-    for (const controller of controllers) {
-      try {
-        controller.enqueue(chunk)
-      } catch {
-        controllers.delete(controller)
-      }
+  const send = (controller: ReadableStreamDefaultController<Uint8Array>, event: unknown) => {
+    try {
+      controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`))
+    } catch {
+      controllers.delete(controller)
     }
+  }
+  const broadcast = (event: unknown) => {
+    for (const controller of [...controllers]) send(controller, event)
   }
   const resolve = (decision: RestartApprovalDecision) => {
     if (state.winner === undefined) {
       state.winner = decision
-      broadcast({ type: "server.restart.resolved", data: { decision: state.winner } })
+      broadcast({ id: "evt_resolved", type: "server.restart.resolved", created: 1, data: { decision } })
     }
     return { decision: state.winner }
   }
@@ -61,18 +65,24 @@ function startStub(initial: Partial<StubState> = {}) {
       }
       if (request.method === "POST" && url.pathname === "/api/server/restart/request") {
         state.requests += 1
+        state.order.push("request")
         return Response.json({ active: Object.keys(state.active) })
       }
       if (request.method === "POST" && url.pathname === "/api/server/restart/resolve") {
         const body = (await request.json()) as { decision: RestartApprovalDecision }
         state.resolves.push(body.decision)
+        if (state.resolveFirstFails && state.resolves.length === 1) {
+          return Response.json({ _tag: "InvalidRequestError", message: "No pending service restart request" }, { status: 400 })
+        }
         return Response.json(resolve(body.decision))
       }
       if (request.method === "GET" && url.pathname === "/api/event") {
         const stream = new ReadableStream<Uint8Array>({
           start: (controller) => {
             state.sseConnections += 1
+            state.order.push("sse")
             controllers.add(controller)
+            send(controller, { id: "evt_connected", type: "server.connected", created: 0, data: {} })
           },
           cancel: (controller) => {
             controllers.delete(controller)
@@ -144,11 +154,26 @@ test("active sessions with --force restart without requesting approval", async (
   }
 })
 
+test("the event subscription connects before the intent request", async () => {
+  const stub = startStub({ active: { ses_1: { type: "running" } } })
+  try {
+    const pending = run(stub.client, deps({ resolveTimeoutMs: 300 }))
+    await pending.then(
+      () => undefined,
+      () => undefined,
+    )
+    expect(stub.state.order[0]).toBe("sse")
+    expect(stub.state.order).toContain("request")
+  } finally {
+    await stub.stop()
+  }
+})
+
 test("non-TTY waits for a TUI decision and obeys the winner", async () => {
   const stub = startStub({ active: { ses_1: { type: "running" } } })
   try {
     const pending = run(stub.client, deps())
-    await until(() => stub.state.sseConnections > 0, "CLI did not subscribe for approval")
+    await until(() => stub.state.requests > 0, "CLI did not request approval")
     await tuiResolve(stub.url, "now")
     expect(await pending).toBe("now")
     expect(stub.state.requests).toBe(1)
@@ -159,32 +184,35 @@ test("non-TTY waits for a TUI decision and obeys the winner", async () => {
   }
 })
 
-test("non-TTY timeout aborts and names --force", async () => {
+test("non-TTY timeout aborts without naming --force and releases TUIs", async () => {
   const stub = startStub({ active: { ses_1: { type: "running" } } })
   try {
     const error = await run(stub.client, deps({ resolveTimeoutMs: 200 })).then(
       () => undefined,
       (cause: Error) => cause,
     )
-    expect(error?.message).toContain("--force")
+    expect(error?.message).toContain("Timed out")
+    expect(error?.message).not.toContain("--force")
     expect(stub.state.requests).toBe(1)
-    expect(stub.state.resolves).toEqual([])
+    // The timeout posts a cancel so connected TUIs dismiss their dialogs.
+    expect(stub.state.resolves).toEqual(["cancel"])
   } finally {
     await stub.stop()
   }
 })
 
-test("a TUI cancel aborts the restart", async () => {
+test("a TUI cancel aborts the restart without naming --force", async () => {
   const stub = startStub({ active: { ses_1: { type: "running" } } })
   try {
     const pending = run(stub.client, deps())
-    await until(() => stub.state.sseConnections > 0, "CLI did not subscribe for approval")
+    await until(() => stub.state.requests > 0, "CLI did not request approval")
     await tuiResolve(stub.url, "cancel")
     const error = await pending.then(
       () => undefined,
       (cause: Error) => cause,
     )
-    expect(error?.message).toContain("--force")
+    expect(error?.message).toContain("still running")
+    expect(error?.message).not.toContain("--force")
   } finally {
     await stub.stop()
   }
@@ -198,7 +226,7 @@ test("an idle winner waits until sessions finish", async () => {
       stub.client,
       deps({ onWaiting: (active) => waited.push(active) }),
     )
-    await until(() => stub.state.sseConnections > 0, "CLI did not subscribe for approval")
+    await until(() => stub.state.requests > 0, "CLI did not request approval")
     await tuiResolve(stub.url, "idle")
     expect(await pending).toBe("idle")
     expect(waited.length).toBeGreaterThan(0)
@@ -207,11 +235,29 @@ test("an idle winner waits until sessions finish", async () => {
   }
 })
 
+test("the idle wait excludes the requesting session itself", async () => {
+  const previous = process.env.OPENCODE_SESSION_ID
+  process.env.OPENCODE_SESSION_ID = "ses_1"
+  const stub = startStub({ active: { ses_1: { type: "running" } } })
+  try {
+    const pending = run(stub.client, deps())
+    await until(() => stub.state.requests > 0, "CLI did not request approval")
+    await tuiResolve(stub.url, "idle")
+    expect(await pending).toBe("idle")
+    // One check plus one drain poll; without exclusion this would never settle.
+    expect(stub.state.activeCalls).toBeLessThanOrEqual(2)
+  } finally {
+    if (previous === undefined) delete process.env.OPENCODE_SESSION_ID
+    else process.env.OPENCODE_SESSION_ID = previous
+    await stub.stop()
+  }
+})
+
 test("an idle wait aborts when the server connection drops", async () => {
   const stub = startStub({ active: { ses_1: { type: "running" } } })
   try {
     const pending = run(stub.client, deps())
-    await until(() => stub.state.sseConnections > 0, "CLI did not subscribe for approval")
+    await until(() => stub.state.requests > 0, "CLI did not request approval")
     await tuiResolve(stub.url, "idle")
     await until(() => stub.state.activeCalls > 1, "CLI did not poll for idle")
     stub.state.activeFails = true
@@ -236,6 +282,22 @@ test("a TTY pick adopts the first-wins winner", async () => {
     )
     expect(error?.message).toContain("--force")
     expect(stub.state.resolves).toEqual(["cancel", "now"])
+  } finally {
+    await stub.stop()
+  }
+})
+
+test("a lost resolve race falls back to the broadcast winner", async () => {
+  const stub = startStub({
+    active: { ses_1: { type: "running" } },
+    drainAfterActiveCalls: 4,
+    resolveFirstFails: true,
+  })
+  try {
+    const pending = run(stub.client, deps({ interactive: true }))
+    await until(() => stub.state.requests > 0, "CLI did not request approval")
+    await tuiResolve(stub.url, "idle")
+    expect(await pending).toBe("idle")
   } finally {
     await stub.stop()
   }
