@@ -42,6 +42,25 @@ describe("resolveOpenTarget", () => {
     expect(resolveOpenTarget("../sibling.md", base)).toBe(path.resolve(base, "../sibling.md"))
   })
 
+  test("decodes percent-escaped relative hrefs and drops fragments", () => {
+    const base = path.resolve("/repo")
+    const notes = path.join(base, "plan notes.md")
+    expect(resolveOpenTarget("plan%20notes.md", base)).toBe(notes)
+    expect(resolveOpenTarget("./plan%20notes.md", base)).toBe(notes)
+    expect(resolveOpenTarget("plan%20notes.md#section", base)).toBe(notes)
+    expect(resolveOpenTarget("plan notes.md", base)).toBe(notes)
+    // Literal % / # in filenames stay reachable through their encoded forms.
+    expect(resolveOpenTarget("foo%2520bar.md", base)).toBe(path.join(base, "foo%20bar.md"))
+    expect(resolveOpenTarget("foo%23bar.md", base)).toBe(path.join(base, "foo#bar.md"))
+  })
+
+  test("file URLs with fragments resolve to the same path as the bare file URL", () => {
+    const file = path.join(path.resolve("/tmp"), "plan notes.md")
+    const href = pathToFileURL(file).href
+    expect(resolveOpenTarget(`${href}#section`)).toBe(file)
+    expect(resolveOpenTarget(href)).toBe(file)
+  })
+
   test("rejects remote file URLs, anchors, and unsafe schemes", () => {
     expect(resolveOpenTarget("file://example.com/share/index.html")).toBeUndefined()
     expect(resolveOpenTarget("javascript:alert(1)")).toBeUndefined()
