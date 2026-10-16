@@ -82,6 +82,10 @@ const BooleanFromString = Schema.Literals(["true", "false"]).pipe(
   }),
 )
 
+// Kept so existing imports of SessionsCursor from Protocol keep working.
+export const SessionsCursor = Session.ListCursor
+export type SessionsCursor = Session.ListCursor
+
 export const SessionsQuery = Schema.Struct({
   limit: Schema.NumberFromString.pipe(Schema.decodeTo(PositiveInt), Schema.optional).annotate({
     description: "Maximum number of sessions to return. Defaults to the newest 50 sessions.",
