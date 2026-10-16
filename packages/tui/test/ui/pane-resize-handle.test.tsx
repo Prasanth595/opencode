@@ -118,6 +118,10 @@ for (const mode of ["dark", "light"] as const) {
       expect(resize.size()).toBe(31)
       expect(handle.x).toBe(30)
       expect(line.x).toBe(30)
+      // A small step lands the pointer on the moved handle itself; the grip still keeps its row.
+      await app.mockMouse.moveTo(31, 1)
+      await app.renderOnce()
+      expect(grips()).toEqual([[31, 2]])
       expect(commits).toEqual([])
 
       // Clamping leaves the pointer outside the handle while the parent keeps dragging.

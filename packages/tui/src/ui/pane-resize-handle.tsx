@@ -1,6 +1,6 @@
 import type { BoxRenderable, MouseEvent } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
-import { createEffect, createSignal, on, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, on, onCleanup, Show } from "solid-js"
 import { useTheme } from "../context/theme"
 import type { createPaneResize } from "./pane-resize"
 
@@ -11,10 +11,13 @@ export function PaneResizeHandle(props: {
 }) {
   const theme = useTheme()
   const renderer = useRenderer()
-  const active = () => props.resize.hovered() || props.resize.resizing()
+  const active = createMemo(() => props.resize.hovered() || props.resize.resizing())
   const [row, setRow] = createSignal(0)
   let handle: BoxRenderable | undefined
-  const follow = (event: MouseEvent) => setRow(event.y - (handle?.y ?? 0))
+  // The grip follows the pointer while hovering and keeps the row a drag started on.
+  const follow = (event: MouseEvent) => {
+    if (!props.resize.resizing()) setRow(event.y - (handle?.y ?? 0))
+  }
 
   // Show the terminal's resize pointer while hovering or dragging, as GUI split panes do.
   createEffect(on(active, (value) => renderer.setMousePointer(value ? "ew-resize" : "default"), { defer: true }))
