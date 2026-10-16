@@ -1,8 +1,10 @@
 import { createMemo, createSignal } from "solid-js"
 import { useConfig, useNewDesigns } from "../config"
 import { useThemes } from "../context/theme"
-import { DialogSelect } from "../ui/dialog-select"
+import { useDialog, type DialogContext } from "../ui/dialog"
+import { DialogSelect, DialogSelectChoice } from "../ui/dialog-select"
 import { useToast } from "../ui/toast"
+import { DialogThemeList } from "./dialog-theme-list"
 
 type Setting = {
   title: string
@@ -16,6 +18,8 @@ type Setting = {
   max?: number
   format?: (value: unknown) => string
   keywords?: readonly string[]
+  /** Under the "new-designs" experiment, enter opens this picker instead of cycling. ←/→ still cycle. */
+  open?: (dialog: DialogContext) => void
 }
 
 export const settings: Setting[] = [
@@ -25,6 +29,10 @@ export const settings: Setting[] = [
     path: ["theme", "name"],
     default: "opencode",
     keywords: ["color scheme", "colors"],
+    open: (dialog) =>
+      dialog.replace(() => (
+        <DialogThemeList onClose={() => dialog.replace(() => <DialogConfig current="theme.name" />)} />
+      )),
   },
   {
     title: "Color mode",
@@ -333,6 +341,7 @@ export function settingID(setting: Setting) {
 export function DialogConfig(props: { current?: string }) {
   const config = useConfig()
   const newDesigns = useNewDesigns()
+  const dialog = useDialog()
   const toast = useToast()
   const themes = useThemes()
   const current = Math.max(
@@ -365,7 +374,12 @@ export function DialogConfig(props: { current?: string }) {
       title: setting.title,
       category: setting.category,
       searchText: setting.keywords?.join(" "),
-      footer: display(setting),
+      footer: newDesigns() ? (
+        <DialogSelectChoice value={display(setting)} active={selected() === index} open={setting.open !== undefined} />
+      ) : (
+        display(setting)
+      ),
+      footerOverhang: newDesigns() ? 2 : undefined,
       value: index,
     })),
   )
@@ -401,7 +415,11 @@ export function DialogConfig(props: { current?: string }) {
       current={current}
       filterThreshold={0.7}
       onMove={(option) => setSelected(option.value)}
-      onSelect={(option) => void change(1, option.value)}
+      onSelect={(option) => {
+        const open = settings[option.value].open
+        if (newDesigns() && open) return open(dialog)
+        void change(1, option.value)
+      }}
       footerHints={newDesigns() ? [] : [{ title: "change", label: "←/→" }]}
       bindings={[
         {
