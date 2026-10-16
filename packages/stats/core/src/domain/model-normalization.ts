@@ -1,4 +1,5 @@
 export const MODEL_AUTHOR_RULES = [
+  { match: "beam", author: "reflection" },
   { match: "claude", author: "anthropic" },
   { match: "gemini", author: "google" },
   { match: "deepseek", author: "deepseek" },
