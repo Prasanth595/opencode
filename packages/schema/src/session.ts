@@ -66,11 +66,13 @@ export const ListAnchor = Schema.Struct({
 }).annotate({ identifier: "Session.ListAnchor" })
 export interface ListAnchor extends Schema.Schema.Type<typeof ListAnchor> {}
 
+// These fields are also the session.list HTTP query parameters. Raw Schema.optional keeps that
+// endpoint's OpenAPI parameters unchanged.
 const ListFilterFields = {
-  order: Schema.Literals(["asc", "desc"]).pipe(optional).annotate({
+  order: Schema.Literals(["asc", "desc"]).pipe(Schema.optional).annotate({
     description: "Session order for the first page. Use desc for newest first or asc for oldest first.",
   }),
-  search: Schema.String.pipe(optional),
+  search: Schema.String.pipe(Schema.optional),
   parentID: Schema.Union([
     ID,
     Schema.Null.pipe(
@@ -80,21 +82,26 @@ const ListFilterFields = {
       }),
     ),
   ])
-    .pipe(optional)
-    .annotate({ description: "Filter by parent session. Use null to return only root sessions." }),
+    .annotate({ description: "Filter by parent session. Use null to return only root sessions." })
+    .pipe(Schema.optional),
 }
 
 export const ListFilter = Schema.Struct({
   ...ListFilterFields,
-  directory: AbsolutePath.pipe(optional),
-  project: Project.ID.pipe(optional),
-  subpath: RelativePath.pipe(optional),
+  directory: AbsolutePath.pipe(Schema.optional),
+  project: Project.ID.pipe(Schema.optional),
+  subpath: RelativePath.pipe(Schema.optional),
 }).annotate({ identifier: "Session.ListFilter" })
 export interface ListFilter extends Schema.Schema.Type<typeof ListFilter> {}
 
 const ListCursorInput = Schema.Union([
   Schema.Struct({ ...ListFilterFields, directory: AbsolutePath, anchor: ListAnchor }),
-  Schema.Struct({ ...ListFilterFields, project: Project.ID, subpath: RelativePath.pipe(optional), anchor: ListAnchor }),
+  Schema.Struct({
+    ...ListFilterFields,
+    project: Project.ID,
+    subpath: RelativePath.pipe(Schema.optional),
+    anchor: ListAnchor,
+  }),
   Schema.Struct({ ...ListFilterFields, anchor: ListAnchor }),
 ])
 const ListCursorJson = Schema.fromJsonString(ListCursorInput)
