@@ -65,7 +65,8 @@ export interface DialogSelectProps<T> {
 
 type DialogSelectActionBase<T> = {
   command: string
-  title: string
+  /** A function title follows the selected option, e.g. "favorite" / "unfavorite". */
+  title: string | ((option: DialogSelectOption<T> | undefined) => string)
   bind?: string
   /** Footer placement while the "new-designs" experiment is off. */
   side?: "left" | "right"
@@ -106,6 +107,11 @@ export interface DialogSelectOption<T = any> {
   fg?: RGBA
   gutter?: (color: RGBA) => JSX.Element
   margin?: JSX.Element
+  /**
+   * Shown below the list while this option is selected, under the "new-designs" experiment. A function is called
+   * each time the option becomes selected, because a rendered element cannot be shown again once it is removed.
+   */
+  detail?: string | (() => JSX.Element)
   onSelect?: (ctx: DialogContext) => void
 }
 
@@ -257,6 +263,14 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   }
 
   const selected = createMemo(() => flat()[store.selected])
+  const detailView = () => {
+    const detail = selected()?.detail
+    return typeof detail === "function" ? detail : undefined
+  }
+  const detailText = () => {
+    const detail = selected()?.detail
+    return typeof detail === "string" ? detail : undefined
+  }
 
   createEffect(
     on(
@@ -505,7 +519,8 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
         },
         ...visible.map((item) => ({
           id: item.command,
-          title: item.title,
+          // Resolved without a selection so moving through the list does not rebuild the layer.
+          title: typeof item.title === "function" ? item.title(undefined) : item.title,
           group: "Dialog",
           bind: item.bind,
           run: () => trigger(item),
@@ -584,7 +599,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
         side: item.side,
         group: item.group ?? (item.selection === "none" ? "secondary" : "primary"),
         action: {
-          title: item.title,
+          title: actionTitle(item),
           key: item.label,
           disabled: isActionDisabled(item),
           onTrigger: () => trigger(item),
@@ -606,6 +621,10 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
     const option = selected()
     if (!option) return
     item.onTrigger(option)
+  }
+
+  function actionTitle(item: Action) {
+    return typeof item.title === "function" ? item.title(selected()) : item.title
   }
 
   function isActionItem(item: VisibleAction): item is Action & { label: string } {
@@ -790,6 +809,22 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
           <Show when={overflows()}>
             <box paddingLeft={DIALOG_LIST_INSET} flexShrink={0}>
               <text fg={theme.text.faint}>{moreBelow() ? "…" : " "}</text>
+            </box>
+          </Show>
+          {/* Reserved whenever any option has a detail, so the dialog does not resize as the selection moves. */}
+          <Show when={newDesigns() && flat().some((option) => option.detail !== undefined)}>
+            <box paddingTop={1} paddingLeft={DIALOG_LIST_INSET} paddingRight={DIALOG_LIST_INSET} flexShrink={0}>
+              <Show
+                when={detailView()}
+                keyed
+                fallback={
+                  <text fg={theme.text.faint} wrapMode="word">
+                    {detailText() || " "}
+                  </text>
+                }
+              >
+                {(render) => render()}
+              </Show>
             </box>
           </Show>
         </Show>
