@@ -17,8 +17,10 @@ test("transient location sync failure does not flag the location as missing", as
   try {
     fixture.location.set({ directory })
     await fixture.app.waitFor(() => fixture.reads.includes(directory))
-    // Let the sync rejection settle through LocationProvider's catch.
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    // Yield to the event loop: the rejection has been served, and flushing
+    // through a macrotask guarantees all queued microtasks (fetch decode,
+    // sync rejection, provider catch) have run before asserting.
+    await Bun.sleep(0)
 
     expect(fixture.location.error).toBeUndefined()
   } finally {
