@@ -4,7 +4,7 @@ import { makeLocationNode } from "@opencode/util/effect/app-node"
 import path from "path"
 import { isDeepStrictEqual } from "node:util"
 import { applyEdits, modify, type ParseError, parse, printParseErrorCode } from "jsonc-parser"
-import { Context, Effect, FiberMap, Layer, Option, PubSub, Ref, Schema, Semaphore, Stream } from "effect"
+import { Context, Effect, FiberMap, Layer, PubSub, Ref, Result, Schema, Semaphore, Stream } from "effect"
 import { Directory, Document, Info, Rejected, type Patch, type Entry, Event } from "@opencode/schema/config"
 import { Credential } from "./credential.js"
 import { Bus } from "./bus.js"
@@ -15,6 +15,7 @@ import { Location } from "./location.js"
 import { AbsolutePath } from "./schema.js"
 import { ConfigVariable } from "./config/variable.js"
 import { ConfigNormalize } from "./config/normalize.js"
+import { ConfigReject } from "./config/reject.js"
 import { ConfigDiscovery } from "./config/discovery.js"
 import { ConfigWatch } from "./config/watch.js"
 import { WellKnown } from "./wellknown.js"
@@ -99,8 +100,6 @@ export const layer = (options?: Options) =>
       const wellknown = yield* WellKnown.Service
       const reloadLock = Semaphore.makeUnsafe(1)
       const updateLock = Semaphore.makeUnsafe(1)
-      const decodeOptions = { errors: "all", onExcessProperty: "ignore" } as const
-      const decodeInfo = Schema.decodeUnknownOption(Info, decodeOptions)
       const parseInfo = Effect.fn("Config.parseInfo")(function* (text: string, source: string) {
         const errors: ParseError[] = []
         const input: unknown = parse(text, errors, { allowTrailingComma: true })
@@ -128,15 +127,15 @@ export const layer = (options?: Options) =>
               result.diagnostics.map((diagnostic) => diagnostic.message).join("; ") ||
               "configuration is not valid",
           }
-        const info = Option.getOrUndefined(decodeInfo(result.encoded))
-        if (info) return info
+        const decoded = ConfigReject.decodeInfoOrReason(result.encoded)
+        if (Result.isSuccess(decoded)) return decoded.success
         yield* Effect.logWarning("configuration normalization diagnostic", {
           source,
           path: "$",
           kind: "invalid",
           action: "rejected canonical configuration after final validation",
         })
-        return { rejected: "configuration is not valid" }
+        return { rejected: decoded.failure }
       })
 
       const loadFile = Effect.fnUntraced(function* (filepath: string) {
