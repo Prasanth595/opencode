@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { LLMClient, LLMEvent, LanguageModel, ToolDefinition, type LLMRequest } from "@opencode/ai"
+import { GenerationOptions, LLMClient, LLMEvent, LanguageModel, ToolDefinition, type LLMRequest } from "@opencode/ai"
 import { OpenAIChat } from "@opencode/ai/protocols"
 import { Database } from "@opencode/core/database/database"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
@@ -18,6 +18,7 @@ import { SessionRunnerModel } from "@opencode/core/session/runner/model"
 import { SessionTable } from "@opencode/core/session/sql"
 import { SessionStore } from "@opencode/core/session/store"
 import { Session } from "@opencode/core/session"
+import { Location } from "@opencode/core/location"
 import { Project } from "@opencode/core/project"
 import { ProjectTable } from "@opencode/core/project/sql"
 import { App } from "@opencode/core/app"
@@ -87,7 +88,11 @@ const it = testEffect(
       SessionModelRequest.node,
       PluginHooks.node,
     ]),
-    [Bus.node.replace(Bus.configured({ persist: true })), llmClient.replace(client)],
+    [
+      Bus.node.replace(Bus.configured({ persist: true })),
+      llmClient.replace(client),
+      Location.node.replace(Location.boundNode({ directory: AbsolutePath.make("/project") })),
+    ],
   ),
 )
 
@@ -212,14 +217,15 @@ it.effect("auto compaction estimates current content against the buffered prompt
     expect(yield* due(native(244_800))).toBe(true)
     expect(yield* due(native(1_000_000, { context: 0, input: undefined, output: 0 }))).toBe(false)
 
+    // The summary's 16k output limit is more than 10% of a 100k window, so it sets the ceiling.
     const contextLimited = { context: 100_000, output: 10_000 }
-    expect(yield* due(input(89_999, contextLimited))).toBe(false)
-    expect(yield* due(input(90_000, contextLimited))).toBe(true)
+    expect(yield* due(input(83_999, contextLimited))).toBe(false)
+    expect(yield* due(input(84_000, contextLimited))).toBe(true)
 
     // The reply limit does not lower the ceiling.
     const outputLimited = { context: 100_000, output: 30_000 }
-    expect(yield* due(input(89_999, outputLimited))).toBe(false)
-    expect(yield* due(input(90_000, outputLimited))).toBe(true)
+    expect(yield* due(input(83_999, outputLimited))).toBe(false)
+    expect(yield* due(input(84_000, outputLimited))).toBe(true)
 
     const assistant = input(89_000, contextLimited).messages[0]
     const tool = SessionMessage.AssistantTool.make({
@@ -444,15 +450,17 @@ it.effect("manual compaction summarizes short context instead of no-op", () =>
     expect(requests).toHaveLength(1)
     expect(requests[0]?.promptCacheKey).toBe(parentID)
     expect(requests[0]?.http?.headers).toEqual({
-      "x-session-affinity": sessionID,
-      "X-Session-Id": sessionID,
+      "x-opencode-session-id": session.id,
+      "x-opencode-parent-session-id": parentID,
+      "x-session-affinity": parentID,
+      "X-Session-Id": parentID,
       "x-parent-session-id": parentID,
       "User-Agent": App.useragent(App.make()),
       "x-opencode-project": Project.ID.global,
-      "x-opencode-session": sessionID,
+      "x-opencode-session": parentID,
       "x-opencode-client": "opencode",
     })
-    expect(requests[0]?.generation).toBeUndefined()
+    expect(requests[0]?.generation).toEqual(GenerationOptions.make({ maxTokens: 20_000 }))
     expect(JSON.stringify(requests[0]?.messages)).toContain("Manual compaction should include this short conversation.")
     expect(JSON.stringify(requests[0]?.messages)).toContain("Use Effect services and generators.")
     expect(JSON.stringify(requests[0]?.messages)).toContain("User shell pwd completed: /project")
@@ -487,6 +495,46 @@ it.effect("manual compaction summarizes short context instead of no-op", () =>
       { type: Bus.versionedType(SessionEvent.UsageRecorded.type, 1) },
       { type: Bus.versionedType(SessionEvent.Compaction.Ended.type, 1) },
     ])
+  }),
+)
+
+it.effect("compaction lowers the output limit when it sends a request it could not shrink", () =>
+  Effect.gen(function* () {
+    requests = []
+    const session = yield* insertSession(Session.ID.make("ses_unshrinkable_compaction"))
+    // One exchange estimated at 250k tokens, past the 200k window, so no older exchange can be dropped.
+    const messages = [
+      SessionMessage.User.make({
+        id: SessionMessage.ID.create(),
+        type: "user",
+        text: "x".repeat(1_000_000),
+        time: { created: DateTime.makeUnsafe(0) },
+      }),
+    ]
+
+    expect(yield* compactManually(session, messages)).toEqual({ status: "completed" })
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.generation).toEqual(GenerationOptions.make({ maxTokens: 1_024 }))
+  }),
+)
+
+it.effect("compaction keeps the output limit for a request that fits its target", () =>
+  Effect.gen(function* () {
+    requests = []
+    const session = yield* insertSession(Session.ID.make("ses_fitting_compaction"))
+    // About 170k estimated tokens, under the 180k target, leaving 30k of the 200k window.
+    const messages = [
+      SessionMessage.User.make({
+        id: SessionMessage.ID.create(),
+        type: "user",
+        text: "x".repeat(680_000),
+        time: { created: DateTime.makeUnsafe(0) },
+      }),
+    ]
+
+    expect(yield* compactManually(session, messages)).toEqual({ status: "completed" })
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.generation).toEqual(GenerationOptions.make({ maxTokens: 20_000 }))
   }),
 )
 

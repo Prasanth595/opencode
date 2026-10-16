@@ -1,7 +1,6 @@
 import { createEffect, createMemo, createSignal, Show } from "solid-js"
 import { useData } from "../context/data"
 import { useClient } from "../context/client"
-import { Keymap } from "../context/keymap"
 import { pipe, sortBy } from "remeda"
 import { DialogSelect } from "../ui/dialog-select"
 import { useDialog } from "../ui/dialog"
@@ -153,11 +152,7 @@ export function DialogMcp(props: { initialServer?: string; details?: boolean } =
                 },
               },
             ]}
-            footer={
-              <Show when={focusedError()}>
-                <text fg={theme.text.muted}>enter to view error</text>
-              </Show>
-            }
+            footerHints={focusedError() ? [{ title: "view error", label: "enter" }] : []}
           />
         }
       >
