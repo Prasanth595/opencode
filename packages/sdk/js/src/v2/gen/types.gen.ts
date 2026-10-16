@@ -1840,6 +1840,10 @@ export type McpLocalConfig = {
   }
   enabled?: boolean
   timeout?: number
+  /**
+   * Default time limit in ms for each call to this server's tools, or false for none. Replaces tool_timeout.default for these tools; a tool_timeout entry naming the tool replaces this. Unlike timeout, it is not reset by progress notifications.
+   */
+  tool_timeout?: number | false
 }
 
 export type McpOAuthConfig = {
@@ -1868,6 +1872,10 @@ export type McpRemoteConfig = {
    */
   oauth?: McpOAuthConfig | false
   timeout?: number
+  /**
+   * Default time limit in ms for each call to this server's tools, or false for none. Replaces tool_timeout.default for these tools; a tool_timeout entry naming the tool replaces this. Unlike timeout, it is not reset by progress notifications.
+   */
+  tool_timeout?: number | false
 }
 
 /**
@@ -2013,6 +2021,9 @@ export type Config = {
   tool_output?: {
     max_lines?: number
     max_bytes?: number
+  }
+  tool_timeout?: {
+    [key: string]: number | false
   }
   compaction?: {
     auto?: boolean
