@@ -62,6 +62,29 @@ test("resolution from another surface dismisses the dialog", async () => {
   }
 })
 
+test("an expired request dismisses the dialog", async () => {
+  const fixture = await renderApproval()
+  try {
+    fixture.events.emit({
+      id: "evt_restart_requested",
+      type: "server.restart.requested",
+      created: 1,
+      data: { active: ["ses_1"] },
+    })
+    await fixture.app.waitForFrame((frame) => frame.includes(title))
+    fixture.events.emit({
+      id: "evt_restart_expired",
+      type: "server.restart.expired",
+      created: 2,
+      data: {},
+    })
+    await fixture.app.waitForFrame((frame) => !frame.includes(title))
+    expect(fixture.resolves).toEqual([])
+  } finally {
+    fixture.app.renderer.destroy()
+  }
+})
+
 test("a stale resolve dismisses silently without an error toast", async () => {
   const fixture = await renderApproval({ resolveFails: true })
   try {

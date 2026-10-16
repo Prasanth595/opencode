@@ -12,6 +12,10 @@ import { ServerInfo } from "../server-info"
 import { ServerPairing } from "../pairing"
 import { RestartIntent } from "../restart-intent"
 
+// Deadline for a pending restart request. Kept in step with the CLI's own
+// approval wait; the requester releases first when it is alive.
+const RestartApprovalTtl = Duration.minutes(2)
+
 export const ServerHandler = HttpApiBuilder.group(Api, "server.server", (handlers) =>
   Effect.gen(function* () {
     const pairing = yield* ServerPairing.Service
@@ -38,8 +42,18 @@ export const ServerHandler = HttpApiBuilder.group(Api, "server.server", (handler
         "server.restart.request",
         Effect.fn(function* () {
           const active = Array.from(yield* session.active)
-          yield* intent.request()
+          const generation = yield* intent.request()
           yield* bus.publish(ServiceEvent.Requested, { active }, { global: true })
+          // Backstop for a requester that dies without releasing: the requester
+          // covers its own timeout, this covers SIGKILL and shell-tool kills.
+          // Detached so it outlives this request's scope.
+          yield* Effect.sleep(RestartApprovalTtl).pipe(
+            Effect.andThen(intent.expire(generation)),
+            Effect.flatMap((expired) =>
+              expired ? bus.publish(ServiceEvent.Expired, {}, { global: true }) : Effect.void,
+            ),
+            Effect.forkDetach,
+          )
           return { active }
         }),
       )

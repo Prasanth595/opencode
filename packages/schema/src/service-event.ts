@@ -25,4 +25,11 @@ export const Resolved = Event.ephemeral({
   },
 })
 
-export const Definitions = Event.inventory(Requested, Resolved)
+// Emitted when a pending request passes its deadline without being resolved, so
+// approvers can dismiss it even if the requester died without releasing.
+export const Expired = Event.ephemeral({
+  type: "server.restart.expired",
+  schema: {},
+})
+
+export const Definitions = Event.inventory(Requested, Resolved, Expired)

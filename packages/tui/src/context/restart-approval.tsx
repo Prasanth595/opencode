@@ -42,6 +42,7 @@ export const { use: useRestartApproval, provider: RestartApprovalProvider } = cr
 
     event.on("server.restart.requested", (evt) => open(evt.data.active))
     event.on("server.restart.resolved", () => close())
+    event.on("server.restart.expired", () => close())
 
     return { open, close, decide }
   },

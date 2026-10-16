@@ -9,6 +9,12 @@ import { ServiceConfig } from "../../../services/service-config"
 import { ServerConnection } from "../../../services/server-connection"
 import { prompt } from "../../../ui/prompt"
 
+// Waits longer than the server's own request TTL so expiry, not this local
+// timer, is what ends an unanswered wait. The timer only covers a stream that
+// goes silent without the server releasing the request.
+const ApprovalWaitMs = 150_000
+const ApprovalTimeoutMessage = "Timed out waiting for restart approval with sessions still running."
+
 export default Runtime.handler(
   Commands.commands.service.commands.restart,
   Effect.fn("cli.service.restart")(function* (input: Runtime.Input<typeof Commands.commands.service.commands.restart>) {
@@ -20,7 +26,7 @@ export default Runtime.handler(
         force: input.force,
         interactive: process.stdin.isTTY === true && process.stdout.isTTY === true,
         ask: askRestartDecision,
-        resolveTimeoutMs: 120_000,
+        resolveTimeoutMs: ApprovalWaitMs,
         idlePollMs: 2_000,
         onWaiting: (active) =>
           process.stdout.write(`Waiting for ${active.length} active session(s) to finish...${EOL}`),
@@ -47,10 +53,11 @@ export type RestartApprovalDeps = {
 
 // Approval gate for restarting a managed server with running sessions. The event
 // subscription starts before the intent request so a resolution cannot slip
-// through between them; only decisions recorded after the request count.
-// Resolves to the winning decision ("now" when nothing needs approval); "cancel"
-// and approval timeouts fail instead of restarting. A local pick is adopted from
-// the resolve response, falling back to the broadcast winner on a lost race.
+// through between them; only decisions recorded after the request count. The
+// server owns release: it expires an unanswered request, so a requester that
+// dies without unwinding still closes approver dialogs. Resolves to the winning
+// decision ("now" when nothing needs approval); "cancel", expiry and a dead
+// stream fail instead of restarting.
 export const resolveRestartApproval = Effect.fn("cli.service.restart.approval")(function* (
   client: OpenCodeClient,
   deps: RestartApprovalDeps,
@@ -71,7 +78,7 @@ export const resolveRestartApproval = Effect.fn("cli.service.restart.approval")(
     watcher.arm()
     const winner = deps.interactive
       ? yield* resolveInteractive(client, deps, watcher, ids)
-      : yield* resolveRemote(client, deps, watcher)
+      : yield* awaitWinner(watcher, deps)
     if (winner === "cancel") return yield* Effect.fail(restartAborted(ids, deps.interactive))
     if (winner === "idle") yield* waitForIdle(client, deps)
     return winner
@@ -93,36 +100,25 @@ const resolveInteractive = Effect.fn("cli.service.restart.approval.interactive")
   }).pipe(
     Effect.map((resolved) => resolved.decision),
     // Another surface won the race; adopt the broadcast winner instead.
-    Effect.catchIf(isInvalidRequestError, () => awaitWinner(client, watcher, deps)),
+    Effect.catchIf(isInvalidRequestError, () => awaitWinner(watcher, deps)),
     Effect.mapError((cause) => new Error("Could not reach server to resolve restart approval", { cause })),
   )
 })
 
-const resolveRemote = Effect.fn("cli.service.restart.approval.remote")(function* (
-  client: OpenCodeClient,
-  deps: RestartApprovalDeps,
-  watcher: ResolvedWatcher,
-) {
-  return yield* awaitWinner(client, watcher, deps)
-})
-
 const awaitWinner = Effect.fn("cli.service.restart.approval.wait")(function* (
-  client: OpenCodeClient,
   watcher: ResolvedWatcher,
   deps: RestartApprovalDeps,
 ) {
-  return yield* Effect.tryPromise({
+  const outcome = yield* Effect.tryPromise({
     try: () => watcher.wait(deps.resolveTimeoutMs),
     catch: (cause) =>
       cause instanceof RestartApprovalTimeout
-        ? new Error("Timed out waiting for restart approval with sessions still running.")
+        ? new Error(ApprovalTimeoutMessage)
         : new Error("Lost connection to the server while waiting for restart approval", { cause }),
-  }).pipe(
-    Effect.tapError(() =>
-      // Release TUIs stuck on our intent; a settled intent replays its winner.
-      Effect.tryPromise(() => client.server.restart.resolve({ decision: "cancel" })).pipe(Effect.ignore),
-    ),
-  )
+  })
+  // The server expired the request without a decision; nothing was approved.
+  if (outcome === "expired") return yield* Effect.fail(new Error(ApprovalTimeoutMessage))
+  return outcome
 })
 
 // The requesting session blocks on this command, so it can never go idle while
@@ -159,17 +155,21 @@ class RestartApprovalTimeout extends Error {
   }
 }
 
+export type RestartResolution = RestartApprovalDecision | "expired"
+
 export type ResolvedWatcher = {
   readonly arm: () => void
-  readonly wait: (timeoutMs: number) => Promise<RestartApprovalDecision>
+  readonly wait: (timeoutMs: number) => Promise<RestartResolution>
   readonly dispose: () => void
 }
 
+// Subscribes immediately so a decision broadcast during the intent request is
+// buffered rather than missed; consumers only count outcomes seen after arm().
 export function watchResolved(client: OpenCodeClient): ResolvedWatcher {
   const controller = new AbortController()
   let armed = false
-  let pending: RestartApprovalDecision | undefined
-  let settle: ((decision: RestartApprovalDecision) => void) | undefined
+  let pending: RestartResolution | undefined
+  let settle: ((outcome: RestartResolution) => void) | undefined
   let failure: unknown | undefined
   const fail = (cause: unknown) => {
     failure ??= cause
@@ -181,11 +181,16 @@ export function watchResolved(client: OpenCodeClient): ResolvedWatcher {
       for (;;) {
         const next = await stream.next()
         if (next.done) break
-        if (armed && next.value.type === "server.restart.resolved") {
-          const decision = next.value.data.decision
-          pending ??= decision
-          settle?.(decision)
-        }
+        if (!armed) continue
+        const outcome: RestartResolution | undefined =
+          next.value.type === "server.restart.resolved"
+            ? next.value.data.decision
+            : next.value.type === "server.restart.expired"
+              ? "expired"
+              : undefined
+        if (outcome === undefined) continue
+        pending ??= outcome
+        settle?.(outcome)
       }
       fail(new Error("Event stream disconnected while waiting for restart approval"))
     } catch (cause) {
@@ -197,13 +202,13 @@ export function watchResolved(client: OpenCodeClient): ResolvedWatcher {
       armed = true
     },
     wait(timeoutMs: number) {
-      return new Promise<RestartApprovalDecision>((resolve, reject) => {
+      return new Promise<RestartResolution>((resolve, reject) => {
         if (pending !== undefined) return resolve(pending)
         if (failure !== undefined) return reject(failure)
         const timer = setTimeout(() => reject(new RestartApprovalTimeout()), timeoutMs)
-        settle = (decision) => {
+        settle = (outcome) => {
           clearTimeout(timer)
-          resolve(decision)
+          resolve(outcome)
         }
       })
     },

@@ -1759,6 +1759,15 @@ export type ServerRestartResolved = {
   data: { decision: "now" | "idle" | "cancel" }
 }
 
+export type ServerRestartExpired = {
+  id: EventID
+  created: number
+  metadata?: { [x: string]: any }
+  type: "server.restart.expired"
+  location?: LocationRef
+  data: {}
+}
+
 export type TuiPromptAppend = {
   id: EventID
   created: number
@@ -2646,6 +2655,7 @@ export type V2Event =
   | SessionIdle
   | ServerRestartRequested
   | ServerRestartResolved
+  | ServerRestartExpired
   | TuiPromptAppend
   | TuiCommandExecute
   | TuiToastShow

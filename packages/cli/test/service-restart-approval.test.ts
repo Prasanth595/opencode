@@ -100,7 +100,13 @@ function startStub(initial: Partial<StubState> = {}) {
     },
   })
   const client = OpenCode.make({ baseUrl: `http://127.0.0.1:${server.port}`, headers: {} })
-  return { state, client, url: `http://127.0.0.1:${server.port}`, stop: () => server.stop(true) }
+  return {
+    state,
+    client,
+    url: `http://127.0.0.1:${server.port}`,
+    broadcastExpired: () => broadcast({ id: "evt_expired", type: "server.restart.expired", created: 2, data: {} }),
+    stop: () => server.stop(true),
+  }
 }
 
 const deps = (overrides: Partial<RestartApprovalDeps> = {}): RestartApprovalDeps => ({
@@ -184,7 +190,7 @@ test("non-TTY waits for a TUI decision and obeys the winner", async () => {
   }
 })
 
-test("non-TTY timeout aborts without naming --force and releases TUIs", async () => {
+test("non-TTY timeout aborts without naming --force and leaves release to the server", async () => {
   const stub = startStub({ active: { ses_1: { type: "running" } } })
   try {
     const error = await run(stub.client, deps({ resolveTimeoutMs: 200 })).then(
@@ -194,8 +200,25 @@ test("non-TTY timeout aborts without naming --force and releases TUIs", async ()
     expect(error?.message).toContain("Timed out")
     expect(error?.message).not.toContain("--force")
     expect(stub.state.requests).toBe(1)
-    // The timeout posts a cancel so connected TUIs dismiss their dialogs.
-    expect(stub.state.resolves).toEqual(["cancel"])
+    // Release is the server's job; the CLI does not post a cancel of its own.
+    expect(stub.state.resolves).toEqual([])
+  } finally {
+    await stub.stop()
+  }
+})
+
+test("an expired request aborts the wait", async () => {
+  const stub = startStub({ active: { ses_1: { type: "running" } } })
+  try {
+    const pending = run(stub.client, deps())
+    await until(() => stub.state.requests > 0, "CLI did not request approval")
+    stub.broadcastExpired()
+    const error = await pending.then(
+      () => undefined,
+      (cause: Error) => cause,
+    )
+    expect(error?.message).toContain("Timed out")
+    expect(error?.message).not.toContain("--force")
   } finally {
     await stub.stop()
   }
