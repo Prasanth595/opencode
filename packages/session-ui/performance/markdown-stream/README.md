@@ -41,6 +41,37 @@ re-lexed from the whole accumulated message on every delta, so baseline lexer
 characters grow roughly quadratically with response length while an in-place tail
 stays constant.
 
+## Results
+
+Representative run on one machine (Linux x86_64, AMD Ryzen Threadripper 1920X,
+Bun 1.4.2, Marked 18.0.11), `origin/dev` baseline vs this branch, both streamed
+through the same harness in the same environment, 5 measured passes per workload
+(medians shown). Absolute times are machine-specific; the ratios and lexer
+character counts are the signal. Lexer characters are totals across the 5 passes.
+
+| Workload | Baseline | Incremental | Speedup | Baseline lex chars | Incremental lex chars |
+| --- | --- | --- | --- | --- | --- |
+| `many-paragraph-deltas` | 145.3 ms | 9.1 ms | 15.9× | 4,640,465 | 92,230 |
+| `one-long-paragraph` (12.6 KB) | 10,565.2 ms | 92.5 ms | 114.3× | 63,152,630 | 20 |
+| `completed-head-live-tail` | 241.0 ms | 7.9 ms | 30.6× | 9,151,035 | 240 |
+| `mixed-long-response` | 837.8 ms | 21.5 ms | 38.9× | 30,741,870 | 316,600 |
+| `growing-list` | 406.0 ms | 19.1 ms | 21.2× | 9,164,700 | 170 |
+| `growing-table` | 172.4 ms | 13.8 ms | 12.5× | 6,421,720 | 50 |
+| `open-code-fence` | 1.6 ms | 0.8 ms | 2.0× | 30 | 30 |
+
+`scale.bench.ts` (one size per row) shows the baseline lexer work growing
+quadratically while the in-place tail stays constant:
+
+| Words | Chars | Baseline | Incremental | Baseline lex chars | Incremental lex chars |
+| --- | --- | --- | --- | --- | --- |
+| 250 | 1,576 | 26.4 ms | 5.1 ms | 197,240 | 4 |
+| 500 | 3,151 | 87.1 ms | 9.9 ms | 789,207 | 4 |
+| 1,000 | 6,316 | 320.2 ms | 30.9 ms | 3,157,346 | 4 |
+| 2,000 | 12,626 | 10,570.6 ms | 95.9 ms | 12,630,526 | 4 |
+
+No measured workload regressed, and `project.bench.ts` reports 0 partition
+mismatches (`blocks.map(b => b.raw).join("") === text`) on every update.
+
 ## Limitations
 
 - This measures `project()` CPU only. It does not measure worker message passing,
