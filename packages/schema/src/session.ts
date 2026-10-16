@@ -1,11 +1,12 @@
 export * as Session from "./session.js"
 
-import { Schema } from "effect"
+import { Effect, Result, Schema, SchemaGetter, SchemaParser } from "effect"
+import { Base64Url } from "effect/encoding"
 import { Agent } from "./agent.js"
 import { Location } from "./location.js"
 import { Model } from "./model.js"
 import { Project } from "./project.js"
-import { DateTimeUtcFromMillis, optional, RelativePath } from "./schema.js"
+import { AbsolutePath, DateTimeUtcFromMillis, optional, RelativePath, statics } from "./schema.js"
 import { SessionEvent } from "./session-event.js"
 import { SessionID } from "./session-id.js"
 import { SessionMetadata } from "./session-metadata.js"
@@ -64,3 +65,61 @@ export const ListAnchor = Schema.Struct({
   direction: Schema.Literals(["previous", "next"]),
 }).annotate({ identifier: "Session.ListAnchor" })
 export interface ListAnchor extends Schema.Schema.Type<typeof ListAnchor> {}
+
+const ListFilterFields = {
+  order: Schema.Literals(["asc", "desc"]).pipe(optional).annotate({
+    description: "Session order for the first page. Use desc for newest first or asc for oldest first.",
+  }),
+  search: Schema.String.pipe(optional),
+  parentID: Schema.Union([
+    ID,
+    Schema.Null.pipe(
+      Schema.encodeTo(Schema.Literal("null"), {
+        decode: SchemaGetter.transform(() => null),
+        encode: SchemaGetter.transform(() => "null" as const),
+      }),
+    ),
+  ])
+    .pipe(optional)
+    .annotate({ description: "Filter by parent session. Use null to return only root sessions." }),
+}
+
+export const ListFilter = Schema.Struct({
+  ...ListFilterFields,
+  directory: AbsolutePath.pipe(optional),
+  project: Project.ID.pipe(optional),
+  subpath: RelativePath.pipe(optional),
+}).annotate({ identifier: "Session.ListFilter" })
+export interface ListFilter extends Schema.Schema.Type<typeof ListFilter> {}
+
+const ListCursorInput = Schema.Union([
+  Schema.Struct({ ...ListFilterFields, directory: AbsolutePath, anchor: ListAnchor }),
+  Schema.Struct({ ...ListFilterFields, project: Project.ID, subpath: RelativePath.pipe(optional), anchor: ListAnchor }),
+  Schema.Struct({ ...ListFilterFields, anchor: ListAnchor }),
+])
+const ListCursorJson = Schema.fromJsonString(ListCursorInput)
+const encodeListCursor = Schema.encodeSync(ListCursorJson)
+const decodeListCursor = Schema.decodeUnknownEffect(ListCursorJson)
+
+export const ListCursor = Schema.String.pipe(
+  Schema.brand("SessionsCursor"),
+  Schema.annotate({
+    identifier: "SessionsCursor",
+    description: "Opaque pagination cursor returned as cursor.previous or cursor.next in the previous response.",
+  }),
+  statics((schema) => {
+    // Read the default constructor without caching it on the schema, so `make` can be replaced.
+    const make = SchemaParser.make(schema)
+    return {
+      make: (input: typeof ListCursorInput.Type) => make(Base64Url.encode(encodeListCursor(input))),
+      parse: (input: string) =>
+        Effect.suspend(() => {
+          const result = Base64Url.decodeString(input)
+          return Result.isFailure(result)
+            ? Effect.fail("Invalid cursor" as const)
+            : decodeListCursor(result.success).pipe(Effect.mapError(() => "Invalid cursor" as const))
+        }),
+    }
+  }),
+)
+export type ListCursor = typeof ListCursor.Type

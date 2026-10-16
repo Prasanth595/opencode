@@ -7,7 +7,6 @@ import type { Session } from "@opencode/schema/session"
 import type { AbsolutePath } from "@opencode/schema/schema"
 import type { Project } from "@opencode/schema/project"
 import type { RelativePath } from "@opencode/schema/schema"
-import type { SessionsCursor } from "@opencode/protocol/groups/session"
 import type { Money } from "@opencode/schema/money"
 import type { Model } from "@opencode/schema/model"
 import type { DateTime } from "effect"
@@ -125,11 +124,14 @@ export type SessionListInput = {
   readonly directory?: AbsolutePath | undefined
   readonly project?: Project.ID | undefined
   readonly subpath?: RelativePath | undefined
-  readonly cursor?: SessionsCursor | undefined
+  readonly cursor?: Session.ListCursor | undefined
 }
 export type SessionListOutput = {
   readonly data: ReadonlyArray<Session.Info>
-  readonly cursor: { readonly previous?: SessionsCursor | undefined; readonly next?: SessionsCursor | undefined }
+  readonly cursor: {
+    readonly previous?: Session.ListCursor | undefined
+    readonly next?: Session.ListCursor | undefined
+  }
 }
 export type SessionListOperation<E = never> = (input?: SessionListInput) => Effect.Effect<SessionListOutput, E>
 

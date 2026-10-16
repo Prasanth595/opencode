@@ -1,18 +1,16 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { SessionsCursor } from "../src/groups/session.js"
-import { Session } from "@opencode/schema/session"
+import { Session } from "../src/session.js"
 
-describe("SessionsCursor", () => {
+describe("Session.ListCursor", () => {
   test("round trips without Node globals", async () => {
     const input = {
-      workspace: undefined,
       search: "protocol",
       order: "desc" as const,
       anchor: { id: Session.ID.make("ses_test"), time: 1, direction: "next" as const },
     }
-    const cursor = SessionsCursor.make(input)
+    const cursor = Session.ListCursor.make(input)
 
-    expect(await Effect.runPromise(SessionsCursor.parse(cursor))).toEqual(input)
+    expect(await Effect.runPromise(Session.ListCursor.parse(cursor))).toEqual(input)
   })
 })
