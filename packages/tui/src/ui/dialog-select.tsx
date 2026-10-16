@@ -832,8 +832,11 @@ function DialogSelectRow(props: {
     if (props.current && !newDesigns()) return theme.text.formfield.selected
     return theme.text.base
   })
-  // Secondary text (description and footer) on the highlighted row.
-  const secondary = () => (newDesigns() ? theme.text.action.secondary.focused : text())
+  // Secondary text (description and footer).
+  const secondary = () => {
+    if (!newDesigns()) return props.active ? text() : theme.text.muted
+    return props.active ? theme.text.action.secondary.focused : theme.text.faint
+  }
 
   const row = () => (
     // A marker or gutter takes its cell plus the row gap out of the left padding,
@@ -876,12 +879,12 @@ function DialogSelectRow(props: {
               ? Locale.truncateLeft(props.title, props.titleWidth ?? 61)
               : Locale.truncate(props.title, props.titleWidth ?? 61))}
         <Show when={props.description}>
-          <span style={{ fg: props.active ? secondary() : theme.text.muted }}>{" " + props.description}</span>
+          <span style={{ fg: secondary() }}>{" " + props.description}</span>
         </Show>
       </text>
       <Show when={props.footer}>
         <box flexShrink={0}>
-          <text fg={props.active ? secondary() : (props.footerColor ?? theme.text.muted)}>{props.footer}</text>
+          <text fg={props.active || !props.footerColor ? secondary() : props.footerColor}>{props.footer}</text>
         </box>
       </Show>
     </box>
