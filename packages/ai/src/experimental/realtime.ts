@@ -57,7 +57,13 @@ export const connect = Effect.fn("Realtime.connect")(function* (input: RealtimeC
       form.append("sdp", input.transport.sdp)
       form.append("session", encodeJson(session))
       const query = input.transport.dcid === undefined ? "" : `?dcid=${input.transport.dcid}`
-      const sdp = yield* post(resolved.id, `${OPENAI_BASE_URL}/realtime/calls${query}`, input.apiKey, form)
+      const sdp = yield* post(
+        resolved.id,
+        `${OPENAI_BASE_URL}/realtime/calls${query}`,
+        input.apiKey,
+        form,
+        Schema.String,
+      )
       return { type: "webrtc" as const, sdp }
     }
     case "xai-realtime": {
@@ -73,41 +79,32 @@ export const Realtime = {
   connect,
 } as const
 
-const LiveSessionResponse = Schema.Struct({
-  transport: Schema.Struct({ sdp: Schema.String }),
-})
+const LiveSessionResponse = Schema.fromJsonString(
+  Schema.Struct({
+    transport: Schema.Struct({ sdp: Schema.String }),
+  }),
+)
 
 // xAI's ephemeral-token docs (https://docs.x.ai/developers/model-capabilities/audio/ephemeral-tokens)
 // document the request body (`{ expires_after: { seconds } }`) but not the response payload; we assume
 // it mirrors OpenAI's `{ value, expires_at }` response shape.
-const ClientSecretResponse = Schema.Struct({
-  value: Schema.String,
-  expires_at: Schema.Number,
-})
+const ClientSecretResponse = Schema.fromJsonString(
+  Schema.Struct({
+    value: Schema.String,
+    expires_at: Schema.Number,
+  }),
+)
 
 const invalidRequest = (message: string) => new AIError({ reason: new InvalidRequestError({ message }) })
 
-function post(
+const post = <A>(
   route: string,
   url: string,
   apiKey: string,
   body: Record<string, unknown> | FormData,
-): Effect.Effect<string, AIError, RequestExecutor.Service>
-function post<A>(
-  route: string,
-  url: string,
-  apiKey: string,
-  body: Record<string, unknown> | FormData,
-  schema: Schema.Codec<A, unknown>,
-): Effect.Effect<A, AIError, RequestExecutor.Service>
-function post<A>(
-  route: string,
-  url: string,
-  apiKey: string,
-  body: Record<string, unknown> | FormData,
-  schema?: Schema.Codec<A, unknown>,
-) {
-  return Effect.gen(function* () {
+  response: Schema.Codec<A, string>,
+) =>
+  Effect.gen(function* () {
     const executor = yield* RequestExecutor.Service
     const res = yield* executor.execute(
       HttpClientRequest.post(url).pipe(
@@ -121,12 +118,10 @@ function post<A>(
     const fail = (message: string, cause?: unknown, raw?: string) =>
       new AIError({ reason: new InvalidProviderOutputError({ route, message, body: raw, http, cause }) })
     const text = yield* res.text.pipe(Effect.mapError((cause) => fail(`Failed to read ${route} response`, cause)))
-    if (!schema) return text
-    return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(text).pipe(
+    return yield* Schema.decodeEffect(response)(text).pipe(
       Effect.mapError((cause) => fail(`${route} returned an invalid response`, cause, text)),
     )
   })
-}
 
 const clientSecret = (
   route: string,
