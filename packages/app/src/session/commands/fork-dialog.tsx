@@ -1,10 +1,13 @@
-import { Component, createMemo } from "solid-js"
+import { Component, createMemo, For, Show } from "solid-js"
 import { useNavigate, useParams } from "@solidjs/router"
 import { useData } from "@/runtime/server/current"
 import { useComposerState } from "@/composer/persistence"
 import { useDialog } from "@opencode/ui/context/dialog"
-import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@opencode/ui/dialog"
-import { List } from "@opencode/ui/list"
+import { Dialog, DialogBody, DialogHeader, DialogTitleGroup } from "@opencode/ui/dialog"
+import { useFilteredList } from "@opencode/ui/hooks"
+import { Icon } from "@opencode/ui/icon"
+import { ScrollView } from "@opencode/ui/scroll-view"
+import { TextInput } from "@opencode/ui/text-input"
 import { showToast } from "@/shell/notifications/toast"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useServerSDK } from "@/runtime/server/client"
@@ -13,6 +16,7 @@ import { extractPromptContext, extractPromptFromMessage } from "@/composer/promp
 import { useWorkspaceLocation } from "@/workspaces/location"
 import { useServer } from "@/runtime/server/current"
 import { sessionHref } from "@/shell/routes/session"
+import "@/shell/search-list.css"
 
 interface ForkableMessage {
   id: string
@@ -90,28 +94,99 @@ export const DialogFork: Component = () => {
       })
   }
 
+  const list = useFilteredList({
+    items: messages,
+    key: (x) => x.id,
+    filterKeys: ["text"],
+    onSelect: handleSelect,
+    noInitialSelection: true,
+  })
+
+  let resultsRef: HTMLDivElement | undefined
+
+  const onKeyDown = (event: KeyboardEvent) => {
+    // Nothing is highlighted until the pointer or arrow keys pick a row, so Enter forks from the newest match.
+    if (event.key === "Enter" && !event.isComposing && !list.active()) {
+      event.preventDefault()
+      handleSelect(list.flat()[0])
+
+      return
+    }
+
+    list.onKeyDown(event)
+    const active = list.active()
+
+    if (!active) return
+    resultsRef?.querySelector(`[data-option-key="${CSS.escape(active)}"]`)?.scrollIntoView({ block: "nearest" })
+  }
+
   return (
-    <Dialog>
+    <Dialog class="search-list-dialog">
       <DialogHeader>
-        <DialogTitle>{language.t("command.session.fork")}</DialogTitle>
+        <DialogTitleGroup
+          title={language.t("command.session.fork")}
+          description={language.t("dialog.fork.description")}
+        />
       </DialogHeader>
-      <DialogBody>
-        <List
-          class="flex-1 px-3 min-h-0 [&_[data-slot=list-scroll]]:flex-1 [&_[data-slot=list-scroll]]:min-h-0"
-          search={{ placeholder: language.t("common.search.placeholder"), autofocus: true }}
-          emptyMessage={language.t("dialog.fork.empty")}
-          key={(x) => x.id}
-          items={messages}
-          filterKeys={["text"]}
-          onSelect={handleSelect}
-        >
-          {(item) => (
-            <div class="w-full flex items-center gap-2">
-              <span class="truncate flex-1 min-w-0 text-left font-normal">{item.text}</span>
-              <span class="text-text-weak shrink-0 font-normal">{item.time}</span>
+      <DialogBody class="search-list-body">
+        <div class="search-list-search">
+          <TextInput
+            type="search"
+            appearance="base"
+            class="!w-full"
+            leadingIcon={<Icon name="magnifying-glass" size="small" />}
+            value={list.filter()}
+            onInput={(event) => list.onInput(event.currentTarget.value)}
+            onKeyDown={onKeyDown}
+            placeholder={language.t("common.search.placeholder")}
+            spellcheck={false}
+            autocorrect="off"
+            autocomplete="off"
+            autocapitalize="off"
+            autofocus
+            aria-label={language.t("common.search.placeholder")}
+            showClearButton={!!list.filter()}
+            clearIcon="circle-xmark"
+            clearLabel={language.t("common.clear")}
+            onClearClick={() => list.clear()}
+          />
+        </div>
+        <ScrollView class="search-list-scroll" viewportRef={(el) => (resultsRef = el)}>
+          <Show
+            when={list.flat().length > 0}
+            fallback={
+              <div class="search-list-empty">
+                {language.t(messages().length > 0 ? "dialog.fork.search.empty" : "dialog.fork.empty")}
+              </div>
+            }
+          >
+            <div role="listbox" class="search-list-results">
+              <For each={list.flat()}>
+                {(item) => (
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={list.active() === item.id}
+                    data-option-key={item.id}
+                    data-active={list.active() === item.id ? "" : undefined}
+                    class="search-list-row"
+                    onMouseMove={() => list.setActive(item.id)}
+                    onMouseLeave={() => list.setActive("")}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => handleSelect(item)}
+                  >
+                    <span class="search-list-row-text">
+                      <span class="search-list-title" data-weight="regular">
+                        {item.text}
+                      </span>
+                    </span>
+                    <span class="search-list-trailing">{item.time}</span>
+                  </button>
+                )}
+              </For>
             </div>
-          )}
-        </List>
+          </Show>
+        </ScrollView>
       </DialogBody>
     </Dialog>
   )

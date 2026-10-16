@@ -328,6 +328,9 @@ export const dict = {
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "{{enabled}} of {{total}} enabled",
   "dialog.mcp.empty": "No MCPs configured",
+  "dialog.mcp.search.empty": "No MCPs found",
+  "dialog.fork.search.empty": "No messages found",
+  "dialog.fork.description": "Edit an earlier message in a new session",
 
   "mcp.status.connected": "connected",
   "mcp.status.failed": "failed",
