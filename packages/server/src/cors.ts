@@ -12,7 +12,7 @@ export const CorsConfig = Context.Reference<CorsOptions | undefined>("@opencode/
 export function isAllowedCorsOrigin(input: string | undefined, opts?: CorsOptions) {
   if (!input) return true
   if (loopbackOrigin.test(input)) return true
-  if (input === "oc://renderer" || input === "oc://renderer/") return true
+  if (input === "oc://renderer") return true
   if (input === "tauri://localhost" || input === "http://tauri.localhost" || input === "https://tauri.localhost")
     return true
   if (opencodeOrigin.test(input)) return true
