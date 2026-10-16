@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Cause, Deferred, Effect, Fiber, Layer } from "effect"
+import { Cause, Deferred, Effect, Fiber, Layer, Logger } from "effect"
 import { Agent } from "@opencode/core/agent"
 import { Database } from "@opencode/core/database/database"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
@@ -9,6 +9,7 @@ import { Location } from "@opencode/core/location"
 import { Permission } from "@opencode/core/permission"
 import { PermissionTable } from "@opencode/core/permission/sql"
 import { PermissionSaved } from "@opencode/core/permission/saved"
+import { PluginHooks } from "@opencode/core/plugin/hooks"
 import { Project } from "@opencode/core/project"
 import { ProjectTable } from "@opencode/core/project/sql"
 import { AbsolutePath } from "@opencode/core/schema"
@@ -26,7 +27,15 @@ const current = Layer.succeed(
 )
 const it = testEffect(
   AppNodeBuilder.build(
-    LayerNode.group([Database.node, Bus.node, SessionStore.node, PermissionSaved.node, Agent.node, Permission.node]),
+    LayerNode.group([
+      Database.node,
+      Bus.node,
+      SessionStore.node,
+      PermissionSaved.node,
+      Agent.node,
+      Permission.node,
+      PluginHooks.node,
+    ]),
     [Location.node.replace(current)],
   ),
 )
@@ -98,6 +107,112 @@ function waitForRequest(input: Partial<Permission.AssertInput> = {}) {
 }
 
 describe("Permission", () => {
+  for (const scenario of [
+    { name: "allow", effect: "allow", ruleEffect: "allow", rule: 1, rules: 2 },
+    { name: "deny", effect: "deny", ruleEffect: "deny", rule: 1, rules: 2 },
+    { name: "default", effect: "ask", ruleEffect: "ask", rule: -1, rules: 0 },
+    { name: "saved", effect: "allow", ruleEffect: "allow", rule: 1, rules: 2 },
+    { name: "hook", effect: "deny", ruleEffect: "allow", rule: 1, rules: 2 },
+  ] as const) {
+    it.effect(`logs the effective ${scenario.name} decision without private permission data`, () => {
+      const output: { level: string; message: unknown }[] = []
+      const logger = Logger.make((entry) => output.push({ level: entry.logLevel, message: entry.message }))
+      return Effect.gen(function* () {
+        yield* setup(
+          scenario.name === "default"
+            ? []
+            : [
+                { action: "*", resource: "*", effect: "ask" },
+                { action: "read", resource: "secret-*", effect: scenario.name === "deny" ? "deny" : "allow" },
+              ],
+        )
+        if (scenario.name === "saved") {
+          yield* setRules([{ action: "read", resource: "*", effect: "ask" }])
+          const saved = yield* PermissionSaved.Service
+          yield* saved.add({ projectID: Project.ID.global, action: "read", resources: ["secret-*"] })
+        }
+        if (scenario.name === "hook") {
+          const hooks = yield* PluginHooks.Service
+          yield* hooks.register("permission", "evaluate", (event) =>
+            Effect.sync(() => {
+              event.effect = "deny"
+              event.message = "secret-hook-message"
+            }),
+          )
+        }
+        const service = yield* Permission.Service
+        const result = yield* service
+          .ask(assertion({ resources: ["secret-resource"], metadata: { private: "secret-metadata" } }))
+          .pipe(Effect.provide(Logger.layer([logger])))
+        expect(
+          output.filter((entry) => Array.isArray(entry.message) && entry.message[0] === "permission evaluated"),
+        ).toEqual([
+          {
+            level: "Info",
+            message: [
+              "permission evaluated",
+              {
+                sessionID: Session.ID.make("ses_test"),
+                permission: "read",
+                effect: scenario.effect,
+                ruleEffect: scenario.ruleEffect,
+                rule: scenario.rule,
+                rules: scenario.rules,
+              },
+            ],
+          },
+        ])
+        expect(JSON.stringify(output)).not.toContain("secret")
+        if (result.effect === "ask") yield* service.reply({ requestID: result.id, reply: "once" })
+      })
+    })
+  }
+
+  for (const reply of ["once", "always", "reject"] as const) {
+    it.effect(`logs an ask and ${reply} reply with matching identifiers and no private payload`, () => {
+      const output: unknown[] = []
+      const logger = Logger.make((entry) => output.push(entry.message))
+      return Effect.gen(function* () {
+        yield* setup()
+        const service = yield* Permission.Service
+        const result = yield* service.ask(
+          assertion({
+            resources: ["secret-resource"],
+            save: ["secret-*"],
+            metadata: { private: "secret-metadata" },
+          }),
+        )
+        yield* service.reply({ requestID: result.id, reply, message: "secret-feedback" })
+        expect(output.slice(1)).toEqual([
+          ["permission asking", { sessionID: Session.ID.make("ses_test"), id: result.id, permission: "read" }],
+          ["permission replied", { sessionID: Session.ID.make("ses_test"), id: result.id, reply }],
+        ])
+        expect(JSON.stringify(output)).not.toContain("secret")
+        expect(yield* service.list()).toEqual([])
+      }).pipe(Effect.provide(Logger.layer([logger])))
+    })
+  }
+
+  it.effect("logs automatic replies when saved approval releases another request and the service closes", () => {
+    const output: unknown[] = []
+    const logger = Logger.make((entry) => output.push(entry.message))
+    return Effect.gen(function* () {
+      yield* setup()
+      const service = yield* Permission.Service
+      const first = yield* service.ask(assertion({ save: ["src/*"] }))
+      const second = yield* service.ask(assertion({ id: Permission.ID.create("per_second") }))
+      yield* service.reply({ requestID: first.id, reply: "always" })
+      const third = yield* service.ask(assertion({ id: Permission.ID.create("per_third"), resources: ["outside.ts"] }))
+      yield* service.close
+      expect(output.filter((entry) => Array.isArray(entry) && entry[0] === "permission replied")).toEqual([
+        ["permission replied", { sessionID: Session.ID.make("ses_test"), id: first.id, reply: "always" }],
+        ["permission replied", { sessionID: Session.ID.make("ses_test"), id: second.id, reply: "always" }],
+        ["permission replied", { sessionID: Session.ID.make("ses_test"), id: third.id, reply: "reject" }],
+      ])
+      expect(yield* service.list()).toEqual([])
+    }).pipe(Effect.provide(Logger.layer([logger])))
+  })
+
   it.effect("returns the evaluated effect and only queues prompts", () =>
     Effect.gen(function* () {
       yield* setup([{ action: "read", resource: "*", effect: "allow" }])
