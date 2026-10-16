@@ -9,7 +9,7 @@ import {
 } from "@opencode/ai/experimental"
 import { RequestExecutor } from "@opencode/ai/route"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Credential } from "./credential.js"
 import { requestExecutor } from "./effect/app-node-platform.js"
 import { Integration } from "./integration.js"
@@ -50,12 +50,17 @@ export const layer = Layer.effect(
       // `Credential.list` returns stored rows ordered `asc(active), asc(time_created)`, so `findLast`
       // selects the active credential when it is a key, or else the newest stored key credential.
       const saved = yield* credentials.list(Integration.ID.make(engine.provider))
-      const apiKey =
-        saved.findLast(
-          (item): item is Credential.Info & { readonly value: Credential.Key } =>
-            item.value.type === "key" && Boolean(item.value.key),
-        )?.value.key ?? process.env[engine.env]
-      if (!apiKey)
+      const stored = saved.findLast(
+        (item): item is Credential.Info & { readonly value: Credential.Key } =>
+          item.value.type === "key" && Boolean(item.value.key),
+      )
+      const apiKey = stored
+        ? Option.some(Redacted.make(stored.value.key))
+        : yield* Config.option(Config.Redacted(engine.env)).pipe(
+            Effect.map(Option.filter((key) => Redacted.value(key) !== "")),
+            Effect.mapError((error) => new UnavailableError({ service: engine.provider, message: error.message })),
+          )
+      if (Option.isNone(apiKey))
         return yield* new UnavailableError({
           service: engine.provider,
           message:
@@ -64,12 +69,13 @@ export const layer = Layer.effect(
               : "Voice needs an xAI API key on the server (a stored key or XAI_API_KEY).",
         })
 
-      return yield* Realtime.connect({ ...input, apiKey }).pipe(
+      return yield* Realtime.connect({ ...input, apiKey: apiKey.value }).pipe(
         Effect.provideService(RequestExecutor.Service, executor),
-        Effect.mapError((error: AIError): Error =>
-          error.reason._tag === "InvalidRequest" || error.reason._tag === "UnsupportedOperation"
-            ? new InvalidRequestError({ message: error.message })
-            : new UnavailableError({ message: error.message, service: engine.provider }),
+        Effect.mapError(
+          (error: AIError): Error =>
+            error.reason._tag === "InvalidRequest" || error.reason._tag === "UnsupportedOperation"
+              ? new InvalidRequestError({ message: error.message })
+              : new UnavailableError({ message: error.message, service: engine.provider }),
         ),
       )
     })

@@ -3,7 +3,7 @@ import { RequestExecutor } from "@opencode/ai/route"
 import { Credential } from "@opencode/core/credential"
 import { Integration } from "@opencode/core/integration"
 import { Voice } from "@opencode/core/voice"
-import { Effect, Layer } from "effect"
+import { ConfigProvider, Effect, Layer } from "effect"
 import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/http"
 import { testEffect } from "./lib/effect"
 
@@ -68,32 +68,20 @@ it.effect("resolves credentials (active key, stored key over OAuth, env fallback
     yield* call("gpt-live-1", [keyCred("stored", "sk-stored"), oauthCred])
     expect(auths).toEqual(["Bearer sk-active", "Bearer sk-stored"])
 
-    const prevOpenAI = process.env.OPENAI_API_KEY
-    const prevXAI = process.env.XAI_API_KEY
-    delete process.env.OPENAI_API_KEY
-    process.env.XAI_API_KEY = "xai-env-key"
+    const oauthOnly = yield* call("gpt-live-1", [oauthCred]).pipe(Effect.flip)
+    expect(oauthOnly._tag).toBe("Voice.UnavailableError")
+    expect(oauthOnly.message).toContain("OpenAI API key")
 
-    yield* Effect.gen(function* () {
-      const oauthOnly = yield* call("gpt-live-1", [oauthCred]).pipe(Effect.flip)
-      expect(oauthOnly._tag).toBe("Voice.UnavailableError")
-      expect(oauthOnly.message).toContain("OpenAI API key")
-
-      const grok = yield* call("grok-voice-3.0", [], () => Response.json({ value: "ek_xai", expires_at: 1760000999 }))
-      expect(grok).toEqual({
-        type: "websocket",
-        url: "wss://api.x.ai/v1/realtime?model=grok-voice-3.0",
-        token: "ek_xai",
-        expiresAt: 1760000999,
-      })
-    }).pipe(
-      Effect.ensuring(
-        Effect.sync(() => {
-          if (prevOpenAI === undefined) delete process.env.OPENAI_API_KEY
-          if (prevOpenAI !== undefined) process.env.OPENAI_API_KEY = prevOpenAI
-          if (prevXAI === undefined) delete process.env.XAI_API_KEY
-          if (prevXAI !== undefined) process.env.XAI_API_KEY = prevXAI
-        }),
-      ),
-    )
-  }),
+    const grok = yield* call("grok-voice-3.0", [], (req) => {
+      auths.push(req.headers.authorization ?? "")
+      return Response.json({ value: "ek_xai", expires_at: 1760000999 })
+    })
+    expect(auths.at(-1)).toBe("Bearer xai-env-key")
+    expect(grok).toEqual({
+      type: "websocket",
+      url: "wss://api.x.ai/v1/realtime?model=grok-voice-3.0",
+      token: "ek_xai",
+      expiresAt: 1760000999,
+    })
+  }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: { XAI_API_KEY: "xai-env-key" } })))),
 )

@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, type Redacted, Schema } from "effect"
 import { HttpClientRequest } from "effect/http"
 import { RequestExecutor } from "../route/executor.js"
 import { AIError, HttpContext, InvalidProviderOutputError, InvalidRequestError } from "../schema/index.js"
@@ -19,7 +19,7 @@ export type RealtimeSession = Readonly<Record<string, unknown>>
 
 export interface RealtimeConnectInput {
   readonly model: string
-  readonly apiKey: string
+  readonly apiKey: Redacted.Redacted
   readonly session?: RealtimeSession
   readonly transport: RealtimeTransportInput
 }
@@ -100,7 +100,7 @@ const invalidRequest = (message: string) => new AIError({ reason: new InvalidReq
 const post = <A>(
   route: string,
   url: string,
-  apiKey: string,
+  apiKey: Redacted.Redacted,
   body: Record<string, unknown> | FormData,
   response: Schema.Codec<A, string>,
 ) =>
@@ -127,7 +127,7 @@ const clientSecret = (
   route: string,
   baseURL: string,
   model: string,
-  apiKey: string,
+  apiKey: Redacted.Redacted,
   session?: Record<string, unknown>,
 ) =>
   post(
