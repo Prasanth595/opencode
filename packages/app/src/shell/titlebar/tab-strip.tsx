@@ -31,6 +31,7 @@ function SessionTabSlot(props: {
   unread: boolean
   loading: boolean
   fallbackTitle?: string
+  fallbackDirectory?: string
   onRename: (title: string) => Promise<void>
   onNavigate: (element: HTMLDivElement) => void
   onClose: () => void
@@ -70,6 +71,7 @@ function SessionTabSlot(props: {
         unread={props.unread}
         loading={props.loading}
         fallbackTitle={props.fallbackTitle}
+        fallbackDirectory={props.fallbackDirectory}
         onRename={props.onRename}
         onNavigate={() => props.onNavigate(ref)}
         onClose={props.onClose}
@@ -209,6 +211,7 @@ function SessionTabEntry(props: {
             ? language.t("session.tab.session")
             : (persisted()?.title ?? (missingSession() ? language.t("session.tab.unknown") : undefined))
         }
+        fallbackDirectory={persisted()?.directory}
         onRename={rename}
         onNavigate={props.onNavigate}
         onClose={props.onClose}

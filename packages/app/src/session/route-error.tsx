@@ -6,7 +6,7 @@ import { useServer } from "@/runtime/server/current"
 import { ServerConnection, serverName, useServers } from "@/runtime/server/registry"
 import { useTabs } from "@/shell/tabs/tabs"
 import { isLocalSessionNotFoundError, isSessionNotFoundError } from "@/runtime/server/errors"
-import { IncompatibleServerPanel } from "./incompatible-server-panel"
+import { ServerUnavailablePanel } from "./server-unavailable-panel"
 
 export function SessionErrorFallback(props: { error: unknown; sessionID?: string; serverKey?: ServerConnection.Key }) {
   const language = useLanguage()
@@ -28,7 +28,7 @@ export function SessionErrorFallback(props: { error: unknown; sessionID?: string
   return (
     <Show
       when={!activeServer.health?.incompatible}
-      fallback={<IncompatibleServerPanel onClose={props.sessionID ? closeSession : undefined} />}
+      fallback={<ServerUnavailablePanel reason="incompatible" onClose={props.sessionID ? closeSession : undefined} />}
     >
       <Show
         when={isCurrentSessionNotFoundError(props.error, props.sessionID)}

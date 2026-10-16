@@ -5,7 +5,7 @@ import { useLanguage } from "@/runtime/i18n/language"
 import { useServer } from "@/runtime/server/current"
 import { serverName } from "@/runtime/server/registry"
 
-export function IncompatibleServerPanel(props: { onClose?: () => void }) {
+export function ServerUnavailablePanel(props: { reason: "incompatible" | "unreachable"; onClose?: () => void }) {
   const language = useLanguage()
   const server = useServer()
 
@@ -14,12 +14,18 @@ export function IncompatibleServerPanel(props: { onClose?: () => void }) {
       <div class="h-full px-6 pb-42 -mt-4 flex flex-col items-center justify-center text-center gap-4">
         <Icon name="warning" size="large" class="text-icon-warning-base" />
         <div class="flex flex-col items-center gap-2">
-          <div class="text-16-medium text-text max-w-md">{language.t("session.error.incompatible")}</div>
+          <div class="text-16-medium text-text max-w-md">
+            {props.reason === "incompatible"
+              ? language.t("session.error.incompatible")
+              : language.t("session.error.unreachable")}
+          </div>
           <div class="text-13-regular text-text-weak max-w-md">
-            {language.t("session.error.incompatible.description", {
-              server: serverName(server.conn),
-              version: server.health?.version ?? "1",
-            })}
+            {props.reason === "incompatible"
+              ? language.t("session.error.incompatible.description", {
+                  server: serverName(server.conn),
+                  version: server.health?.version ?? "1",
+                })
+              : language.t("session.error.unreachable.description", { server: serverName(server.conn) })}
           </div>
         </div>
         <Show when={props.onClose}>

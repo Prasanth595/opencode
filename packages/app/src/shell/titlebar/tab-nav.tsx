@@ -30,6 +30,7 @@ export function TabNavItem(props: {
   unread: boolean
   loading: boolean
   fallbackTitle?: string
+  fallbackDirectory?: string
   onRename: (title: string) => Promise<void>
   onClose: () => void
   onNavigate: () => void
@@ -63,9 +64,11 @@ export function TabNavItem(props: {
   const project = createMemo(() => {
     const session = props.session
 
-    if (!session) return
+    if (session) return serverCtx()?.projects.forSession(session)
 
-    return serverCtx()?.projects.forSession(session)
+    if (!props.fallbackDirectory) return
+
+    return serverCtx()?.projects.resolve({ worktree: props.fallbackDirectory, expanded: false })
   })
 
   const title = createMemo(() => {
@@ -295,7 +298,25 @@ export function TabNavItem(props: {
               <Show
                 when={props.preparing}
                 fallback={
-                  <span class="block size-4 rounded-[3px] border border-v2-border-border-muted" aria-hidden="true" />
+                  // The remembered directory keeps the project avatar while the server is unreachable.
+                  <Show
+                    when={props.fallbackDirectory}
+                    fallback={
+                      <span
+                        class="block size-4 rounded-[3px] border border-v2-border-border-muted"
+                        aria-hidden="true"
+                      />
+                    }
+                  >
+                    {(directory) => (
+                      <SessionTabAvatarView
+                        project={project()}
+                        directory={directory()}
+                        unread={false}
+                        loading={false}
+                      />
+                    )}
+                  </Show>
                 }
               >
                 <SessionProgressIndicatorV2 />

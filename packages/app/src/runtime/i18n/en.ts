@@ -538,6 +538,9 @@ export const dict = {
   "session.error.incompatible": "This server version isn't supported",
   "session.error.incompatible.description":
     "{{server}} is running OpenCode {{version}}, which isn't compatible with this app. Upgrade the server to OpenCode V2 to continue.",
+  "session.error.unreachable": "Can't reach this server",
+  "session.error.unreachable.description":
+    "{{server}} isn't responding, so this session can't load. It will open automatically once the server is reachable again.",
   "session.background.moveRunning": "Move to background",
   "session.background.moveInline": "Press {{keybind}} to move running work to the background",
   "command.session.background": "Move to background",
