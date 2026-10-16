@@ -304,6 +304,46 @@ describe("markdown stream", () => {
     expect(grown.blocks.map((block) => block.raw).join("")).toBe(grown.text)
   })
 
+  test("splits an oversized live tail when blank-line separators are split across deltas", () => {
+    const paragraph = (index: number) => `Paragraph ${index} ${"filler ".repeat(30).trim()}`
+    let text = ""
+    let previous: ReturnType<typeof project> | undefined
+
+    for (let index = 0; index < 60; index++) {
+      text += paragraph(index)
+      previous = project(previous, text, true)
+
+      text += "\n"
+      previous = project(previous, text, true)
+
+      text += "\n"
+      previous = project(previous, text, true)
+
+      expect(previous.blocks.map((block) => block.raw).join("")).toBe(text)
+    }
+
+    // Each paragraph is a completed block even though every blank-line separator
+    // arrived as two deltas, so the tail never grows into one oversized block.
+    const completed = previous!
+    expect(completed.blocks).toHaveLength(60)
+    expect(completed.blocks.at(-1)!.mode).toBe("live")
+
+    const frozen = completed.blocks.slice(0, -1)
+
+    text += "# Heading"
+    const heading = project(completed, text, true)
+
+    // The heading starts its own block instead of joining the previous tail.
+    expect(heading.blocks.at(-1)).toEqual({ raw: "# Heading", src: "# Heading", mode: "live" })
+    expect(heading.blocks.map((block) => block.raw).join("")).toBe(text)
+
+    // Blocks that did not need to change keep their identity.
+    for (let index = 0; index < frozen.length; index++) expect(heading.blocks[index]).toBe(frozen[index])
+
+    // The incremental projection matches a fresh projection of the same source.
+    expect(heading.blocks).toEqual(stream(text, true))
+  })
+
   test("keeps a list in one live block while items are appended", () => {
     let previous = project(undefined, "- one\n- two", true)
     previous = project(previous, `${previous.text}\n- three`, true)

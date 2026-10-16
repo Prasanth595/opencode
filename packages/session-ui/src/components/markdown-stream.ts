@@ -128,10 +128,11 @@ export function stream(text: string, live: boolean): Block[] {
 
 // Streaming projection bounds the work done per delta. Re-lexing the whole
 // accumulated text on every delta is O(n²) for a long single part and freezes
-// the UI; while a tail block is still open we grow it in place, only re-lexing
-// when the appended text introduces a block boundary (a blank line) or the tail
-// exceeds this cap. A boundary-less tail (one giant paragraph, list, or table)
-// keeps growing in place past the cap so it is never re-lexed on every delta.
+// the UI; while a tail block is still open we grow it in place. The tail is
+// re-projected when it is already parked at a blank-line boundary (this delta
+// starts a new block) or when an over-cap tail crosses a boundary introduced by
+// the delta. A boundary-less tail (one giant paragraph, list, or table) keeps
+// growing in place past the cap so it is never re-lexed on every delta.
 const LIVE_TAIL_MAX = 2048
 
 function hasBlockBoundary(text: string) {
@@ -204,7 +205,16 @@ export function project(previous: Projection | undefined, text: string, live: bo
 
     if (opensFence(raw)) return { text, blocks: [...previous.blocks.slice(0, -1), ...stream(raw, true)] }
 
-    if (raw.length <= LIVE_TAIL_MAX || !hasBlockBoundary(suffix))
+    // A blank line split across deltas is only visible in the join, never in
+    // `suffix` alone. `\n\n` is two characters, so the minimum context is one
+    // character from the existing tail plus the suffix.
+    const boundaryAtJoin = hasBlockBoundary(tail.raw.slice(-1) + suffix)
+    // The tail is already parked at a blank-line boundary, so this delta starts
+    // a new block: freeze the completed tail even while it is still under the
+    // cap, otherwise an oversized tail keeps absorbing later blocks.
+    const startsNewBlock = tail.raw.endsWith("\n\n")
+
+    if (!startsNewBlock && (raw.length <= LIVE_TAIL_MAX || !boundaryAtJoin))
       return { text, blocks: [...previous.blocks.slice(0, -1), { ...tail, raw, src: liveSource(raw) }] }
 
     return { text, blocks: [...previous.blocks.slice(0, -1), ...stream(raw, true)] }
