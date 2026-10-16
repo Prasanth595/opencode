@@ -61,6 +61,10 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.list",
         Effect.fn(function* (ctx) {
+          if (ctx.query.directory !== undefined && ctx.query.project !== undefined)
+            return yield* new InvalidRequestError({ message: "directory and project cannot be combined" })
+          if (ctx.query.subpath !== undefined && ctx.query.project === undefined)
+            return yield* new InvalidRequestError({ message: "subpath requires project" })
           const query =
             ctx.query.cursor !== undefined
               ? yield* SessionsCursor.parse(ctx.query.cursor).pipe(

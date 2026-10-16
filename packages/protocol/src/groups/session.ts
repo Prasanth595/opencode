@@ -165,12 +165,22 @@ const BooleanFromString = Schema.Literals(["true", "false"]).pipe(
   }),
 )
 
+// Generated clients need a flat, portable query struct, so the server handler rejects location
+// combinations that the cursor union cannot carry.
 export const SessionsQuery = Schema.Struct({
   ...SessionsQueryFields,
-  directory: AbsolutePath.pipe(Schema.optional),
-  project: Project.ID.pipe(Schema.optional),
-  subpath: RelativePath.pipe(Schema.optional),
-  cursor: SessionsCursor.pipe(Schema.optional),
+  directory: AbsolutePath.pipe(Schema.optional).annotate({
+    description: "Filter by session directory. Cannot be combined with project.",
+  }),
+  project: Project.ID.pipe(Schema.optional).annotate({
+    description: "Filter by project. Cannot be combined with directory.",
+  }),
+  subpath: RelativePath.pipe(Schema.optional).annotate({
+    description: "Filter by path within the project. Requires project.",
+  }),
+  cursor: SessionsCursor.pipe(Schema.optional).annotate({
+    description: "Pagination cursor from a previous response. It carries that request's filters, so other filters are ignored.",
+  }),
 }).annotate({ identifier: "SessionsQuery" })
 
 export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI extends HttpApiMiddleware.AnyId, FormS>(
