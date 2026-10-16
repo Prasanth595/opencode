@@ -21,7 +21,7 @@ export default {
         continue
 
       const ip = event.event.request.headers["x-real-ip"]
-      let data: Record<string, unknown> = {
+      const data: Record<string, unknown> = {
         "cf.continent": event.event.request.cf?.continent,
         "cf.country": event.event.request.cf?.country,
         "cf.city": event.event.request.cf?.city,
@@ -35,35 +35,12 @@ export default {
         ip,
         "ip.prefix": ipPrefix(ip),
       }
-      const time = new Date(event.eventTimestamp ?? Date.now()).toISOString()
-      // This also merges each _metric log into data, so keep it while the Honeycomb export below is disabled.
-      const events = [
-        ...event.logs.flatMap((log) =>
-          log.message.flatMap((message: string) => {
-            if (!message.startsWith("_metric:")) return []
-            const json = JSON.parse(message.slice(8)) as Record<string, unknown>
-            data = { ...data, ...json }
-            if ("llm.error.code" in json) {
-              return [{ time, data: { ...data, event_type: "llm.error" } }]
-            }
-            return []
-          }),
+      const metrics = event.logs.flatMap((log) =>
+        log.message.flatMap((message: string) =>
+          message.startsWith("_metric:") ? [JSON.parse(message.slice(8)) as Record<string, unknown>] : [],
         ),
-        { time, data: { ...data, event_type: "completions" } },
-      ]
-      console.log(JSON.stringify(data, null, 2))
-      void events
-
-      // const honeycomb = await fetch("https://api.honeycomb.io/1/batch/zen", {
-      //   method: "POST",
-      //   headers: {
-      //     "Content-Type": "application/json",
-      //     "X-Honeycomb-Team": Resource.HONEYCOMB_API_KEY.value,
-      //   },
-      //   body: JSON.stringify(events),
-      // })
-      // console.log(honeycomb.status)
-      // console.log(await honeycomb.text())
+      )
+      console.log(JSON.stringify(Object.assign(data, ...metrics), null, 2))
     }
   },
 }
