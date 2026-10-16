@@ -140,12 +140,9 @@ export const dict = {
   "home.faq.a6":
     "OpenCode è gratuito al 100%. Include anche un set di modelli gratuiti. Potrebbero esserci costi aggiuntivi se colleghi altri provider.",
   "home.faq.q7": "E per quanto riguarda dati e privacy?",
-  "home.faq.a7.p1":
-    "I tuoi dati vengono archiviati solo quando usi i nostri modelli gratuiti o crei link condivisibili.",
+  "home.faq.a7.p1": "I tuoi dati vengono archiviati solo quando usi i nostri modelli gratuiti.",
   "home.faq.a7.p2.beforeModels": "Scopri di più su",
   "home.faq.a7.p2.modelsLink": "i nostri modelli",
-  "home.faq.a7.p2.and": "e",
-  "home.faq.a7.p2.shareLink": "le pagine di condivisione",
   "home.faq.q8": "OpenCode è open source?",
   "home.faq.a8.p1": "Sì, OpenCode è completamente open source. Il codice sorgente è pubblico su",
   "home.faq.a8.p2": "sotto la",
@@ -221,7 +218,7 @@ export const dict = {
     "Tutti i modelli Zen sono ospitati negli Stati Uniti. I provider seguono una policy di zero-retention e non usano i tuoi dati per l'addestramento dei modelli, con le",
   "zen.privacy.exceptionsLink": "seguenti eccezioni",
 
-  "go.promo.step5": "Step 5 Preview Free, un nuovo modello, è disponibile gratuitamente per un periodo limitato.",
+  "go.promo.step5": "Step 5 Preview è ora disponibile in Go con utilizzo 4× per un periodo limitato.",
   "go.title": "OpenCode Go | Modelli di coding a basso costo per tutti",
   "go.meta.description":
     "Go costa $10/mese, con limiti di utilizzo generosi e un accesso affidabile ai principali modelli di coding.",
@@ -248,6 +245,7 @@ export const dict = {
   "go.graph.requests": "Richieste stimate / 5 ore",
   "go.graph.allowance": "Utilizzo mensile",
   "go.graph.new": "Nuovo",
+  "go.graph.bonus": "Utilizzo {{count}}×",
   "go.graph.scale": "Scala non lineare delle richieste",
   "go.graph.showAll": "Mostra tutti i {{count}} modelli",
   "go.graph.showLess": "Mostra meno modelli",
@@ -301,6 +299,8 @@ export const dict = {
     "ZDR disabilita importanti funzionalità API che dipendono dai dati archiviati, tra cui la Responses API con stato, Files and Collections e Batch API.",
   "go.faq.a5.gptRetention":
     "I log di monitoraggio degli abusi vengono generati per l'utilizzo di tutte le funzionalità API e conservati per un massimo di 30 giorni.",
+  "go.faq.a5.geminiRetention":
+    "I tuoi prompt e completamenti possono essere utilizzati per addestrare futuri modelli Google.",
   "go.faq.a5.learnMore": "Scopri di più",
   "go.faq.a5.deepseekRetention":
     "L'accordo ZDR viene rinnovato mensilmente. L'accordo attuale è valido fino al 31 ottobre 2026.",
@@ -375,10 +375,6 @@ export const dict = {
   "download.faq.a5.p2.beforeZen":
     "Eventuali costi aggiuntivi proverranno dal tuo abbonamento a un provider di modelli. Mentre OpenCode funziona con qualsiasi provider di modelli, raccomandiamo di usare",
   "download.faq.a5.p2.afterZen": ".",
-
-  "download.faq.a6.p1": "I tuoi dati e informazioni sono archiviati solo quando crei link condivisibili in OpenCode.",
-  "download.faq.a6.p2.beforeShare": "Scopri di più sulle",
-  "download.faq.a6.shareLink": "pagine condivise",
 
   "enterprise.title": "OpenCode | Soluzioni Enterprise per la tua organizzazione",
   "enterprise.meta.description": "Contatta OpenCode per soluzioni enterprise",

@@ -1760,7 +1760,6 @@ export type TuiCommandExecute = {
     command:
       | "session.list"
       | "session.new"
-      | "session.share"
       | "session.interrupt"
       | "session.background"
       | "session.compact"
@@ -2154,6 +2153,11 @@ export type ConfigEntry =
         enterprise?: { url?: string }
         username?: string
         permissions?: PermissionRuleset
+        policies?: Array<{
+          action: "provider.use" | "tool.use" | "integration.use"
+          resource: string
+          effect: "allow" | "deny"
+        }>
         agents?: {
           [x: string]: {
             model?: string | { providerID: string; model: string; variant?: string }
