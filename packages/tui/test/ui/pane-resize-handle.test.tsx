@@ -12,7 +12,7 @@ import { TestTuiContexts } from "../fixture/tui-environment"
 import { createTuiResolvedConfig } from "../fixture/tui-runtime"
 
 for (const mode of ["dark", "light"] as const) {
-  test(`${mode} pane resize handle renders themed hover and resize pointer and keeps parent-owned dragging and reset`, async () => {
+  test(`${mode} pane resize handle renders themed hover, resize pointer and grip and keeps parent-owned dragging and reset`, async () => {
     const [value, setValue] = createSignal(20)
     const commits: number[] = []
     let resize!: ReturnType<typeof createPaneResize>
@@ -58,6 +58,12 @@ for (const mode of ["dark", "light"] as const) {
     )
 
     const pointers: string[] = []
+    // Where the grip mark is drawn, as [column, row] pairs.
+    const grips = () =>
+      app
+        .captureCharFrame()
+        .split("\n")
+        .flatMap((row, y) => [...row].flatMap((char, x) => (char === "⋮" ? [[x, y]] : [])))
     app.renderer.setMousePointer = (style) => pointers.push(style)
 
     try {
@@ -70,6 +76,7 @@ for (const mode of ["dark", "light"] as const) {
       expect(line.backgroundColor.a).toBe(0)
       expect(handle.backgroundColor.a).toBe(0)
       expect(pointers).toEqual([])
+      expect(grips()).toEqual([])
 
       setValue(24)
       await app.renderOnce()
@@ -85,6 +92,10 @@ for (const mode of ["dark", "light"] as const) {
       expect(line.backgroundColor.toInts()).toEqual(theme.background.raised.high.toInts())
       expect(handle.backgroundColor.a).toBe(0)
       expect(pointers).toEqual(["ew-resize"])
+      expect(grips()).toEqual([[23, 2]])
+      await app.mockMouse.moveTo(24, 4)
+      await app.renderOnce()
+      expect(grips()).toEqual([[23, 4]])
       for (const row of app.captureSpans().lines) {
         const colors = row.spans.flatMap((span) => Array.from({ length: span.width }, () => span.bg.toInts()))
         expect(colors[23]).toEqual(theme.background.raised.high.toInts())
@@ -96,11 +107,14 @@ for (const mode of ["dark", "light"] as const) {
       expect(resize.hovered()).toBe(false)
       expect(line.backgroundColor.a).toBe(0)
       expect(pointers).toEqual(["ew-resize", "default"])
+      expect(grips()).toEqual([])
 
       await app.mockMouse.pressDown(24, 2)
       expect(resize.resizing()).toBe(true)
-      await app.mockMouse.moveTo(30, 2)
+      // The grip stays on the row the drag started from and moves with the divider.
+      await app.mockMouse.moveTo(30, 1)
       await app.renderOnce()
+      expect(grips()).toEqual([[30, 2]])
       expect(resize.size()).toBe(31)
       expect(handle.x).toBe(30)
       expect(line.x).toBe(30)
@@ -115,6 +129,8 @@ for (const mode of ["dark", "light"] as const) {
       expect(resize.resizing()).toBe(true)
       expect(line.backgroundColor.toInts()).toEqual(theme.background.raised.high.toInts())
       expect(pointers.at(-1)).toBe("ew-resize")
+      expect(grips()).toEqual([[39, 2]])
+      expect(line.getChildren()[0]).toMatchObject({ fg: theme.text.action.primary.base })
       expect(commits).toEqual([])
 
       await app.mockMouse.release(55, 2)
@@ -125,6 +141,7 @@ for (const mode of ["dark", "light"] as const) {
       expect(value()).toBe(40)
       expect(commits).toEqual([40])
       expect(pointers).toEqual(["ew-resize", "default", "ew-resize", "default"])
+      expect(grips()).toEqual([])
 
       await app.mockMouse.doubleClick(40, 2)
       await app.renderOnce()
