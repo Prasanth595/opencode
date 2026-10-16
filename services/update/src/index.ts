@@ -590,7 +590,6 @@ export function validGitHubClaims(claims: JWTPayload): claims is GitHubClaims {
 
 export function channelsForRef(ref: string) {
   if (ref === "refs/heads/dev") return ["dev", "latest"]
-  if (ref === "refs/heads/v2") return ["dev", "latest"]
   if (ref === "refs/heads/beta") return ["beta"]
   return []
 }

@@ -182,15 +182,14 @@ function publishClaims(ref: string) {
 // releases to "latest".
 test.each([
   ["refs/heads/dev", ["dev", "latest"]],
-  ["refs/heads/v2", ["dev", "latest"]],
   ["refs/heads/beta", ["beta"]],
 ])("accepts publish tokens from %s", (ref, channels) => {
   expect(channelsForRef(ref)).toEqual(channels)
   expect(validGitHubClaims(publishClaims(ref))).toBe(true)
 })
 
-// publish.yml no longer runs on push to these branches, so a manual dispatch there must not publish either.
-test.each(["refs/heads/ci", "refs/heads/fix/npm-native-binary-install", "refs/heads/snapshot-otui"])(
+// These branches no longer publish (v2 was merged into dev), so their tokens must not be accepted.
+test.each(["refs/heads/v2", "refs/heads/ci", "refs/heads/fix/npm-native-binary-install", "refs/heads/snapshot-otui"])(
   "rejects publish tokens from %s",
   (ref) => {
     expect(channelsForRef(ref)).toEqual([])
