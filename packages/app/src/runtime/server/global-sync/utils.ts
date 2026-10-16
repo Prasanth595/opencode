@@ -81,7 +81,11 @@ export function normalizeProviderList(
       family: model.family,
       capabilities: {
         temperature: false,
-        reasoning: false,
+        // V2 models expose reasoning controls as variants instead of a capability flag.
+        // Ignore the "none" option: it only disables reasoning.
+        reasoning:
+          model.variants.some((variant) => variant.id !== "none") ||
+          model.compatibility?.reasoningField !== undefined,
         attachment: model.capabilities.input.some((item) => item !== "text"),
         toolcall: model.capabilities.tools,
         input: {
