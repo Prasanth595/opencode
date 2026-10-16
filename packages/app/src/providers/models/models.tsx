@@ -40,7 +40,8 @@ const createModelsController = (directory: Accessor<string | undefined>) => {
     () =>
       new Map(
         available().map(
-          (model) => [modelKey({ providerID: model.provider.id, modelID: model.id }), Date.parse(model.release_date)] as const,
+          (model) =>
+            [modelKey({ providerID: model.provider.id, modelID: model.id }), Date.parse(model.release_date)] as const,
         ),
       ),
   )
@@ -130,6 +131,19 @@ const createModelsController = (directory: Accessor<string | undefined>) => {
     setStore("recent", uniq)
   }
 
+  // Newest favorite first, as in the TUI.
+  const toggleFavorite = (model: ModelKey) => {
+    const key = modelKey(model)
+    const rest = store.favorite.filter((item) => modelKey(item) !== key)
+
+    setStore(
+      "favorite",
+      rest.length === store.favorite.length
+        ? [{ providerID: model.providerID, modelID: model.modelID }, ...rest]
+        : rest,
+    )
+  }
+
   const variantKey = (model: ModelKey) => `${model.providerID}/${model.modelID}`
   const getVariant = (model: ModelKey) => store.variant?.[variantKey(model)]
 
@@ -154,6 +168,10 @@ const createModelsController = (directory: Accessor<string | undefined>) => {
     recent: {
       list: models.recent,
       push,
+    },
+    favorite: {
+      list: models.favorite,
+      toggle: toggleFavorite,
     },
     variant: {
       get: getVariant,

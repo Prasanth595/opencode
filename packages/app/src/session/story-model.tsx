@@ -63,6 +63,7 @@ const modelSelection = {
   key: () => ({ providerID: storyComposerModel.provider.id, modelID: storyComposerModel.id }),
   current: () => storyComposerModel,
   recent: () => [storyComposerModel],
+  favorite: { list: () => [], toggle() {} },
   list: () => [storyComposerModel],
   cycle() {},
   set() {},
