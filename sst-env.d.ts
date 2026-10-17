@@ -53,7 +53,6 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
-    "LogProcessor": import("@cloudflare/workers-types").Service
     "SALESFORCE_CLIENT_ID": {
       "type": "sst.sst.Secret"
       "value": string

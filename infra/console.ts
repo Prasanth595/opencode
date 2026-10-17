@@ -31,10 +31,6 @@ const CONSOLE_CRM_LOOKUP_URL = new sst.Linkable("CONSOLE_CRM_LOOKUP_URL", {
   properties: { value: `https://${domain}/console/api/internal/console-account` },
 })
 
-const logProcessor = new sst.cloudflare.Worker("LogProcessor", {
-  handler: "packages/console/function/src/log-processor.ts",
-})
-
 new sst.cloudflare.x.SolidStart("Console", {
   domain,
   path: "packages/console/app",
@@ -70,7 +66,6 @@ new sst.cloudflare.x.SolidStart("Console", {
               ...(bindings ?? []),
               { type: "service", name: "INFERENCE", service: `opencode-inference-${$app.stage}` },
             ])
-          args.tailConsumers = [{ service: logProcessor.nodes.worker.scriptName }]
         },
       },
     },
