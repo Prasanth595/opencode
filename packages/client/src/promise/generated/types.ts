@@ -4898,17 +4898,26 @@ export type SessionGoalUpdateInput = {
     readonly action: "set" | "clear" | "edit" | "pause" | "resume"
     readonly objective?: string | undefined
     readonly expectedRevision?: number | undefined
+    readonly expectedGoalID?: string | undefined
   }["action"]
   readonly objective?: {
     readonly action: "set" | "clear" | "edit" | "pause" | "resume"
     readonly objective?: string | undefined
     readonly expectedRevision?: number | undefined
+    readonly expectedGoalID?: string | undefined
   }["objective"]
   readonly expectedRevision?: {
     readonly action: "set" | "clear" | "edit" | "pause" | "resume"
     readonly objective?: string | undefined
     readonly expectedRevision?: number | undefined
+    readonly expectedGoalID?: string | undefined
   }["expectedRevision"]
+  readonly expectedGoalID?: {
+    readonly action: "set" | "clear" | "edit" | "pause" | "resume"
+    readonly objective?: string | undefined
+    readonly expectedRevision?: number | undefined
+    readonly expectedGoalID?: string | undefined
+  }["expectedGoalID"]
 }
 
 export type SessionGoalUpdateOutput = { data: SessionGoalSnapshot1 }["data"]
@@ -4921,7 +4930,27 @@ export type SessionTodoReplaceInput = {
       readonly status: "pending" | "in_progress" | "completed" | "cancelled"
       readonly acceptance?: string
     }>
+    readonly expectedRevision?: number | "Infinity" | "-Infinity" | "NaN" | null
+    readonly expectedGoalID?: string | null
   }["todos"]
+  readonly expectedRevision?: {
+    readonly todos: ReadonlyArray<{
+      readonly content: string
+      readonly status: "pending" | "in_progress" | "completed" | "cancelled"
+      readonly acceptance?: string
+    }>
+    readonly expectedRevision?: number | "Infinity" | "-Infinity" | "NaN" | null
+    readonly expectedGoalID?: string | null
+  }["expectedRevision"]
+  readonly expectedGoalID?: {
+    readonly todos: ReadonlyArray<{
+      readonly content: string
+      readonly status: "pending" | "in_progress" | "completed" | "cancelled"
+      readonly acceptance?: string
+    }>
+    readonly expectedRevision?: number | "Infinity" | "-Infinity" | "NaN" | null
+    readonly expectedGoalID?: string | null
+  }["expectedGoalID"]
 }
 
 export type SessionTodoReplaceOutput = void
