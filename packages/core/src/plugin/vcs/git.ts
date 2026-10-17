@@ -477,21 +477,30 @@ function makeGit(proc: AppProcess.Interface, env?: Record<string, string>) {
 
   // Paths are literal so names containing pathspec magic such as `*` or `[` match only themselves.
   const intentToAdd = Effect.fn("VcsGit.intentToAdd")(function* (cwd: string, list: string) {
-    yield* run(
-      [
-        "--literal-pathspecs",
-        "-c",
-        "core.splitIndex=false",
-        "add",
-        "--intent-to-add",
-        "--force",
-        "--sparse",
-        "--ignore-errors",
-        `--pathspec-from-file=${list}`,
-        "--pathspec-file-nul",
-      ],
+    const args = [
+      "--literal-pathspecs",
+      "-c",
+      "core.splitIndex=false",
+      "add",
+      "--intent-to-add",
+      "--force",
+      "--sparse",
+      "--ignore-errors",
+      `--pathspec-from-file=${list}`,
+      "--pathspec-file-nul",
+    ]
+    const result = yield* run(args, { cwd })
+    if (result.exitCode === 0) return true
+
+    // `git add --sparse` is unavailable in older Git versions (including Apple Git).
+    // Retry without it; if the worktree is sparse and this cannot add the paths, callers
+    // retain the existing per-file fallback.
+    if (result.exitCode !== 129) return false
+    const compatible = yield* run(
+      args.filter((arg) => arg !== "--sparse"),
       { cwd },
     )
+    return compatible.exitCode === 0
   })
 
   const worktreeStats = Effect.fn("VcsGit.worktreeStats")(function* (cwd: string) {
@@ -566,7 +575,7 @@ const untrackedBatch = Effect.fnUntraced(function* (
     (base) =>
       Effect.gen(function* () {
         const git = makeGit(ctx.proc, { GIT_INDEX_FILE: `${base}.index` })
-        yield* git.intentToAdd(ctx.worktree, `${base}.list`)
+        if (!(yield* git.intentToAdd(ctx.worktree, `${base}.list`))) return emptyUntracked()
         const [stats, patch] = yield* Effect.all(
           [
             git.worktreeStats(ctx.worktree),
