@@ -409,6 +409,65 @@ describe("WebFetchTool helpers", () => {
 })
 
 describe("WebFetchTool registration", () => {
+  it.effect("reports when nonempty HTML has no readable text", () =>
+    Effect.gen(function* () {
+      reset()
+      const registry = yield* Tool.Service
+      const url = "https://example.com/empty-html"
+      const html = "<html><head><script>challenge()</script></head><body></body></html>"
+      for (const status of [200, 202]) {
+        const contentType = "text/html; charset=utf-8"
+        respond = () => Effect.succeed(new Response(html, { status, headers: { "content-type": contentType } }))
+        const message = `No readable content was extracted from this HTML response (HTTP ${status}; ${contentType}).`
+        for (const format of ["markdown", "text"] as const) {
+          expect(yield* executeTool(registry, call({ url, format }))).toMatchObject({
+            status: "completed",
+            output: { output: message },
+            content: [{ type: "text", text: message }],
+          })
+        }
+      }
+    }),
+  )
+
+  it.effect("preserves readable HTML, raw HTML, and empty responses", () =>
+    Effect.gen(function* () {
+      reset()
+      const registry = yield* Tool.Service
+      const url = "https://example.com/content"
+      for (const fixture of [
+        { body: "<p>Hello</p>", format: "markdown", type: "text/html", status: 200, output: "Hello" },
+        { body: "<p>Hello</p>", format: "text", type: "text/html", status: 200, output: "Hello" },
+        {
+          body: "<script>challenge()</script>",
+          format: "html",
+          type: "text/html",
+          status: 200,
+          output: "<script>challenge()</script>",
+        },
+        { body: "", format: "markdown", type: "text/html", status: 200, output: "" },
+        { body: "", format: "text", type: "text/plain", status: 200, output: "" },
+      ] as const) {
+        respond = () =>
+          Effect.succeed(
+            new Response(fixture.body, {
+              status: fixture.status,
+              headers: { "content-type": fixture.type },
+            }),
+          )
+        expect(yield* executeTool(registry, call({ url, format: fixture.format }))).toMatchObject({
+          status: "completed",
+          output: { output: fixture.output },
+        })
+      }
+      respond = () => Effect.succeed(new Response(null, { status: 204, headers: { "content-type": "text/html" } }))
+      expect(yield* executeTool(registry, call({ url, format: "markdown" }))).toMatchObject({
+        status: "error",
+        error: { message: expect.stringContaining("EmptyBody") },
+      })
+    }),
+  )
+
   it.effect("registers and fetches an ordinary hostname HTTP URL without rewriting it", () =>
     Effect.gen(function* () {
       reset()
