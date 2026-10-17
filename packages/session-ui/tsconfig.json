@@ -14,7 +14,8 @@
     "noEmit": true,
     "lib": ["es2023", "dom", "dom.iterable"],
     "strict": true,
-    "types": ["vite/client", "bun"]
+    "types": ["vite/client", "bun"],
+    "noUncheckedSideEffectImports": false
   },
   "exclude": ["**/*.stories.*", "**/*.mdx"]
 }
