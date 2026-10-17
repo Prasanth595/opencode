@@ -2,15 +2,13 @@ import { describe, expect, test } from "bun:test"
 import { assertRunContext } from "../../src/run/run"
 
 describe("run session context", () => {
-  test("rejects nested agent sessions and allows a top-level invocation", () => {
-    expect(() => assertRunContext("ses_parent", [])).toThrow("nested OpenCode session")
-    expect(() => assertRunContext(undefined, [])).not.toThrow()
+  test("rejects nested agent sessions unless explicitly allowed", () => {
+    expect(() => assertRunContext("ses_parent", false)).toThrow("nested OpenCode session")
+    expect(() => assertRunContext("ses_parent", true)).not.toThrow()
+    expect(() => assertRunContext(undefined, false)).not.toThrow()
   })
 
-  test("rejects an OpenCode ancestor even when the session environment was stripped", () => {
-    expect(() => assertRunContext(undefined, ["zsh -c task", "/usr/local/bin/opencode serve --service"]))
-      .toThrow("nested OpenCode session")
-    expect(() => assertRunContext(undefined, ["/usr/local/bin/opencode-notebook"]))
-      .not.toThrow()
+  test("does not inspect process ancestors when the session environment is absent", () => {
+    expect(() => assertRunContext(undefined, false)).not.toThrow()
   })
 })

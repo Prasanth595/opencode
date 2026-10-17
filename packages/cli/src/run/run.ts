@@ -2,7 +2,6 @@ import { Service, type Endpoint } from "@opencode/client/effect/service"
 import { OpenCode, type SessionMessageAssistantTool } from "@opencode/client/promise"
 import { FSUtil } from "@opencode/util/fs-util"
 import { open } from "node:fs/promises"
-import { execFileSync } from "node:child_process"
 import path from "node:path"
 import { readStdin } from "../util/io"
 import { ServerConnection } from "../services/server-connection"
@@ -30,40 +29,12 @@ export type RunCommandInput = {
 
 export function assertRunContext(
   parentSessionID = process.env.OPENCODE_SESSION_ID,
-  parentCommands = processAncestorCommands(),
+  allowNested = process.env.OPENCODE_ALLOW_NESTED_RUN === "1",
 ) {
-  if (parentSessionID || parentCommands.some(isOpenCodeCommand))
+  if (parentSessionID && !allowNested)
     fail(
-      "Refusing to start a nested OpenCode session from an active agent or OpenCode process.",
+      "Refusing to start a nested OpenCode session from an active agent. Set OPENCODE_ALLOW_NESTED_RUN=1 to explicitly allow it.",
     )
-}
-
-function processAncestorCommands(): readonly string[] {
-  if (process.platform === "win32") return []
-  const commands: string[] = []
-  let pid = process.ppid
-  for (let depth = 0; pid > 1 && depth < 64; depth += 1) {
-    try {
-      const line = execFileSync("ps", ["-o", "ppid=", "-o", "command=", "-p", String(pid)], {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-      }).trim()
-      const match = /^(\d+)\s+(.*)$/u.exec(line)
-      if (!match) break
-      pid = Number(match[1])
-      commands.push(match[2])
-    } catch {
-      break
-    }
-  }
-  return commands
-}
-
-function isOpenCodeCommand(command: string): boolean {
-  const executable = /^\s*(?:"([^"]+)"|'([^']+)'|(\S+))/u.exec(command)
-  const path = executable?.[1] ?? executable?.[2] ?? executable?.[3]
-  if (!path) return false
-  return ["opencode", "opencode.exe"].includes(path.split(/[\\/]/u).at(-1)?.toLowerCase() ?? "")
 }
 
 type FilePart = {
