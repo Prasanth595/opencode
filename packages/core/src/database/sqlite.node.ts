@@ -3,7 +3,7 @@ import { Context, Effect, Layer } from "effect"
 import { Reactivity } from "effect/reactivity"
 import { SqlClient } from "effect/sql"
 import { classifySqliteError, SqlError } from "effect/sql/SqlError"
-import { Sqlite } from "./sqlite.js"
+import { retryBusy, Sqlite } from "./sqlite.js"
 
 const TypeId = "~@opencode/core/database/SqliteNode" as const
 
@@ -27,7 +27,7 @@ const make = (options: Config) =>
     const native = (yield* Sqlite.Native) as DatabaseSync
 
     const run = (query: string, params: ReadonlyArray<unknown> = []) =>
-      Effect.withFiber<Array<Record<string, unknown>>, SqlError>((fiber) => {
+      retryBusy(Effect.withFiber<Array<Record<string, unknown>>, SqlError>((fiber) => {
         const statement = native.prepare(query)
         statement.setReadBigInts(Context.get(fiber.context, SqlClient.SafeIntegers))
         try {
@@ -39,10 +39,10 @@ const make = (options: Config) =>
             }),
           )
         }
-      })
+      }))
 
     const runValues = (query: string, params: ReadonlyArray<unknown> = []) =>
-      Effect.withFiber<ReadonlyArray<ReadonlyArray<unknown>>, SqlError>((fiber) => {
+      retryBusy(Effect.withFiber<ReadonlyArray<ReadonlyArray<unknown>>, SqlError>((fiber) => {
         const statement = native.prepare(query)
         statement.setReadBigInts(Context.get(fiber.context, SqlClient.SafeIntegers))
         statement.setReturnArrays(true)
@@ -57,7 +57,7 @@ const make = (options: Config) =>
             }),
           )
         }
-      })
+      }))
 
     const connection = Sqlite.makeConnection(run, runValues, {
       loadExtension: (path: string) =>
@@ -87,6 +87,9 @@ const nativeLayer = (config: Config) =>
         open: true,
       })
       yield* Effect.addFinalizer(() => Effect.sync(() => native.close()))
+      // Set before WAL and migrations create tables. Existing databases with
+      // tables keep their current mode and need explicit VACUUM to switch.
+      if (config.readonly !== true) native.exec("PRAGMA auto_vacuum = INCREMENTAL;")
       if (config.disableWAL !== true && config.readonly !== true) native.exec("PRAGMA journal_mode = WAL;")
       return native
     }),

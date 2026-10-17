@@ -48,6 +48,14 @@ const databaseLayer = (lock: Effect.Effect<Semaphore.Semaphore>) =>
       const semaphore = yield* lock
       yield* semaphore.withPermit(DatabaseMigration.apply(db))
 
+      if (supportsTuningPragmas) {
+        const mode = yield* db.get<{ auto_vacuum: number }>("PRAGMA auto_vacuum")
+        if (mode?.auto_vacuum === 2) {
+          const freelist = yield* db.get<{ freelist_count: number }>("PRAGMA freelist_count")
+          if (freelist && freelist.freelist_count > 1024) yield* db.run("PRAGMA incremental_vacuum(256)")
+        }
+      }
+
       return { db }
     }).pipe(Effect.orDie),
   )

@@ -3,7 +3,7 @@ import { Context, Effect, Layer } from "effect"
 import { Reactivity } from "effect/reactivity"
 import { SqlClient } from "effect/sql"
 import { classifySqliteError, SqlError } from "effect/sql/SqlError"
-import { Sqlite } from "./sqlite.js"
+import { retryBusy, Sqlite } from "./sqlite.js"
 
 const TypeId = "~@opencode/core/database/SqliteBun" as const
 
@@ -25,7 +25,7 @@ const make = (options: Config) =>
     const native = (yield* Sqlite.Native) as Database
 
     const run = (query: string, params: ReadonlyArray<unknown> = []) =>
-      Effect.withFiber<Array<Record<string, unknown>>, SqlError>((fiber) => {
+      retryBusy(Effect.withFiber<Array<Record<string, unknown>>, SqlError>((fiber) => {
         const statement = native.query<Record<string, unknown>, SQLQueryBindings[]>(query)
         // @ts-ignore bun-types missing safeIntegers method, fixed in https://github.com/oven-sh/bun/pull/26627
         statement.safeIntegers(Context.get(fiber.context, SqlClient.SafeIntegers))
@@ -38,10 +38,10 @@ const make = (options: Config) =>
             }),
           )
         }
-      })
+      }))
 
     const runValues = (query: string, params: ReadonlyArray<unknown> = []) =>
-      Effect.withFiber<Array<unknown[]>, SqlError>((fiber) => {
+      retryBusy(Effect.withFiber<Array<unknown[]>, SqlError>((fiber) => {
         const statement = native.query<unknown, SQLQueryBindings[]>(query)
         // @ts-ignore bun-types missing safeIntegers method, fixed in https://github.com/oven-sh/bun/pull/26627
         statement.safeIntegers(Context.get(fiber.context, SqlClient.SafeIntegers))
@@ -54,7 +54,7 @@ const make = (options: Config) =>
             }),
           )
         }
-      })
+      }))
 
     const connection = Sqlite.makeConnection(run, runValues, {
       export: Effect.try({
@@ -90,6 +90,9 @@ const nativeLayer = (config: Config) =>
         create: config.create ?? true,
       })
       yield* Effect.addFinalizer(() => Effect.sync(() => native.close()))
+      // Set before WAL and migrations create tables. Existing databases with
+      // tables keep their current mode and need explicit VACUUM to switch.
+      if (config.readonly !== true) native.run("PRAGMA auto_vacuum = INCREMENTAL")
       if (config.disableWAL !== true) native.run("PRAGMA journal_mode = WAL;")
       return native
     }),
