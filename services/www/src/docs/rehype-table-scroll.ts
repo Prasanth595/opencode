@@ -27,5 +27,10 @@ export default function rehypeTableScroll() {
 function isScroller(node: HastNode) {
   const className = node.properties?.className
   if (Array.isArray(className) && className.includes("docs-table-scroll")) return true
-  return !!node.attributes?.some((attribute) => attribute.name === "class" && attribute.value === "docs-table-scroll")
+  return !!node.attributes?.some(
+    (attribute) =>
+      (attribute.name === "class" || attribute.name === "className") &&
+      typeof attribute.value === "string" &&
+      attribute.value.split(/\s+/).includes("docs-table-scroll"),
+  )
 }
