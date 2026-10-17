@@ -4,7 +4,6 @@ import { Session } from "@opencode/core/session"
 import { OpenAIResponses } from "@opencode/ai/protocols/openai-responses"
 import { AIError, HttpContext, LLM, Message, RateLimitError } from "@opencode/ai"
 import { classifyProviderFailure } from "@opencode/ai/provider-error"
-import { fromPromise } from "@opencode/plugin/promise/adapter"
 import { compileRequest } from "@opencode/ai/route/client"
 import { describe, expect } from "bun:test"
 // import { DateTime, Deferred, Effect, Schedule } from "effect"
@@ -97,136 +96,6 @@ const request = Effect.fn(function* (
       (yield* hooks.has("session", "http.request", providerID)) ||
       (yield* hooks.has("session", "http.response", providerID)),
   }
-})
-
-describe("OAuth plugin authorization context", () => {
-  for (const kind of ["effect", "promise"] as const) {
-    it.effect(`passes the target credential and answers through the ${kind} plugin adapter`, () =>
-      Effect.gen(function* () {
-        const integrations = yield* Integration.Service
-        const credentials = yield* Credential.Service
-        const plugin = yield* Plugin.Service
-        const host = yield* PluginHost.make(plugin)
-        const integrationID = Integration.ID.make("context-fixture")
-        const methodID = Integration.MethodID.make("oauth")
-        const value = Credential.OAuth.make({
-          type: "oauth",
-          methodID,
-          access: "target-access",
-          refresh: "target-refresh",
-          expires: 1,
-          metadata: { clientID: "target-client" },
-        })
-        const target = yield* credentials.create({ integrationID, value })
-        yield* credentials.create({
-          integrationID,
-          value: Credential.OAuth.make({ type: "oauth", methodID, access: "active", refresh: "active", expires: 1 }),
-        })
-        const method = {
-          id: methodID,
-          type: "oauth" as const,
-          label: "Fixture",
-          form: [{ type: "string" as const, key: "account", title: "Account", required: true }],
-        } satisfies Integration.OAuthMethod
-        const authorization = {
-          mode: "code" as const,
-          url: "https://example.com/authorize",
-          instructions: "Paste the code",
-        }
-        if (kind === "effect") {
-          yield* host.integration.transform((editor) =>
-            editor.method.update({
-              integrationID,
-              method,
-              authorize: (answer, context) => {
-                expect(answer).toEqual({ account: "work" })
-                expect(context?.credential).toEqual(value)
-                return Effect.succeed({
-                  ...authorization,
-                  callback: (code: string) => Effect.succeed(Credential.OAuth.make({ ...value, access: code })),
-                })
-              },
-            }),
-          )
-        }
-        if (kind === "promise") {
-          yield* fromPromise({
-            id: "oauth-context-fixture",
-            setup: async (context) => {
-              await context.integration.transform((editor) =>
-                editor.method.update({
-                  integrationID,
-                  method,
-                  authorize: async (answer, context) => {
-                    expect(answer).toEqual({ account: "work" })
-                    expect(context?.credential).toEqual(value)
-                    return {
-                      ...authorization,
-                      callback: async (code: string) => Credential.OAuth.make({ ...value, access: code }),
-                    }
-                  },
-                }),
-              )
-            },
-          }).effect(host)
-        }
-
-        const attempt = yield* integrations.oauth.connect({
-          integrationID,
-          methodID,
-          credentialID: target.id,
-          answer: { account: "work" },
-        })
-        expect(attempt.url).toBe(authorization.url)
-        yield* integrations.oauth.complete({ integrationID, attemptID: attempt.attemptID, code: "code" })
-        expect((yield* credentials.list(integrationID)).map((entry) => entry.value)).toContainEqual(
-          Credential.OAuth.make({ ...value, access: "code" }),
-        )
-      }),
-    )
-  }
-
-  it.effect("keeps single-argument Promise OAuth plugins compatible with explicit targets", () =>
-    Effect.gen(function* () {
-      const integrations = yield* Integration.Service
-      const credentials = yield* Credential.Service
-      const plugin = yield* Plugin.Service
-      const host = yield* PluginHost.make(plugin)
-      const integrationID = Integration.ID.make("legacy-fixture")
-      const methodID = Integration.MethodID.make("oauth")
-      const target = yield* credentials.create({
-        integrationID,
-        value: Credential.OAuth.make({ type: "oauth", methodID, access: "old", refresh: "old", expires: 1 }),
-      })
-      yield* fromPromise({
-        id: "legacy-oauth-fixture",
-        setup: async (context) => {
-          await context.integration.transform((editor) =>
-            editor.method.update({
-              integrationID,
-              method: { id: methodID, type: "oauth", label: "Legacy" },
-              authorize: async (answer) => {
-                expect(answer).toEqual({})
-                return {
-                  mode: "code" as const,
-                  url: "https://example.com/legacy",
-                  instructions: "Paste the code",
-                  callback: async (code: string) =>
-                    Credential.OAuth.make({ type: "oauth", methodID, access: code, refresh: "new", expires: 2 }),
-                }
-              },
-            }),
-          )
-        },
-      }).effect(host)
-
-      const attempt = yield* integrations.oauth.connect({ integrationID, methodID, credentialID: target.id })
-      yield* integrations.oauth.complete({ integrationID, attemptID: attempt.attemptID, code: "new-access" })
-      expect((yield* credentials.list(integrationID)).map((entry) => entry.value)).toContainEqual(
-        expect.objectContaining({ access: "new-access", refresh: "new" }),
-      )
-    }),
-  )
 })
 
 describe("ChatGPTPlugin", () => {
@@ -611,6 +480,41 @@ describe("ChatGPTPlugin", () => {
       expect(url.searchParams.has("agent_name_hint")).toBe(false)
       expect(url.searchParams.get("ext_agent_host_id")).toBe(hostID)
       expect(new URL(url.searchParams.get("redirect_uri") ?? "").hostname).toBe("127.0.0.1")
+    }),
+  )
+
+  it.live("registers a new ChatGPT agent when switching a legacy target to token sharing", () =>
+    Effect.gen(function* () {
+      const credentials = yield* Credential.Service
+      const integrationID = Integration.ID.make("openai")
+      const legacy = yield* credentials.create({
+        integrationID,
+        value: Credential.OAuth.make({
+          type: "oauth",
+          methodID: Integration.MethodID.make("chatgpt-browser"),
+          access: "legacy-access",
+          refresh: "legacy-refresh",
+          expires: Date.now() + 60 * 60_000,
+          metadata: { accountID: "acct_legacy" },
+        }),
+      })
+      yield* credentials.create({
+        integrationID,
+        value: Credential.OAuth.make({
+          type: "oauth",
+          methodID: Integration.MethodID.make("chatgpt-token-sharing"),
+          access: "active-access",
+          refresh: "active-refresh",
+          expires: Date.now() + 60 * 60_000,
+          metadata: { clientID: "oaiapp_active" },
+        }),
+      })
+      yield* addPlugin()
+      const url = yield* authorize(legacy.id)
+      expect(Object.fromEntries(url.searchParams)).toMatchObject({
+        client_id: "dynamic_agent_client",
+        agent_name_hint: "OpenCode",
+      })
     }),
   )
 

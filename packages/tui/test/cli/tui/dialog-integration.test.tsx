@@ -76,10 +76,12 @@ test("starts a new OAuth registration from add account without targeting an exis
   }
 })
 
+// This HTTP fixture verifies UI request wiring, not core reauthentication or method-switch semantics.
 test.each([
-  { credentialID: "cred_personal", moves: 1 },
-  { credentialID: "cred_work", moves: 2 },
-])("reauthenticates $credentialID through method selection without activating it", async ({ credentialID, moves }) => {
+  { credentialID: "cred_personal", moves: 1, methodID: "browser" },
+  { credentialID: "cred_work", moves: 2, methodID: "browser" },
+  { credentialID: "cred_work", moves: 2, methodID: "device" },
+])("starts $methodID OAuth for $credentialID without activating it", async ({ credentialID, moves, methodID }) => {
   const fixture = await renderIntegration(undefined, undefined, { oauth: true })
 
   try {
@@ -89,15 +91,17 @@ test.each([
     await fixture.app.waitForFrame(
       (frame) =>
         frame.includes("Browser login") &&
+        frame.includes("Device login") &&
         frame.includes("API key") &&
         fixture.app.renderer.currentFocusedEditor instanceof InputRenderable,
     )
     expect(fixture.requests).toEqual([])
+    if (methodID === "device") fixture.app.mockInput.pressArrow("down")
     fixture.app.mockInput.pressEnter()
     await fixture.app.waitFor(() => fixture.requests.length === 2)
 
     expect(fixture.requests).toEqual([
-      { method: "POST", path: "/api/integration/openai/connect/oauth", body: { methodID: "browser", credentialID } },
+      { method: "POST", path: "/api/integration/openai/connect/oauth", body: { methodID, credentialID } },
       { method: "GET", path: "/api/integration/openai/connect/oauth/attempt_test" },
     ])
     expect(fixture.accounts.map((account) => account.id)).toEqual(["cred_personal", "cred_work"])
@@ -393,7 +397,12 @@ async function renderIntegration(
             id: "openai",
             name: "OpenAI",
             methods: [
-              ...(options?.oauth ? [{ type: "oauth", id: "browser", label: "Browser login" }] : []),
+              ...(options?.oauth
+                ? [
+                    { type: "oauth", id: "browser", label: "Browser login" },
+                    { type: "oauth", id: "device", label: "Device login" },
+                  ]
+                : []),
               { type: "key", label: "API key", form },
             ],
             connections: [...accounts, { type: "env", name: "OPENAI_API_KEY" }],

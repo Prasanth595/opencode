@@ -326,7 +326,7 @@ describe("Integration", () => {
     }),
   )
 
-  for (const target of ["missing", "other-integration", "key", "other-method"] as const) {
+  for (const target of ["missing", "other-integration", "key"] as const) {
     it.effect(`rejects an OAuth ${target} target before authorization without changing credentials`, () =>
       Effect.gen(function* () {
         const integrations = yield* Integration.Service
@@ -356,7 +356,7 @@ describe("Integration", () => {
               ? Credential.Key.make({ type: "key", key: "secret" })
               : Credential.OAuth.make({
                   type: "oauth",
-                  methodID: target === "other-method" ? Integration.MethodID.make("other") : methodID,
+                  methodID,
                   access: "access",
                   refresh: "refresh",
                   expires: 1,
@@ -377,6 +377,59 @@ describe("Integration", () => {
         expect(authorizations).toBe(0)
         expect(yield* credentials.all()).toEqual(before)
         expect(yield* integrations.connection.active(integrationID)).toEqual(active)
+      }),
+    )
+  }
+
+  for (const sameMethod of [true, false]) {
+    it.effect(`authorizes an OAuth target with ${sameMethod ? "the same" : "a different"} method`, () =>
+      Effect.gen(function* () {
+        const integrations = yield* Integration.Service
+        const credentials = yield* Credential.Service
+        const integrationID = Integration.ID.make("openai")
+        const value = Credential.OAuth.make({
+          type: "oauth",
+          methodID: Integration.MethodID.make("original"),
+          access: "old-access",
+          refresh: "old-refresh",
+          expires: 1,
+        })
+        const target = yield* credentials.create({ integrationID, value })
+        const methodID = sameMethod ? value.methodID : Integration.MethodID.make("selected")
+        const answer = { account: "work" }
+        yield* integrations.transform((editor) =>
+          editor.method.update({
+            integrationID,
+            method: {
+              id: methodID,
+              type: "oauth",
+              label: "Selected",
+              form: [{ type: "string", key: "account", title: "Account", required: true }],
+            },
+            authorize: (received, context) => {
+              expect(received).toEqual(answer)
+              expect(context?.credential).toEqual(sameMethod ? value : undefined)
+              return Effect.succeed({
+                mode: "code" as const,
+                url: "https://example.com/authorize",
+                instructions: "Paste the code",
+                callback: (code: string) => Effect.succeed(Credential.OAuth.make({ ...value, methodID, access: code })),
+              })
+            },
+          }),
+        )
+        const before = yield* credentials.list(integrationID)
+        const active = yield* integrations.connection.active(integrationID)
+        const attempt = yield* integrations.oauth.connect({ integrationID, methodID, credentialID: target.id, answer })
+        expect(yield* credentials.list(integrationID)).toEqual(before)
+        expect(yield* integrations.connection.active(integrationID)).toEqual(active)
+
+        yield* integrations.oauth.complete({ integrationID, attemptID: attempt.attemptID, code: "new-access" })
+        const after = yield* credentials.list(integrationID)
+        expect(after.find((entry) => entry.id === target.id)?.value).toEqual(value)
+        expect(after.filter((entry) => entry.id !== target.id)).toEqual([
+          expect.objectContaining({ value: Credential.OAuth.make({ ...value, methodID, access: "new-access" }) }),
+        ])
       }),
     )
   }

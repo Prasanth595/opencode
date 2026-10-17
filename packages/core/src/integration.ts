@@ -606,8 +606,8 @@ const layer = Layer.effect(
           return yield* new AuthorizationError({ cause: new Error("OAuth credential belongs to another integration") })
         if (saved.value.type !== "oauth")
           return yield* new AuthorizationError({ cause: new Error("Credential is not an OAuth credential") })
-        if (saved.value.methodID !== input.methodID)
-          return yield* new AuthorizationError({ cause: new Error("OAuth credential belongs to another method") })
+        // Choosing another OAuth method starts a new connection without reusing the old registration.
+        if (saved.value.methodID !== input.methodID) return undefined
         return saved.value
       })
       const answer = input.answer ?? {}
