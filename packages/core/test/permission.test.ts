@@ -107,66 +107,163 @@ function waitForRequest(input: Partial<Permission.AssertInput> = {}) {
 }
 
 describe("Permission", () => {
-  for (const scenario of [
-    { name: "allow", effect: "allow", ruleEffect: "allow", rule: 1, rules: 2 },
-    { name: "deny", effect: "deny", ruleEffect: "deny", rule: 1, rules: 2 },
-    { name: "default", effect: "ask", ruleEffect: "ask", rule: -1, rules: 0 },
-    { name: "saved", effect: "allow", ruleEffect: "allow", rule: 1, rules: 2 },
-    { name: "hook", effect: "deny", ruleEffect: "allow", rule: 1, rules: 2 },
-  ] as const) {
-    it.effect(`logs the effective ${scenario.name} decision without private permission data`, () => {
-      const output: { level: string; message: unknown }[] = []
-      const logger = Logger.make((entry) => output.push({ level: entry.logLevel, message: entry.message }))
-      return Effect.gen(function* () {
-        yield* setup(
-          scenario.name === "default"
-            ? []
-            : [
-                { action: "*", resource: "*", effect: "ask" },
-                { action: "read", resource: "secret-*", effect: scenario.name === "deny" ? "deny" : "allow" },
-              ],
-        )
-        if (scenario.name === "saved") {
-          yield* setRules([{ action: "read", resource: "*", effect: "ask" }])
-          const saved = yield* PermissionSaved.Service
-          yield* saved.add({ projectID: Project.ID.global, action: "read", resources: ["secret-*"] })
-        }
-        if (scenario.name === "hook") {
-          const hooks = yield* PluginHooks.Service
-          yield* hooks.register("permission", "evaluate", (event) =>
-            Effect.sync(() => {
-              event.effect = "deny"
-              event.message = "secret-hook-message"
-            }),
-          )
-        }
-        const service = yield* Permission.Service
-        const result = yield* service
-          .ask(assertion({ resources: ["secret-resource"], metadata: { private: "secret-metadata" } }))
-          .pipe(Effect.provide(Logger.layer([logger])))
-        expect(
-          output.filter((entry) => Array.isArray(entry.message) && entry.message[0] === "permission evaluated"),
-        ).toEqual([
-          {
-            level: "Info",
-            message: [
-              "permission evaluated",
-              {
-                sessionID: Session.ID.make("ses_test"),
-                permission: "read",
-                effect: scenario.effect,
-                ruleEffect: scenario.ruleEffect,
-                rule: scenario.rule,
-                rules: scenario.rules,
-              },
-            ],
-          },
-        ])
-        expect(JSON.stringify(output)).not.toContain("secret")
-        if (result.effect === "ask") yield* service.reply({ requestID: result.id, reply: "once" })
-      })
+  it.effect("logs the matched configured allow rule without private permission data", () => {
+    const output: { level: string; message: unknown }[] = []
+    const logger = Logger.make((entry) => output.push({ level: entry.logLevel, message: entry.message }))
+    return Effect.gen(function* () {
+      yield* setup([
+        { action: "*", resource: "*", effect: "ask" },
+        { action: "read", resource: "secret-*", effect: "allow" },
+      ])
+      const service = yield* Permission.Service
+      const result = yield* service
+        .ask(assertion({ resources: ["secret-resource"], metadata: { private: "secret-metadata" } }))
+        .pipe(Effect.provide(Logger.layer([logger])))
+      expect(result.effect).toBe("allow")
+      expect(output).toEqual([
+        {
+          level: "Info",
+          message: [
+            "permission evaluated",
+            {
+              sessionID: Session.ID.make("ses_test"),
+              permission: "read",
+              effect: "allow",
+              ruleEffect: "allow",
+              rule: 1,
+              rules: 2,
+            },
+          ],
+        },
+      ])
+      expect(JSON.stringify(output)).not.toContain("secret")
     })
-  }
+  })
+
+  it.effect("logs the matched configured deny rule without private permission data", () => {
+    const output: unknown[] = []
+    const logger = Logger.make((entry) => output.push(entry.message))
+    return Effect.gen(function* () {
+      yield* setup([
+        { action: "*", resource: "*", effect: "ask" },
+        { action: "read", resource: "secret-*", effect: "deny" },
+      ])
+      const service = yield* Permission.Service
+      const result = yield* service
+        .ask(assertion({ resources: ["secret-resource"], metadata: { private: "secret-metadata" } }))
+        .pipe(Effect.provide(Logger.layer([logger])))
+      expect(result.effect).toBe("deny")
+      expect(output).toEqual([
+        [
+          "permission evaluated",
+          {
+            sessionID: Session.ID.make("ses_test"),
+            permission: "read",
+            effect: "deny",
+            ruleEffect: "deny",
+            rule: 1,
+            rules: 2,
+          },
+        ],
+      ])
+      expect(JSON.stringify(output)).not.toContain("secret")
+    })
+  })
+
+  it.effect("logs rule -1 when no configured rule matches", () => {
+    const output: unknown[] = []
+    const logger = Logger.make((entry) => output.push(entry.message))
+    return Effect.gen(function* () {
+      yield* setup()
+      const service = yield* Permission.Service
+      const result = yield* service
+        .ask(assertion({ resources: ["secret-resource"], metadata: { private: "secret-metadata" } }))
+        .pipe(Effect.provide(Logger.layer([logger])))
+      expect(result.effect).toBe("ask")
+      expect(output).toEqual([
+        [
+          "permission evaluated",
+          {
+            sessionID: Session.ID.make("ses_test"),
+            permission: "read",
+            effect: "ask",
+            ruleEffect: "ask",
+            rule: -1,
+            rules: 0,
+          },
+        ],
+        ["permission asking", { sessionID: Session.ID.make("ses_test"), id: result.id, permission: "read" }],
+      ])
+      expect(JSON.stringify(output)).not.toContain("secret")
+      yield* service.reply({ requestID: result.id, reply: "once" })
+    })
+  })
+
+  it.effect("logs a saved approval's position in the combined ruleset", () => {
+    const output: unknown[] = []
+    const logger = Logger.make((entry) => output.push(entry.message))
+    return Effect.gen(function* () {
+      yield* setup([{ action: "read", resource: "*", effect: "ask" }])
+      const saved = yield* PermissionSaved.Service
+      yield* saved.add({ projectID: Project.ID.global, action: "read", resources: ["secret-*"] })
+      const service = yield* Permission.Service
+      const result = yield* service
+        .ask(assertion({ resources: ["secret-resource"], metadata: { private: "secret-metadata" } }))
+        .pipe(Effect.provide(Logger.layer([logger])))
+      expect(result.effect).toBe("allow")
+      expect(output).toEqual([
+        [
+          "permission evaluated",
+          {
+            sessionID: Session.ID.make("ses_test"),
+            permission: "read",
+            effect: "allow",
+            ruleEffect: "allow",
+            rule: 1,
+            rules: 2,
+          },
+        ],
+      ])
+      expect(JSON.stringify(output)).not.toContain("secret")
+    })
+  })
+
+  it.effect("logs a hook override separately from the matched rule without the hook message", () => {
+    const output: unknown[] = []
+    const logger = Logger.make((entry) => output.push(entry.message))
+    return Effect.gen(function* () {
+      yield* setup([
+        { action: "*", resource: "*", effect: "ask" },
+        { action: "read", resource: "secret-*", effect: "allow" },
+      ])
+      const hooks = yield* PluginHooks.Service
+      yield* hooks.register("permission", "evaluate", (event) =>
+        Effect.sync(() => {
+          event.effect = "deny"
+          event.message = "secret-hook-message"
+        }),
+      )
+      const service = yield* Permission.Service
+      const result = yield* service
+        .ask(assertion({ resources: ["secret-resource"], metadata: { private: "secret-metadata" } }))
+        .pipe(Effect.provide(Logger.layer([logger])))
+      expect(result.effect).toBe("deny")
+      expect(output).toEqual([
+        [
+          "permission evaluated",
+          {
+            sessionID: Session.ID.make("ses_test"),
+            permission: "read",
+            effect: "deny",
+            ruleEffect: "allow",
+            rule: 1,
+            rules: 2,
+          },
+        ],
+      ])
+      expect(JSON.stringify(output)).not.toContain("secret")
+    })
+  })
 
   for (const reply of ["once", "always", "reject"] as const) {
     it.effect(`logs an ask and ${reply} reply with matching identifiers and no private payload`, () => {
