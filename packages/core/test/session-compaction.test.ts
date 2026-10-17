@@ -222,6 +222,16 @@ it.effect("auto compaction estimates current content against the buffered prompt
     expect(yield* due(input(83_999, contextLimited))).toBe(false)
     expect(yield* due(input(84_000, contextLimited))).toBe(true)
 
+    // A model-level buffer overrides the default headroom for that model.
+    const buffered = (tokens: number, buffer: number) => {
+      const selected = input(tokens, contextLimited)
+      return { ...selected, model: { ...selected.model, compaction: { buffer } } }
+    }
+    expect(yield* due(buffered(89_999, 10_000))).toBe(false)
+    expect(yield* due(buffered(90_000, 10_000))).toBe(true)
+    expect(yield* due(buffered(99_999, 0))).toBe(false)
+    expect(yield* due(buffered(100_000, 0))).toBe(true)
+
     // The reply limit does not lower the ceiling.
     const outputLimited = { context: 100_000, output: 30_000 }
     expect(yield* due(input(83_999, outputLimited))).toBe(false)

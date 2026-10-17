@@ -20,7 +20,7 @@ export type AgentID = string
 
 export type ProviderID = string
 
-export type ProviderCompaction = { type: "summary" } | { type: "native" }
+export type ProviderCompaction = { type?: "summary" | "native"; buffer?: number }
 
 export type ProviderTransport = "http" | "websocket"
 
