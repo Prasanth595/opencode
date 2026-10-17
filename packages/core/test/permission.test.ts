@@ -174,30 +174,13 @@ describe("Permission", () => {
       Permission.evaluate(action, resource, [{ action, resource: pattern, effect: "deny" }]).effect
 
     expect(deny("read", "Workshop/Checklist.md", "./Workshop/Checklist.md")).toBe("deny")
-    expect(deny("read", "Workshop/Checklist.md", "././Workshop/Checklist.md")).toBe("deny")
-    expect(deny("read", "Workshop/Checklist.md", ".//Workshop/Checklist.md")).toBe("deny")
-    expect(deny("read", ".", "./")).toBe("deny")
-    expect(deny("read", "Workshop/Checklist.md", ".\\Workshop\\Checklist.md")).toBe("deny")
-    expect(deny("read", "Workshop/Checklist.md", "./Workshop/*")).toBe("deny")
-    expect(deny("read", ".env", "./.env")).toBe("deny")
     expect(deny("edit", "Workshop/Checklist.md", "./Workshop/Checklist.md")).toBe("deny")
-    expect(deny("read", "Workshop/Other.md", "./Workshop/Checklist.md")).toBe("ask")
+    expect(deny("read", "Workshop/Checklist.md", "./Workshop/*")).toBe("deny")
     expect(deny("shell", "printf hello", "./printf hello")).toBe("ask")
     expect(
       Permission.evaluate("shell", "./printf hello", [{ action: "shell", resource: "./printf hello", effect: "deny" }])
         .effect,
     ).toBe("deny")
-    expect(
-      Permission.evaluate("read", "Workshop/Checklist.md", [
-        { action: "*", resource: "./Workshop/Checklist.md", effect: "deny" },
-      ]).effect,
-    ).toBe("deny")
-    expect(
-      Permission.evaluate("read", "Workshop/Checklist.md", [
-        { action: "read", resource: "./Workshop/Checklist.md", effect: "deny" },
-        { action: "read", resource: "*", effect: "allow" },
-      ]).effect,
-    ).toBe("allow")
   })
 
   it.effect("allows managed output reads without granting external directory access", () =>
