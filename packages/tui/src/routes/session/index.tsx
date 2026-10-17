@@ -235,7 +235,7 @@ export function Session(props: {
 
   const dimensions = useTerminalDimensions()
   const thinkingMode = createMemo<ThinkingMode>(() => config.session?.thinking ?? "hide")
-  const showScrollbar = createMemo(() => config.session?.scrollbar ?? false)
+  const showScrollbar = createMemo(() => config.session?.scrollbar ?? true)
   const markdownMode = createMemo(() => config.session?.markdown ?? "rendered")
   const diffWrapMode = createMemo(() => config.diffs?.wrap ?? "word")
   const groupExploration = createMemo(() => config.session?.grouping !== "none")
