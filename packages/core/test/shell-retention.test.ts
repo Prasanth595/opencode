@@ -205,7 +205,10 @@ it.live("retiming a timed-out shell while its output drains still resolves waite
       // The timeout fiber is now finishing; retiming must not interrupt it.
       yield* shell.timeout(info.id, 10_000)
       yield* Deferred.succeed(release, undefined)
-      expect((yield* shell.wait(info.id)).status).toBe("timeout")
+      const final = yield* shell.wait(info.id)
+      expect(final.status).toBe("timeout")
+      // Completed when the timeout fired, not when it was armed.
+      expect(final.time.completed! - final.time.started).toBeGreaterThanOrEqual(15)
     }).pipe(
       Effect.timeout("5 seconds"),
       Effect.provide(

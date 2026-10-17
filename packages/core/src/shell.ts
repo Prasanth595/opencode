@@ -79,8 +79,8 @@ export interface Interface {
   readonly wait: (id: Shell.ID) => Effect.Effect<Shell.Info, NotFoundError>
   // A known shell's terminal state and bounded tail. Missing capture remains distinct from its exit status.
   readonly result: (started: Shell.Info) => Effect.Effect<ShellResult.Result>
-  // Replaces the running command's timeout from now; zero clears it. Ignored once the process has
-  // ended and only its output is still being captured.
+  // Replaces the running command's timeout from now; zero clears it. Ignored once the command has
+  // ended or timed out, even while its process is still being killed or its output captured.
   readonly timeout: (id: Shell.ID, duration: number) => Effect.Effect<Shell.Info, NotFoundError>
   readonly output: (id: Shell.ID, input?: Shell.OutputInput) => Effect.Effect<Shell.Output, NotFoundError>
   readonly remove: (id: Shell.ID) => Effect.Effect<void, NotFoundError>
@@ -364,7 +364,7 @@ const layer = () =>
               // The process exit and the timeout race to record how the command ended; the first wins.
               const ended = Deferred.makeUnsafe<Ended>()
               const end = (outcome: Omit<Ended, "completed">) =>
-                Deferred.succeed(ended, { ...outcome, completed: Date.now() })
+                Effect.suspend(() => Deferred.succeed(ended, { ...outcome, completed: Date.now() }))
 
               command.timeout = (duration) =>
                 Effect.gen(function* () {
@@ -374,14 +374,19 @@ const layer = () =>
                   if (duration === 0) return
                   command.timeoutFiber = runFork(
                     Effect.sleep(Duration.millis(duration)).pipe(
-                      // A recorded timeout must always kill, so retiming cannot interrupt between the two.
+                      // A recorded timeout must always kill. The kill runs detached, so interrupting this
+                      // timer (retime, remove, teardown) neither cancels it nor waits for the process to die.
                       Effect.andThen(
                         end({ status: "timeout" }).pipe(
                           Effect.flatMap((won) =>
                             won
-                              ? handle
-                                  .kill({ forceKillAfter: Duration.seconds(3) })
-                                  .pipe(Effect.catch(() => Effect.void))
+                              ? Effect.sync(() =>
+                                  runFork(
+                                    handle
+                                      .kill({ forceKillAfter: Duration.seconds(3) })
+                                      .pipe(Effect.catch(() => Effect.void)),
+                                  ),
+                                )
                               : Effect.void,
                           ),
                           Effect.uninterruptible,
