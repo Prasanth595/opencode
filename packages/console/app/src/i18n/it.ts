@@ -36,6 +36,7 @@ export const dict = {
   "email.placeholder": "Indirizzo email",
   "email.subscribe": "Iscriviti",
   "email.success": "Quasi fatto, controlla la posta in arrivo e conferma il tuo indirizzo email",
+  "email.error": "Iscrizione non riuscita. Riprova.",
 
   "notFound.title": "Non trovato | opencode",
   "notFound.heading": "404 - Pagina non trovata",

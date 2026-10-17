@@ -36,6 +36,7 @@ export const dict = {
   "email.placeholder": "電子郵件地址",
   "email.subscribe": "訂閱",
   "email.success": "就差一步，請查收你的信箱並確認電子郵件地址",
+  "email.error": "訂閱失敗，請再試一次。",
 
   "notFound.title": "找不到頁面 | OpenCode",
   "notFound.heading": "404 - 找不到頁面",

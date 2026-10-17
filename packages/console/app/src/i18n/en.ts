@@ -37,6 +37,7 @@ export const dict = {
   "email.placeholder": "Email address",
   "email.subscribe": "Subscribe",
   "email.success": "Almost done, check your inbox and confirm your email address",
+  "email.error": "Couldn't subscribe you. Please try again.",
 
   "notFound.title": "Not Found | opencode",
   "notFound.heading": "404 - Page Not Found",

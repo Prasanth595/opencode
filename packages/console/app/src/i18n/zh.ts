@@ -36,6 +36,7 @@ export const dict = {
   "email.placeholder": "电子邮箱地址",
   "email.subscribe": "订阅",
   "email.success": "即将完成，请检查您的收件箱并确认您的邮箱地址",
+  "email.error": "订阅失败，请重试。",
 
   "notFound.title": "未找到页面 | OpenCode",
   "notFound.heading": "404 - 页面未找到",

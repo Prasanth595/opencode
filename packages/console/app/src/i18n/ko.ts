@@ -36,6 +36,7 @@ export const dict = {
   "email.placeholder": "이메일 주소",
   "email.subscribe": "구독",
   "email.success": "거의 완료되었습니다. 이메일 수신함을 확인하고 주소를 인증해주세요.",
+  "email.error": "구독하지 못했습니다. 다시 시도해주세요.",
 
   "notFound.title": "페이지를 찾을 수 없음 | OpenCode",
   "notFound.heading": "404 - 페이지를 찾을 수 없음",

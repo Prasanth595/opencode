@@ -36,6 +36,7 @@ export const dict = {
   "email.placeholder": "メールアドレス",
   "email.subscribe": "登録",
   "email.success": "ほぼ完了です。受信トレイを確認してメールアドレスを認証してください",
+  "email.error": "登録できませんでした。もう一度お試しください。",
 
   "notFound.title": "見つかりません | OpenCode",
   "notFound.heading": "404 - ページが見つかりません",
