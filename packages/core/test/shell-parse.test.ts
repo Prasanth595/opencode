@@ -218,7 +218,47 @@ describe("ShellParse", () => {
   })
 
   test("does not flag relative or internal-like paths as candidate paths", async () => {
-    const result = await Effect.runPromise(ShellParse.scan("cp src/a.ts src/b.ts", "/bin/bash", "/workspace"))
-    expect(result.paths ?? []).toHaveLength(0)
+    for (const scan of [
+      ShellParse.scan,
+      (c: string, s: string, d: string) => ShellParse.scan(c, s, d, { portable: true }),
+    ]) {
+      const result = await Effect.runPromise(scan("cp src/a.ts src/b.ts", "/bin/bash", "/workspace"))
+      expect(result.paths ?? []).toHaveLength(0)
+    }
+  })
+
+  test("does not flag standard device redirects or descriptor redirections as candidate paths", async () => {
+    for (const scan of [
+      ShellParse.scan,
+      (c: string, s: string, d: string) => ShellParse.scan(c, s, d, { portable: true }),
+    ]) {
+      const bashDev = await Effect.runPromise(scan("ls 2>/dev/null 2>&1", "/bin/bash", "/workspace"))
+      expect(bashDev.paths ?? []).toHaveLength(0)
+
+      const devOut = await Effect.runPromise(scan("echo x > /dev/null", "/bin/bash", "/workspace"))
+      expect(devOut.paths ?? []).toHaveLength(0)
+
+      const pwshNull = await Effect.runPromise(scan("Get-ChildItem > $null", "pwsh", "C:\\workspace"))
+      expect(pwshNull.paths ?? []).toHaveLength(0)
+
+      const pwshNul = await Effect.runPromise(scan("Get-ChildItem > NUL", "pwsh", "C:\\workspace"))
+      expect(pwshNul.paths ?? []).toHaveLength(0)
+    }
+  })
+
+  test("does not flag regex patterns or arbitrary command arguments as candidate paths", async () => {
+    for (const scan of [
+      ShellParse.scan,
+      (c: string, s: string, d: string) => ShellParse.scan(c, s, d, { portable: true }),
+    ]) {
+      const grep = await Effect.runPromise(scan("grep -rn '/api/v1' src", "/bin/bash", "/workspace"))
+      expect(grep.paths ?? []).toHaveLength(0)
+
+      const awk = await Effect.runPromise(scan("awk '/foo/ {print}' a.txt", "/bin/bash", "/workspace"))
+      expect(awk.paths ?? []).toHaveLength(0)
+
+      const sed = await Effect.runPromise(scan("sed 's/foo/bar/' a.txt", "/bin/bash", "/workspace"))
+      expect(sed.paths ?? []).toHaveLength(0)
+    }
   })
 })

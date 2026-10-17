@@ -12,8 +12,55 @@ import { Wildcard } from "../util/wildcard.js"
 
 type Part = { type: string; text: string }
 const CWD = new Set(["cd", "chdir", "popd", "pushd", "push-location", "set-location"])
+const FILE_COMMANDS = new Set([
+  "add-content",
+  "cat",
+  "chmod",
+  "chown",
+  "clear-content",
+  "copy",
+  "copy-item",
+  "cp",
+  "cpi",
+  "del",
+  "dir",
+  "erase",
+  "gc",
+  "gci",
+  "get-childitem",
+  "get-content",
+  "get-item",
+  "gi",
+  "head",
+  "ln",
+  "ls",
+  "mi",
+  "mkdir",
+  "move",
+  "move-item",
+  "mv",
+  "new-item",
+  "ni",
+  "out-file",
+  "remove-item",
+  "ri",
+  "rm",
+  "rmdir",
+  "sc",
+  "set-content",
+  "set-item",
+  "si",
+  "tail",
+  "tee",
+  "test-path",
+  "touch",
+  "truncate",
+  "type",
+])
 const POWERSHELL_PATH_FLAG_RE =
   /^-(?:p(?:ath|at|a)?|lp|l(?:i(?:t(?:e(?:r(?:a(?:l(?:p(?:a(?:t(?:h)?)?)?)?)?)?)?)?)?)?|psp(?:a(?:t(?:h)?)?)?):?$/i
+const DEVICE_PATH_RE =
+  /^(?:\/dev\/(?:null|zero|stdin|stdout|stderr|urandom|random|tty|pts(?:\/\w+)?|fd(?:\/\w+)?|tcp\/.*|udp\/.*)|(?:\\\\\.?\\)?(?:nul|con|prn|aux|com[1-9]|lpt[1-9])(?::)?|\$null)$/i
 
 export type Result = {
   commands: Array<{ resource: string; save: string }>
@@ -214,7 +261,11 @@ const scanLegacy = Effect.fnUntraced(function* (command: string, shell: string, 
               result.directories.push(...directoryArgs(command, powershell, cwd, shell))
               return result
             }
-            const candidatePaths = directoryArgs(command, powershell, cwd, shell).filter(isCandidatePath)
+            const candidatePaths = FILE_COMMANDS.has(name)
+              ? directoryArgs(command, powershell, cwd, shell).filter(isCandidatePath)
+              : powershell
+                ? flaggedPathArgs(command, cwd, shell).filter(isCandidatePath)
+                : []
             if (candidatePaths.length > 0) paths.push(...candidatePaths)
             result.commands.push({
               resource: (node.parent?.type === "redirected_statement" ? node.parent.text : node.text).trim(),
@@ -272,7 +323,11 @@ export const scanPortable = Effect.fnUntraced(function* (command: string, shell:
       output.directories.push(...directoryArgs(cmdParts, powershell, cwd, shell))
       continue
     }
-    const candidatePaths = directoryArgs(cmdParts, powershell, cwd, shell).filter(isCandidatePath)
+    const candidatePaths = FILE_COMMANDS.has(name)
+      ? directoryArgs(cmdParts, powershell, cwd, shell).filter(isCandidatePath)
+      : powershell
+        ? flaggedPathArgs(cmdParts, cwd, shell).filter(isCandidatePath)
+        : []
     if (candidatePaths.length > 0) paths.push(...candidatePaths)
     const selected = prefix(words.slice(0, PREFIX_LENGTH))
     const conventional = `${selected.join(" ")} *`
@@ -322,6 +377,7 @@ function commandParts(words: string[], rawWords: string[], decodedWords: string[
 }
 
 function isCandidatePath(text: string) {
+  if (DEVICE_PATH_RE.test(text)) return false
   return (
     text.startsWith("/") ||
     text.startsWith("\\") ||
@@ -329,6 +385,28 @@ function isCandidatePath(text: string) {
     /^[A-Za-z]:[/\\]/.test(text) ||
     /(?:^|[/\\])\.\.(?:[/\\]|$)/.test(text)
   )
+}
+
+function flaggedPathArgs(command: Part[], cwd: string, shell: string) {
+  const paths: string[] = []
+  let path = false
+  let endOfParameters = false
+  for (const part of command.slice(1)) {
+    if (!endOfParameters && part.text === "--") {
+      endOfParameters = true
+      continue
+    }
+    if (path) {
+      const value = directoryArgument(part.text, true, cwd, shell)
+      if (value) paths.push(value)
+      path = false
+      continue
+    }
+    if (!endOfParameters && part.type === "command_parameter") {
+      path = POWERSHELL_PATH_FLAG_RE.test(part.text)
+    }
+  }
+  return paths
 }
 
 function parts(node: Node) {
