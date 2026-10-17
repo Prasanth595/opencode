@@ -19,9 +19,9 @@ describe("Ripgrep", () => {
       yield* Effect.promise(() => Bun.write(path.join(tmp.path, "visible.ts"), "needle\n"))
       const ripgrep = yield* Ripgrep.Service
       for (const search of [
-        ripgrep.glob({ cwd: tmp.path, pattern: "[", limit: 10 }),
-        ripgrep.find({ cwd: tmp.path, pattern: "[", limit: 10 }),
-        ripgrep.grep({ cwd: tmp.path, pattern: "needle", include: "[", limit: 10 }),
+        ripgrep.glob({ cwd: tmp.path, pattern: "[", limit: 10 }).pipe(Effect.asVoid),
+        ripgrep.find({ cwd: tmp.path, pattern: "[", limit: 10 }).pipe(Effect.asVoid),
+        ripgrep.grep({ cwd: tmp.path, pattern: "needle", include: "[", limit: 10 }).pipe(Effect.asVoid),
       ]) {
         const error = yield* search.pipe(Effect.flip)
         expect(error.message).toContain("error parsing glob")
