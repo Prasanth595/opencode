@@ -39,7 +39,6 @@ test.each([false, true])("rejected existing-session shell preserves newer draft:
       if (url.pathname === `/api/session/${session.id}/shell` && request.method === "POST") {
         requested.resolve(await request.json())
         const reply = await response.promise
-        console.log("SHELL_ADMISSION_HTTP_RESPONSE", JSON.stringify({ sessionID: session.id, status: reply.status }))
         return reply
       }
       return undefined
@@ -57,14 +56,9 @@ test.each([false, true])("rejected existing-session shell preserves newer draft:
   expect(await requested.promise).toEqual({ command })
   await setup.waitForFrame(() => setup.renderer.currentFocusedEditor?.plainText === "")
   if (newerDraft) await setup.mockInput.typeText("newer unsent draft")
-  console.log(
-    "SHELL_ADMISSION_REQUEST",
-    JSON.stringify({ command, newerDraft, draft: setup.renderer.currentFocusedEditor?.plainText, status: 400 }),
-  )
   response.resolve(json({ message: "shell admission rejected" }, { status: 400 }))
   const frame = await setup.waitForFrame((frame) => frame.includes("Failed to run shell command"))
   const draft = setup.renderer.currentFocusedEditor?.plainText
-  console.log("SHELL_ADMISSION_OBSERVATION", JSON.stringify({ command, newerDraft, draft, status: 400 }))
   expect(draft).toBe(newerDraft ? "newer unsent draft" : command)
   if (newerDraft) expect(frame).not.toContain("Shell")
   else expect(frame).toContain("Shell")
