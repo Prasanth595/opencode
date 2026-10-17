@@ -4,7 +4,7 @@ import { AIError, isRetryable } from "@opencode/ai"
 import { Agent } from "@opencode/schema/agent"
 import { Model } from "@opencode/schema/model"
 import { SessionError } from "@opencode/schema/session-error"
-import { Clock, Duration, Effect } from "effect"
+import { Clock, Effect } from "effect"
 import { Bus } from "../../bus.js"
 import { ModelRetry } from "../../model-retry.js"
 import type { PluginHooks } from "../../plugin/hooks.js"
@@ -27,6 +27,7 @@ export interface Decision {
   readonly retry: true
   readonly attempt: number
   readonly delay: number
+  readonly cooldownKey?: string
 }
 
 export const policy = (sessionID: SessionSchema.ID) =>
@@ -50,7 +51,7 @@ export const policy = (sessionID: SessionSchema.ID) =>
           Number.isFinite(event.decision.delay) && event.decision.delay >= 0
             ? Math.ceil(event.decision.delay)
             : next.delay
-        return { retry: true as const, attempt: next.attempt, delay: normalized }
+        return { retry: true as const, attempt: next.attempt, delay: normalized, cooldownKey: next.cooldownKey }
       })
   })
 
@@ -64,15 +65,15 @@ export const make = (bus: Bus.Interface, sessionID: SessionSchema.ID) =>
     }) =>
       Effect.gen(function* () {
         const scheduled = yield* Clock.currentTimeMillis
+        const at = yield* ModelRetry.readyAt(input.decision, scheduled)
         yield* bus.publish(SessionEvent.RetryScheduled, {
           sessionID,
           assistantMessageID: input.assistantMessageID,
           attempt: input.decision.attempt,
-          at: scheduled + input.decision.delay,
+          at,
           error: input.error,
         })
-        const remaining = Math.max(0, scheduled + input.decision.delay - (yield* Clock.currentTimeMillis))
-        yield* Effect.sleep(Duration.millis(remaining))
+        yield* ModelRetry.wait(input.decision, scheduled)
       })
     return { decide, wait }
   })

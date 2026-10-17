@@ -8,6 +8,31 @@ interface Input {
   readonly retry: boolean
 }
 
+export interface Decision {
+  readonly attempt: number
+  readonly delay: number
+  readonly retry: boolean
+  /** The upstream origin whose 429 response established this shared cooldown. */
+  readonly cooldownKey?: string
+}
+
+const cooldowns = new Map<string, number>()
+
+const cooldownKey = (input: Input) => {
+  if (input.cause.reason._tag !== "RateLimit") return undefined
+  try {
+    const url = new URL(input.cause.reason.http?.url ?? "")
+    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined
+    return url.origin
+  } catch {
+    return undefined
+  }
+}
+
+const pruneCooldowns = (now: number) => {
+  for (const [origin, until] of cooldowns) if (until <= now) cooldowns.delete(origin)
+}
+
 /** Bound provider-requested delays so a hostile or buggy retry-after cannot stall a call for hours. */
 const RETRY_AFTER_MAX = Duration.toMillis("15 minutes")
 
@@ -51,13 +76,45 @@ export const policy = Effect.gen(function* () {
       const [, duration] = next
       attempt++
       if (input.cause.reason._tag === "Transport" && input.cause.reason.code === "Timeout") timeouts++
+      let delay = Math.ceil(Duration.toMillis(duration))
+      const key = cooldownKey(input)
+      if (input.retry && key) {
+        const until = Math.max(cooldowns.get(key) ?? 0, now + delay)
+        cooldowns.set(key, until)
+        pruneCooldowns(now)
+        delay = Math.max(delay, until - now)
+      }
       return {
         attempt,
-        delay: Math.ceil(Duration.toMillis(duration)),
+        delay,
         retry: input.retry && timeouts <= MAX_TIMEOUT_RETRIES,
+        cooldownKey: key,
       }
     })
 })
+
+/** Wait through the local retry delay and any newer cooldown published by another session. */
+export const wait = (decision: Decision, scheduledAt?: number) =>
+  Effect.gen(function* () {
+    const localUntil = (scheduledAt ?? (yield* Clock.currentTimeMillis)) + decision.delay
+    while (true) {
+      const now = yield* Clock.currentTimeMillis
+      pruneCooldowns(now)
+      const sharedUntil = decision.cooldownKey ? (cooldowns.get(decision.cooldownKey) ?? 0) : 0
+      const remaining = Math.max(localUntil, sharedUntil) - now
+      if (remaining <= 0) return
+      yield* Effect.sleep(Duration.millis(remaining))
+    }
+  })
+
+/** Absolute deadline used by both session events and retry waiting. */
+export const readyAt = (decision: Decision, scheduledAt: number) =>
+  Effect.gen(function* () {
+    const now = yield* Clock.currentTimeMillis
+    pruneCooldowns(now)
+    const sharedUntil = decision.cooldownKey ? (cooldowns.get(decision.cooldownKey) ?? 0) : 0
+    return Math.max(scheduledAt + decision.delay, sharedUntil)
+  })
 
 /** Retry a buffered model call from scratch; failed attempts never contribute to its returned output. */
 export const retry = <A, R>(effect: Effect.Effect<A, AIError, R>) =>
@@ -68,6 +125,7 @@ export const retry = <A, R>(effect: Effect.Effect<A, AIError, R>) =>
       if (result._tag === "Success") return result.success
       const decision = yield* decide({ cause: result.failure, retry: isRetryable(result.failure) })
       if (!decision?.retry) return yield* result.failure
-      yield* Effect.sleep(Duration.millis(decision.delay))
+      const scheduledAt = yield* Clock.currentTimeMillis
+      yield* wait(decision, scheduledAt)
     }
   })
