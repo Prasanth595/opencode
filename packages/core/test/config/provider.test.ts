@@ -53,6 +53,9 @@ describe("ConfigProviderPlugin.Plugin", () => {
                     settings: { compaction: { type: "summary" } },
                     package: "@opencode/ai/providers/openai/chat",
                   },
+                  buffered: {
+                    settings: { compaction: { buffer: 10_000 } },
+                  },
                   unsupported: { package: "@opencode/ai/providers/openai/chat" },
                 },
               },
@@ -63,14 +66,17 @@ describe("ConfigProviderPlugin.Plugin", () => {
       ])
       const native = required(yield* models.get(Provider.ID.make("custom"), Model.ID.make("native")))
       const local = required(yield* models.get(Provider.ID.make("custom"), Model.ID.make("local")))
+      const buffered = required(yield* models.get(Provider.ID.make("custom"), Model.ID.make("buffered")))
       const unsupported = required(yield* models.get(Provider.ID.make("custom"), Model.ID.make("unsupported")))
       const defaultModel = required(yield* models.get(Provider.ID.make("default"), Model.ID.make("chat")))
       expect(native.settings?.compaction).toEqual({ type: "native" })
       expect(local.settings?.compaction).toEqual({ type: "summary" })
+      expect(buffered.settings?.compaction).toEqual({ type: "native", buffer: 10_000 })
       expect(defaultModel.settings?.compaction).toBeUndefined()
       expect((yield* providers.get(Provider.ID.make("custom")))?.settings?.compaction).toEqual({ type: "native" })
       yield* ModelResolver.fromCatalogModel(native)
       yield* ModelResolver.fromCatalogModel(local)
+      yield* ModelResolver.fromCatalogModel(buffered)
       yield* ModelResolver.fromCatalogModel(defaultModel)
       expect(yield* ModelResolver.fromCatalogModel(unsupported).pipe(Effect.flip)).toMatchObject({
         _tag: "SessionRunnerModel.UnsupportedCompactionError",

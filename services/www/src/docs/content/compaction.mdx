@@ -84,7 +84,8 @@ Add `compaction` to any [OpenCode configuration file](/config):
 | `keep.tokens` | `15000` | Approximate recent conversation kept beside the summary. Larger values preserve more detail but leave less room for new work. |
 | `buffer` | 10% of the limit | Tokens to keep free below the model's limit. Larger values start automatic compaction earlier. |
 
-`keep.tokens` and `buffer` accept non-negative integers.
+`keep.tokens` and `buffer` accept non-negative integers. `buffer` is an
+absolute token count; it does not scale with the context window.
 
 ## Providers
 
@@ -108,6 +109,24 @@ provider or model with `settings.compaction`:
 
 A model setting overrides the provider setting. `native` uses the provider's
 compaction; `summary` uses OpenCode's own.
+
+Set `settings.compaction.buffer` on a provider or model to give models with
+different context windows independent headroom. The model value wins, then the
+provider value, then the top-level `compaction.buffer`:
+
+```jsonc title="opencode.jsonc"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "compaction": { "buffer": 20000 },
+  "providers": {
+    "openai": {
+      "models": {
+        "gpt-4.1": { "settings": { "compaction": { "buffer": 40000 } } },
+      },
+    },
+  },
+}
+```
 
 With native compaction, OpenCode sends the conversation to the provider's
 compaction endpoint. The provider returns an opaque, encrypted item that stands

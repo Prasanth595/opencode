@@ -85,7 +85,13 @@ describe("Model.Info", () => {
       compaction: { type: "native" },
     })
     expect(Schema.decodeUnknownSync(Provider.Compaction)({ type: "summary" })).toEqual({ type: "summary" })
+    expect(Schema.decodeUnknownSync(Provider.Compaction)({ type: "native", buffer: 10_000 })).toEqual({
+      type: "native",
+      buffer: 10_000,
+    })
+    expect(Schema.decodeUnknownSync(Provider.Compaction)({ buffer: 10_000 })).toEqual({ buffer: 10_000 })
     expect(() => Schema.decodeUnknownSync(Provider.Compaction)({ type: "automatic" })).toThrow()
+    expect(() => Schema.decodeUnknownSync(Provider.Compaction)({ buffer: -1 })).toThrow()
   })
 
   test("uses practical token limits for unknown models", () => {
