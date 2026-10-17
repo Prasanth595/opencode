@@ -27,7 +27,7 @@ import { sessionHref } from "@/shell/routes/session"
 import { showToast } from "@/shell/notifications/toast"
 import { sessionTitle } from "./title"
 import { SessionWorkingIndicator } from "./header/session-working-indicator"
-import { SessionHeaderSidebarSlot } from "@/shell/sidebar-toggle"
+import { CollapsedSidebarToggleSpace } from "@/shell/sidebar-toggle"
 import "./session-identity-header.css"
 
 export function SessionTitleHeader(props: ParentProps) {
@@ -36,7 +36,7 @@ export function SessionTitleHeader(props: ParentProps) {
       {/* The bottom inset reserves room for the fade without covering rows stuck below the bar. */}
       <div data-session-title class="pointer-events-none sticky top-0 z-30 w-full pb-4">
         <div class="pointer-events-auto flex items-center bg-v2-background-bg-base pe-3 ps-2.5">
-          <SessionHeaderSidebarSlot />
+          <CollapsedSidebarToggleSpace />
           <div class="min-w-0 flex-1">{props.children}</div>
         </div>
       </div>

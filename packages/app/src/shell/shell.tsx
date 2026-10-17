@@ -13,6 +13,7 @@ import { ExtensionServerCover } from "@/runtime/extension/server-shell"
 import { ExtensionSlot } from "@/runtime/extension/render"
 import { useCommand } from "@/shell/commands/command"
 import { useLanguage } from "@/runtime/i18n/language"
+import { CollapsedSidebarToggle } from "@/shell/sidebar-toggle"
 
 export default function Layout(props: ParentProps) {
   const platform = usePlatform()
@@ -139,6 +140,7 @@ export default function Layout(props: ParentProps) {
             <ExtensionServerCover>
               <Suspense>{props.children}</Suspense>
             </ExtensionServerCover>
+            <CollapsedSidebarToggle />
           </main>
         </div>
         <ExtensionSlot at="window.bottom" input={{}} />

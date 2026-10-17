@@ -4,6 +4,7 @@ import {
   NO_PROVIDER,
   REMOTE_SERVER,
   SERVER,
+  draftHref,
   expectPath,
   holdRoute,
   project,
@@ -361,6 +362,34 @@ test("vertical tabs resize, scroll, show shortcut hints, and navigate", async ({
   await tabB.click()
   await expectPath(page, sessionHref(b.id))
 })
+
+for (const [screen, href] of [
+  ["home", "/"],
+  ["new session", draftHref("draft_collapsed_sidebar")],
+  ["settings", "/settings"],
+  ["session", sessionHref(a.id)],
+] as const) {
+  test(`collapsed vertical tabs sidebar reopens from the ${screen} screen`, async ({ page }) => {
+    await mockWorkspace(page, {
+      name: "Tabs",
+      sessions: [a],
+      seed: {
+        settings: { appearance: { tabLayout: "vertical", sidebarOpen: false } },
+        tabs: [a.id, { draft: "draft_collapsed_sidebar", directory: "C:/OpenCode/Tabs" }],
+      },
+    })
+    await page.goto(href)
+
+    const sidebar = page.locator('[data-slot="vertical-tabs-sidebar"]')
+    await expect(sidebar).toHaveAttribute("data-state", "closed")
+    await page.locator("main").getByRole("button", { name: "Toggle sidebar", exact: true }).click()
+    await expect(sidebar).toHaveAttribute("data-state", "open")
+    await expect(sidebar.getByRole("button", { name: "Toggle sidebar", exact: true })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    )
+  })
+}
 
 test("vertical tab gaps hover and select the nearest row", async ({ page }) => {
   await mockWorkspace(page, {

@@ -27,6 +27,7 @@ import { ServerRowMenuView, serverMenuLabels } from "@/servers/registry/row-menu
 import { ServerHealthIndicator } from "@/servers/registry/row"
 import { type ServerHealth } from "@/runtime/server/health"
 import { fileManagerApp } from "@/home/projects/file-manager"
+import { CollapsedSidebarToggleSpace } from "@/shell/sidebar-toggle"
 import "./view.css"
 
 const HOME_PROJECT_NAV_LABEL = "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
@@ -173,7 +174,7 @@ function HomeProjectsPanel(props: HomeProjectsViewProps) {
         props.dropdown
           ? "flex max-h-[min(60dvh,calc(var(--kb-popper-content-available-height)-12px))] min-h-0 min-w-0 flex-col overflow-hidden"
           : `
-        mt-6 flex min-h-0 min-w-0 flex-col gap-4 overflow-hidden
+        mt-2.5 flex min-h-0 min-w-0 flex-col gap-4 overflow-hidden
         lg:sticky lg:top-14 lg:mt-14 lg:h-[calc(100cqh-56px)] lg:self-start lg:pt-[52px]
       `
       }
@@ -185,7 +186,13 @@ function HomeProjectsPanel(props: HomeProjectsViewProps) {
     >
       <Show when={!props.dropdown}>
         <div class="flex h-7 min-w-0 shrink-0 items-center justify-between pl-1.5 pr-3">
-          <div class="text-v2-text-text-muted [font-weight:530]">{props.language.t("home.projects")}</div>
+          {/* Below lg, Projects heads the page on the collapsed sidebar toggle's line. Starting the space at the row's
+              edge (the shell's 8px inset plus the grid's 12px padding) keeps the row's 6px padding after the toggle,
+              which lines the label up with the icons that follow it in the session and settings headers. */}
+          <div class="flex min-w-0 items-center">
+            <CollapsedSidebarToggleSpace start={20} class="lg:hidden" />
+            <div class="text-v2-text-text-muted [font-weight:530]">{props.language.t("home.projects")}</div>
+          </div>
           <Show when={props.servers.length === 1 && !(props.projects.length === 0 && props.recentlyClosed.length > 0)}>
             <Tooltip placement="bottom" value={props.language.t("home.project.add")}>
               <IconButton
