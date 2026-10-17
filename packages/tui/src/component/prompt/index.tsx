@@ -25,7 +25,7 @@ import { useEvent } from "../../context/event"
 import { editorSelectionKey, useEditorContext, type EditorSelection } from "../../context/editor"
 import { normalizePromptContent, openEditor } from "../../editor"
 import { useExit } from "../../context/exit"
-import { promptOffsetWidth } from "../../prompt/display"
+import { displayOffsetIndex, promptOffsetWidth } from "../../prompt/display"
 import { expandPromptInputPastedText, realignPromptInputMentions } from "../../prompt/mention"
 import { parseSlashHead } from "../../prompt/parse"
 import { stringWidth } from "../../util/string-width"
@@ -182,6 +182,34 @@ function argumentSlash(input: string, commands: readonly KeymapCommand[]) {
   return { command, input: head.arguments }
 }
 
+type VimOperator = "d" | "c" | "y" | ">" | "<" | "~"
+type VimFindKind = "t" | "f" | "T" | "F"
+type VimMotionSpec = { type: "motion"; key: string } | { type: "object"; around: boolean; char: string }
+type VimPending =
+  | { kind: "g"; op?: VimOperator; count?: number }
+  | { kind: "operator"; op: VimOperator; count: number }
+  | { kind: "find"; op?: VimOperator; count: number; find: VimFindKind }
+  | { kind: "textobject"; op: VimOperator; count: number; around: boolean }
+  | { kind: "replace"; count: number }
+type VimResolved = { range: { start: number; end: number }; linewise: boolean }
+type VimOperatorChange = { kind: "operator"; op: VimOperator; count: number; motion: VimMotionSpec; insert?: string }
+type VimLastChange =
+  | VimOperatorChange
+  | { kind: "simple"; key: string; count: number }
+  | { kind: "replace"; char: string; count: number }
+  | { kind: "insert"; text: string }
+
+const VIM_BRACKETS: Record<string, [string, string]> = {
+  "(": ["(", ")"],
+  ")": ["(", ")"],
+  "[": ["[", "]"],
+  "]": ["[", "]"],
+  "{": ["{", "}"],
+  "}": ["{", "}"],
+  "<": ["<", ">"],
+  ">": ["<", ">"],
+}
+
 export function Prompt(props: PromptProps) {
   let input: TextareaRenderable
   let anchor: BoxRenderable
@@ -206,6 +234,19 @@ export function Prompt(props: PromptProps) {
   const currentLocation = useLocation()
   const args = useArgs()
   const config = useConfig().data
+  const [vimMode, setVimMode] = createSignal<"insert" | "normal" | "visual">("insert")
+  const [vimPending, setVimPending] = createSignal<VimPending>()
+  const [vimCount, setVimCount] = createSignal(0)
+  const [vimVisualKind, setVimVisualKind] = createSignal<"char" | "line">("char")
+  const [vimVisualAnchor, setVimVisualAnchor] = createSignal(0)
+  const [vimRegister, setVimRegister] = createSignal<{ text: string; linewise: boolean }>({ text: "", linewise: false })
+  const [vimLastChange, setVimLastChange] = createSignal<VimLastChange>()
+  const [vimLastFind, setVimLastFind] = createSignal<{ find: VimFindKind; char: string }>()
+  const [vimLastVisual, setVimLastVisual] = createSignal<{ anchor: number; cursor: number; kind: "char" | "line" }>()
+  // Insert-session bookkeeping for `.`; intentionally non-reactive.
+  let vimInsertOrigin: number | undefined
+  let vimInsertOperator: VimOperatorChange | undefined
+  const vimEnabled = () => config.prompt?.vim !== false
   const dialog = useDialog()
   const toast = useToast()
   const status = createMemo(() => data.session.status(props.sessionID ?? ""))
@@ -351,7 +392,8 @@ export function Prompt(props: PromptProps) {
   createEffect(() => {
     if (!input || input.isDestroyed) return
     input.cursorColor = disabled() ? theme.background.raised.base : theme.text.base
-    if (config.cursor) input.cursorStyle = config.cursor
+    const style = vimEnabled() && vimMode() !== "insert" ? { style: "block" as const, blinking: false } : config.cursor
+    if (style) input.cursorStyle = style
   })
 
   const [store, setStore] = createStore<{
@@ -409,6 +451,10 @@ export function Prompt(props: PromptProps) {
       () => props.sessionID,
       () => {
         setStore("placeholder", randomIndex(list().length))
+        setVimMode("insert")
+        setVimPending(undefined)
+        setVimCount(0)
+        if (input && !input.isDestroyed) input.clearSelection()
       },
       { defer: true },
     ),
@@ -692,6 +738,9 @@ export function Prompt(props: PromptProps) {
       setStore("prompt", prompt)
       restoreExtmarksFromPrompt(prompt)
       input.gotoBufferEnd()
+      setVimMode("insert")
+      setVimPending(undefined)
+      setVimCount(0)
     },
     reset() {
       resetComposer()
@@ -706,6 +755,9 @@ export function Prompt(props: PromptProps) {
     setStore("prompt", emptyPrompt())
     setStore("extmarkToPart", new Map())
     input.clear()
+    setVimMode("insert")
+    setVimPending(undefined)
+    setVimCount(0)
   }
 
   // Captured once: the session route is keyed by sessionID, so this Prompt
@@ -1019,6 +1071,35 @@ export function Prompt(props: PromptProps) {
     return {
       priority: 1,
       target: inputTarget,
+      enabled:
+        inputTarget() !== undefined &&
+        !disabled() &&
+        vimEnabled() &&
+        vimMode() === "insert" &&
+        store.mode === "normal" &&
+        !auto()?.visible,
+      commands: [
+        {
+          bind: "escape",
+          title: "Enter Vim normal mode",
+          group: "Prompt",
+          run: () => {
+            if (!input || input.isDestroyed) return
+            vimLeaveInsert()
+            setVimMode("normal")
+            setVimPending(undefined)
+            setVimCount(0)
+            input.moveCursorLeft()
+          },
+        },
+      ],
+    }
+  })
+
+  Keymap.createLayer(() => {
+    return {
+      priority: 1,
+      target: inputTarget,
       enabled: (() => {
         cursorVersion()
         return inputTarget() !== undefined && !disabled() && !auto()?.visible && input !== undefined
@@ -1091,6 +1172,1148 @@ export function Prompt(props: PromptProps) {
   })
 
   let submitting = false
+
+  // OpenTUI cursor and selection offsets count display columns, while the Vim
+  // helpers index the plain string by code unit. Convert at this boundary.
+  function vimCaret() {
+    return displayOffsetIndex(input.plainText, input.cursorOffset)
+  }
+
+  function vimSetCaret(index: number) {
+    input.cursorOffset = promptOffsetWidth(input.plainText.slice(0, index))
+  }
+
+  function vimCell(index: number) {
+    return promptOffsetWidth(input.plainText.slice(0, index))
+  }
+
+  function vimHistory(direction: 1 | -1, times: number) {
+    for (let step = 0; step < times; step++) {
+      const item = history.move(direction, input.plainText)
+      if (!item) return
+      input.setText(item.text)
+      setStore("prompt", item)
+      setStore("mode", item.mode ?? "normal")
+      restoreExtmarksFromPrompt(item)
+      vimSetCaret(direction === -1 ? 0 : input.plainText.length)
+    }
+  }
+
+  function vimOffsetToPos(offset: number) {
+    const before = input.plainText.slice(0, offset)
+    const lineStart = before.lastIndexOf("\n") + 1
+    return { row: before.match(/\n/g)?.length ?? 0, col: promptOffsetWidth(before.slice(lineStart)) }
+  }
+
+  function vimDeleteRange(start: number, end: number) {
+    if (end <= start) return false
+    const from = vimOffsetToPos(start)
+    const to = vimOffsetToPos(end)
+    input.deleteRange(from.row, from.col, to.row, to.col)
+    return true
+  }
+
+  function vimStarts(text: string) {
+    return [0, ...[...text.matchAll(/\n/g)].map((match) => (match.index ?? 0) + 1)]
+  }
+
+  function vimRowStarts() {
+    return vimStarts(input.plainText)
+  }
+
+  function vimRow(offset: number) {
+    return input.plainText.slice(0, offset).match(/\n/g)?.length ?? 0
+  }
+
+  function vimLineStart(offset: number) {
+    return input.plainText.lastIndexOf("\n", offset - 1) + 1
+  }
+
+  function vimLineEnd(offset: number) {
+    const index = input.plainText.indexOf("\n", offset)
+    return index === -1 ? input.plainText.length : index
+  }
+
+  function vimFirstNonBlankOffset(offset: number) {
+    const start = vimLineStart(offset)
+    const line = input.plainText.slice(start, vimLineEnd(offset))
+    return start + (line.match(/^[ \t]*/)?.[0].length ?? 0)
+  }
+
+  function vimFirstNonBlank() {
+    vimSetCaret(vimFirstNonBlankOffset(vimCaret()))
+  }
+
+  function vimIsSpace(char: string | undefined) {
+    return char === undefined || /\s/.test(char)
+  }
+
+  function vimRepeat(times: number, fn: () => void) {
+    for (let step = 0; step < times; step++) fn()
+  }
+
+  function vimWordForwardOffset(offset: number, times: number) {
+    const text = input.plainText
+    let index = offset
+    for (let step = 0; step < times; step++) {
+      index++
+      while (index < text.length && vimIsSpace(text[index])) index++
+    }
+    return Math.min(index, text.length)
+  }
+
+  function vimWordBackwardOffset(offset: number, times: number) {
+    const text = input.plainText
+    let index = offset
+    for (let step = 0; step < times; step++) {
+      index = Math.max(0, index - 1)
+      while (index > 0 && vimIsSpace(text[index])) index--
+      while (index > 0 && !vimIsSpace(text[index - 1])) index--
+    }
+    return index
+  }
+
+  function vimWordEndOffset(offset: number, times = 1) {
+    const text = input.plainText
+    let index = offset
+    for (let step = 0; step < times; step++) {
+      // On the last character of a word, `e` advances to the end of the next word.
+      if (!vimIsSpace(text[index]) && vimIsSpace(text[index + 1])) {
+        index++
+        while (index < text.length && vimIsSpace(text[index])) index++
+      }
+      if (index >= text.length) return text.length
+      while (index + 1 < text.length && !vimIsSpace(text[index + 1])) index++
+      if (step + 1 < times) index = Math.min(index + 1, text.length)
+    }
+    return index
+  }
+
+  function vimMoveCapture(move: () => void) {
+    const start = input.cursorOffset
+    move()
+    const end = displayOffsetIndex(input.plainText, input.cursorOffset)
+    input.cursorOffset = start
+    return end
+  }
+
+  function vimLinewiseLineRange(first: number, last: number) {
+    const text = input.plainText
+    const starts = vimRowStarts()
+    const lo = Math.max(0, Math.min(first, last))
+    const hi = Math.min(starts.length - 1, Math.max(first, last))
+    const end = hi + 1 < starts.length ? (starts[hi + 1] ?? text.length) : text.length
+    // Reaching the buffer end drops the preceding newline so deleting trailing
+    // lines does not leave an empty last line behind.
+    const start = end === text.length && (starts[lo] ?? 0) > 0 ? (starts[lo] ?? 0) - 1 : (starts[lo] ?? 0)
+    return { start, end }
+  }
+
+  function vimDoubledRange(count: number) {
+    const row = vimRow(vimCaret())
+    return { range: vimLinewiseLineRange(row, row + (count || 1) - 1), linewise: true }
+  }
+
+  function vimMotionRange(motion: string, count: number): VimResolved | undefined {
+    const cursor = vimCaret()
+    const clamp = (value: number) => Math.max(0, Math.min(value, input.plainText.length))
+    const charwise = (start: number, end: number): VimResolved => ({
+      range: { start: clamp(Math.min(start, end)), end: clamp(Math.max(start, end)) },
+      linewise: false,
+    })
+    switch (motion) {
+      case "h":
+        return charwise(cursor - (count || 1), cursor)
+      case "l":
+      case " ":
+        return charwise(cursor, Math.min(vimLineEnd(cursor), cursor + (count || 1)))
+      case "w":
+        return charwise(
+          cursor,
+          vimMoveCapture(() => vimRepeat(count || 1, () => input.moveWordForward())),
+        )
+      case "W":
+        return charwise(cursor, vimWordForwardOffset(cursor, count || 1))
+      case "b":
+        return charwise(
+          vimMoveCapture(() => vimRepeat(count || 1, () => input.moveWordBackward())),
+          cursor,
+        )
+      case "B":
+        return charwise(vimWordBackwardOffset(cursor, count || 1), cursor)
+      case "e":
+      case "E":
+        return charwise(cursor, Math.min(vimWordEndOffset(cursor, count || 1) + 1, vimLineEnd(cursor)))
+      case "0":
+        return charwise(vimLineStart(cursor), cursor)
+      case "^":
+        return charwise(vimFirstNonBlankOffset(cursor), cursor)
+      case "$":
+        return charwise(cursor, vimLineEnd(cursor))
+      case "s":
+        return charwise(cursor, Math.min(vimLineEnd(cursor), cursor + (count || 1)))
+      case "j": {
+        const row = vimRow(cursor)
+        return { range: vimLinewiseLineRange(row, row + (count || 1)), linewise: true }
+      }
+      case "k": {
+        const row = vimRow(cursor)
+        return { range: vimLinewiseLineRange(row - (count || 1), row), linewise: true }
+      }
+      case "G":
+        return {
+          range: vimLinewiseLineRange(vimRow(cursor), count ? count - 1 : vimRowStarts().length - 1),
+          linewise: true,
+        }
+      case "gg":
+        return { range: vimLinewiseLineRange(count ? count - 1 : 0, vimRow(cursor)), linewise: true }
+      default:
+        return undefined
+    }
+  }
+
+  function vimFindIndex(char: string, find: VimFindKind, times: number) {
+    const cursor = vimCaret()
+    let index = cursor
+    if (find === "f" || find === "t") {
+      for (let step = 0; step < times; step++) {
+        index = input.plainText.indexOf(char, index + 1)
+        if (index === -1 || index >= vimLineEnd(cursor)) return undefined
+      }
+      return index
+    }
+    for (let step = 0; step < times; step++) {
+      index = input.plainText.lastIndexOf(char, index - 1)
+      if (index === -1 || index < vimLineStart(cursor)) return undefined
+    }
+    return index
+  }
+
+  function vimApplyFind(op: VimOperator | undefined, find: VimFindKind, char: string, count: number) {
+    const index = vimFindIndex(char, find, count || 1)
+    if (index === undefined) {
+      setVimCount(0)
+      return
+    }
+    if (op) {
+      const cursor = vimCaret()
+      const range =
+        find === "f"
+          ? { start: cursor, end: index + 1 }
+          : find === "t"
+            ? { start: cursor, end: index }
+            : find === "F"
+              ? { start: index, end: cursor }
+              : { start: index + 1, end: cursor }
+      vimApplyResolved(op, { range, linewise: false }, { type: "motion", key: find }, count)
+    } else {
+      const cursor = vimCaret()
+      if (find === "f" || find === "F") vimSetCaret(index)
+      else if (find === "t") vimSetCaret(Math.max(vimLineStart(index), index - 1))
+      else vimSetCaret(Math.min(vimLineEnd(cursor), index + 1))
+    }
+    setVimLastFind({ find, char })
+    setVimCount(0)
+  }
+
+  function vimToggleRange(range: { start: number; end: number }) {
+    const text = input.plainText
+    const toggled = text
+      .slice(range.start, range.end)
+      .replace(/[a-zA-Z]/g, (char) => (char === char.toLowerCase() ? char.toUpperCase() : char.toLowerCase()))
+    input.setText(text.slice(0, range.start) + toggled + text.slice(range.end))
+  }
+
+  function vimIndentRange(range: { start: number; end: number }, indent: boolean) {
+    const text = input.plainText
+    const firstRow = vimRow(range.start)
+    // Linewise ranges aimed at the buffer end start on the preceding newline.
+    const first = text[range.start] === "\n" ? firstRow + 1 : firstRow
+    const last = vimRow(Math.max(range.start, range.end - 1))
+    const lines = text.split("\n")
+    for (let row = first; row <= last; row++) {
+      lines[row] = indent ? "  " + (lines[row] ?? "") : (lines[row] ?? "").replace(/^ {1,2}|^\t/, "")
+    }
+    const next = lines.join("\n")
+    input.setText(next)
+    vimSetCaret(vimFirstNonBlankOffset(vimStarts(next)[first] ?? 0))
+  }
+
+  function vimReplaceChar(char: string, count: number) {
+    const cursor = vimCaret()
+    const end = Math.min(vimLineEnd(cursor), cursor + (count || 1))
+    if (end <= cursor) return
+    const text = input.plainText
+    input.setText(text.slice(0, cursor) + char.repeat(end - cursor) + text.slice(end))
+    vimSetCaret(cursor)
+    setVimLastChange({ kind: "replace", char, count: count || 1 })
+  }
+
+  function vimJoinLines(count: number) {
+    let cursor = vimCaret()
+    let next = input.plainText
+    for (let step = 0; step < (count || 1); step++) {
+      const newline = next.indexOf("\n", cursor)
+      if (newline === -1) break
+      let after = newline + 1
+      while (after < next.length && (next[after] === " " || next[after] === "\t")) after++
+      next = next.slice(0, newline) + " " + next.slice(after)
+      cursor = newline
+    }
+    input.setText(next)
+    vimSetCaret(cursor)
+  }
+
+  function vimPaste(after: boolean, count: number) {
+    const register = vimRegister()
+    if (!register.text) return
+    const text = input.plainText
+    const caret = vimCaret()
+    const times = count || 1
+    if (register.linewise) {
+      const chunk = register.text.repeat(times)
+      const lineEnd = vimLineEnd(caret)
+      const atBufferEnd = after && lineEnd >= text.length
+      const insertAt = after ? (atBufferEnd ? text.length : lineEnd + 1) : vimLineStart(caret)
+      const body = chunk.endsWith("\n") ? chunk : chunk + "\n"
+      const payload = atBufferEnd ? "\n" + body : body
+      input.setText(text.slice(0, insertAt) + payload + text.slice(insertAt))
+      vimSetCaret(vimFirstNonBlankOffset(atBufferEnd ? insertAt + 1 : insertAt))
+      return
+    }
+    const at = after ? Math.min(text.length, caret + 1) : caret
+    const payload = register.text.repeat(times)
+    input.setText(text.slice(0, at) + payload + text.slice(at))
+    vimSetCaret(at + payload.length - 1)
+  }
+
+  function vimWordObject(cursor: number, count: number, around: boolean): VimResolved {
+    const text = input.plainText
+    const onWord = !vimIsSpace(text[cursor])
+    const same = (index: number) => !vimIsSpace(text[index]) === onWord
+    let start = cursor
+    let end = Math.min(cursor + 1, text.length)
+    while (start > 0 && same(start - 1)) start--
+    while (end < text.length && same(end)) end++
+    for (let step = 1; step < count; step++) {
+      while (end < text.length && vimIsSpace(text[end])) end++
+      while (end < text.length && !vimIsSpace(text[end])) end++
+    }
+    if (around) {
+      const trailing = end
+      while (end < text.length && vimIsSpace(text[end])) end++
+      if (end === trailing) {
+        while (start > 0 && vimIsSpace(text[start - 1])) start--
+      }
+    }
+    return { range: { start, end: Math.max(start, end) }, linewise: false }
+  }
+
+  function vimQuoteObject(cursor: number, quote: string, around: boolean): VimResolved | undefined {
+    const text = input.plainText
+    const lineStart = vimLineStart(cursor)
+    const lineEnd = vimLineEnd(cursor)
+    const positions: number[] = []
+    for (let index = lineStart; index < lineEnd; index++) {
+      if (text[index] === quote && text[index - 1] !== "\\") positions.push(index)
+    }
+    let open = -1
+    let close = -1
+    for (let index = 0; index + 1 < positions.length; index += 2) {
+      const left = positions[index]
+      const right = positions[index + 1]
+      if (left === undefined || right === undefined) continue
+      if (left <= cursor && cursor <= right) {
+        open = left
+        close = right
+        break
+      }
+    }
+    if (open === -1) {
+      for (let index = 0; index + 1 < positions.length; index += 2) {
+        const left = positions[index]
+        const right = positions[index + 1]
+        if (left === undefined || right === undefined) continue
+        if (left >= cursor) {
+          open = left
+          close = right
+          break
+        }
+      }
+    }
+    if (open === -1 && positions.length >= 2) {
+      open = positions[positions.length - 2] ?? -1
+      close = positions[positions.length - 1] ?? -1
+    }
+    if (open === -1 || close === -1) return undefined
+    return around
+      ? { range: { start: open, end: close + 1 }, linewise: false }
+      : { range: { start: open + 1, end: close }, linewise: false }
+  }
+
+  function vimBracketObject(
+    cursor: number,
+    pair: [string, string],
+    count: number,
+    around: boolean,
+  ): VimResolved | undefined {
+    const [open, close] = pair
+    const text = input.plainText
+    let openIndex = -1
+    if (text[cursor] === open) {
+      openIndex = cursor
+    } else {
+      let depth = 0
+      for (let index = text[cursor] === close ? cursor - 1 : cursor; index >= 0; index--) {
+        if (text[index] === close) depth++
+        else if (text[index] === open) {
+          if (depth === 0) {
+            openIndex = index
+            break
+          }
+          depth--
+        }
+      }
+    }
+    if (openIndex === -1) return undefined
+
+    const findClose = (start: number) => {
+      let depth = 0
+      for (let index = start + 1; index < text.length; index++) {
+        if (text[index] === open) depth++
+        else if (text[index] === close) {
+          if (depth === 0) return index
+          depth--
+        }
+      }
+      return -1
+    }
+
+    let closeIndex = findClose(openIndex)
+    if (closeIndex === -1) return undefined
+
+    for (let level = 1; level < count; level++) {
+      let depth = 0
+      let parent = -1
+      for (let index = openIndex - 1; index >= 0; index--) {
+        if (text[index] === close) depth++
+        else if (text[index] === open) {
+          if (depth === 0) {
+            parent = index
+            break
+          }
+          depth--
+        }
+      }
+      if (parent === -1) break
+      const parentClose = findClose(parent)
+      if (parentClose === -1) break
+      openIndex = parent
+      closeIndex = parentClose
+    }
+
+    return around
+      ? { range: { start: openIndex, end: closeIndex + 1 }, linewise: false }
+      : { range: { start: openIndex + 1, end: closeIndex }, linewise: false }
+  }
+
+  function vimParagraphObject(cursor: number, count: number, around: boolean): VimResolved {
+    const text = input.plainText
+    const starts = vimRowStarts()
+    const lastRow = starts.length - 1
+    const lineText = (row: number) =>
+      text.slice(starts[row] ?? 0, row + 1 < starts.length ? (starts[row + 1] ?? text.length) - 1 : text.length)
+    const blank = (row: number) => lineText(row).trim() === ""
+    let first = vimRow(cursor)
+    while (first > 0 && !blank(first - 1)) first--
+    let last = vimRow(cursor)
+    while (last + 1 <= lastRow && !blank(last + 1)) last++
+    for (let step = 1; step < count; step++) {
+      let next = last + 1
+      while (next <= lastRow && blank(next)) next++
+      if (next > lastRow) break
+      last = next
+      while (last + 1 <= lastRow && !blank(last + 1)) last++
+    }
+    let start = starts[first] ?? 0
+    let end = last + 1 < starts.length ? (starts[last + 1] ?? text.length) : text.length
+    if (around) {
+      const before = end
+      let next = last + 1
+      while (next <= lastRow && blank(next)) {
+        end = next + 1 < starts.length ? (starts[next + 1] ?? text.length) : text.length
+        next++
+      }
+      if (end === before) {
+        while (first > 0 && blank(first - 1)) {
+          first--
+          start = starts[first] ?? 0
+        }
+      }
+    }
+    return { range: { start, end }, linewise: true }
+  }
+
+  function vimObjectRange(around: boolean, char: string, count: number): VimResolved | undefined {
+    const cursor = vimCaret()
+    if (char === "w") return vimWordObject(cursor, count || 1, around)
+    if (char === "p") return vimParagraphObject(cursor, count || 1, around)
+    if (char === '"' || char === "'" || char === "`") return vimQuoteObject(cursor, char, around)
+    const pair = VIM_BRACKETS[char]
+    if (pair) return vimBracketObject(cursor, pair, count || 1, around)
+    return undefined
+  }
+
+  function vimResolveSpec(spec: VimMotionSpec, count: number): VimResolved | undefined {
+    if (spec.type === "object") return vimObjectRange(spec.around, spec.char, count || 1)
+    if (
+      spec.key === "S" ||
+      spec.key === "d" ||
+      spec.key === "c" ||
+      spec.key === "y" ||
+      spec.key === ">" ||
+      spec.key === "<"
+    )
+      return vimDoubledRange(count || 1)
+    return vimMotionRange(spec.key, count)
+  }
+
+  function vimEnterInsert(change?: VimOperatorChange) {
+    vimInsertOrigin = vimCaret()
+    vimInsertOperator = change
+    setVimMode("insert")
+    setVimPending(undefined)
+    setVimCount(0)
+  }
+
+  function vimLeaveInsert() {
+    const origin = vimInsertOrigin
+    vimInsertOrigin = undefined
+    const operator = vimInsertOperator
+    vimInsertOperator = undefined
+    if (origin === undefined) return
+    const text = input.plainText.slice(origin, vimCaret())
+    if (operator) setVimLastChange({ ...operator, insert: text })
+    else if (text) setVimLastChange({ kind: "insert", text })
+  }
+
+  function vimApplyResolved(
+    op: VimOperator,
+    resolved: VimResolved,
+    motion: VimMotionSpec,
+    count: number,
+    insert?: string,
+  ) {
+    const { range, linewise } = resolved
+    if (op === "y") {
+      setVimRegister({ text: input.plainText.slice(range.start, range.end), linewise })
+      vimSetCaret(range.start)
+      return
+    }
+    if (op === "d" || op === "c") {
+      setVimRegister({ text: input.plainText.slice(range.start, range.end), linewise })
+      vimDeleteRange(range.start, range.end)
+      if (op === "c") {
+        const change: VimOperatorChange = { kind: "operator", op, count, motion }
+        if (insert !== undefined) {
+          input.insertText(insert)
+          vimSetCaret(range.start + insert.length)
+          setVimLastChange({ ...change, insert })
+        } else {
+          vimEnterInsert(change)
+        }
+      } else {
+        setVimLastChange({ kind: "operator", op, count, motion })
+      }
+      return
+    }
+    if (op === ">") {
+      vimIndentRange(range, true)
+      setVimLastChange({ kind: "operator", op, count, motion })
+      return
+    }
+    if (op === "<") {
+      vimIndentRange(range, false)
+      setVimLastChange({ kind: "operator", op, count, motion })
+      return
+    }
+    vimToggleRange(range)
+    vimSetCaret(range.start)
+    setVimLastChange({ kind: "operator", op, count, motion })
+  }
+
+  function vimExecute(op: VimOperator, spec: VimMotionSpec, count: number, insert?: string) {
+    // Vim's `cw`/`cW` stop at the end of the word instead of swallowing the
+    // trailing whitespace, unless the cursor starts on whitespace.
+    const changeWord = op === "c" && spec.type === "motion" && (spec.key === "w" || spec.key === "W")
+    const resolved = changeWord
+      ? vimMotionRange(vimIsSpace(input.plainText[vimCaret()]) ? spec.key : spec.key === "w" ? "e" : "E", count)
+      : vimResolveSpec(spec, count)
+    if (resolved) vimApplyResolved(op, resolved, spec, count, insert)
+    setVimCount(0)
+  }
+
+  function vimApplyObject(op: VimOperator, around: boolean, char: string, count: number) {
+    const resolved = vimObjectRange(around, char, count || 1)
+    if (resolved) vimApplyResolved(op, resolved, { type: "object", around, char }, count)
+    setVimCount(0)
+  }
+
+  function vimSyncSelection() {
+    if (vimMode() !== "visual") {
+      input.clearSelection()
+      return
+    }
+    const anchor = vimVisualAnchor()
+    const cursor = vimCaret()
+    if (vimVisualKind() === "line") {
+      input.setSelectionInclusive(
+        vimCell(vimLineStart(Math.min(anchor, cursor))),
+        vimCell(vimLineEnd(Math.max(anchor, cursor))),
+      )
+      return
+    }
+    input.setSelectionInclusive(vimCell(Math.min(anchor, cursor)), vimCell(Math.max(anchor, cursor)))
+  }
+
+  function vimVisualResolved(): VimResolved {
+    const anchor = vimVisualAnchor()
+    const cursor = vimCaret()
+    if (vimVisualKind() === "line") {
+      return { range: vimLinewiseLineRange(vimRow(anchor), vimRow(cursor)), linewise: true }
+    }
+    return { range: { start: Math.min(anchor, cursor), end: Math.max(anchor, cursor) + 1 }, linewise: false }
+  }
+
+  function vimExitVisual() {
+    setVimLastVisual({ anchor: vimVisualAnchor(), cursor: vimCaret(), kind: vimVisualKind() })
+    setVimMode("normal")
+    input.clearSelection()
+    setVimPending(undefined)
+    setVimCount(0)
+  }
+
+  function vimApplyVisual(op: VimOperator) {
+    const resolved = vimVisualResolved()
+    setVimLastVisual({ anchor: vimVisualAnchor(), cursor: vimCaret(), kind: vimVisualKind() })
+    input.clearSelection()
+    setVimMode("normal")
+    setVimPending(undefined)
+    setVimCount(0)
+    vimApplyResolved(op, resolved, { type: "motion", key: "v" }, 1)
+  }
+
+  function vimPasteVisual() {
+    const resolved = vimVisualResolved()
+    const register = vimRegister()
+    setVimLastVisual({ anchor: vimVisualAnchor(), cursor: vimCaret(), kind: vimVisualKind() })
+    input.clearSelection()
+    setVimMode("normal")
+    setVimPending(undefined)
+    setVimCount(0)
+    if (!register.text) return
+    vimDeleteRange(resolved.range.start, resolved.range.end)
+    input.insertText(register.text)
+    vimSetCaret(resolved.range.start + register.text.length - 1)
+  }
+
+  function vimRestoreVisual() {
+    const last = vimLastVisual()
+    if (!last) return
+    setVimVisualKind(last.kind)
+    setVimVisualAnchor(last.anchor)
+    setVimMode("visual")
+    vimSetCaret(last.cursor)
+    vimSyncSelection()
+  }
+
+  function vimEnterVisual(kind: "char" | "line") {
+    setVimVisualKind(kind)
+    setVimVisualAnchor(vimCaret())
+    setVimMode("visual")
+    setVimPending(undefined)
+    setVimCount(0)
+    vimSyncSelection()
+  }
+
+  function vimGotoLine(line: number) {
+    const starts = vimRowStarts()
+    vimSetCaret(starts[Math.min(line, starts.length - 1)] ?? 0)
+  }
+
+  function vimFlipFind(find: VimFindKind): VimFindKind {
+    if (find === "f") return "F"
+    if (find === "F") return "f"
+    if (find === "t") return "T"
+    return "t"
+  }
+
+  function vimCombineCount(first: number, second: number) {
+    const total = (first || 1) * (second || 1)
+    return first > 0 || second > 0 ? total : 0
+  }
+
+  function vimSimple(key: string, count: number) {
+    const times = count || 1
+    if (key === "x") {
+      vimRepeat(times, () => input.deleteChar())
+      return
+    }
+    if (key === "~") {
+      const cursor = vimCaret()
+      const end = Math.min(vimLineEnd(cursor), cursor + times)
+      if (end <= cursor) return
+      vimToggleRange({ start: cursor, end })
+      vimSetCaret(Math.min(end, vimLineEnd(cursor)))
+      return
+    }
+    if (key === "J") {
+      vimJoinLines(times)
+      return
+    }
+    if (key === "p" || key === "P") {
+      vimPaste(key === "p", times)
+    }
+  }
+
+  function vimDot() {
+    const change = vimLastChange()
+    if (!change) return
+    if (change.kind === "insert") {
+      if (!change.text) return
+      const at = vimCaret()
+      input.insertText(change.text)
+      vimSetCaret(at + change.text.length)
+      return
+    }
+    if (change.kind === "replace") {
+      vimReplaceChar(change.char, change.count)
+      return
+    }
+    if (change.kind === "simple") {
+      vimSimple(change.key, change.count)
+      return
+    }
+    vimExecute(change.op, change.motion, change.count, change.insert)
+  }
+
+  // Normal and visual mode own every unmodified key so nothing types into the
+  // prompt. Modified keys still reach the keymap, and structural keys such as
+  // arrows, Home/End and paging keep their existing bindings.
+  function takeCount() {
+    const count = vimCount()
+    setVimCount(0)
+    return count
+  }
+
+  function vimKey(event: KeyEvent): boolean {
+    if (!vimEnabled()) return false
+    if (disabled() || store.mode === "shell" || auto()?.visible) return false
+    if (!input || input.isDestroyed || !input.focused) return false
+    if (leader()) return false
+    if (event.ctrl || event.meta || event.super || event.hyper) return false
+    if (vimMode() === "normal") return vimNormalKey(event)
+    if (vimMode() === "visual") return vimVisualKey(event)
+    return false
+  }
+
+  // Shared cursor motions. `visual` makes j/k move by line instead of history.
+  function vimMove(key: string, times: number, visual: boolean) {
+    switch (key) {
+      case "h":
+        vimRepeat(times, () => input.moveCursorLeft())
+        return true
+      case "l":
+        vimRepeat(times, () => input.moveCursorRight())
+        return true
+      case "j":
+        if (visual) vimRepeat(times, () => input.moveCursorDown())
+        else vimHistory(1, times)
+        return true
+      case "k":
+        if (visual) vimRepeat(times, () => input.moveCursorUp())
+        else vimHistory(-1, times)
+        return true
+      case "w":
+        vimRepeat(times, () => input.moveWordForward())
+        return true
+      case "W":
+        vimSetCaret(vimWordForwardOffset(vimCaret(), times))
+        return true
+      case "b":
+        vimRepeat(times, () => input.moveWordBackward())
+        return true
+      case "B":
+        vimSetCaret(vimWordBackwardOffset(vimCaret(), times))
+        return true
+      case "e":
+      case "E":
+        vimSetCaret(vimWordEndOffset(vimCaret(), times))
+        return true
+      case "0":
+        input.gotoLineHome()
+        return true
+      case "$":
+        input.gotoLineEnd()
+        return true
+      case "^":
+        vimFirstNonBlank()
+        return true
+      default:
+        return false
+    }
+  }
+
+  function vimNormalKey(event: KeyEvent): boolean {
+    const pending = vimPending()
+
+    // Let the keymap clear a pending sequence and keep the existing double-Escape
+    // interrupt behavior; an idle Escape simply stays in normal mode.
+    if (event.name === "escape") {
+      setVimPending(undefined)
+      setVimCount(0)
+      return false
+    }
+    if (event.name === "return") {
+      setVimPending(undefined)
+      // A plain Enter still submits; an inserted newline is suppressed.
+      return event.shift
+    }
+    if (event.name === "backspace" || event.name === "delete") {
+      setVimPending(undefined)
+      return true
+    }
+    const key = event.name === "space" ? " " : event.sequence.length === 1 ? event.sequence : undefined
+    if (key === undefined) return false
+
+    if (pending?.kind === "find") {
+      setVimPending(undefined)
+      vimApplyFind(pending.op, pending.find, key, pending.count)
+      return true
+    }
+    if (pending?.kind === "replace") {
+      setVimPending(undefined)
+      vimReplaceChar(key, pending.count)
+      return true
+    }
+    if (pending?.kind === "g") {
+      setVimPending(undefined)
+      const count = takeCount()
+      if (key === "g") {
+        if (pending.op)
+          vimExecute(pending.op, { type: "motion", key: "gg" }, vimCombineCount(pending.count ?? 0, count))
+        else vimGotoLine(count ? count - 1 : 0)
+      } else if (key === "v" && !pending.op) {
+        vimRestoreVisual()
+      }
+      return true
+    }
+    if (pending?.kind === "textobject") {
+      setVimPending(undefined)
+      vimApplyObject(pending.op, pending.around, key, pending.count)
+      return true
+    }
+
+    if (/^[1-9]$/.test(key) || (key === "0" && vimCount() > 0)) {
+      setVimCount(vimCount() * 10 + Number(key))
+      return true
+    }
+
+    if (pending?.kind === "operator") {
+      if (key === "i" || key === "a") {
+        setVimPending({
+          kind: "textobject",
+          op: pending.op,
+          count: vimCombineCount(pending.count, takeCount()),
+          around: key === "a",
+        })
+        return true
+      }
+      if (key === "t" || key === "f" || key === "T" || key === "F") {
+        setVimPending({ kind: "find", op: pending.op, count: vimCombineCount(pending.count, takeCount()), find: key })
+        return true
+      }
+      if (key === "g") {
+        setVimPending({ kind: "g", op: pending.op, count: vimCombineCount(pending.count, takeCount()) })
+        return true
+      }
+      setVimPending(undefined)
+      vimExecute(pending.op, { type: "motion", key }, vimCombineCount(pending.count, takeCount()))
+      return true
+    }
+
+    const count = vimCount()
+    const times = count || 1
+
+    if (vimMove(key, times, false)) {
+      setVimCount(0)
+      return true
+    }
+
+    switch (key) {
+      case "g":
+        setVimPending({ kind: "g" })
+        return true
+      case "G":
+        if (count) vimGotoLine(count - 1)
+        else input.gotoBufferEnd()
+        setVimCount(0)
+        return true
+      case "d":
+        setVimPending({ kind: "operator", op: "d", count })
+        setVimCount(0)
+        return true
+      case "c":
+        setVimPending({ kind: "operator", op: "c", count })
+        setVimCount(0)
+        return true
+      case "y":
+        setVimPending({ kind: "operator", op: "y", count })
+        setVimCount(0)
+        return true
+      case ">":
+        setVimPending({ kind: "operator", op: ">", count })
+        setVimCount(0)
+        return true
+      case "<":
+        setVimPending({ kind: "operator", op: "<", count })
+        setVimCount(0)
+        return true
+      case "t":
+      case "f":
+      case "T":
+      case "F":
+        setVimPending({ kind: "find", count, find: key })
+        setVimCount(0)
+        return true
+      case "r":
+        setVimPending({ kind: "replace", count: times })
+        setVimCount(0)
+        return true
+      case "s":
+        vimExecute("c", { type: "motion", key: "s" }, times)
+        return true
+      case "S":
+        vimExecute("c", { type: "motion", key: "S" }, times)
+        return true
+      case "C":
+        vimExecute("c", { type: "motion", key: "$" }, times)
+        return true
+      case "D":
+        vimExecute("d", { type: "motion", key: "$" }, times)
+        return true
+      case "x":
+        vimSimple("x", times)
+        setVimLastChange({ kind: "simple", key: "x", count: times })
+        setVimCount(0)
+        return true
+      case "~":
+        vimSimple("~", times)
+        setVimLastChange({ kind: "simple", key: "~", count: times })
+        setVimCount(0)
+        return true
+      case "J":
+        vimSimple("J", times)
+        setVimLastChange({ kind: "simple", key: "J", count: times })
+        setVimCount(0)
+        return true
+      case "p":
+        vimSimple("p", times)
+        setVimLastChange({ kind: "simple", key: "p", count: times })
+        setVimCount(0)
+        return true
+      case "P":
+        vimSimple("P", times)
+        setVimLastChange({ kind: "simple", key: "P", count: times })
+        setVimCount(0)
+        return true
+      case "u":
+        vimRepeat(times, () => input.undo())
+        setVimCount(0)
+        return true
+      case ";": {
+        const last = vimLastFind()
+        if (last) vimApplyFind(undefined, last.find, last.char, times)
+        setVimCount(0)
+        return true
+      }
+      case ",": {
+        const last = vimLastFind()
+        if (last) vimApplyFind(undefined, vimFlipFind(last.find), last.char, times)
+        setVimCount(0)
+        return true
+      }
+      case ".":
+        vimDot()
+        setVimCount(0)
+        return true
+      case "i":
+        vimEnterInsert()
+        return true
+      case "a":
+        input.moveCursorRight()
+        vimEnterInsert()
+        return true
+      case "A":
+        input.gotoLineEnd()
+        vimEnterInsert()
+        return true
+      case "I":
+        vimFirstNonBlank()
+        vimEnterInsert()
+        return true
+      case "o":
+        input.gotoLineEnd()
+        input.newLine()
+        vimEnterInsert()
+        return true
+      case "O": {
+        const origin = vimLineStart(vimCaret())
+        vimSetCaret(origin)
+        input.newLine()
+        vimSetCaret(origin)
+        vimEnterInsert()
+        return true
+      }
+      case "v":
+        vimEnterVisual("char")
+        return true
+      case "V":
+        vimEnterVisual("line")
+        return true
+      default:
+        return true
+    }
+  }
+
+  function vimVisualKey(event: KeyEvent): boolean {
+    const pending = vimPending()
+
+    if (event.name === "escape") {
+      setVimPending(undefined)
+      setVimCount(0)
+      vimExitVisual()
+      return true
+    }
+    if (event.name === "return") return event.shift
+    if (event.name === "backspace" || event.name === "delete") return false
+    const key = event.name === "space" ? " " : event.sequence.length === 1 ? event.sequence : undefined
+    if (key === undefined) return false
+
+    if (pending?.kind === "find") {
+      setVimPending(undefined)
+      vimApplyFind(undefined, pending.find, key, pending.count)
+      vimSyncSelection()
+      return true
+    }
+    if (pending?.kind === "g") {
+      setVimPending(undefined)
+      const count = takeCount()
+      if (key === "g") vimSetCaret(count ? (vimRowStarts()[count - 1] ?? 0) : 0)
+      vimSyncSelection()
+      return true
+    }
+
+    if (/^[1-9]$/.test(key) || (key === "0" && vimCount() > 0)) {
+      setVimCount(vimCount() * 10 + Number(key))
+      return true
+    }
+
+    const count = vimCount()
+    const times = count || 1
+
+    if (key === "g") {
+      setVimPending({ kind: "g" })
+      return true
+    }
+
+    if (key === "o") {
+      const anchor = vimVisualAnchor()
+      setVimVisualAnchor(vimCaret())
+      vimSetCaret(anchor)
+      setVimCount(0)
+      vimSyncSelection()
+      return true
+    }
+
+    if (vimMove(key, times, true)) {
+      setVimCount(0)
+      vimSyncSelection()
+      return true
+    }
+
+    switch (key) {
+      case "G":
+        vimSetCaret(
+          count ? (vimRowStarts()[Math.min(count - 1, vimRowStarts().length - 1)] ?? 0) : input.plainText.length,
+        )
+        setVimCount(0)
+        vimSyncSelection()
+        return true
+      case "t":
+      case "f":
+      case "T":
+      case "F":
+        setVimPending({ kind: "find", count, find: key })
+        setVimCount(0)
+        return true
+      case ";": {
+        const last = vimLastFind()
+        if (last) vimApplyFind(undefined, last.find, last.char, times)
+        setVimCount(0)
+        vimSyncSelection()
+        return true
+      }
+      case ",": {
+        const last = vimLastFind()
+        if (last) vimApplyFind(undefined, vimFlipFind(last.find), last.char, times)
+        setVimCount(0)
+        vimSyncSelection()
+        return true
+      }
+      case "d":
+      case "x":
+        vimApplyVisual("d")
+        return true
+      case "c":
+        vimApplyVisual("c")
+        return true
+      case "y":
+        vimApplyVisual("y")
+        return true
+      case ">":
+        vimApplyVisual(">")
+        return true
+      case "<":
+        vimApplyVisual("<")
+        return true
+      case "~":
+        vimApplyVisual("~")
+        return true
+      case "p":
+        vimPasteVisual()
+        return true
+      case "v":
+      case "V":
+        vimExitVisual()
+        return true
+      default:
+        return true
+    }
+  }
+
+  onCleanup(
+    keymap.intercept(
+      "key",
+      (context) => {
+        if (vimKey(context.event)) {
+          context.consume({ preventDefault: true, stopPropagation: true })
+        }
+      },
+      { priority: 1000 },
+    ),
+  )
+
   async function submit(delivery: SessionInbox.Delivery = "steer") {
     if (disabled()) return false
     // Prevent overlapping invocations (e.g. a double-pressed Enter, or the
@@ -1834,6 +3057,9 @@ export function Prompt(props: PromptProps) {
             <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
               <PromptMetadataRow
                 mode={store.mode}
+                vim={
+                  vimEnabled() && vimMode() !== "insert" ? (vimMode() === "visual" ? "VISUAL" : "NORMAL") : undefined
+                }
                 agent={agentLabel()}
                 auto={local.permission.mode === "autoaccept"}
                 model={promptDisplay().modelLabel}

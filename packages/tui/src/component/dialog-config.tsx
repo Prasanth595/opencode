@@ -250,6 +250,15 @@ export const settings: Setting[] = [
     keywords: ["attachments", "clipboard", "images", "prompt"],
   },
   {
+    title: "Vim mode",
+    category: "Input",
+    path: ["prompt", "vim"],
+    default: true,
+    values: [false, true],
+    labels: ["off", "on"],
+    keywords: ["vim", "normal mode", "escape", "motions", "prompt history"],
+  },
+  {
     title: "Leader timeout",
     category: "Input",
     path: ["leader", "timeout"],

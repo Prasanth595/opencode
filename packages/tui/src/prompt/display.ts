@@ -11,7 +11,7 @@ export function promptOffsetWidth(value: string) {
   return width
 }
 
-function displayOffsetIndex(value: string, offset: number) {
+export function displayOffsetIndex(value: string, offset: number) {
   if (offset <= 0) return 0
 
   let width = 0

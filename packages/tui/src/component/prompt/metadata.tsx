@@ -7,6 +7,7 @@ import { stringWidth } from "../../util/string-width"
 
 export function PromptMetadataRow(props: {
   mode: "normal" | "shell"
+  vim?: string
   agent?: string
   auto: boolean
   model: string
@@ -21,16 +22,19 @@ export function PromptMetadataRow(props: {
   const theme = useTheme()
   const dimensions = useTerminalDimensions()
   const layout = createMemo(() => {
-    if (props.mode === "shell") return { agent: props.agent ?? "Shell", model: "" }
-    return promptMetadataLayout({
-      width: Math.max(0, dimensions().width - (dimensions().width < 44 ? 9 : 13)),
-      terminalWidth: dimensions().width,
-      agent: props.agent ?? "",
-      auto: props.auto,
-      model: props.model,
-      provider: props.provider,
-      variant: props.variant,
-    })
+    if (props.mode === "shell") return { agent: props.agent ?? "Shell", model: "", vim: undefined }
+    return {
+      ...promptMetadataLayout({
+        width: Math.max(0, dimensions().width - (dimensions().width < 44 ? 9 : 13)),
+        terminalWidth: dimensions().width,
+        agent: props.agent ?? "",
+        auto: props.auto,
+        model: props.model,
+        provider: props.provider,
+        variant: props.variant,
+      }),
+      vim: props.vim,
+    }
   })
 
   return (
@@ -81,6 +85,11 @@ export function PromptMetadataRow(props: {
             </Show>
           </box>
         </Show>
+      </Show>
+      <Show when={layout().vim}>
+        <text flexShrink={0} fg={fade(theme.text.muted, props.agentAlpha)}>
+          {layout().vim}
+        </text>
       </Show>
     </box>
   )

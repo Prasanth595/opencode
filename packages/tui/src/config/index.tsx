@@ -147,6 +147,9 @@ export const Info = Schema.Struct({
       image_preview: Schema.optional(Schema.Boolean).annotate({
         description: "Show image attachment previews above the prompt input",
       }),
+      vim: Schema.optional(Schema.Boolean).annotate({
+        description: "Enable Vim-style prompt editing: Escape enters normal mode. Defaults to true.",
+      }),
     }),
   ).annotate({ description: "Prompt input behavior" }),
   session: Schema.optional(
