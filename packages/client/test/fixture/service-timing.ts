@@ -6,6 +6,7 @@ const timing = {
   spawnDelay: 200,
   maxSpawnDelay: 1_200,
   promiseTimeout: 3_000,
+  unresponsiveGrace: 1_000,
   stopPollInterval: 5,
 }
 

@@ -11,15 +11,15 @@ export type LocalService = {
   readonly info: Info
   readonly endpoint: Endpoint
   readonly version?: string
-  readonly state: "ready" | "waiting" | "busy" | "failed"
+  readonly state: "ready" | "waiting" | "failed"
   readonly compatible: boolean
 }
 
-export type Status = Readonly<{ url: string; state: "ready" | "starting" | "busy" | "failed" }>;
+export type Status = Readonly<{ url: string; state: "ready" | "starting" }>;
 
 export function status(service: LocalService | undefined): Status | undefined {
-  if (service === undefined) return undefined
-  return { url: service.endpoint.url, state: service.state === "waiting" ? "starting" : service.state }
+  if (service === undefined || service.state === "failed") return undefined
+  return { url: service.endpoint.url, state: service.state === "waiting" ? "starting" : "ready" }
 }
 
 /**
@@ -66,11 +66,10 @@ export async function probeResult(info: Info, timeout = defaultEnsureTiming.requ
     }))
     .catch(() => undefined)
   if (result === undefined) {
-    if (!processAlive(info.pid)) return { service: undefined, timedOut: signal.aborted }
-    return {
-      service: { info, endpoint, version: info.version, state: "busy", compatible: true } satisfies LocalService,
-      timedOut: signal.aborted,
-    }
+    if (!processAlive(info.pid)) return { service: undefined, timedOut: false }
+    // A live PID does not prove this URL is served by that process. Let ensure apply a bounded
+    // grace period to actual probe timeouts; callers must not treat an unverified process as ready.
+    return { service: undefined, timedOut: signal.aborted }
   }
   const response = result.response
   // A missing health endpoint identifies protocol incompatibility, not an older
@@ -89,10 +88,9 @@ export async function probeResult(info: Info, timeout = defaultEnsureTiming.requ
   const serverInfo = decodeInfo(result.body)
   if (serverInfo === undefined) {
     if (!processAlive(info.pid)) return { service: undefined, timedOut: false }
-    return {
-      service: { info, endpoint, version: info.version, state: "busy", compatible: true } satisfies LocalService,
-      timedOut: false,
-    }
+    // A responding endpoint without a valid identity is not a healthy service, but a transient
+    // 503 with an empty body should receive the same bounded grace as a slow health request.
+    return { service: undefined, timedOut: true }
   }
   if (serverInfo.pid !== info.pid) return { service: undefined, timedOut: false }
   if (info.version !== undefined && serverInfo.version !== info.version) return { service: undefined, timedOut: false }

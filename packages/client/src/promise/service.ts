@@ -37,7 +37,7 @@ export async function ensure(options: EnsureOptions = {}): Promise<Endpoint> {
   const timing = ensureTiming(options)
   const deadline = Date.now() + timing.promiseTimeout
   const pool = contenderPool(timing)
-  let stalled: { readonly info: Info; readonly count: number } | undefined
+  let stalled: { readonly info: Info; readonly since: number } | undefined
   let announced = false
 
   const announce = (reason: "missing" | "version-mismatch", previousVersion?: string) => {
@@ -60,19 +60,27 @@ export async function ensure(options: EnsureOptions = {}): Promise<Endpoint> {
       if (Date.now() >= deadline)
         throw pool.failure() ?? new Error("Timed out waiting for the background service to start")
       const registration = await registered(options.file, timing.requestTimeout)
-      if (registration.timedOut && registration.info !== undefined && pool.owns(registration.info.pid)) {
+      let waitingOnUnresponsive = false
+      if (registration.timedOut && registration.info !== undefined) {
+        const since = stalled !== undefined && same(stalled.info, registration.info) ? stalled.since : Date.now()
         stalled = {
           info: registration.info,
-          count: stalled !== undefined && same(stalled.info, registration.info) ? stalled.count + 1 : 1,
+          since,
         }
-        if (stalled.count >= 3) {
-          console.warn("Background service contender is unresponsive; replacing the owned startup attempt")
+        if (Date.now() - since >= timing.unresponsiveGrace) {
+          const owned = pool.owns(registration.info.pid)
+          console.warn(
+            owned
+              ? "Background service contender is unresponsive; replacing the owned startup attempt"
+              : "Registered background service did not answer health checks; replacing its registration",
+          )
           await PtyHandoff.clear(options.file ?? fallback())
-          await terminate(registration.info, options, timing)
+          if (owned) await terminate(registration.info, options, timing)
+          else await unregister(registration.info, options.file)
           pool.evict(registration.info.pid)
           pool.recruitNow()
           stalled = undefined
-        }
+        } else waitingOnUnresponsive = true
       } else stalled = undefined
       if (registration.service !== undefined) {
         pool.serviceAnswered()
@@ -82,9 +90,6 @@ export async function ensure(options: EnsureOptions = {}): Promise<Endpoint> {
         if (decision._tag === "reuse") {
           await PtyHandoff.complete(options.file ?? fallback(), service.info)
           return service.endpoint
-        }
-        if (decision._tag === "wait" && service.state === "busy") {
-          await delay(Math.max(timing.pollInterval, Math.min(timing.requestTimeout, 1_000)))
         }
         if (decision._tag === "replace") {
           announce("version-mismatch", service.version)
@@ -96,7 +101,7 @@ export async function ensure(options: EnsureOptions = {}): Promise<Endpoint> {
       } else {
         const failed = pool.reap()
         if (failed !== undefined) throw failed
-        if (pool.shouldRecruit(registration.info !== undefined)) {
+        if (!waitingOnUnresponsive && pool.shouldRecruit(false)) {
           announce("missing")
           pool.add(await spawnContender())
         }
@@ -172,6 +177,11 @@ async function terminate(info: Info, options: { readonly file?: string }, timing
   const latest = await read(options.file)
   if (latest === undefined || !same(latest, info)) return
   await rm(options.file ?? fallback(), { force: true })
+}
+
+async function unregister(info: Info, file?: string) {
+  const current = await read(file)
+  if (current !== undefined && same(current, info)) await rm(file ?? fallback(), { force: true })
 }
 
 function delay(milliseconds: number) {

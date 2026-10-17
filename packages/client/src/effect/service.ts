@@ -1,4 +1,4 @@
-import { Effect, FileSystem, Option, Schedule, Schema } from "effect"
+import { Clock, Effect, FileSystem, Option, Schedule, Schema } from "effect"
 import type { DiscoverOptions, EnsureOptions, StopOptions } from "../service.js"
 import { contenderPool, spawnServiceContender } from "../service-contender.js"
 import { defaultEnsureTiming, ensureTiming, type EnsureTiming } from "../service-timing.js"
@@ -57,7 +57,7 @@ export const incumbent = Effect.fn("service.incumbent")(function* (
 export const ensure = Effect.fn("service.ensure")(function* (options: EnsureOptions = {}) {
   const timing = ensureTiming(options)
   const pool = contenderPool(timing)
-  let stalled: { readonly info: Info; readonly count: number } | undefined
+  let stalled: { readonly info: Info; readonly since: number } | undefined
   let announced = false
   const announce = (reason: "missing" | "version-mismatch", previousVersion?: string) =>
     Effect.sync(() => {
@@ -80,16 +80,25 @@ export const ensure = Effect.fn("service.ensure")(function* (options: EnsureOpti
     const registration = yield* registered(options.file, timing.requestTimeout)
     const info = registration.info
     const service = registration.service
-    if (registration.timedOut && info !== undefined && pool.owns(info.pid)) {
-      stalled = { info, count: stalled !== undefined && same(stalled.info, info) ? stalled.count + 1 : 1 }
-      if (stalled.count >= 3) {
-        yield* Effect.logWarning("Background service contender is unresponsive; replacing the owned startup attempt")
+    let waitingOnUnresponsive = false
+    if (registration.timedOut && info !== undefined) {
+      const now = yield* Clock.currentTimeMillis
+      const since = stalled !== undefined && same(stalled.info, info) ? stalled.since : now
+      stalled = { info, since }
+      if (now - since >= timing.unresponsiveGrace) {
+        const owned = pool.owns(info.pid)
+        yield* Effect.logWarning(
+          owned
+            ? "Background service contender is unresponsive; replacing the owned startup attempt"
+            : "Registered background service did not answer health checks; replacing its registration",
+        )
         yield* Effect.tryPromise(() => PtyHandoff.clear(options.file ?? fallback()))
-        yield* terminate(info, options, timing)
+        if (owned) yield* terminate(info, options, timing)
+        else yield* unregister(info, options.file)
         pool.evict(info.pid)
         pool.recruitNow()
         stalled = undefined
-      }
+      } else waitingOnUnresponsive = true
     } else stalled = undefined
     if (service !== undefined) {
       pool.serviceAnswered()
@@ -98,9 +107,6 @@ export const ensure = Effect.fn("service.ensure")(function* (options: EnsureOpti
       if (decision._tag === "reuse") {
         yield* Effect.tryPromise(() => PtyHandoff.complete(options.file ?? fallback(), service.info))
         return Option.some(service)
-      }
-      if (decision._tag === "wait" && service.state === "busy") {
-        yield* Effect.sleep(Math.max(timing.pollInterval, Math.min(timing.requestTimeout, 1_000)))
       }
       if (decision._tag === "replace") {
         yield* announce("version-mismatch", service.version)
@@ -114,7 +120,7 @@ export const ensure = Effect.fn("service.ensure")(function* (options: EnsureOpti
 
     const failed = pool.reap()
     if (failed !== undefined) return yield* Effect.fail(failed)
-    if (pool.shouldRecruit(info !== undefined)) {
+    if (!waitingOnUnresponsive && pool.shouldRecruit(false)) {
       yield* announce("missing")
       pool.add(yield* spawnContender)
     }
@@ -201,6 +207,13 @@ const terminate = Effect.fnUntraced(function* (info: Info, options: { readonly f
   if (latest === undefined || !same(latest, info)) return
   const fs = yield* FileSystem.FileSystem
   yield* fs.remove(options.file ?? fallback()).pipe(Effect.ignore)
+})
+
+const unregister = Effect.fnUntraced(function* (info: Info, file?: string) {
+  const current = yield* read(file)
+  if (current === undefined || !same(current, info)) return
+  const fs = yield* FileSystem.FileSystem
+  yield* fs.remove(file ?? fallback()).pipe(Effect.ignore)
 })
 
 /** Effect-based local service lifecycle operations. */

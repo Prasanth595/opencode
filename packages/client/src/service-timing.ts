@@ -4,6 +4,7 @@ export type EnsureTiming = {
   readonly spawnDelay: number
   readonly maxSpawnDelay: number
   readonly promiseTimeout: number
+  readonly unresponsiveGrace: number
   readonly stopPollInterval: number
   readonly stopPollAttempts: number
 }
@@ -19,6 +20,8 @@ export const defaultEnsureTiming: EnsureTiming = {
   spawnDelay: 5_000,
   maxSpawnDelay: 30_000,
   promiseTimeout: 120_000,
+  // A delayed /api/info during load must not trigger a restart loop, but a hung service must recover.
+  unresponsiveGrace: 30_000,
   stopPollInterval: 50,
   stopPollAttempts: 100,
 }
