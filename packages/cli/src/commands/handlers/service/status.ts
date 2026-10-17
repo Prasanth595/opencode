@@ -10,6 +10,6 @@ export default Runtime.handler(
   Effect.fn("cli.service.status")(function* () {
     const options = yield* ServiceConfig.options()
     const found = yield* Service.status({ ...options, version: undefined })
-    process.stdout.write((found?.url ?? "stopped") + EOL)
+    process.stdout.write((found?.url ?? found?.state ?? "stopped") + EOL)
   }),
 )

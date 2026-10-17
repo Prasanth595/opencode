@@ -15,10 +15,11 @@ export type LocalService = {
   readonly compatible: boolean
 }
 
-export type Status = Readonly<{ url: string; state: "ready" | "starting" }>;
+export type Status = Readonly<{ url?: string; state: "ready" | "starting" | "failed" | "unresponsive" }>;
 
 export function status(service: LocalService | undefined): Status | undefined {
-  if (service === undefined || service.state === "failed") return undefined
+  if (service === undefined) return undefined
+  if (service.state === "failed") return { state: "failed" }
   return { url: service.endpoint.url, state: service.state === "waiting" ? "starting" : "ready" }
 }
 

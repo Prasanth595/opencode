@@ -33,7 +33,10 @@ export const discover = Effect.fn("service.discover")(function* (options: Discov
 /** Report a registered process even when its health endpoint is busy. */
 export const status = Effect.fn("service.status")(function* (options: DiscoverOptions = {}) {
   const info = yield* read(options.file)
-  const found = info === undefined ? undefined : (yield* Effect.promise(() => probeResult(info, 250))).service
+  if (info === undefined) return undefined
+  const probe = yield* Effect.promise(() => probeResult(info, 250))
+  if (probe.timedOut) return { state: "unresponsive" as const }
+  const found = probe.service
   if (found !== undefined && !matchesVersion(found.version, options)) return undefined
   return serviceStatus(found)
 })

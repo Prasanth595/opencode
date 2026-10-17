@@ -117,7 +117,7 @@ test("reports a failed registered service", async () => {
   await expect(ensure({ file: registration, version: "test", command: [] })).rejects.toThrow(
     "Background service failed to start",
   )
-  expect(await serviceStatus({ file: registration })).toBeUndefined()
+  expect(await serviceStatus({ file: registration })).toEqual({ state: "failed" })
 })
 
 test("reports overlapping contender failures without recruiting replacements", async () => {
@@ -211,7 +211,7 @@ test("replaces an unresponsive service after a bounded grace without killing an 
   const existing = fixture.spawn("hanging")
   await fixture.waitForFile()
   const original = await Bun.file(registration).json()
-  expect(await serviceStatus({ file: registration })).toBeUndefined()
+  expect(await serviceStatus({ file: registration })).toEqual({ state: "unresponsive" })
 
   const endpoint = await ensure({
     file: registration,
