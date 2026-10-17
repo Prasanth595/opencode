@@ -600,12 +600,10 @@ const lowerMessages = Effect.fnUntraced(function* (request: LLMRequest, options:
     if (pendingAttachments.length === 0) return
     bridgeTools()
     const content = pendingAttachments.splice(0)
-    // OpenRouter's Gemini translation rejects image-only tool continuations when
-    // the preceding model turn carries thought signatures.
+    // Keep synthetic tool-media continuations text-bearing for OpenRouter's
+    // Gemini translation, including turns carrying thought signatures.
     const prefix =
-      request.model.provider === "openrouter" &&
-      modelID.startsWith("google/gemini-") &&
-      content.every((part) => part.type === "image_url")
+      request.model.provider === "openrouter" && modelID.startsWith("google/gemini-")
         ? [{ type: "text" as const, text: "Attached media from tool result:" }]
         : []
     messages.push({ role: "user", content: [...prefix, ...content] })
