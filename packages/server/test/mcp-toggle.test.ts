@@ -2,7 +2,6 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { expect } from "bun:test"
 import { Effect } from "effect"
-import { parse } from "jsonc-parser"
 import { tmpdir } from "../../core/test/fixture/tmpdir"
 import { it } from "../../core/test/lib/effect"
 import { startServer } from "./fixture/server"
@@ -43,7 +42,7 @@ it.live("persists disabling and enabling a failed MCP server in its config file"
       }
       throw new Error(`MCP server did not reach ${expected}`)
     })
-    const read = () => Effect.promise(() => fs.readFile(config, "utf8").then((text) => parse(text)))
+    const read = () => Effect.promise(() => fs.readFile(config, "utf8").then((text) => JSON.parse(text)))
 
     yield* status("failed")
     expect((yield* request("/api/experimental/mcp/broken/disconnect", "POST")).status).toBe(204)
@@ -52,5 +51,6 @@ it.live("persists disabling and enabling a failed MCP server in its config file"
 
     expect((yield* request("/api/experimental/mcp/broken/connect", "POST")).status).toBe(204)
     expect((yield* read()).mcp.servers.broken).not.toHaveProperty("disabled")
+    yield* status("failed")
   }),
 )

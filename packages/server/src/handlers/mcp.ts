@@ -60,8 +60,9 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
         "mcp.connect",
         Effect.fn(function* (ctx) {
           const service = yield* Mcp.Service
-          // A changed config file reloads and starts the server itself; connecting here too would start it twice.
-          if (yield* persistDisabled(ctx.params.server, false)) return HttpApiSchema.NoContent.make()
+          yield* persistDisabled(ctx.params.server, false)
+          // Connect even after a config edit: the merged config can still disable the server, and the
+          // reload that follows the edit at worst restarts it.
           yield* notFound(service.connect(ctx.params.server))
           return HttpApiSchema.NoContent.make()
         }),
