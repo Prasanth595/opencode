@@ -1,8 +1,9 @@
 import { Database } from "bun:sqlite"
 import { expect, test } from "bun:test"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { isolatedEnv } from "./fixture/environment"
 import { compactDatabase } from "../src/commands/handlers/db/maintenance"
 
 test("vacuum converts an existing database and reclaims deleted pages", async () => {
@@ -37,3 +38,63 @@ test("vacuum converts an existing database and reclaims deleted pages", async ()
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test("db vacuum command runs without a service registration", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencode-db-vacuum-cli-"))
+  try {
+    const result = await runVacuum(root)
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" })
+    expect(result.stdout).toContain("Database vacuum complete")
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("db vacuum command refuses a live registered service process", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencode-db-vacuum-live-service-"))
+  try {
+    const state = join(root, "state", "opencode")
+    await mkdir(state, { recursive: true })
+    await writeFile(
+      join(state, "service-local.json"),
+      JSON.stringify({ url: "http://127.0.0.1:1", pid: process.pid, version: "test" }),
+    )
+
+    const result = await runVacuum(root)
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain("still running")
+    expect(result.stdout).toBe("")
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("vacuum reports a busy database without continuing maintenance", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "opencode-db-vacuum-busy-"))
+  const filename = join(dir, "busy.db")
+  const owner = new Database(filename)
+  try {
+    owner.exec("CREATE TABLE history (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)")
+    owner.exec("BEGIN EXCLUSIVE")
+    expect(() => compactDatabase(filename)).toThrow("stop every OpenCode process")
+  } finally {
+    if (owner.inTransaction) owner.exec("ROLLBACK")
+    owner.close()
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+async function runVacuum(root: string) {
+  const child = Bun.spawn([process.execPath, "run", join(import.meta.dir, "../src/index.ts"), "db", "vacuum"], {
+    cwd: join(import.meta.dir, ".."),
+    env: isolatedEnv(root),
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ])
+  return { stdout, stderr, exitCode }
+}
