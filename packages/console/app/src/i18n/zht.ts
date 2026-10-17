@@ -229,7 +229,6 @@ export const dict = {
   "go.problem.title": "Go 正在解決什麼問題？",
   "go.problem.body":
     "我們致力於將 OpenCode 體驗帶給盡可能多的人。OpenCode Go 是一款每月 $10 的低成本訂閱服務。它提供充裕的額度，並讓您能可靠地使用最強大的開源模型。",
-  "go.problem.subtitle": " ",
   "go.problem.item1": "低成本訂閱定價",
   "go.problem.item2": "寬裕的限額與穩定存取",
   "go.problem.item3": "專為盡可能多的程式設計師打造",

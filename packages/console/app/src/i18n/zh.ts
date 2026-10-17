@@ -230,7 +230,6 @@ export const dict = {
   "go.problem.title": "Go 解决了什么问题？",
   "go.problem.body":
     "我们致力于将 OpenCode 体验带给尽可能多的人。OpenCode Go 是一款每月 $10 的低成本订阅服务。它提供充裕的额度，并让您能可靠地使用最强大的开源模型。",
-  "go.problem.subtitle": " ",
   "go.problem.item1": "低成本订阅定价",
   "go.problem.item2": "充裕的限额和可靠的访问",
   "go.problem.item3": "为尽可能多的程序员打造",
