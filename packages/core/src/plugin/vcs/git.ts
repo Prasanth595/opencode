@@ -492,7 +492,7 @@ function makeGit(proc: AppProcess.Interface, env?: Record<string, string>) {
     const result = yield* run(args, { cwd })
     if (result.exitCode === 0) return true
 
-    // `git add --sparse` is unavailable in older Git versions (including Apple Git).
+    // `git add --sparse` is unavailable in older Git versions.
     // Retry without it; if the worktree is sparse and this cannot add the paths, callers
     // retain the existing per-file fallback.
     if (result.exitCode !== 129) return false
