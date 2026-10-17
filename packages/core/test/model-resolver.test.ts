@@ -1,9 +1,10 @@
 import { describe, expect } from "bun:test"
-import { LLM, LanguageModel, Message } from "@opencode/ai"
+import { LLM, LLMClient, LanguageModel, Message } from "@opencode/ai"
 import { OpenAIChat } from "@opencode/ai/protocols"
 import { compileRequest } from "@opencode/ai/route/client"
-import { ConfigProvider, Effect, Layer } from "effect"
-import { Headers } from "effect/http"
+import { RequestExecutor } from "@opencode/ai/route"
+import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { Headers, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { AISDKNative } from "@opencode/core/aisdk-native"
 import { Credential } from "@opencode/core/credential"
 import { Integration } from "@opencode/core/integration"
@@ -582,6 +583,59 @@ describe("ModelResolver", () => {
       })
     }),
   )
+
+  for (const providerID of ["minimax-coding-plan", "minimax-cn-coding-plan"]) {
+    it.effect(`sends declared MiniMax Messages effort levels for ${providerID}`, () =>
+      Effect.gen(function* () {
+        const efforts = ["low", "medium", "high", "xhigh", "max"]
+        const base = model(Provider.aisdk("@ai-sdk/anthropic"), {
+          providerID: Provider.ID.make(providerID),
+          modelID: "MiniMax-M3.1-Flash-Preview",
+        })
+        const catalog = Info.make({
+          ...base,
+          variants: Variant.resolve(base, [{ type: "effort", values: efforts }]),
+        })
+        expect(catalog.variants.map((variant) => String(variant.id))).toEqual(efforts)
+        for (const effort of efforts) {
+          const resolved = yield* ModelResolver.resolveModel(
+            catalog,
+            VariantID.make(effort),
+            Credential.Key.make({ type: "key", key: "fixture" }),
+          )
+          expect(resolved.route.id).toBe("minimax-messages")
+          const http = Layer.succeed(
+            HttpClient.HttpClient,
+            HttpClient.make((request) =>
+              Effect.gen(function* () {
+                const web = yield* HttpClientRequest.toWeb(request).pipe(Effect.orDie)
+                const wire = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(
+                  yield* Effect.promise(() => web.text()),
+                )
+                expect(wire).toMatchObject({
+                  model: "MiniMax-M3.1-Flash-Preview",
+                  output_config: { effort },
+                })
+                expect(wire).not.toMatchObject({ thinking: { type: "disabled" } })
+                return HttpClientResponse.fromWeb(
+                  request,
+                  new Response(
+                    'data: {"type":"message_start","message":{"usage":{"input_tokens":1}}}\n\n' +
+                      'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":0}}\n\n' +
+                      'data: {"type":"message_stop"}\n\n',
+                    { headers: { "content-type": "text/event-stream" } },
+                  ),
+                )
+              }),
+            ),
+          )
+          yield* LLMClient.generate(LLM.request({ model: resolved, prompt: "Hello" })).pipe(
+            Effect.provide(LLMClient.layer.pipe(Layer.provide(RequestExecutor.layer.pipe(Layer.provide(http))))),
+          )
+        }
+      }),
+    )
+  }
 
   it.effect("sends xAI Responses effort variants with reasoning summaries", () =>
     Effect.gen(function* () {
