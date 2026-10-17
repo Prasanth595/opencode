@@ -128,9 +128,9 @@ describe("command reasoning variants", () => {
   for (const fixture of [
     { name: "same model", command: "test/parent", expected: "xhigh" },
     { name: "another supported model", command: "test/supported", expected: "xhigh" },
-    { name: "unsupported destination", command: "test/unsupported", expected: undefined },
-    { name: "stale same-model variant", initial: "test/unsupported#xhigh", command: "test/unsupported", expected: undefined },
-    { name: "unknown destination", command: "test/unknown", expected: undefined },
+    { name: "unsupported destination", command: "test/unsupported", expected: "default" },
+    { name: "stale same-model variant", initial: "test/unsupported#xhigh", command: "test/unsupported", expected: "default" },
+    { name: "unknown destination", command: "test/unknown", expected: "default" },
     { name: "explicit command variant", command: "test/parent#low", expected: "low" },
     { name: "agent model", agent: "test/parent", expected: "xhigh" },
     { name: "explicit agent variant", agent: "test/parent#low", expected: "low" },
@@ -177,7 +177,7 @@ describe("command reasoning variants", () => {
         yield* sessions.wait(session.id)
         const selected = (yield* sessions.get(session.id)).model
         expect(selected?.id).toBe(Model.Ref.parse(fixture.command ?? fixture.agent ?? "test/parent").id)
-        expect(selected?.variant).toBe(fixture.expected)
+        expect(selected?.variant).toBe(Model.VariantID.make(fixture.expected))
         expect((yield* sessions.context(session.id)).filter((message) => message.type === "user")).toMatchObject([
           { text: "Review changes" },
         ])
