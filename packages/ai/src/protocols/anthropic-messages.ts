@@ -1,4 +1,4 @@
-import { Buffer } from "node:buffer"
+import { Buffer, isUtf8 } from "node:buffer"
 import { Effect, Option, Schema, SchemaGetter } from "effect"
 import { Tool } from "@opencode/schema/tool"
 import { Route } from "../route/client.js"
@@ -785,7 +785,26 @@ const lowerMedia = Effect.fnUntraced(function* (part: MediaPart, breakpoints?: C
 // content instead of JSON-stringifying base64 into a prompt string.
 const lowerToolResultContentItem = Effect.fnUntraced(function* (item: Tool.Content) {
   if (item.type === "text") return { type: "text" as const, text: item.text } satisfies AnthropicTextBlock
-  return yield* lowerMedia(ProviderShared.toolFileMedia(item))
+  const part = ProviderShared.toolFileMedia(item)
+  const mime = item.mime.toLowerCase()
+  const inline = part.media.inline()
+  // Only normalize valid UTF-8 tool text. Other representations retain the existing typed error.
+  if (
+    /^text\/[a-z0-9!#$%&'*+.^_`|~-]+$/.test(mime) &&
+    mime !== "text/plain" &&
+    inline &&
+    (!/^data:/i.test(item.uri) || /^data:[^;,]+;base64,/.test(item.uri))
+  ) {
+    const bytes = Buffer.from(inline.base64, "base64")
+    const canonical = bytes.toString("base64")
+    if (
+      /^[A-Za-z0-9+/]*={0,2}$/.test(inline.base64) &&
+      (canonical === inline.base64 || canonical.replace(/=+$/, "") === inline.base64) &&
+      isUtf8(bytes)
+    )
+      return yield* lowerMedia(ProviderShared.toolFileMedia({ ...item, mime: "text/plain" }))
+  }
+  return yield* lowerMedia(part)
 })
 
 const lowerToolResultContent = Effect.fnUntraced(function* (part: ToolResultPart) {
