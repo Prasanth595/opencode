@@ -202,7 +202,7 @@ it.live("retiming a timed-out shell while its output drains still resolves waite
       const shell = yield* Shell.Service
       const info = yield* shell.create({ shell: "sh", command: "slow", timeout: 20 })
       yield* Deferred.await(killed)
-      // The timeout fiber is now finishing; retiming must not interrupt it.
+      // Output is still draining after the timeout; retiming must be ignored.
       yield* shell.timeout(info.id, 10_000)
       yield* Deferred.succeed(release, undefined)
       const final = yield* shell.wait(info.id)
