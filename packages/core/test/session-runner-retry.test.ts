@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { AIError, ProviderInternalError, TransportError } from "@opencode/ai"
+import { AIError, HttpContext, ProviderInternalError, TransportError } from "@opencode/ai"
 import { Agent } from "@opencode/schema/agent"
 import { Model } from "@opencode/schema/model"
 import { Provider } from "@opencode/core/provider"
@@ -13,6 +13,20 @@ const timeout = new AIError({
   reason: new TransportError({ message: "Timed out", transport: "http", operation: "request", code: "Timeout" }),
 })
 const internal = new AIError({ reason: new ProviderInternalError({ message: "internal" }) })
+const gatewayTimeout = new AIError({
+  reason: new ProviderInternalError({ message: "Streaming response failed: [504] Provider timed out after 362397ms" }),
+})
+const badGateway = new AIError({
+  reason: new ProviderInternalError({ message: "Streaming response failed: [502] Upstream error" }),
+})
+const socketTimeout = new AIError({
+  reason: new TransportError({
+    message: "Timed out waiting for WebSocket data",
+    transport: "websocket",
+    operation: "read",
+    code: "idle-timeout",
+  }),
+})
 
 const input = (cause: AIError) => ({
   cause,
@@ -39,9 +53,39 @@ describe("SessionRunnerRetry.policy", () => {
     }),
   )
 
+  it.effect("stops retrying gateway-reported provider timeouts after three attempts", () =>
+    Effect.gen(function* () {
+      expect(yield* decisions(gatewayTimeout, 4)).toEqual([true, true, true, false])
+    }),
+  )
+
+  it.effect("counts 504 responses without a timeout message toward the timeout cap", () =>
+    Effect.gen(function* () {
+      const gatewayStatus = new AIError({
+        reason: new ProviderInternalError({
+          message: "upstream unavailable",
+          http: new HttpContext({ url: "https://example.com/v1", status: 504, headers: {} }),
+        }),
+      })
+      expect(yield* decisions(gatewayStatus, 4)).toEqual([true, true, true, false])
+    }),
+  )
+
   it.effect("keeps the general allowance for other transient failures", () =>
     Effect.gen(function* () {
       expect(yield* decisions(internal, 10)).toEqual(Array(10).fill(true))
+    }),
+  )
+
+  it.effect("keeps the general allowance for fast failures like 502", () =>
+    Effect.gen(function* () {
+      expect(yield* decisions(badGateway, 10)).toEqual(Array(10).fill(true))
+    }),
+  )
+
+  it.effect("keeps websocket idle timeouts on the general allowance", () =>
+    Effect.gen(function* () {
+      expect(yield* decisions(socketTimeout, 10)).toEqual(Array(10).fill(true))
     }),
   )
 })

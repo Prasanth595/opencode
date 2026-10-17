@@ -59,7 +59,17 @@ const schedule = Schedule.max([
 // dead provider hold a step for most of an hour. Cap those attempts well below it.
 const MAX_TIMEOUT_RETRIES = 3
 
-const isTimeout = (error: AIError) => error.reason._tag === "Transport" && error.reason.code === "Timeout"
+// Gateways report their own provider timeouts as ordinary failures: OpenCode Zen answers a dead
+// upstream in-band with `Streaming response failed: [504] Provider timed out after Nms`, and the
+// status never reaches the reason. Restricting the status and message checks to the gateway
+// failure shapes keeps WebSocket idle/connect timeouts and unrelated messages on the general
+// allowance.
+const isTimeout = (error: AIError) =>
+  (error.reason._tag === "Transport" && error.reason.code === "Timeout") ||
+  ((error.reason._tag === "ProviderInternal" || error.reason._tag === "UnknownProvider") &&
+    (error.reason.http?.status === 408 ||
+      error.reason.http?.status === 504 ||
+      /\btimed?[- ]?out\b/i.test(error.reason.message)))
 
 export const policy = (sessionID: SessionSchema.ID) =>
   Effect.gen(function* () {
@@ -100,6 +110,15 @@ export const make = (bus: Bus.Interface, sessionID: SessionSchema.ID) =>
       readonly error: SessionError.Error
     }) =>
       Effect.gen(function* () {
+        // Retried attempts otherwise leave no trace in the logs: only the final drain failure
+        // logs, so a hang-then-recover loop is invisible when debugging a wedged session.
+        yield* Effect.logWarning("retrying step", {
+          sessionID,
+          attempt: input.decision.attempt,
+          delayMs: input.decision.delay,
+          errorType: input.error.type,
+          message: input.error.message,
+        })
         const scheduled = yield* Clock.currentTimeMillis
         yield* bus.publish(SessionEvent.RetryScheduled, {
           sessionID,
