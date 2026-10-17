@@ -283,6 +283,17 @@ export const Plugin = {
       Effect.gen(function* () {
         const tool = event.tools[name]
         if (!tool) return
+        let current = yield* sessions.get(event.sessionID).pipe(Effect.orDie)
+        let depth = 0
+        while (current.parentID) {
+          depth++
+          current = yield* sessions.get(current.parentID).pipe(Effect.orDie)
+        }
+        const limit = Config.latest(yield* config.entries(), "experimental")?.subagent_depth ?? 1
+        if (depth >= limit) {
+          delete event.tools[name]
+          return
+        }
         const selected = yield* agents.resolve(event.agent)
         if (!selected) return
         const available = (yield* agents.list())
