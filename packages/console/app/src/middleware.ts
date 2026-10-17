@@ -13,6 +13,9 @@ export default createMiddleware({
       url.pathname = strip(url.pathname)
       if (/^\/changelog\/?$/.test(url.pathname))
         return new Response(null, { status: 301, headers: { Location: "/changelog" } })
+      // English pages live at unprefixed URLs, so /en/... would be a duplicate of every page.
+      if (locale === "en" && (event.request.method === "GET" || event.request.method === "HEAD"))
+        return new Response(null, { status: 301, headers: { Location: `${url.pathname}${url.search}` } })
       const request = new Request(url, event.request)
       request.headers.set(LOCALE_HEADER, locale)
       event.request = request
