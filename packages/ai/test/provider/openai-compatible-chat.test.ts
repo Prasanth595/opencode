@@ -1,12 +1,12 @@
 import { describe, expect } from "bun:test"
 import { Effect, Schema } from "effect"
 import { HttpClientRequest } from "effect/http"
-import { LLM, LLMRequest, Message, ToolCallPart, ToolChoice, ToolDefinition } from "../../src/index.js"
+import { isContextOverflowFailure, LLM, LLMRequest, Message, ToolCallPart, ToolChoice, ToolDefinition } from "../../src/index.js"
 import { Auth, LLMClient } from "../../src/route.js"
 import { compileRequest } from "../../src/route/client.js"
 import * as OpenAICompatibleChat from "../../src/protocols/openai-compatible-chat.js"
 import { it } from "../lib/effect.js"
-import { dynamicResponse, fixedResponse } from "../lib/http.js"
+import { dynamicResponse, fixedResponse, json } from "../lib/http.js"
 import { sseEvents } from "../lib/sse.js"
 
 const Json = Schema.fromJsonString(Schema.Unknown)
@@ -582,6 +582,29 @@ describe("OpenAI-compatible Chat route", () => {
         id: "chatcmpl_fixture",
         choices: [{ finish_reason: "future_reason" }],
       })
+    }),
+  )
+
+  it.effect("classifies gateway configured input limits from an HTTP 400 response", () =>
+    Effect.gen(function* () {
+      const message = "This text request is too large for the model's configured input limit."
+      const error = yield* LLMClient.generate(request).pipe(
+        Effect.provide(
+          dynamicResponse((input) =>
+            Effect.succeed(
+              json(
+                input,
+                { error: { type: "unsupported_request", code: "unsupported_request", message } },
+                { status: 400 },
+              ),
+            ),
+          ),
+        ),
+        Effect.flip,
+      )
+      expect(error).toMatchObject({ reason: { _tag: "InvalidRequest", classification: "context-overflow" } })
+      expect(error.message).toContain(message)
+      expect(isContextOverflowFailure(error)).toBe(true)
     }),
   )
 
