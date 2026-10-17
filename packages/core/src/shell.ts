@@ -52,7 +52,7 @@ type Active = {
 }
 
 type Ended = {
-  status: Exclude<Info["status"], "running">
+  status: "exited" | "timeout"
   exit?: number
   signal?: string
   completed: number
@@ -377,20 +377,12 @@ const layer = () =>
                       // A recorded timeout must always kill. The kill runs detached, so interrupting this
                       // timer (retime, remove, teardown) neither cancels it nor waits for the process to die.
                       Effect.andThen(
-                        end({ status: "timeout" }).pipe(
-                          Effect.flatMap((won) =>
-                            won
-                              ? Effect.sync(() =>
-                                  runFork(
-                                    handle
-                                      .kill({ forceKillAfter: Duration.seconds(3) })
-                                      .pipe(Effect.catch(() => Effect.void)),
-                                  ),
-                                )
-                              : Effect.void,
-                          ),
-                          Effect.uninterruptible,
-                        ),
+                        Effect.gen(function* () {
+                          if (!(yield* end({ status: "timeout" }))) return
+                          runFork(
+                            handle.kill({ forceKillAfter: Duration.seconds(3) }).pipe(Effect.catch(() => Effect.void)),
+                          )
+                        }).pipe(Effect.uninterruptible),
                       ),
                     ),
                   )
