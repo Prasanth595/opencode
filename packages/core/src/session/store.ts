@@ -1,7 +1,7 @@
 export * as SessionStore from "./store.js"
 
 import { and, asc, desc, eq, gt, isNotNull, isNull, like, lt, notInArray, or, sql, type SQL } from "drizzle-orm"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Schema } from "effect"
 import { Project } from "@opencode/schema/project"
 import { Workspace } from "@opencode/schema/workspace"
 import { AbsolutePath, PositiveInt, RelativePath } from "@opencode/schema/schema"
@@ -82,6 +82,8 @@ export interface Interface {
    * total — or undefined when the Session no longer exists.
    */
   readonly countResume: (sessionID: Session.ID) => Effect.Effect<number | undefined>
+  /** Delay before resuming a claimed turn, based on its durable prior resume starts. */
+  readonly resumeDelay: (sessionID: Session.ID) => Effect.Effect<number>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionStore") {}
@@ -207,9 +209,10 @@ const layer = Layer.effect(
         // no-op (a resumed turn re-claims through the same started hook).
         // Claim bookkeeping never counts as user activity: time_updated is
         // pinned so session ordering only moves on real changes.
+        const now = yield* Clock.currentTimeMillis
         yield* db
           .update(SessionTable)
-          .set({ time_suspended: Date.now(), time_updated: sql`${SessionTable.time_updated}` })
+          .set({ time_suspended: now, time_updated: sql`${SessionTable.time_updated}` })
           .where(and(eq(SessionTable.id, sessionID), isNull(SessionTable.time_suspended)))
           .run()
           .pipe(Effect.orDie)
@@ -237,17 +240,36 @@ const layer = Layer.effect(
           .pipe(Effect.orDie, Effect.asVoid),
       ),
       countResume: Effect.fn("SessionStore.countResume")(function* (sessionID) {
+        const now = yield* Clock.currentTimeMillis
         const row = yield* db
           .update(SessionTable)
           .set({
             resume_attempts: sql`${SessionTable.resume_attempts} + 1`,
+            time_suspended: now,
             time_updated: sql`${SessionTable.time_updated}`,
           })
-          .where(eq(SessionTable.id, sessionID))
+          .where(and(eq(SessionTable.id, sessionID), isNotNull(SessionTable.time_suspended)))
           .returning({ attempts: SessionTable.resume_attempts })
           .get()
           .pipe(Effect.orDie)
         return row?.attempts
+      }),
+      resumeDelay: Effect.fn("SessionStore.resumeDelay")(function* (sessionID) {
+        const now = yield* Clock.currentTimeMillis
+        const row = yield* db
+          .select({ attempts: SessionTable.resume_attempts, suspendedAt: SessionTable.time_suspended })
+          .from(SessionTable)
+          .where(eq(SessionTable.id, sessionID))
+          .get()
+          .pipe(Effect.orDie)
+        if (!row || row.suspendedAt === null || row.attempts === 0) return 0
+        const base = Math.min(60_000 * 2 ** Math.min(row.attempts - 1, 3), 5 * 60_000)
+        const hash = Array.from(sessionID).reduce(
+          (value, character) => (value * 31 + character.charCodeAt(0)) >>> 0,
+          0,
+        )
+        const jitter = 0.8 + (hash % 4_001) / 10_000
+        return Math.max(0, Math.round(base * jitter - (now - row.suspendedAt)))
       }),
     })
   }),
