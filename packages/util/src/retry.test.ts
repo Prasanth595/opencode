@@ -60,6 +60,37 @@ describe("client retry", () => {
     expect(failures).toHaveLength(1)
   })
 
+  test.each(["message", "code"])("retries a wrapped broken pipe identified by its %s", async (source) => {
+    const calls: string[] = []
+    const cause =
+      source === "message" ? new Error("write EPIPE") : Object.assign(new Error("write failed"), { code: "EPIPE" })
+    const value = await retry(
+      async () => {
+        calls.push("attempt")
+        if (calls.length === 1) throw new Error("Transport", { cause: new TypeError("fetch failed", { cause }) })
+        return "ready"
+      },
+      { delay: 0 },
+    )
+
+    expect(value).toBe("ready")
+    expect(calls).toHaveLength(2)
+  })
+
+  test("bounds retries when a broken pipe persists", async () => {
+    const calls: string[] = []
+    await expect(
+      retry(
+        async () => {
+          calls.push("attempt")
+          throw Object.assign(new Error("write failed"), { code: "EPIPE" })
+        },
+        { attempts: 2, delay: 0 },
+      ),
+    ).rejects.toThrow("write failed")
+    expect(calls).toHaveLength(2)
+  })
+
   test("does not retry other failures", async () => {
     const failures: string[] = []
     await expect(
