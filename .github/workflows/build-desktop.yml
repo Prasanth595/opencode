@@ -1,0 +1,112 @@
+name: build-desktop
+
+# 手动触发,构建 OpenCode Desktop (dev channel) 的 Windows x64 NSIS 安装包,
+# 上传为 workflow artifact,并按需发布到 fork 的 GitHub Releases。
+# 适用仓库: Su-Qingmu/opencode (个人 fork,不需要 production 签名)。
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "发布为 GitHub Release"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: build-desktop
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build Windows x64 (OpenCode Dev)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      OPENCODE_CHANNEL: dev
+      OPENCODE_CLI_TARGET: x86_64-pc-windows-msvc
+      OPENCODE_VERSION: dev-${{ github.run_number }}
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Show tool versions
+        shell: bash
+        run: |
+          echo "bun: $(bun --version)"
+          echo "node: $(node --version)"
+          echo "pwsh: $(pwsh --version)"
+
+      - name: Prebuild (download dev CLI)
+        working-directory: packages/desktop
+        shell: bash
+        run: bun ./scripts/prebuild.ts
+
+      - name: Build (electron-vite)
+        working-directory: packages/desktop
+        shell: bash
+        run: bun run build
+
+      - name: Package (electron-builder NSIS)
+        working-directory: packages/desktop
+        shell: bash
+        run: npx electron-builder --win --publish never --config electron-builder.config.ts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List dist
+        working-directory: packages/desktop
+        shell: pwsh
+        run: |
+          Get-ChildItem dist | Format-Table Name, Length
+          $total = (Get-ChildItem dist -Recurse | Measure-Object Length -Sum).Sum / 1MB
+          Write-Host "Total dist size: $([math]::Round($total, 2)) MB"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencode-desktop-windows-x64
+          path: |
+            packages/desktop/dist/*.exe
+            packages/desktop/dist/latest.yml
+            packages/desktop/dist/*.blockmap
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        if: inputs.publish_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-dev-${{ github.run_number }}
+          name: OpenCode Desktop Dev Build #${{ github.run_number }}
+          body: |
+            Auto-built Windows x64 installer for **OpenCode Dev** (dev channel).
+
+            - **Commit:** ${{ github.sha }}
+            - **Workflow run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            - **Branch:** ${{ github.ref_name }}
+            - **Triggered by:** @${{ github.actor }}
+
+            The product installs as "OpenCode Dev" (appId `ai.opencode.desktop.dev`) and bundles the dev CLI from the `dev` channel on npm.
+          draft: false
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: |
+            packages/desktop/dist/*.exe
+            packages/desktop/dist/latest.yml
+            packages/desktop/dist/*.blockmap
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
