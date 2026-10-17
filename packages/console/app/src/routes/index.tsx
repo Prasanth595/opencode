@@ -32,15 +32,18 @@ export default function Home() {
   const i18n = useI18n()
   const language = useLanguage()
   const githubData = createAsync(() => github())
-  // Round down so the "over N stars" copy stays true.
-  const stars = (notation: "compact" | "standard") =>
+  // Formatted like the footer so both show the same figure.
+  const starsCompact = createMemo(() =>
     githubData()?.stars
-      ? new Intl.NumberFormat(language.tag(language.locale()), { notation }).format(
-          Math.floor(githubData()!.stars! / 1000) * 1000,
-        )
-      : config.github.starsFormatted[notation === "compact" ? "compact" : "full"]
-  const starsCompact = createMemo(() => stars("compact"))
-  const starsFull = createMemo(() => stars("standard"))
+      ? new Intl.NumberFormat(language.tag(language.locale()), { notation: "compact" }).format(githubData()!.stars!)
+      : config.github.starsFormatted.compact,
+  )
+  // Round down so the "over N stars" copy stays true.
+  const starsFull = createMemo(() =>
+    githubData()?.stars
+      ? new Intl.NumberFormat(language.tag(language.locale())).format(Math.floor(githubData()!.stars! / 1000) * 1000)
+      : config.github.starsFormatted.full,
+  )
   const handleCopyClick = (event: Event) => {
     const button = event.currentTarget as HTMLButtonElement
     const text = button.textContent
