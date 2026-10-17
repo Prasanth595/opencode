@@ -111,6 +111,39 @@ grep 'role=server' ~/.local/share/opencode/log/opencode.log
 grep 'run=8fc3b1d5' ~/.local/share/opencode/log/opencode.log
 ```
 
+## Export logs and traces
+
+OpenCode can send logs and spans to an OpenTelemetry collector over OTLP/HTTP.
+Set these variables in the environment of the process you want to observe:
+
+| Variable | Purpose |
+| --- | --- |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Collector base URL, for example `http://127.0.0.1:4318`. OpenCode appends `/v1/logs` and `/v1/traces`; omit a trailing slash and the signal path. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Optional comma-separated `key=value` request headers for the collector. |
+| `OTEL_RESOURCE_ATTRIBUTES` | Optional comma-separated resource attributes, for example `team=platform,service.namespace=development`. Percent-encode commas and equals signs inside keys or values. |
+
+For example, start a foreground server from a POSIX shell with a local collector
+already listening:
+
+```sh
+OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 \
+OTEL_RESOURCE_ATTRIBUTES=team=platform \
+opencode serve
+```
+
+OpenCode exports resources with `service.name=opencode`, the application version,
+client, channel, and run identifier. Without an endpoint, remote export is off
+and local logging remains available.
+
+The CLI and background server are separate processes. Exporting variables in a
+new terminal does not change an already running server; make them available
+when that server starts. Check the collector for `/v1/traces` and `/v1/logs`
+requests when diagnosing a missing export.
+
+Use a collector you control and review captured data before forwarding it to
+an external service. Logs and spans can include sensitive operational context;
+collector authentication headers should be kept outside committed config files.
+
 ## Capture CPU and memory profiles
 
 On macOS and Linux, you can signal a running OpenCode process to capture diagnostic data. Get the background server PID
