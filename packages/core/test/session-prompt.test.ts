@@ -20,6 +20,7 @@ import { ProjectTable } from "@opencode/core/project/sql"
 import { AbsolutePath } from "@opencode/core/schema"
 import { Session } from "@opencode/core/session"
 import { SessionMessage } from "@opencode/core/session/message"
+import { toLLMMessages } from "@opencode/core/session/runner/to-llm-message"
 import { SessionProjector } from "@opencode/core/session/projector"
 import { SessionExecution } from "@opencode/core/session/execution"
 import { SessionInbox } from "@opencode/core/session/inbox"
@@ -456,6 +457,40 @@ describe("Session.prompt", () => {
           data: "AA==",
           mime: "image/png",
           source: { type: "inline" },
+        },
+      ])
+    }),
+  )
+
+  it.effect("preserves unsupported attachments after durable prompt admission", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* Session.Service
+      const { db } = yield* Database.Service
+      const bus = yield* Bus.Service
+      const data = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00]).toString("base64")
+      const admitted = yield* session.prompt({
+        sessionID,
+        text: "",
+        files: [{ uri: `data:application/zip;base64,${data}`, name: "archive.zip" }],
+        resume: false,
+      })
+      expect(admitted.payload.files?.[0]).toMatchObject({ mime: "application/octet-stream", data })
+      yield* SessionInbox.promote(db, bus, sessionID, "steer")
+      const messages = toLLMMessages(
+        yield* session.context(sessionID),
+        Model.Ref.make({ id: Model.ID.make("model"), providerID: Provider.ID.make("test") }),
+      )
+      expect(messages).toMatchObject([
+        {
+          id: admitted.id,
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: 'ERROR: Cannot read "archive.zip" (unsupported attachment format: application/octet-stream). Inform the user.',
+            },
+          ],
         },
       ])
     }),

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Message, Media } from "@opencode/ai"
+import { LLM, Message, Media } from "@opencode/ai"
 import { Model } from "@opencode/core/model"
 import { Provider } from "@opencode/core/provider"
 import { SessionMessage } from "@opencode/core/session/message"
@@ -10,7 +10,10 @@ import { Agent } from "@opencode/core/agent"
 import { Shell } from "@opencode/schema/shell"
 import { Location } from "@opencode/schema/location"
 import { AbsolutePath } from "@opencode/schema/schema"
-import { DateTime } from "effect"
+import { DateTime, Effect, Layer } from "effect"
+import { AnthropicMessages, OpenAIChat, OpenAIResponses } from "@opencode/ai/protocols"
+import { compileRequest } from "@opencode/ai/route/client"
+import { testEffect } from "./lib/effect"
 import path from "path"
 import { pathToFileURL } from "url"
 
@@ -18,6 +21,7 @@ const created = DateTime.makeUnsafe(0)
 const id = (value: string) => SessionMessage.ID.make(`msg_${value}`)
 const model = Model.Ref.make({ id: Model.ID.make("model"), providerID: Provider.ID.make("provider") })
 const build = Agent.defaultID
+const it = testEffect(Layer.empty)
 
 describe("toLLMMessages", () => {
   test("background user shells enter model context only through their completion notification", () => {
@@ -498,6 +502,103 @@ Earlier work
       { type: "text", text: `\n\nAttached directory: ${directory}\n\nindex.ts` },
     ])
   })
+
+  for (const fixture of [
+    { mime: "image/avif", name: "preview.avif" },
+    { mime: "image/tiff", name: "scan.tiff" },
+    { mime: "application/zip", name: "archive.zip" },
+    { mime: "application/octet-stream", name: "document.docx" },
+  ]) {
+    test(`retains unsupported attachments instead of dropping ${fixture.name}`, () => {
+      const file = FileAttachment.make({
+        data: Base64.make("YmluYXJ5"),
+        ...fixture,
+        source: { type: "inline" },
+      })
+      const user = SessionMessage.User.make({
+        id: id("unsupported-attachment"),
+        type: "user",
+        text: "",
+        files: [file],
+        time: { created },
+      })
+      expect(toLLMMessages([user], model)).toMatchObject([
+        {
+          id: user.id,
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `ERROR: Cannot read "${fixture.name}" (unsupported attachment format: ${fixture.mime}). Inform the user.`,
+            },
+          ],
+        },
+      ])
+    })
+  }
+
+  for (const fixture of [
+    {
+      source: { type: "uri" as const, uri: pathToFileURL(path.resolve("/project/preview.avif")).href },
+      expected: path.resolve("/project/preview.avif"),
+    },
+    {
+      source: { type: "uri" as const, uri: "https://example.com/preview.avif" },
+      expected: "https://example.com/preview.avif",
+    },
+    { source: { type: "inline" as const }, expected: "inline attachment" },
+  ]) {
+    test(`names unsupported attachments from ${fixture.expected}`, () => {
+      const messages = toLLMMessages(
+        [
+          SessionMessage.User.make({
+            id: id("unnamed-attachment"),
+            type: "user",
+            text: "Inspect it",
+            files: [FileAttachment.make({ data: Base64.make("YmluYXJ5"), mime: "image/avif", source: fixture.source })],
+            time: { created },
+          }),
+        ],
+        model,
+      )
+      expect(messages[0]?.content).toEqual([
+        Message.text("Inspect it"),
+        Message.text(
+          `ERROR: Cannot read ${JSON.stringify(fixture.expected)} (unsupported attachment format: image/avif). Inform the user.`,
+        ),
+      ])
+    })
+  }
+
+  it.effect("keeps unsupported attachments visible on native provider requests", () =>
+    Effect.gen(function* () {
+      const messages = toLLMMessages(
+        [
+          SessionMessage.User.make({
+            id: id("unsupported-wire"),
+            type: "user",
+            text: "",
+            files: [
+              FileAttachment.make({
+                data: Base64.make("YmluYXJ5"),
+                mime: "image/avif",
+                source: { type: "inline" },
+                name: "preview.avif",
+              }),
+            ],
+            time: { created },
+          }),
+        ],
+        model,
+      )
+      for (const route of [OpenAIChat.route, OpenAIResponses.route, AnthropicMessages.route]) {
+        const prepared = yield* compileRequest(LLM.request({ model: route.model({ id: "test" }), messages }))
+        expect(JSON.stringify(prepared.body)).toContain("preview.avif")
+        expect(JSON.stringify(prepared.body)).toContain("unsupported attachment format: image/avif")
+        expect(JSON.stringify(prepared.body)).not.toContain("YmluYXJ5")
+      }
+    }),
+  )
 
   test("uses materialized image and PDF data as provider media", () => {
     const data = Base64.make("AAECAw==")
