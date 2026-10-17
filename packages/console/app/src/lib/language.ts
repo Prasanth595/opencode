@@ -84,7 +84,8 @@ const DOCS = {
   ja: "ja",
   pl: "pl",
   ru: "ru",
-  uk: "uk",
+  // There are no Ukrainian docs, so Ukrainian visitors read the English docs.
+  uk: "root",
   ar: "ar",
   no: "nb",
   br: "pt-br",
