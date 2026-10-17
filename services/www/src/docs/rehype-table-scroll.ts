@@ -13,7 +13,12 @@ export default function rehypeTableScroll() {
       if (isScroller(node)) return
       node.children = node.children?.map((child) =>
         child.type === "element" && child.tagName === "table"
-          ? { type: "element", tagName: "div", properties: { className: ["docs-table-scroll"] }, children: [child] }
+          ? {
+              type: "element",
+              tagName: "div",
+              properties: { className: ["docs-table-scroll"], tabIndex: 0 },
+              children: [child],
+            }
           : child,
       )
       node.children?.forEach(visit)
