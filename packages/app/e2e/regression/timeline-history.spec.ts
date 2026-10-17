@@ -1,16 +1,18 @@
 import type { SessionMessageAssistant, SessionMessageInfo } from "@opencode/client/promise"
 import { expect, test, type Page } from "@playwright/test"
-import { seed, sessionHref } from "../utils/app"
+import { pageMessagesFrom, seed, sessionHref } from "../utils/app"
 import { trackPageErrors } from "../utils/errors"
 import { fixture, installTimelineSettings, mockStressTimeline } from "../utils/session-fixture"
 import {
   assistantMessage,
   messageUpdated,
+  renderedPartID,
   sessionID,
   setupTimeline,
   status,
   textPart,
   userMessage,
+  userText,
 } from "../utils/timeline"
 import { expectSessionTitle } from "../utils/waits"
 
@@ -67,6 +69,134 @@ test.describe("timeline history", () => {
     // The older page has landed above the visible rows.
     await expect.poll(() => scroller.evaluate((element) => element.scrollHeight)).toBeGreaterThan(height)
     await expect.poll(positions).toEqual(before)
+  })
+
+  test("navigates every turn, highlights visible turns, and previews unloaded replies on hover", async ({ page }) => {
+    const replies = [
+      "Response number 0\n\nEarlier reply remains visible.\n\nMore of the same reply.",
+      ["Response number 1", ...Array.from({ length: 45 }, () => "A long reply for the reading-only fallback.")].join(
+        "\n\n",
+      ),
+    ]
+
+    const messages = Array.from({ length: 40 }, (_, index) => {
+      const value = String(index).padStart(4, "0")
+      const id = `msg_0${value}_turn_a_user`
+
+      return [
+        userMessage(
+          [
+            userText(
+              index === 39
+                ? ["Prompt number 39", ...Array.from({ length: 40 }, () => "Long tail prompt content.")].join("\n\n")
+                : `Prompt number ${index}`,
+              { id: `prt_0${value}_turn_prompt` },
+            ),
+          ],
+          {
+            id,
+            created: 1690000000000 + index * 10_000,
+          },
+        ),
+        assistantMessage(
+          [
+            {
+              id: `prt_0${value}_turn_text`,
+              type: "text",
+              text: replies[index] ?? `Response number ${index}`,
+            },
+          ],
+          {
+            id: `msg_0${value}_turn_b_assistant`,
+            parentID: id,
+            created: 1690000001000 + index * 10_000,
+          },
+        ),
+      ]
+    }).flat()
+
+    const loads: (string | undefined)[] = []
+    await setupTimeline(page, {
+      sessionMessages: messages,
+      pageMessages: pageMessagesFrom({ [sessionID]: messages }),
+      inbox: [
+        {
+          id: "msg_99999_queued_user",
+          sessionID,
+          type: "user",
+          time: { created: 1690000500000 },
+          delivery: "queue",
+          payload: { text: "Queued prompt", files: [], agents: [] },
+        },
+      ],
+      onMessages: (request) => {
+        if (request.phase === "start") loads.push(request.before)
+      },
+    })
+
+    const navigator = page.locator('[data-component="session-turn-navigator"]')
+    const turns = navigator.locator("[data-turn]")
+    const preview = navigator.locator('[data-slot="session-turn-navigator-preview"]')
+    // The index lists every transcript turn, not queued input, without paging the transcript.
+    await expect(turns).toHaveCount(40)
+    expect(loads).toEqual([undefined])
+
+    await turns.nth(39).hover()
+    await expect(preview).toContainText("Prompt number 39")
+    await expect(preview).toContainText("Response number 39")
+
+    // An unloaded turn fetches only its own latest reply, not the transcript around it.
+    await turns.nth(0).hover()
+    await expect(preview).toContainText("Prompt number 0")
+    await expect(preview).toContainText("Response number 0")
+    await expect(preview).not.toContainText("Response number 1")
+    expect(loads).toEqual([undefined])
+
+    const activeIndexes = () =>
+      navigator
+        .locator('[data-state="active"]')
+        .evaluateAll((elements) => elements.map((el) => Number(el.getAttribute("data-index"))))
+
+    await turns.nth(0).click()
+    await expect(page.locator("#message-msg_00000_turn_a_user")).toBeInViewport()
+    await timelineScroller(page).hover()
+    await expect(page.locator("#message-msg_00001_turn_a_user")).toBeInViewport()
+    await expect.poll(activeIndexes).toEqual([0, 1])
+
+    // A reply-only turn is not highlighted while a different prompt remains visible.
+    const replyID = renderedPartID("prt_00000_turn_text")
+    await timelineScroller(page).evaluate((scroller, id) => {
+      const reply = scroller.querySelector(`[data-timeline-part-id="${id}"]`)
+
+      if (!reply) throw new Error("Expected the first reply")
+      scroller.scrollTop += reply.getBoundingClientRect().top - scroller.getBoundingClientRect().top
+    }, replyID)
+    await expect(page.locator("#message-msg_00000_turn_a_user")).not.toBeInViewport()
+    await expect(page.locator(`[data-timeline-part-id="${replyID}"]`)).toBeInViewport()
+    await expect.poll(activeIndexes).toEqual([1])
+
+    // With no bubbles visible, the preceding turn alone stays highlighted.
+    const longReplyID = renderedPartID("prt_00001_turn_text")
+    const longReply = page.locator(`[data-timeline-part-id="${longReplyID}"]`)
+    await expect
+      .poll(() => longReply.evaluate((element) => element.getBoundingClientRect().height))
+      .toBeGreaterThan(await timelineScroller(page).evaluate((element) => element.clientHeight))
+    await timelineScroller(page).evaluate((scroller, id) => {
+      const reply = scroller.querySelector(`[data-timeline-part-id="${id}"]`)
+
+      if (!reply) throw new Error("Expected the long reply")
+      scroller.scrollTop += reply.getBoundingClientRect().top - scroller.getBoundingClientRect().top + 120
+    }, longReplyID)
+    await expect(page.locator("#message-msg_00001_turn_a_user")).not.toBeInViewport()
+    await expect(page.locator("#message-msg_00002_turn_a_user")).not.toBeInViewport()
+    await expect(longReply).toBeInViewport()
+    await expect.poll(activeIndexes).toEqual([1])
+
+    // Clicking a long prompt (>1024 chars, non-immediate render) highlights it and keeps active emphasis while hovered.
+    await turns.nth(39).click()
+    await expect(page.locator("#message-msg_00039_turn_a_user")).toBeInViewport()
+    await expect(turns.nth(39)).toHaveAttribute("data-state", "active")
+    expect(loads.length).toBeGreaterThan(1)
   })
 
   test("mounts every part once and in order while paging to the start", async ({ page }) => {
@@ -149,6 +279,7 @@ test.describe("timeline history", () => {
       const roots: { sessionID: string; messageID: string }[] = []
       const sequence: string[] = []
       const messages = rootHistory()
+      // SAFETY: rootHistory() always ends with its in-progress assistant reply.
       const last = messages.at(-1) as SessionMessageAssistant
       await page.addInitScript(installVisibilityProbe)
 
@@ -199,7 +330,7 @@ test.describe("timeline history", () => {
       const completed = {
         ...last,
         time: { ...last.time, completed: last.time.created + 15_000 },
-        ...(scenario.error ? { error: scenario.error } : {}),
+        error: scenario.error,
       }
 
       const message = messageUpdated(completed)
@@ -244,16 +375,16 @@ test.describe("timeline history", () => {
     })
   }
 
-  for (const shape of ["assistant-only", "mixed"] as const) {
-    test(`renders the ${shape} tail before parent hydration and preserves it afterward`, async ({ page }) => {
-      const session = { ...fixture.sessions[0]!, id: `ses_hydration_${shape}` }
+  for (const kind of ["assistant-only", "mixed"] as const) {
+    test(`renders the ${kind} tail before parent hydration and preserves it afterward`, async ({ page }) => {
+      const session = { ...fixture.sessions[0]!, id: `ses_hydration_${kind}` }
 
       // Compact's initial 40 and the next 20 begin with an assistant; page three supplies its parent.
       const messages = Array.from({ length: 61 }, (_, index): SessionMessageInfo => {
         const id = `msg_hydration_${index}`
         const time = { created: 1700000000000 + index * 1_000 }
 
-        if (index === 0 || (shape === "mixed" && index === 59))
+        if (index === 0 || (kind === "mixed" && index === 59))
           return { id, type: "user", time, text: `Prompt ${index}` }
 
         return {
@@ -324,7 +455,7 @@ test.describe("timeline history", () => {
         await expectReadyTail()
         await expect(orphan).toHaveAttribute("data-message-id", "msg_hydration_21")
 
-        if (shape === "mixed")
+        if (kind === "mixed")
           await expect(
             page.locator('[data-timeline-row="UserMessage"][data-message-id="msg_hydration_59"]'),
           ).toBeInViewport()
@@ -462,6 +593,16 @@ function rootHistory() {
 // visible element (with exactly `text`, when set).
 type ProbeFinal = { attached: string[]; visible: { selector: string; text?: string }[] }
 
+type ProbeState = {
+  armed: boolean
+  hidden: boolean
+  parts: string[]
+  final?: ProbeFinal
+  settled: boolean
+  arm(): string[]
+  settle(final: ProbeFinal): void
+}
+
 // Samples every painted frame and records whether any part that was visible when armed disappeared. After `settle`,
 // it also records (`settled`) the first sample that shows the final state, so `hidden` then covers that frame.
 function installVisibilityProbe() {
@@ -494,11 +635,10 @@ function installVisibilityProbe() {
       .flatMap((part) => (part.dataset.timelinePartId ? [part.dataset.timelinePartId] : []))
   }
 
-  const state = {
+  const state: ProbeState = {
     armed: false,
     hidden: false,
-    parts: [] as string[],
-    final: undefined as ProbeFinal | undefined,
+    parts: [],
     settled: false,
     // Returns the parts that must stay visible.
     arm() {
