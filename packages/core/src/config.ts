@@ -43,8 +43,9 @@ export interface Interface {
   /** Updates supported global config fields while preserving unrelated JSONC content. */
   readonly update?: (patch: Patch) => Effect.Effect<void, FSUtil.Error>
   /**
-   * Writes an MCP server's disabled flag into the highest-priority config file that defines the
-   * server, preserving unrelated JSONC content. Returns false when no writable file defines it.
+   * Writes an MCP server's disabled flag into the user config file whose definition of the server
+   * wins, preserving unrelated JSONC content. Returns false when the winning definition is managed
+   * or not a JSON/JSONC file, or when nothing changed.
    */
   readonly setMcpDisabled?: (server: string, disabled: boolean) => Effect.Effect<boolean, FSUtil.Error>
 }
@@ -407,16 +408,17 @@ export const layer = (options?: Options) =>
         (effect) => updateLock.withPermit(effect),
       )
 
+      const isManaged = (filepath: string) =>
+        filepath === sources.preferences ||
+        (sources.system?.present === true && path.dirname(filepath) === sources.system.path)
+
       const setMcpDisabled = Effect.fn("Config.setMcpDisabled")(
         function* (server: string, disabled: boolean) {
           const filepath = configs.findLast(
-            (entry): entry is Document =>
-              entry.type === "document" &&
-              entry.path !== undefined &&
-              /\.jsonc?$/.test(entry.path) &&
-              entry.info.mcp?.servers?.[server] !== undefined,
+            (entry): entry is Document => entry.type === "document" && entry.info.mcp?.servers?.[server] !== undefined,
           )?.path
-          if (!filepath) return false
+          // The winning definition replaces lower ones, so a managed or non-file definition stays runtime-only.
+          if (!filepath || !/\.jsonc?$/.test(filepath) || isManaged(filepath)) return false
           const text = yield* fs.readFileStringSafe(filepath)
           if (text === undefined) return false
           const edit = mcpDisabledEdit(parse(text, [], { allowTrailingComma: true }), server, disabled)

@@ -1982,6 +1982,37 @@ describe("Config", () => {
 })
 
 describe("Config.setMcpDisabled", () => {
+  it.live("leaves servers defined by managed config untouched", () =>
+    Effect.acquireDisposable(Effect.promise(() => tmpdir())).pipe(
+      Effect.flatMap((tmp) => {
+        const global = path.join(tmp.path, "global")
+        const project = path.join(tmp.path, "project")
+        const system = path.join(tmp.path, "system")
+        const managed = JSON.stringify({ mcp: { servers: { admin: { type: "local", command: ["admin-mcp"] } } } })
+        return Effect.promise(async () => {
+          await Promise.all([global, project, system].map((dir) => fs.mkdir(dir, { recursive: true })))
+          await fs.writeFile(path.join(system, "opencode.json"), managed)
+          await fs.writeFile(path.join(global, "opencode.json"), managed)
+        }).pipe(
+          Effect.andThen(
+            Effect.gen(function* () {
+              const config = yield* Config.Service
+              expect(yield* config.setMcpDisabled!("admin", true)).toBe(false)
+              expect(yield* Effect.promise(() => fs.readFile(path.join(system, "opencode.json"), "utf8"))).toBe(managed)
+              expect(yield* Effect.promise(() => fs.readFile(path.join(global, "opencode.json"), "utf8"))).toBe(managed)
+            }).pipe(
+              Effect.provide(
+                testLayer(project, global, project, undefined, undefined, emptyCredentialNode, emptyWellknownNode, {
+                  system,
+                }),
+              ),
+            ),
+          ),
+        )
+      }),
+    ),
+  )
+
   it.live("toggles native and V1 MCP servers in the file that defines them, preserving JSONC", () =>
     Effect.acquireDisposable(Effect.promise(() => tmpdir())).pipe(
       Effect.flatMap((tmp) => {
