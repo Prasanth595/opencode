@@ -1,10 +1,26 @@
 export * as Sqlite from "./sqlite.js"
 
-import { Context, Effect, Fiber, Scope, Semaphore, Stream } from "effect"
+import { Context, Effect, Fiber, Schedule, Scope, Semaphore, Stream } from "effect"
 import { identity } from "effect/Function"
 import { SqlClient, Statement } from "effect/sql"
 import type { Connection } from "effect/sql/SqlConnection"
 import type { SqlError } from "effect/sql/SqlError"
+
+const busyRetry = Schedule.min([Schedule.exponential("25 millis"), Schedule.spaced("1 second")]).pipe(Schedule.jittered)
+
+/** Retry transient SQLite writer contention without retrying stale-snapshot transaction failures. */
+export function retryBusy<A, R>(effect: Effect.Effect<A, SqlError, R>) {
+  return effect.pipe(
+    Effect.retry({
+      while: (error) => {
+        if (error.reason._tag !== "LockTimeoutError") return false
+        const cause = error.reason.cause
+        return !(cause instanceof Error && "code" in cause && cause.code === "SQLITE_BUSY_SNAPSHOT")
+      },
+      schedule: busyRetry,
+    }),
+  )
+}
 
 export class Native extends Context.Service<Native, unknown>()("@opencode/core/database/SqliteNative") {}
 

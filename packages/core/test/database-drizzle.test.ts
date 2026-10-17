@@ -8,8 +8,9 @@ import { eq, sql } from "drizzle-orm"
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
 import { Cause, Effect, Tracer } from "effect"
 import type { SqlClient } from "effect/sql/SqlClient"
-import { isSqlError } from "effect/sql/SqlError"
 import { EffectDrizzleSqlite } from "@opencode/core/database/drizzle"
+import { Database as CoreDatabase } from "@opencode/core/database/database"
+import { Global } from "@opencode/util/global"
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors"
 
 const users = sqliteTable("users", {
@@ -139,33 +140,42 @@ test("rolls back explicit transaction rollback", async () => {
   )
 })
 
-test("preserves failed transaction begin errors", async () => {
+test("retries a transient SQLite writer lock until the competing transaction releases", async () => {
   const dir = await mkdtemp(join(tmpdir(), "effect-drizzle-sqlite-"))
   const filename = join(dir, "locked.db")
-  const holder = new Database(filename)
+  let holder: Database | undefined
+  let release: ReturnType<typeof setTimeout> | undefined
 
   try {
-    holder.run("create table users (id integer primary key autoincrement, name text not null)")
-    holder.run("pragma busy_timeout = 0")
-    holder.run("begin immediate")
-
     await Effect.runPromise(
       Effect.gen(function* () {
-        const db = yield* EffectDrizzleSqlite.makeWithDefaults()
+        const { db } = yield* CoreDatabase.Service
+        expect(yield* db.get(sql`PRAGMA auto_vacuum`)).toEqual({ auto_vacuum: 2 })
+        yield* db.run(sql`create table users (id integer primary key autoincrement, name text not null)`)
         yield* db.run(sql`pragma busy_timeout = 0`)
-
-        const error = yield* db
-          .transaction((tx) => tx.insert(users).values({ name: "Blocked" }), { behavior: "immediate" })
-          .pipe(Effect.flip)
-
-        if (!isSqlError(error)) throw new Error("Expected SqlError")
-        expect(error.reason._tag).toBe("LockTimeoutError")
-        expect(error.reason.cause instanceof Error ? error.reason.cause.message : "").toContain("database is locked")
-      }).pipe(Effect.provide(SqliteClient.layer({ filename, disableWAL: true })), Effect.scoped),
+        const locked = new Database(filename)
+        holder = locked
+        locked.run("pragma busy_timeout = 0")
+        locked.run("begin immediate")
+        release = setTimeout(() => {
+          if (locked.inTransaction) locked.run("rollback")
+        }, 100)
+        const inserted = yield* db.transaction(
+          (tx) => tx.insert(users).values({ name: "Recovered" }).returning(),
+          { behavior: "immediate" },
+        )
+        expect(inserted).toHaveLength(1)
+        expect(inserted[0].name).toBe("Recovered")
+      }).pipe(
+        Effect.provide(CoreDatabase.layer({ path: filename })),
+        Effect.provideService(Global.Service, Global.make({ data: dir })),
+        Effect.scoped,
+      ),
     )
   } finally {
-    if (holder.inTransaction) holder.run("rollback")
-    holder.close()
+    if (release !== undefined) clearTimeout(release)
+    if (holder?.inTransaction) holder.run("rollback")
+    holder?.close()
     await rm(dir, { recursive: true, force: true })
   }
 })
