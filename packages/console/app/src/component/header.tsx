@@ -47,6 +47,15 @@ export function Header(props: { zen?: boolean; go?: boolean; hideGetStarted?: bo
   })
 
   createEffect(() => {
+    if (!store.mobileMenuOpen) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setStore("mobileMenuOpen", false)
+    }
+    document.addEventListener("keydown", handleKeyDown)
+    onCleanup(() => document.removeEventListener("keydown", handleKeyDown))
+  })
+
+  createEffect(() => {
     const handleClickOutside = () => {
       setStore("contextMenuOpen", false)
     }
@@ -217,7 +226,7 @@ export function Header(props: { zen?: boolean; go?: boolean; hideGetStarted?: bo
         <button
           type="button"
           data-component="nav-mobile-toggle"
-          aria-expanded="false"
+          aria-expanded={store.mobileMenuOpen}
           aria-controls="nav-mobile-menu"
           class="nav-toggle"
           onClick={() => setStore("mobileMenuOpen", !store.mobileMenuOpen)}
