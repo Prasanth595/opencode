@@ -175,6 +175,15 @@ describe("SessionModelRequest.unsupportedParts", () => {
       ],
     })
   })
+
+  test("normalizes hook drafts that carry string content", () => {
+    const result = unsupportedParts(
+      [{ id: "m1", role: "user", content: "hello" } as unknown as Message],
+      capabilities(["text", "image"]),
+    )
+
+    expect(result[0]?.content).toEqual([Message.text("hello")])
+  })
 })
 
 describe("SessionModelRequest.boundImages", () => {
@@ -228,5 +237,11 @@ describe("SessionModelRequest.boundImages", () => {
         value: [{ type: "text" }, { type: "file", name: "second.png" }],
       },
     })
+  })
+
+  test("normalizes hook drafts that carry string content", () => {
+    const result = boundImages([{ id: "m1", role: "user", content: "hello" } as unknown as Message])
+
+    expect(result[0]?.content).toEqual([Message.text("hello")])
   })
 })

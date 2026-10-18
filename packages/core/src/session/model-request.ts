@@ -153,13 +153,18 @@ const mediaBytes = (media: Media.Asset) => {
   return 0
 }
 
+/** Hook drafts are plain objects whose `content` can be a string or null; the media passes need canonical parts. */
+const asMessage = (message: Message): Message =>
+  Array.isArray(message.content) ? message : Message.make({ ...message, content: message.content ?? [] })
+
 /** Replaces media with the returned text; messages without replacements are returned unchanged. */
 const replaceMedia = (
   messages: LLMRequest["messages"],
   replace: (media: { mime: string; name: string | undefined; bytes: () => number }) => string | undefined,
 ) =>
   messages.map((message) => {
-    const content = message.content.map((part) => {
+    const source = asMessage(message)
+    const content = source.content.map((part) => {
       if (part.type === "media") {
         const text = replace({ mime: part.media.mediaType, name: part.filename, bytes: () => mediaBytes(part.media) })
         return text === undefined ? part : Message.text(text)
@@ -175,9 +180,9 @@ const replaceMedia = (
         ? part
         : { ...part, result: { ...result, value } }
     })
-    return content.every((part, index) => part === message.content[index])
-      ? message
-      : new Message({ ...message, content })
+    return content.every((part, index) => part === source.content[index])
+      ? source
+      : new Message({ ...source, content })
   })
 
 export const unsupportedParts = (
@@ -187,8 +192,12 @@ export const unsupportedParts = (
 ) => replaceMedia(messages, (media) => unsupportedMedia(media.mime, media.name, capabilities, provider))
 
 export const boundImages = (messages: LLMRequest["messages"]) => {
+  // Hook drafts can carry plain objects whose `content` is a string; the scan below needs parts.
+  const normalized = messages.some((message) => !Array.isArray(message.content))
+    ? messages.map(asMessage)
+    : messages
   const isImage = (mime: string) => mime.toLowerCase().startsWith("image/")
-  const imageBytes = messages.reduce(
+  const imageBytes = normalized.reduce(
     (total, message) =>
       total +
       message.content.reduce((sum, part) => {
@@ -205,10 +214,10 @@ export const boundImages = (messages: LLMRequest["messages"]) => {
       }, 0),
     0,
   )
-  if (imageBytes <= IMAGE_BYTES_TRIGGER) return messages
+  if (imageBytes <= IMAGE_BYTES_TRIGGER) return normalized
 
   let removed = 0
-  return replaceMedia(messages, (media) => {
+  return replaceMedia(normalized, (media) => {
     if (!isImage(media.mime) || imageBytes - removed <= IMAGE_BYTES_TARGET) return
     removed += media.bytes()
     return IMAGE_REMOVED
