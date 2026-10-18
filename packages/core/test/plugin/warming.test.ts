@@ -16,7 +16,6 @@ import { Session } from "@opencode/schema/session"
 import type { SessionEvent } from "@opencode/schema/session-event"
 import { DateTime, Effect, Queue, Schema, Stream } from "effect"
 import { TestClock } from "effect/testing"
-import { advance } from "../lib/clock"
 import { it } from "../lib/effect"
 import { host } from "./host"
 
@@ -94,8 +93,29 @@ const warming = (interval: string, duration: string) =>
     return { events, warmed, contextHook }
   })
 
-// A real macrotask, so the forked execution-event subscription consumes a queued event.
-const settle = Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 1)))
+// The execution-event subscription is a forked fiber, so an offered event is only applied once that
+// fiber has been scheduled. Yielding is a scheduler hand-off rather than a timer, which keeps the
+// sequence identical on every machine; a hop count too small would make the busy assertions below
+// fail loudly, never pass for the wrong reason.
+const quiesce = Effect.gen(function* () {
+  for (let hop = 0; hop < 5; hop++) yield* Effect.yieldNow
+})
+
+const send = (events: Queue.Queue<ExecutionEvent>, event: ExecutionEvent) =>
+  Effect.gen(function* () {
+    yield* Queue.offer(events, event)
+    yield* quiesce
+  })
+
+/** Drives the pending TestClock timers, without ever consulting the wall clock. */
+const advance = Effect.fnUntraced(function* (condition: () => boolean) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (condition()) return
+    yield* quiesce
+    yield* TestClock.adjust("500 millis")
+  }
+  return yield* Effect.die(new Error("condition never became true after 100 advances"))
+})
 
 describe("WarmingPlugin", () => {
   it.effect("warms an idle session at the configured interval", () =>
@@ -110,14 +130,34 @@ describe("WarmingPlugin", () => {
   it.effect("defers warming while the session is working and resumes once it settles", () =>
     Effect.gen(function* () {
       const plugin = yield* warming("1 second", "30 minutes")
-      yield* Queue.offer(plugin.events, started)
-      yield* settle
+      yield* send(plugin.events, started)
       yield* plugin.contextHook(turn("hello"))
       yield* TestClock.adjust("1 second")
       yield* TestClock.adjust("1 second")
       yield* TestClock.adjust("1 second")
+      yield* quiesce
       expect(plugin.warmed).toEqual([])
-      yield* Queue.offer(plugin.events, succeeded)
+      yield* send(plugin.events, succeeded)
+      yield* advance(() => plugin.warmed.length > 0)
+      expect(plugin.warmed).toEqual([prompt])
+    }),
+  )
+
+  it.effect("counts the interval from when the session went idle, not from when the turn started", () =>
+    Effect.gen(function* () {
+      const plugin = yield* warming("1 second", "30 minutes")
+      yield* send(plugin.events, started)
+      yield* plugin.contextHook(turn("hello"))
+      yield* TestClock.adjust("1 second")
+      yield* TestClock.adjust("1 second")
+      yield* TestClock.adjust("500 millis")
+      // The turn ends at 2.5s, after the request that started it, so a turn-anchored interval is
+      // already spent and would warm at 3s — seconds after the real response, when the cache is
+      // fresh. Anchoring on idle pushes that first warm to 3.5s.
+      yield* send(plugin.events, succeeded)
+      yield* TestClock.adjust("500 millis")
+      yield* quiesce
+      expect(plugin.warmed).toEqual([])
       yield* advance(() => plugin.warmed.length > 0)
       expect(plugin.warmed).toEqual([prompt])
     }),
@@ -126,16 +166,15 @@ describe("WarmingPlugin", () => {
   it.effect("stops warming when the window expires during a turn that never settles", () =>
     Effect.gen(function* () {
       const plugin = yield* warming("1 second", "2 seconds")
-      yield* Queue.offer(plugin.events, started)
-      yield* settle
+      yield* send(plugin.events, started)
       yield* plugin.contextHook(turn("hello"))
       yield* TestClock.adjust("1 second")
       yield* TestClock.adjust("1 second")
       yield* TestClock.adjust("1 second")
-      yield* Queue.offer(plugin.events, succeeded)
-      yield* settle
+      yield* send(plugin.events, succeeded)
       yield* TestClock.adjust("1 second")
       yield* TestClock.adjust("1 second")
+      yield* quiesce
       expect(plugin.warmed).toEqual([])
     }),
   )

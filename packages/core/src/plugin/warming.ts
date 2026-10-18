@@ -49,9 +49,21 @@ export const Plugin = define({
           event.type === "session.execution.interrupted",
       ),
       Stream.runForEach((event) => {
-        if (event.type === "session.execution.started") working.add(event.data.sessionID)
-        else working.delete(event.data.sessionID)
-        return Effect.void
+        const sessionID = event.data.sessionID
+        if (event.type === "session.execution.started") {
+          working.add(sessionID)
+          return Effect.void
+        }
+        working.delete(sessionID)
+        const current = sessions.get(sessionID)
+        if (!current) return Effect.void
+        // Count the next interval from the moment the session went idle. A turn longer than the
+        // interval otherwise leaves `last` on the turn's first request, so the warm landed seconds
+        // after the real response — when the cache is already fresh — and took the single slot just
+        // as the user was about to send the next prompt. The window itself is untouched.
+        return Effect.map(Clock.currentTimeMillis, (now) => {
+          if (sessions.get(sessionID) === current) current.last = now
+        })
       }),
       Effect.forkScoped({ startImmediately: true }),
     )
