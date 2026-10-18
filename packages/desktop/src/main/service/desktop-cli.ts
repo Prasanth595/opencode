@@ -140,7 +140,11 @@ const installCli = Effect.fn("DesktopCli.install")(function* (source: string, ve
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   // x64 and ARM64 installers share userData on Windows ARM64, so a same-version switch must not reuse the other copy.
-  const stage = `${version}-${process.arch}`.replace(/[^a-zA-Z0-9._-]/g, "-")
+  // The source identity is part of the stage path so reinstalling the same version stages the new executable instead
+  // of reusing a stale copy (and never has to replace an executable that a previous service may still be running).
+  const stat = yield* fs.stat(source)
+  const identity = `${stat.size}-${Option.getOrUndefined(stat.mtime)?.getTime() ?? ""}`
+  const stage = `${version}-${process.arch}-${identity}`.replace(/[^a-zA-Z0-9._-]/g, "-")
   const directory = path.join(app.getPath("userData"), "cli", stage)
   const destination = path.join(directory, executableName())
 
