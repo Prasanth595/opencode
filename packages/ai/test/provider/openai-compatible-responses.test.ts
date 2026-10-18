@@ -652,12 +652,28 @@ describe("Open Responses-compatible route", () => {
           Effect.provide(
             fixedResponse(
               sseEvents(
+                { type: "response.created", response: null },
                 { type: "response.output_item.added", output_index: 0, item: { ...message, content: [] } },
                 { type: "response.output_text.delta", item_id: "msg_1", output_index: null, delta: "Hi" },
                 { type: "response.output_text.delta", item_id: "msg_1", output_index: 0, delta: null },
+                { type: "response.output_text.done", item_id: "msg_1", output_index: 0, text: null },
                 { type: "response.output_item.done", output_index: 0, item: message },
                 { type: "response.output_item.added", output_index: 1, item: { ...call, arguments: null } },
+                { type: "response.function_call_arguments.done", item_id: "fc", output_index: 1, arguments: null },
                 { type: "response.output_item.done", output_index: 1, item: { ...call, arguments: "{}" } },
+                {
+                  type: "response.output_item.done",
+                  output_index: 2,
+                  item: { type: "function_call", id: "fc_2", call_id: null, name: null, arguments: "{}" },
+                },
+                { type: "response.output_item.added", output_index: 3, item: { type: "reasoning", id: "rs_1" } },
+                {
+                  type: "response.reasoning_summary_part.added",
+                  item_id: "rs_1",
+                  output_index: 3,
+                  summary_index: null,
+                },
+                { type: "response.output_item.done", output_index: 3, item: { type: "reasoning", id: "rs_1" } },
                 {
                   type: "response.completed",
                   response: {
@@ -681,7 +697,11 @@ describe("Open Responses-compatible route", () => {
         expect(response.text).toBe("Hi")
         expect(response.toolCalls).toEqual([expect.objectContaining({ id: "call_1", name: "lookup", input: {} })])
         expect(response.toolCalls[0]?.namespace).toBeUndefined()
-        expect(response.usage).toMatchObject({ inputTokens: 5, outputTokens: undefined, cacheReadInputTokens: undefined })
+        expect(response.usage).toMatchObject({
+          inputTokens: 5,
+          outputTokens: undefined,
+          cacheReadInputTokens: undefined,
+        })
       }),
     )
 

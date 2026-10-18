@@ -18,7 +18,15 @@ import {
   type ToolResultPart,
 } from "../schema/index.js"
 import type { Media } from "../media.js"
-import { JsonObject, lenient, optionalArray, optionalNull, optionalNullish, ProviderShared, withUntypedFrames } from "./shared.js"
+import {
+  JsonObject,
+  lenient,
+  optionalArray,
+  optionalNull,
+  optionalNullish,
+  ProviderShared,
+  withUntypedFrames,
+} from "./shared.js"
 import { classifyProviderFailure } from "../provider-error.js"
 import { effortUpdate } from "../effort-updates.js"
 import { OpenResponsesOptions } from "./utils/open-responses-options.js"
@@ -357,7 +365,7 @@ const TypedEvent = Schema.StructWithRest(
     delta: optionalNullish(Schema.String),
     arguments: optionalNullish(Schema.String),
     text: optionalNullish(Schema.String),
-    // Kept strict: a wrong item id would route content into the wrong output item.
+    // Kept strict: item-scoped events always carry an id, so null means a broken stream.
     item_id: Schema.optional(Schema.String),
     output_index: optionalNullish(Schema.Number),
     summary_index: optionalNullish(Schema.Number),
@@ -855,7 +863,7 @@ export const mapUsage = (usage: OpenResponsesUsage | null | undefined, providerM
 
 const mapFinishReason = (event: Event, hasFunctionCall: boolean): FinishReason => {
   const reason = event.response?.incomplete_details?.reason
-  if (reason === undefined || reason === null) {
+  if (reason === undefined) {
     if (hasFunctionCall) return "tool-calls"
     if (event.type === "response.incomplete") return "unknown"
     return "stop"
