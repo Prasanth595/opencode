@@ -14943,6 +14943,9 @@
           "status": {
             "type": "string",
             "enum": ["added", "deleted", "modified"]
+          },
+          "truncated": {
+            "type": "boolean"
           }
         },
         "required": ["file", "patch", "additions", "deletions", "status"],

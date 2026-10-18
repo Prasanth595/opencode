@@ -1,5 +1,7 @@
 export * as McpTool from "./mcp.js"
 
+import { cell as McpReconcile } from "../mcp-reconcile.js"
+
 import { ToolFailure } from "@opencode/ai"
 import { McpEvent } from "@opencode/schema/mcp-event"
 import { Context, Effect, Fiber, type JsonSchema, Layer, PubSub, Semaphore, Stream } from "effect"
@@ -19,6 +21,8 @@ export const name = (server: string, tool: string) => `${namespace(server)}_${to
 export interface Interface {
   /** Wait for the initial MCP tool registration to settle. */
   readonly flush: Effect.Effect<void>
+  /** Reconcile MCP tools into the ToolRegistry after a mutation. */
+  readonly reconcile: Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/McpTool") {}
@@ -127,6 +131,8 @@ export const layer = Layer.effect(
         yield* tools.reload()
       }),
     )
+    // Register for the MCP service to await after mutations.
+    McpReconcile.reconcile = reconcile
 
     // Servers announce tools in bursts and each read loads the whole catalog, so settle and refresh
     // once. The bus subscription stays eager; only the already-open sliding subscription is debounced.
@@ -141,7 +147,7 @@ export const layer = Layer.effect(
       Stream.runForEach(() => reconcile),
       Effect.forkScoped({ startImmediately: true }),
     )
-    return Service.of({ flush: Effect.asVoid(Fiber.await(initial)) })
+    return Service.of({ flush: Effect.asVoid(Fiber.await(initial)), reconcile })
   }),
 )
 

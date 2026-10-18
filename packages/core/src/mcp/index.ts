@@ -13,6 +13,7 @@ import { Bus } from "../bus.js"
 import { Environment } from "../environment/index.js"
 import { Form } from "../form.js"
 import { Integration } from "../integration.js"
+import { cell as mcpReconcileCell } from "../mcp-reconcile.js"
 import { KeyedMutex } from "../effect/keyed-mutex.js"
 import { Location } from "../location.js"
 import { waitForAbort } from "@opencode/util/process"
@@ -636,6 +637,9 @@ export const layer = (options?: Options) =>
           const name = ServerName.make(server)
           overrides.set(name, config)
           yield* state.reload()
+          // Await tool registry reconciliation so a subsequent session/tool
+          // snapshot reflects the mutation (see #39902).
+          if (mcpReconcileCell.reconcile) yield* mcpReconcileCell.reconcile
         }),
         connect: Effect.fn("MCP.connect")(function* (server) {
           const name = ServerName.make(server)
@@ -644,6 +648,7 @@ export const layer = (options?: Options) =>
             yield* stopServer(name, target.entry)
             yield* startServer(name, target.entry)
           }).pipe(locks.withLock(name))
+          if (mcpReconcileCell.reconcile) yield* mcpReconcileCell.reconcile
         }),
         disconnect: Effect.fn("MCP.disconnect")(function* (server) {
           const name = ServerName.make(server)
@@ -653,12 +658,14 @@ export const layer = (options?: Options) =>
             target.entry.status = { status: "disabled" }
             yield* bus.publish(McpEvent.StatusChanged, { server: name })
           }).pipe(locks.withLock(name))
+          if (mcpReconcileCell.reconcile) yield* mcpReconcileCell.reconcile
         }),
         remove: Effect.fn("MCP.remove")(function* (server) {
           const name = ServerName.make(server)
           yield* requireServer(name)
           overrides.set(name, false)
           yield* state.reload()
+          if (mcpReconcileCell.reconcile) yield* mcpReconcileCell.reconcile
         }),
         // Reads report what is connected now; servers still starting contribute once they publish a change.
         tools: Effect.fn("MCP.tools")(function* () {
