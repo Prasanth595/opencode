@@ -46,6 +46,14 @@ describe("Config.Entry", () => {
     expect(() => Schema.decodeUnknownSync(Config.Info)({ providers: { custom: { canonical: 1 } } })).toThrow()
   })
 
+  test("decodes provider-only patches without a shell", () => {
+    const input = { providers: { custom: null } } as const
+    const decoded = Schema.decodeUnknownSync(Config.Patch)(input)
+    expect(decoded.shell).toBeUndefined()
+    expect(decoded.providers?.custom).toBeNull()
+    expect(Schema.encodeSync(Config.Patch)(decoded)).toEqual(input)
+  })
+
   test("round-trips disabled and numeric provider HTTP timeouts", () => {
     const input = {
       providers: { custom: { settings: { timeout: 900_000, headerTimeout: 600_000, chunkTimeout: false } } },

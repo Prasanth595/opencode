@@ -2119,4 +2119,60 @@ describe("Config", () => {
       }),
     ),
   )
+
+  it.live("removes native and migrated V1 provider entries", () =>
+    Effect.acquireDisposable(Effect.promise(() => tmpdir())).pipe(
+      Effect.flatMap((tmp) => {
+        const global = path.join(tmp.path, "global")
+        const file = path.join(global, "opencode.jsonc")
+        return Effect.promise(async () => {
+          await fs.mkdir(global, { recursive: true })
+          await fs.writeFile(
+            file,
+            `{
+  "disabled_providers": ["native", "legacy", "other"],
+  "provider": {
+    "legacy": {
+      "name": "Legacy",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": { "baseURL": "https://legacy.example.com" },
+      "models": { "legacy-model": { "name": "Legacy Model" } }
+    }
+  },
+  "providers": {
+    "native": {
+      "name": "Native",
+      "package": "aisdk:@ai-sdk/openai-compatible",
+      "settings": { "baseURL": "https://native.example.com" },
+      "models": { "native-model": { "name": "Native Model" } }
+    },
+    "other": {
+      "name": "Other",
+      "package": "aisdk:@ai-sdk/openai-compatible",
+      "models": { "other-model": { "name": "Other Model" } }
+    }
+  }
+}
+`,
+          )
+        }).pipe(
+          Effect.andThen(
+            Effect.gen(function* () {
+              const config = yield* Config.Service
+              yield* config.update!({ providers: { native: null, legacy: null } })
+              const updated = parse(yield* Effect.promise(() => fs.readFile(file, "utf8")))
+              expect(updated.disabled_providers).toEqual(["other"])
+              expect(updated.provider?.legacy).toBeUndefined()
+              expect(updated.providers?.native).toBeUndefined()
+              expect(updated.providers?.other).toEqual({
+                name: "Other",
+                package: "aisdk:@ai-sdk/openai-compatible",
+                models: { "other-model": { name: "Other Model" } },
+              })
+            }).pipe(Effect.provide(testLayer(path.join(tmp.path, "project"), global))),
+          ),
+        )
+      }),
+    ),
+  )
 })

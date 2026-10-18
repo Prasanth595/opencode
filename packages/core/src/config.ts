@@ -390,11 +390,9 @@ export const layer = (options?: Options) =>
             try: () => {
               const formattingOptions = { tabSize: 2, insertSpaces: true }
               const providers = Object.entries(patch.providers ?? {})
-              const providerIDs = providers
-                .filter(([, provider]) => provider !== null)
-                .map(([id]) => id)
-              // Saving a provider also re-enables it: a V1 `disabled_providers` entry would otherwise keep the
-              // provider denied by policy even though its configuration was just written.
+              const providerIDs = providers.map(([id]) => id)
+              // Saving or deleting a provider also clears a V1 `disabled_providers` entry: keeping it would leave
+              // the provider denied by policy even though its configuration was just written or removed.
               const disabled = (parse(text) as { disabled_providers?: unknown } | undefined)?.disabled_providers
               const document =
                 !providerIDs.length || !Array.isArray(disabled)
@@ -409,18 +407,21 @@ export const layer = (options?: Options) =>
                       ),
                     )
               // Each step re-parses the document so later edits see earlier ones. jsonc-parser creates missing
-              // intermediate objects, and patching `providers` never replaces unrelated providers.
+              // intermediate objects, and patching `providers` never replaces unrelated providers. A null patch
+              // also removes the migrated V1 entry, which is the only on-disk form for legacy custom providers.
               const steps: Array<{ path: (string | number)[]; value: unknown }> = [
                 ...(patch.shell === undefined ? [] : [{ path: ["shell"], value: patch.shell ?? undefined }]),
-                ...providers.map(([id, provider]) => ({
-                  path: ["providers", id],
-                  value: provider ?? undefined,
-                })),
+                ...providers.flatMap(([id, provider]) => [
+                  { path: ["providers", id], value: provider ?? undefined },
+                  ...(provider === null ? [{ path: ["provider", id], value: undefined }] : []),
+                ]),
               ]
-              return steps.reduce(
-                (current, step) => applyEdits(current, modify(current, step.path, step.value, { formattingOptions })),
-                document,
-              )
+              return steps.reduce((current, step) => {
+                // jsonc-parser throws when asked to delete a path that is absent, which is normal here:
+                // a provider can exist only in the native or only in the migrated V1 representation.
+                if (step.value === undefined && !hasPath(parse(current), step.path)) return current
+                return applyEdits(current, modify(current, step.path, step.value, { formattingOptions }))
+              }, document)
             },
             catch: (cause) => new FSUtil.FileSystemError({ method: "config.update", cause }),
           })
@@ -463,3 +464,11 @@ export function configured(options?: Options) {
 }
 
 export const node = configured()
+
+function hasPath(value: unknown, path: readonly (string | number)[]) {
+  for (const key of path) {
+    if (typeof value !== "object" || value === null || !Object.hasOwn(value, key)) return false
+    value = (value as Record<string | number, unknown>)[key]
+  }
+  return true
+}
