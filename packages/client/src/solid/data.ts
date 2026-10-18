@@ -1858,8 +1858,8 @@ export function createData(config: CreateDataInput) {
               // older snapshot cannot drop a new form or resurrect a settled one.
               const current = new Map(snapshot.map((form) => [form.id, form]))
               updates.forEach((form, id) => {
-                if (form === undefined) current.delete(id)
-                else current.set(id, form)
+                if (form === undefined) return current.delete(id)
+                current.set(id, form)
               })
               setStore("session", "form", sessionID, [...current.values()])
             } finally {

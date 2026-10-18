@@ -183,7 +183,7 @@ test("form hydration retains a form created during the read", async () => {
     })
     response.resolve(Response.json({ data: [] }))
     await reading
-    expect(setup.data.session.form.list(form.sessionID)?.map((item) => item.id)).toEqual([form.id])
+    expect(setup.data.session.form.list(form.sessionID)?.map((entry) => entry.id)).toEqual([form.id])
   } finally {
     response.resolve(Response.json({ data: [] }))
     setup.dispose()
