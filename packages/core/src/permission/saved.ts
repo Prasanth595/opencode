@@ -85,38 +85,45 @@ const layer = Layer.effect(
     })
 
     const update = Effect.fn("PermissionSaved.update")(function* (input: UpdateInput) {
-      const current = yield* db
-        .select()
-        .from(PermissionTable)
-        .where(eq(PermissionTable.id, input.id))
-        .get()
-        .pipe(Effect.orDie)
-      if (!current) return yield* new NotFoundError({ id: input.id })
-      const action = input.action ?? current.action
-      const resource = input.resource ?? current.resource
-      const duplicate = yield* db
-        .select({ id: PermissionTable.id })
-        .from(PermissionTable)
-        .where(
-          and(
-            eq(PermissionTable.project_id, current.project_id),
-            eq(PermissionTable.action, action),
-            eq(PermissionTable.resource, resource),
-            ne(PermissionTable.id, input.id),
-          ),
+      // The duplicate check and the write run in one transaction so a concurrent save can't slip between them.
+      return yield* db
+        .transaction((tx) =>
+          Effect.gen(function* () {
+            const current = yield* tx
+              .select()
+              .from(PermissionTable)
+              .where(eq(PermissionTable.id, input.id))
+              .get()
+              .pipe(Effect.orDie)
+            if (!current) return yield* new NotFoundError({ id: input.id })
+            const action = input.action ?? current.action
+            const resource = input.resource ?? current.resource
+            const duplicate = yield* tx
+              .select({ id: PermissionTable.id })
+              .from(PermissionTable)
+              .where(
+                and(
+                  eq(PermissionTable.project_id, current.project_id),
+                  eq(PermissionTable.action, action),
+                  eq(PermissionTable.resource, resource),
+                  ne(PermissionTable.id, input.id),
+                ),
+              )
+              .get()
+              .pipe(Effect.orDie)
+            if (duplicate) return yield* new ConflictError({ id: duplicate.id, action, resource })
+            const updated = yield* tx
+              .update(PermissionTable)
+              .set({ action, resource })
+              .where(eq(PermissionTable.id, input.id))
+              .returning()
+              .get()
+              .pipe(Effect.orDie)
+            if (!updated) return yield* new NotFoundError({ id: input.id })
+            return info(updated)
+          }),
         )
-        .get()
-        .pipe(Effect.orDie)
-      if (duplicate) return yield* new ConflictError({ id: duplicate.id, action, resource })
-      const updated = yield* db
-        .update(PermissionTable)
-        .set({ action, resource })
-        .where(eq(PermissionTable.id, input.id))
-        .returning()
-        .get()
-        .pipe(Effect.orDie)
-      if (!updated) return yield* new NotFoundError({ id: input.id })
-      return info(updated)
+        .pipe(Effect.catchTag("SqlError", (error) => Effect.die(error)))
     })
 
     const remove = Effect.fn("PermissionSaved.remove")(function* (id: ID) {
