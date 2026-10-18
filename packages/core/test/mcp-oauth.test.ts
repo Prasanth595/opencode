@@ -160,6 +160,54 @@ describe("MCP OAuth", () => {
     expect(tokenRequests[0]?.get("resource")).toBe(server.url.href)
   })
 
+  test("answers the private-network preflight and ignores code-less callback probes", async () => {
+    const server = Bun.serve({
+      port: 0,
+      async fetch(request) {
+        const url = new URL(request.url)
+        if (request.method !== "POST" || url.pathname !== "/token") return new Response(null, { status: 404 })
+        return Response.json({ access_token: "access", token_type: "Bearer", expires_in: 3600 })
+      },
+    })
+
+    const credential = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { authorization, url: authorizationUrl } = yield* start(server, { client_id: "client" })
+          const redirectValue = authorizationUrl.searchParams.get("redirect_uri")
+          const state = authorizationUrl.searchParams.get("state")
+          if (!redirectValue || !state) throw new Error("Missing OAuth redirect parameters")
+          const redirect = new URL(redirectValue)
+
+          // Chrome's private-network preflight must not decide the authorization.
+          const preflight = yield* Effect.promise(() =>
+            fetch(redirect, {
+              method: "OPTIONS",
+              headers: {
+                Origin: "https://auth.example",
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Private-Network": "true",
+              },
+            }),
+          )
+          expect(preflight.status).toBe(204)
+          expect(preflight.headers.get("access-control-allow-origin")).toBe("https://auth.example")
+          expect(preflight.headers.get("access-control-allow-private-network")).toBe("true")
+
+          // A probe without a code or state leaves the login waiting for the real redirect.
+          expect((yield* Effect.promise(() => fetch(redirect))).status).toBe(400)
+
+          redirect.searchParams.set("code", "accepted")
+          redirect.searchParams.set("state", state)
+          expect((yield* Effect.promise(() => fetch(redirect))).status).toBe(200)
+          return yield* authorization.callback
+        }),
+      ),
+    ).finally(() => server.stop(true))
+
+    expect(credential.access).toBe("access")
+  })
+
   test("reports a rejected token exchange on the callback page", async () => {
     const server = Bun.serve({
       port: 0,
