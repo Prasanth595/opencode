@@ -29,6 +29,13 @@ class SecretTextareaRenderable extends TextareaRenderable {
     this.requestRender()
   }
 
+  override getSelectedText(): string {
+    // Copy-on-select and Ctrl+C resolve the selection through this method, so a
+    // masked field must never hand out its value there.
+    if (this._secret) return ""
+    return super.getSelectedText()
+  }
+
   protected override renderSelf(buffer: OptimizedBuffer) {
     super.renderSelf(buffer)
     if (!this._secret) return

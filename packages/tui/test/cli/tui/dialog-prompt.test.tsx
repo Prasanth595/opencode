@@ -215,6 +215,12 @@ test("dialog prompt masks a secret value without echoing it", async () => {
     const frame = await prompt.app.waitForFrame((value) => value.includes("*****"))
     expect(frame).not.toContain("draft")
 
+    // Selection must not resolve the masked value either.
+    prompt.app.mockInput.pressKey("END")
+    prompt.app.mockInput.pressArrow("left", { shift: true })
+    expect(prompt.app.renderer.getSelection()?.getSelectedText()).toBe("")
+    expect(textarea.plainText).toBe("draft")
+
     prompt.app.mockInput.pressEnter()
 
     expect(confirmed).toEqual(["draft"])
@@ -276,6 +282,11 @@ test("dialog prompt echoes the value when secret is not set", async () => {
 
     const frame = await prompt.app.waitForFrame((value) => value.includes("draft"))
     expect(frame).toContain("draft")
+
+    // A normal prompt still exposes its selection.
+    prompt.app.mockInput.pressKey("END")
+    prompt.app.mockInput.pressArrow("left", { shift: true })
+    expect(prompt.app.renderer.getSelection()?.getSelectedText()).toBe("t")
 
     prompt.app.mockInput.pressEnter()
 
