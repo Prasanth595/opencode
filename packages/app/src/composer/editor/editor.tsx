@@ -304,7 +304,7 @@ export function ComposerEditor(props: ComposerEditorProps) {
           />
           <Show when={!props.controller.value()}>
             <div
-              aria-hidden="true"
+              aria-hidden={view.prediction?.text() ? true : undefined}
               dir={state.mode === "normal" ? "auto" : "ltr"}
               class="pointer-events-none col-start-1 row-start-1 whitespace-pre-wrap px-4 pt-4 pb-2 text-[13px] font-[440] leading-5 text-v2-text-text-faint"
               classList={{ "font-mono!": state.mode === "shell" }}
