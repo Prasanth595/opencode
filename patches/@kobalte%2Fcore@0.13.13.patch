@@ -1,0 +1,116 @@
+diff --git a/dist/chunk/3ARTUDH2.jsx b/dist/chunk/3ARTUDH2.jsx
+index 4a2cfa59cfd0adec119e46de043c590af12ceb60..5014cf97bb46a5ecc76c70d9a5a7155b8814e31c 100644
+--- a/dist/chunk/3ARTUDH2.jsx
++++ b/dist/chunk/3ARTUDH2.jsx
+@@ -242,6 +242,12 @@ function Menu(props) {
+   const _focusContent = () => {
+     const content = contentRef();
+     if (content) {
++      // A focused editable (the menu's search input) keeps DOM focus while the pointer crosses items: moving focus
++      // away restarts the caret blink on every hover, which reads as a flash and breaks typing into the search box.
++      const active = document.activeElement;
++      if ((active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active?.isContentEditable) && content.contains(active)) {
++        return;
++      }
+       focusWithoutScrolling(content);
+       listState.selectionManager().setFocused(true);
+       listState.selectionManager().setFocusedKey(void 0);
+@@ -481,9 +487,13 @@ function MenuItemBase(props) {
+     } else {
+       menuContext.onItemEnter(e);
+       if (!e.defaultPrevented) {
+-        focusWithoutScrolling2(e.currentTarget);
+-        menuContext.listState().selectionManager().setFocused(true);
+-        menuContext.listState().selectionManager().setFocusedKey(key());
++        // Keep focus on an editable (search input) inside this menu; hover only updates visual state.
++        const active = document.activeElement;
++        if (!(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active?.isContentEditable) || !e.currentTarget.closest('[role="menu"]')?.contains(active)) {
++          focusWithoutScrolling2(e.currentTarget);
++          menuContext.listState().selectionManager().setFocused(true);
++          menuContext.listState().selectionManager().setFocusedKey(key());
++        }
+       }
+     }
+   };
+@@ -1474,13 +1484,17 @@ function MenuSubTrigger(props) {
+     }
+     parentMenuContext?.onItemEnter(e);
+     if (!e.defaultPrevented) {
+-      if (context.listState().selectionManager().isFocused()) {
+-        context.listState().selectionManager().setFocused(false);
+-        context.listState().selectionManager().setFocusedKey(void 0);
++      // Keep focus on an editable (search input) inside the parent menu; hover only updates visual state.
++      const active = document.activeElement;
++      if (!(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active?.isContentEditable) || !e.currentTarget.closest('[role="menu"]')?.contains(active)) {
++        if (context.listState().selectionManager().isFocused()) {
++          context.listState().selectionManager().setFocused(false);
++          context.listState().selectionManager().setFocusedKey(void 0);
++        }
++        focusWithoutScrolling4(e.currentTarget);
++        parentMenuContext?.listState().selectionManager().setFocused(true);
++        parentMenuContext?.listState().selectionManager().setFocusedKey(key());
+       }
+-      focusWithoutScrolling4(e.currentTarget);
+-      parentMenuContext?.listState().selectionManager().setFocused(true);
+-      parentMenuContext?.listState().selectionManager().setFocusedKey(key());
+     }
+   };
+   const onPointerLeave = (e) => {
+diff --git a/dist/chunk/HGKTPMYY.js b/dist/chunk/HGKTPMYY.js
+index a8fa9b06a97cb3d4d5029fc0c929d78dfdc6edd4..e5b8f346eaf6bc21aab5fa5406e08511f9a513a8 100644
+--- a/dist/chunk/HGKTPMYY.js
++++ b/dist/chunk/HGKTPMYY.js
+@@ -166,6 +166,12 @@ function Menu(props) {
+   const _focusContent = () => {
+     const content = contentRef();
+     if (content) {
++      // A focused editable (the menu's search input) keeps DOM focus while the pointer crosses items: moving focus
++      // away restarts the caret blink on every hover, which reads as a flash and breaks typing into the search box.
++      const active = document.activeElement;
++      if ((active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active?.isContentEditable) && content.contains(active)) {
++        return;
++      }
+       focusWithoutScrolling(content);
+       listState.selectionManager().setFocused(true);
+       listState.selectionManager().setFocusedKey(void 0);
+@@ -368,9 +374,13 @@ function MenuItemBase(props) {
+     } else {
+       menuContext.onItemEnter(e);
+       if (!e.defaultPrevented) {
+-        focusWithoutScrolling(e.currentTarget);
+-        menuContext.listState().selectionManager().setFocused(true);
+-        menuContext.listState().selectionManager().setFocusedKey(key());
++        // Keep focus on an editable (search input) inside this menu; hover only updates visual state.
++        const active = document.activeElement;
++        if (!(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active?.isContentEditable) || !e.currentTarget.closest('[role="menu"]')?.contains(active)) {
++          focusWithoutScrolling(e.currentTarget);
++          menuContext.listState().selectionManager().setFocused(true);
++          menuContext.listState().selectionManager().setFocusedKey(key());
++        }
+       }
+     }
+   };
+@@ -1188,13 +1198,17 @@ function MenuSubTrigger(props) {
+     }
+     parentMenuContext?.onItemEnter(e);
+     if (!e.defaultPrevented) {
+-      if (context.listState().selectionManager().isFocused()) {
+-        context.listState().selectionManager().setFocused(false);
+-        context.listState().selectionManager().setFocusedKey(void 0);
++      // Keep focus on an editable (search input) inside the parent menu; hover only updates visual state.
++      const active = document.activeElement;
++      if (!(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active?.isContentEditable) || !e.currentTarget.closest('[role="menu"]')?.contains(active)) {
++        if (context.listState().selectionManager().isFocused()) {
++          context.listState().selectionManager().setFocused(false);
++          context.listState().selectionManager().setFocusedKey(void 0);
++        }
++        focusWithoutScrolling(e.currentTarget);
++        parentMenuContext?.listState().selectionManager().setFocused(true);
++        parentMenuContext?.listState().selectionManager().setFocusedKey(key());
+       }
+-      focusWithoutScrolling(e.currentTarget);
+-      parentMenuContext?.listState().selectionManager().setFocused(true);
+-      parentMenuContext?.listState().selectionManager().setFocusedKey(key());
+     }
+   };
+   const onPointerLeave = (e) => {
