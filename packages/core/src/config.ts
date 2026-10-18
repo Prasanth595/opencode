@@ -389,7 +389,10 @@ export const layer = (options?: Options) =>
           const updated = yield* Effect.try({
             try: () => {
               const formattingOptions = { tabSize: 2, insertSpaces: true }
-              const providerIDs = Object.keys(patch.providers ?? {})
+              const providers = Object.entries(patch.providers ?? {})
+              const providerIDs = providers
+                .filter(([, provider]) => provider !== null)
+                .map(([id]) => id)
               // Saving a provider also re-enables it: a V1 `disabled_providers` entry would otherwise keep the
               // provider denied by policy even though its configuration was just written.
               const disabled = (parse(text) as { disabled_providers?: unknown } | undefined)?.disabled_providers
@@ -409,9 +412,9 @@ export const layer = (options?: Options) =>
               // intermediate objects, and patching `providers` never replaces unrelated providers.
               const steps: Array<{ path: (string | number)[]; value: unknown }> = [
                 ...(patch.shell === undefined ? [] : [{ path: ["shell"], value: patch.shell ?? undefined }]),
-                ...Object.entries(patch.providers ?? {}).map(([id, provider]) => ({
+                ...providers.map(([id, provider]) => ({
                   path: ["providers", id],
-                  value: provider,
+                  value: provider ?? undefined,
                 })),
               ]
               return steps.reduce(

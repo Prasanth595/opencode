@@ -2016,7 +2016,7 @@ describe("Config", () => {
     ),
   )
 
-  it.live("writes provider patches into the global config and re-enables them", () =>
+  it.live("writes, deletes, and re-adds provider patches in the global config", () =>
     Effect.acquireDisposable(Effect.promise(() => tmpdir())).pipe(
       Effect.flatMap((tmp) => {
         const global = path.join(tmp.path, "global")
@@ -2029,6 +2029,13 @@ describe("Config", () => {
   // keep this comment
   "shell": "/bin/sh",
   "disabled_providers": ["custom", "other"],
+  "providers": {
+    "other": {
+      "name": "Other",
+      "package": "aisdk:@ai-sdk/openai-compatible",
+      "models": { "model-b": { "name": "Model B" } }
+    }
+  }
 }
 `,
           )
@@ -2046,16 +2053,62 @@ describe("Config", () => {
                   },
                 },
               })
-              const text = yield* Effect.promise(() => fs.readFile(file, "utf8"))
-              expect(text).toContain("// keep this comment")
-              expect(parse(text)).toEqual({
+              expect(parse(yield* Effect.promise(() => fs.readFile(file, "utf8")))).toEqual({
                 shell: "/bin/sh",
                 disabled_providers: ["other"],
                 providers: {
+                  other: {
+                    name: "Other",
+                    package: "aisdk:@ai-sdk/openai-compatible",
+                    models: { "model-b": { name: "Model B" } },
+                  },
                   custom: {
                     name: "Custom",
                     package: "aisdk:@ai-sdk/openai-compatible",
                     settings: { baseURL: "https://api.example.com" },
+                    models: { "model-a": { name: "Model A" } },
+                  },
+                },
+              })
+
+              yield* config.update!({ providers: { custom: null } })
+              const deleted = yield* Effect.promise(() => fs.readFile(file, "utf8"))
+              expect(deleted).toContain("// keep this comment")
+              expect(parse(deleted)).toEqual({
+                shell: "/bin/sh",
+                disabled_providers: ["other"],
+                providers: {
+                  other: {
+                    name: "Other",
+                    package: "aisdk:@ai-sdk/openai-compatible",
+                    models: { "model-b": { name: "Model B" } },
+                  },
+                },
+              })
+
+              yield* config.update!({
+                providers: {
+                  custom: {
+                    name: "Custom",
+                    package: "aisdk:@ai-sdk/openai-compatible",
+                    settings: { baseURL: "https://api.example.org" },
+                    models: { "model-a": { name: "Model A" } },
+                  },
+                },
+              })
+              expect(parse(yield* Effect.promise(() => fs.readFile(file, "utf8")))).toEqual({
+                shell: "/bin/sh",
+                disabled_providers: ["other"],
+                providers: {
+                  other: {
+                    name: "Other",
+                    package: "aisdk:@ai-sdk/openai-compatible",
+                    models: { "model-b": { name: "Model B" } },
+                  },
+                  custom: {
+                    name: "Custom",
+                    package: "aisdk:@ai-sdk/openai-compatible",
+                    settings: { baseURL: "https://api.example.org" },
                     models: { "model-a": { name: "Model A" } },
                   },
                 },

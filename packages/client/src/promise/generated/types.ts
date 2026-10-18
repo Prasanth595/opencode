@@ -6965,7 +6965,7 @@ export type ConfigUpdateInput = {
             readonly limit?: { readonly context?: number; readonly input?: number; readonly output?: number }
           }
         }
-      }
+      } | null
     }
   }["shell"]
   readonly providers?: {
@@ -7059,7 +7059,7 @@ export type ConfigUpdateInput = {
             readonly limit?: { readonly context?: number; readonly input?: number; readonly output?: number }
           }
         }
-      }
+      } | null
     }
   }["providers"]
 }

@@ -1,6 +1,6 @@
 const PROVIDER_ID = /^[a-z0-9][a-z0-9-_]*$/
 
-const OPENAI_COMPATIBLE = "aisdk:@ai-sdk/openai-compatible"
+export const OPENAI_COMPATIBLE = "aisdk:@ai-sdk/openai-compatible"
 
 type ProviderConfig = {
   name: string
