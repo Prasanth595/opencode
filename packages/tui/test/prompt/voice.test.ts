@@ -42,9 +42,10 @@ describe("component.prompt.voice", () => {
       expect(args.at(-1)).toBe("/tmp/a.wav")
     })
 
-    test("uses dshow on win32", () => {
-      const args = ffmpegArgs("win32", "/tmp/a.wav")
+    test("uses dshow with the enumerated device on win32", () => {
+      const args = ffmpegArgs("win32", "/tmp/a.wav", "Microphone (Realtek Audio)")
       expect(args).toContain("dshow")
+      expect(args).toContain("audio=Microphone (Realtek Audio)")
       expect(args.at(-1)).toBe("/tmp/a.wav")
     })
 
@@ -62,25 +63,47 @@ describe("component.prompt.voice", () => {
   })
 
   describe("findRecorder", () => {
-    test("prefers ffmpeg over rec", () => {
+    test("prefers ffmpeg over rec", async () => {
       const dir = fakeBinDir({ ffmpeg: "#!/bin/sh\n", rec: "#!/bin/sh\n" })
       process.env.PATH = dir
-      expect(findRecorder("linux")?.command).toBe("ffmpeg")
+      expect((await findRecorder("linux"))?.command).toBe("ffmpeg")
       rmSync(dir, { recursive: true })
     })
 
-    test("falls back to sox rec", () => {
+    test("falls back to sox rec", async () => {
       const dir = fakeBinDir({ rec: "#!/bin/sh\n" })
       process.env.PATH = dir
-      const spec = findRecorder("linux")
+      const spec = await findRecorder("linux")
       expect(spec?.command).toBe("rec")
       expect(spec?.buildArgs("/tmp/a.wav")).toEqual(soxArgs("/tmp/a.wav"))
       rmSync(dir, { recursive: true })
     })
 
-    test("returns undefined when no recorder is installed", () => {
+    test("returns undefined when no recorder is installed", async () => {
       process.env.PATH = mkdtempDir()
-      expect(findRecorder("linux")).toBeUndefined()
+      expect(await findRecorder("linux")).toBeUndefined()
+    })
+
+    test("enumerates a dshow audio device on win32", async () => {
+      const dir = fakeBinDir({
+        ffmpeg: `#!/bin/sh\necho '[dshow @ x] DirectShow video devices:' >&2\necho '[dshow @ x] "Integrated Camera"' >&2\necho '[dshow @ x] DirectShow audio devices (some may be both video and audio devices):' >&2\necho '[dshow @ x]  0 "Microphone (Realtek Audio)"' >&2\n`,
+      })
+      // Prepend: spawn() resolves "ffmpeg" through the child PATH, so the
+      // fake dir must sit in front of the real one rather than replace it.
+      process.env.PATH = `${dir}:${process.env.PATH}`
+      const spec = await findRecorder("win32")
+      expect(spec?.command).toBe("ffmpeg")
+      expect(spec?.buildArgs("/tmp/a.wav")).toContain("audio=Microphone (Realtek Audio)")
+      process.env.PATH = originalPath
+      rmSync(dir, { recursive: true })
+    })
+
+    test("falls back to rec when dshow lists no audio device", async () => {
+      const dir = fakeBinDir({ ffmpeg: "#!/bin/sh\n", rec: "#!/bin/sh\n" })
+      process.env.PATH = `${dir}:${process.env.PATH}`
+      expect((await findRecorder("win32"))?.command).toBe("rec")
+      process.env.PATH = originalPath
+      rmSync(dir, { recursive: true })
     })
   })
 
@@ -129,17 +152,18 @@ describe("component.prompt.voice", () => {
   })
 
   describe("VoiceRecorder", () => {
-    const fakeRecorder = "#!/bin/sh\ntouch \"$1\"\nsleep 30\n"
+    // Exits cleanly on SIGINT so stop() resolves without the SIGKILL fallback.
+    const fakeRecorder = "#!/bin/sh\ntrap 'exit 0' INT\ntouch \"$1\"\nsleep 30\n"
 
-    function listVoiceFiles(): string[] {
-      return readdirSync(tmpdir()).filter((name) => name.startsWith("opencode-voice-"))
+    function listVoiceFiles(dir: string): string[] {
+      return readdirSync(dir).filter((name) => name.startsWith("opencode-voice-"))
     }
 
-    async function waitForNewVoiceFile(before: string[]): Promise<string> {
+    async function waitForNewVoiceFile(dir: string, before: string[]): Promise<string> {
       const deadline = Date.now() + 5000
       while (Date.now() < deadline) {
-        const fresh = listVoiceFiles().find((name) => !before.includes(name))
-        if (fresh) return join(tmpdir(), fresh)
+        const fresh = listVoiceFiles(dir).find((name) => !before.includes(name))
+        if (fresh) return join(dir, fresh)
         await new Promise((resolve) => setTimeout(resolve, 50))
       }
       throw new Error("timed out waiting for the recorder to create its file")
@@ -147,12 +171,13 @@ describe("component.prompt.voice", () => {
 
     test("starts, stops, and resolves the recorded file", async () => {
       const dir = fakeBinDir({ "fake-rec": fakeRecorder })
-      const recorder = new VoiceRecorder()
-      const before = listVoiceFiles()
+      const recordings = mkdtempDir()
+      const recorder = new VoiceRecorder(recordings)
+      const before = listVoiceFiles(recordings)
       recorder.start({ command: join(dir, "fake-rec"), buildArgs: (file) => [file] })
       expect(recorder.recording).toBe(true)
 
-      const expected = await waitForNewVoiceFile(before)
+      const expected = await waitForNewVoiceFile(recordings, before)
       const file = await recorder.stop()
       expect(recorder.recording).toBe(false)
       expect(file).toBe(expected)
@@ -160,11 +185,13 @@ describe("component.prompt.voice", () => {
       recorder.dispose()
       expect(existsSync(file!)).toBe(false)
       rmSync(dir, { recursive: true })
+      rmSync(recordings, { recursive: true })
     })
 
     test("second start while recording is a no-op", async () => {
       const dir = fakeBinDir({ "fake-rec": fakeRecorder })
-      const recorder = new VoiceRecorder()
+      const recordings = mkdtempDir()
+      const recorder = new VoiceRecorder(recordings)
       const spec = { command: join(dir, "fake-rec"), buildArgs: (file: string) => [file] }
       recorder.start(spec)
       recorder.start(spec)
@@ -172,6 +199,7 @@ describe("component.prompt.voice", () => {
       recorder.dispose()
       expect(recorder.recording).toBe(false)
       rmSync(dir, { recursive: true })
+      rmSync(recordings, { recursive: true })
     })
 
     test("stop without start resolves undefined", async () => {
@@ -217,17 +245,19 @@ describe("component.prompt.voice", () => {
 
     test("does not notify onFailure on normal stop", async () => {
       const dir = fakeBinDir({ "fake-rec": fakeRecorder })
-      const recorder = new VoiceRecorder()
+      const recordings = mkdtempDir()
+      const recorder = new VoiceRecorder(recordings)
       let failures = 0
-      const before = listVoiceFiles()
+      const before = listVoiceFiles(recordings)
       recorder.start({ command: join(dir, "fake-rec"), buildArgs: (file) => [file] }, () => {
         failures += 1
       })
-      const file = await waitForNewVoiceFile(before).then(() => recorder.stop())
+      const file = await waitForNewVoiceFile(recordings, before).then(() => recorder.stop())
       expect(file).not.toBeUndefined()
       expect(failures).toBe(0)
       recorder.dispose()
       rmSync(dir, { recursive: true })
+      rmSync(recordings, { recursive: true })
     })
   })
 })

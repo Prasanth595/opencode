@@ -956,7 +956,7 @@ export function Prompt(props: PromptProps) {
   let voiceStartTime = 0
   let voiceStopTimer: ReturnType<typeof setTimeout> | undefined
 
-  function startVoiceRecording() {
+  async function startVoiceRecording() {
     if (voiceRecorder?.recording) {
       void stopVoiceRecording("")
       return
@@ -965,7 +965,7 @@ export function Prompt(props: PromptProps) {
       toast.show({ variant: "error", message: "Voice input needs voice.transcribe_command to be set" })
       return
     }
-    const spec = findRecorder()
+    const spec = await findRecorder()
     if (!spec) {
       toast.show({ variant: "error", message: "Voice input needs ffmpeg or sox installed to record audio" })
       return
@@ -1018,13 +1018,14 @@ export function Prompt(props: PromptProps) {
     const press = config.keybinds.get("prompt.voice.push_to_talk").filter((binding) => binding.event !== "release")
     return {
       target: inputTarget,
+      mode: "base",
       enabled: inputTarget() !== undefined && !disabled() && press.length > 0,
       bindings: [
         ...press.map((binding) => ({
           ...binding,
           desc: "Start voice recording (release or press again to transcribe)",
           group: "Prompt",
-          cmd: () => startVoiceRecording(),
+          cmd: () => void startVoiceRecording(),
         })),
         // Releasing the same key stops the recording, so one configured key
         // covers both halves of push-to-talk without extra configuration.

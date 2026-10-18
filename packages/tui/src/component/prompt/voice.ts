@@ -31,12 +31,12 @@ function commandExists(command: string): boolean {
 }
 
 /** ffmpeg arguments that record the default microphone to a wav file. */
-export function ffmpegArgs(platform: NodeJS.Platform, outputFile: string): string[] {
+export function ffmpegArgs(platform: NodeJS.Platform, outputFile: string, audioDevice?: string): string[] {
   const input =
     platform === "darwin"
       ? ["-f", "avfoundation", "-i", ":default"]
       : platform === "win32"
-        ? ["-f", "dshow", "-i", "audio=default"]
+        ? ["-f", "dshow", "-i", `audio=${audioDevice ?? "default"}`]
         : ["-f", "pulse", "-i", "default"]
   return ["-hide_banner", "-loglevel", "error", ...input, "-ar", "16000", "-ac", "1", "-y", outputFile]
 }
@@ -46,19 +46,41 @@ export function soxArgs(outputFile: string): string[] {
   return ["-r", "16000", "-c", "1", outputFile]
 }
 
+function signal(proc: ChildProcess, sig: NodeJS.Signals): void {
+  if (proc.exitCode === null && proc.signalCode === null) proc.kill(sig)
+}
+
+/**
+ * First DirectShow audio device name, for ffmpeg's dshow on Windows.
+ * dshow has no "default" alias; a concrete device name is required.
+ */
+export async function firstDshowAudioDevice(ffmpeg: string): Promise<string | undefined> {
+  const proc = spawn(ffmpeg, ["-hide_banner", "-list_devices", "true", "-f", "dshow", "-i", "dummy"])
+  const timer = setTimeout(() => signal(proc, "SIGKILL"), 5000)
+  timer.unref()
+  const output = await new Promise<string>((resolve) => {
+    let text = ""
+    proc.stderr?.on("data", (chunk: Buffer) => {
+      text += chunk.toString()
+    })
+    proc.on("close", () => resolve(text))
+    proc.on("error", () => resolve(text))
+  })
+  const audio = output.split("DirectShow audio devices")[1]
+  return audio?.match(/"([^"]+)"/)?.[1]
+}
+
 /** Pick the best available microphone recorder, if any. */
-export function findRecorder(platform: NodeJS.Platform = process.platform): RecorderSpec | undefined {
+export async function findRecorder(platform: NodeJS.Platform = process.platform): Promise<RecorderSpec | undefined> {
   if (commandExists("ffmpeg")) {
-    return { command: "ffmpeg", buildArgs: (outputFile) => ffmpegArgs(platform, outputFile) }
+    if (platform !== "win32") return { command: "ffmpeg", buildArgs: (outputFile) => ffmpegArgs(platform, outputFile) }
+    const device = await firstDshowAudioDevice("ffmpeg")
+    if (device) return { command: "ffmpeg", buildArgs: (outputFile) => ffmpegArgs(platform, outputFile, device) }
   }
   if (commandExists("rec")) {
     return { command: "rec", buildArgs: (outputFile) => soxArgs(outputFile) }
   }
   return undefined
-}
-
-function signal(proc: ChildProcess, sig: NodeJS.Signals): void {
-  if (proc.exitCode === null && proc.signalCode === null) proc.kill(sig)
 }
 
 /**
@@ -70,13 +92,15 @@ export class VoiceRecorder {
   private proc: ChildProcess | undefined
   private file: string | undefined
 
+  constructor(private readonly dir: string = tmpdir()) {}
+
   get recording(): boolean {
     return this.proc !== undefined
   }
 
   start(spec: RecorderSpec, onFailure?: () => void): void {
     if (this.proc) return
-    const file = join(tmpdir(), `opencode-voice-${process.pid}-${Date.now()}.wav`)
+    const file = join(this.dir, `opencode-voice-${process.pid}-${Date.now()}.wav`)
     const proc = spawn(spec.command, spec.buildArgs(file), { stdio: "ignore" })
     const failed = () => {
       if (this.proc === proc) {
