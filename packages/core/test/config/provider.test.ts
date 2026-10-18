@@ -1,7 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Money } from "@opencode/schema/money"
 import { Document, Info, type Entry } from "@opencode/schema/config"
-import { Effect, Schema } from "effect"
+import { Effect, Exit, Schema } from "effect"
 import { Config } from "@opencode/core/config"
 import { ConfigProviderPlugin } from "@opencode/core/config/plugin/provider"
 import { ConfigNormalize } from "@opencode/core/config/normalize"
@@ -696,6 +696,46 @@ describe("ConfigProviderPlugin.Plugin", () => {
         Model.VariantID.make("xhigh"),
         Model.VariantID.make("max"),
       ])
+    }),
+  )
+
+  it.effect("disables inherited variants and does not create absent ones", () =>
+    Effect.gen(function* () {
+      const providers = yield* Provider.Service
+      const models = yield* Model.Service
+      const providerID = Provider.ID.make("audit-disabled")
+      const modelID = Model.ID.make("chat")
+      yield* providers.transform((editor) => {
+        editor.models.update(providerID, modelID, (model) => {
+          model.variants = [
+            { id: Model.VariantID.make("low"), settings: { effort: "low" } },
+            { id: Model.VariantID.make("high"), settings: { effort: "high" } },
+          ]
+        })
+      })
+
+      const result = ConfigNormalize.normalize({
+        provider: {
+          [providerID]: {
+            models: {
+              [modelID]: {
+                variants: {
+                  high: { disabled: true },
+                  absent: { disabled: true },
+                },
+              },
+            },
+          },
+        },
+      })
+      if (result.type !== "normalized") throw new Error("Expected normalized config")
+      expect(result.diagnostics).toEqual([])
+      yield* addPlugin([new Document({ type: "document", info: decode(result.encoded) })])
+
+      const model = required(yield* models.get(providerID, modelID))
+      expect(model.variants.map((variant) => variant.id)).toEqual([Model.VariantID.make("low")])
+      const exit = yield* Effect.exit(ModelResolver.withVariant(model, Model.VariantID.make("high")))
+      expect(Exit.isFailure(exit)).toBe(true)
     }),
   )
 

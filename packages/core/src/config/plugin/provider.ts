@@ -142,6 +142,10 @@ export const Plugin = define({
             if (config.variants !== undefined) {
               model.variants ??= []
               for (const variant of config.variants) {
+                if (variant.disabled) {
+                  model.variants = model.variants.filter((item) => item.id !== variant.id)
+                  continue
+                }
                 let existing = model.variants.find((item) => item.id === variant.id)
                 if (!existing) {
                   existing = { id: variant.id }
