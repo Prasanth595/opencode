@@ -369,6 +369,9 @@ export function createData(config: CreateDataInput) {
   // failure does not block the next.
   const sending = new Map<string, Promise<unknown>>()
   const messageLoads = new Map<string, Promise<unknown>>()
+  // Sessions whose transcript the retention owner evicted. A read rehydrates them; until
+  // then they stay excluded, so later steps cannot rebuild the transcript eviction dropped.
+  const evictedMessages = new Set<string>()
   const compacting = new Map<string, { id: string; observed: Set<string>; request: Promise<SessionInboxCompaction> }>()
   onCleanup(() => compacting.clear())
 
@@ -579,6 +582,7 @@ export function createData(config: CreateDataInput) {
 
   function evictSession(sessionID: string) {
     if (sessionOutbox.has(sessionID)) return
+    evictedMessages.add(sessionID)
     sync.invalidate(`session.pending:${sessionID}`)
     sync.invalidate(`session.message:${sessionID}`)
     messageLoads.delete(sessionID)
@@ -603,6 +607,7 @@ export function createData(config: CreateDataInput) {
   function removeSession(sessionID: string) {
     activeUpdates?.set(sessionID, undefined)
     store.session.pending[sessionID]?.forEach((item) => outbox.delete(item.id))
+    evictedMessages.delete(sessionID)
     messageIndex.delete(sessionID)
     sync.invalidate(`session:${sessionID}`)
     sync.invalidate(`session.family:${sessionID}`)
@@ -879,6 +884,9 @@ export function createData(config: CreateDataInput) {
         })
         return
       case "session.step.started":
+        // A new step must not re-admit a transcript retention evicted: the family stays
+        // excluded until it is read again, which is also where its history comes from.
+        if (evictedMessages.has(event.data.sessionID)) return
         message.update(event.data.sessionID, (draft, index) => {
           const position = index.get(event.data.assistantMessageID)
           const existing = position === undefined ? undefined : draft[position]
@@ -1708,6 +1716,7 @@ export function createData(config: CreateDataInput) {
             )
             const messages = local.length === 0 ? fetched : [...fetched, ...local]
             batch(() => {
+              evictedMessages.delete(sessionID)
               messageIndex.set(sessionID, new Map(messages.map((message, index) => [message.id, index])))
               setStore("session", "message", sessionID, reconcile(messages))
               setStore("session", "messageCursor", sessionID, response.cursor.next ?? undefined)

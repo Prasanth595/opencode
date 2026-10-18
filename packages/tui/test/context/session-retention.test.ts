@@ -60,6 +60,38 @@ function setup(options: { keep?: string[]; current?: string; limit?: number } = 
         setCurrent(id)
         await data.session.message.sync(id)
       },
+      // One complete assistant step: the text lands in the message the step opens.
+      step(sessionID: string, messageID: string) {
+        events.emit("session.step.started", {
+          id: `evt_${messageID}_step`,
+          created: 1,
+          type: "session.step.started",
+          durable: { aggregateID: sessionID, seq: 1, version: 1 },
+          location: { directory },
+          data: {
+            sessionID,
+            assistantMessageID: messageID,
+            agent: "build",
+            model: { providerID: "provider", id: "model" },
+            started: 1,
+          },
+        })
+        events.emit("session.text.started", {
+          id: `evt_${messageID}_text`,
+          created: 2,
+          type: "session.text.started",
+          durable: { aggregateID: sessionID, seq: 2, version: 1 },
+          location: { directory },
+          data: { sessionID, assistantMessageID: messageID, ordinal: 0 },
+        })
+        events.emit("session.text.delta", {
+          id: `evt_${messageID}_delta`,
+          created: 3,
+          type: "session.text.delta",
+          location: { directory },
+          data: { sessionID, assistantMessageID: messageID, ordinal: 0, delta: messageID },
+        })
+      },
       cached: (id: string) => data.session.message.list(id).length > 0,
     }
   })
@@ -199,6 +231,28 @@ test("uses the caller's recent-family limit", async () => {
     expect(scope.cached("a")).toBe(true)
     expect(scope.cached("b")).toBe(false)
     expect(scope.cached("c")).toBe(true)
+  } finally {
+    scope.dispose()
+  }
+})
+
+test("later steps do not rebuild an evicted family's transcript", async () => {
+  const scope = setup()
+  try {
+    for (const id of ["a", "b", "c", "d"]) {
+      scope.remember(id)
+      await scope.view(id)
+    }
+    expect(scope.cached("a")).toBe(false)
+    scope.step("a", "msg_background")
+    scope.remember("a", undefined, 100)
+    expect(scope.data.session.message.list("a")).toEqual([])
+
+    await scope.view("a")
+    scope.step("a", "msg_current")
+    const current = scope.data.session.message.get("a", "msg_current")
+    const part = current?.type === "assistant" ? current.content[0] : undefined
+    expect(part?.type === "text" && part.text).toBe("msg_current")
   } finally {
     scope.dispose()
   }
