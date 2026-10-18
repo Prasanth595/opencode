@@ -161,6 +161,15 @@ export const settings: Setting[] = [
     keywords: ["tab numbers", "number mode", "status icons"],
   },
   {
+    title: "Label",
+    category: "Tabs",
+    path: ["tabs", "label"],
+    default: "title",
+    values: ["title", "project", "path"],
+    labels: ["title only", "project name", "project path"],
+    keywords: ["directory", "folder", "project", "path", "prefix"],
+  },
+  {
     title: "Layout",
     category: "Diffs",
     path: ["diffs", "view"],
