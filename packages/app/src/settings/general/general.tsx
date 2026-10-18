@@ -16,9 +16,8 @@ import { formatKeybind } from "@/shell/commands/command"
 import { SettingsList } from "@/settings/list"
 import { SettingsRow } from "@/settings/row"
 import { createShellOptions, type ShellSettingsController } from "./controllers"
+import { InterfaceModeSetting } from "./interface-mode"
 import "@/settings/settings.css"
-
-const tabLayoutOptions: ("horizontal" | "vertical")[] = ["horizontal", "vertical"]
 
 const AutoApprovePermissionsSetting: Component = () => {
   const language = useLanguage()
@@ -190,33 +189,6 @@ const LanguageSetting = () => {
   )
 }
 
-const TabLayoutSetting = () => {
-  const language = useLanguage()
-  const settings = useSettings()
-
-  return (
-    <SettingsRow
-      title={language.t("settings.appearance.row.tabs.title")}
-      description={language.t("settings.appearance.row.tabs.description")}
-    >
-      <Select
-        data-action="settings-tab-layout"
-        options={tabLayoutOptions}
-        current={tabLayoutOptions.find((option) => option === settings.appearance.tabLayout())}
-        aria-label={language.t("settings.appearance.row.tabs.title")}
-        placement="bottom-end"
-        gutter={6}
-        label={(option) =>
-          option === "horizontal"
-            ? language.t("settings.appearance.row.tabs.horizontal")
-            : language.t("settings.appearance.row.tabs.vertical")
-        }
-        onSelect={(option) => option && settings.appearance.setTabLayout(option)}
-      />
-    </SettingsRow>
-  )
-}
-
 export const SettingsGeneral: Component = () => {
   const language = useLanguage()
   const platform = usePlatform()
@@ -241,9 +213,9 @@ export const SettingsGeneral: Component = () => {
   const GeneralSection = () => (
     <div class="settings-section">
       <h3 class="settings-section-title">{language.t("settings.general.section.general")}</h3>
+      <InterfaceModeSetting />
       <SettingsList>
         <LanguageSetting />
-        <TabLayoutSetting />
 
         <WorkspaceDestinationSetting />
         <AutoApprovePermissionsSetting />

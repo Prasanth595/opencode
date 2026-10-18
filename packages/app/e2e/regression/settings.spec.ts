@@ -1333,18 +1333,17 @@ test("a pairing code with several addresses keeps the first one that works with 
   await expect(settings.getByText(second, { exact: true })).toHaveCount(0)
 })
 
-test("the tab layout preference switches to vertical tabs and survives reload", async ({ page }) => {
+test("the Pro interface mode switches to vertical tabs and survives reload", async ({ page }) => {
   const { settings } = await open(page)
-  const layout = settings.locator('[data-action="settings-tab-layout"]')
-  await expect(layout).toContainText("Horizontal")
-  await layout.click()
-  await page.getByRole("option", { name: "Vertical" }).click()
-  await expect(layout).toContainText("Vertical")
+  const layout = settings.getByRole("group", { name: "Interface" })
+  await expect(layout.getByRole("radio", { name: "Focus", exact: true })).toBeChecked()
+  await layout.getByText("Pro", { exact: true }).click()
+  await expect(layout.getByRole("radio", { name: "Pro", exact: true })).toBeChecked()
   await expect(page.locator('[data-slot="vertical-tabs-sidebar"]')).toBeVisible()
   await expect(page.locator('[data-slot="titlebar-tabs"]')).toHaveCount(0)
 
   await page.reload()
-  await expect(layout).toContainText("Vertical")
+  await expect(layout.getByRole("radio", { name: "Pro", exact: true })).toBeChecked()
   await expect(page.locator('[data-slot="vertical-tabs-sidebar"]')).toBeVisible()
   await expect(page.locator('[data-slot="titlebar-tabs"]')).toHaveCount(0)
 })

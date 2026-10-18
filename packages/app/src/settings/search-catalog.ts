@@ -25,9 +25,9 @@ export const clientSettings: Entry<SettingsRootTab>[] = [
   { tab: "general", label: "settings.general.row.language.title", target: "settings-language" },
   {
     tab: "general",
-    label: "settings.appearance.row.tabs.title",
+    label: "settings.general.row.interfaceMode.title",
     target: "settings-tab-layout",
-    keywords: "vertical horizontal tabs",
+    keywords: "focus pro mode layout density compact vertical horizontal tabs",
   },
   {
     tab: "general",

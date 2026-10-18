@@ -708,6 +708,12 @@ export const dict = {
   "settings.appearance.row.tabs.description": "Choose how session tabs are arranged",
   "settings.appearance.row.tabs.horizontal": "Horizontal",
   "settings.appearance.row.tabs.vertical": "Vertical",
+  "settings.general.row.interfaceMode.title": "Interface",
+  "settings.general.row.interfaceMode.focus": "Focus",
+  "settings.general.row.interfaceMode.focus.description": "Roomy layout with tabs across the top. Made for prompting.",
+  "settings.general.row.interfaceMode.pro": "Pro",
+  "settings.general.row.interfaceMode.pro.description":
+    "Compact layout with tabs down the side and icon-first controls.",
   "settings.notifications.description": "Choose when to receive notifications and hear sounds",
   "settings.shortcuts.description": "Customize shortcuts for common actions",
   "settings.servers.description": "Manage server connections",
