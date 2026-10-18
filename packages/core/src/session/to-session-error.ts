@@ -25,6 +25,11 @@ const tokenSharingMessages = {
     "This ChatGPT connection isn't authorized for this request. Reconnect to ChatGPT or choose another connection.",
 }
 
+const goExpiredKeyMessage = [
+  "Your OpenCode Go API key has expired. Run `/connect`, select **OpenCode**, and sign in to the workspace with your Go subscription to restore access.",
+  "Then select an `opencode-go/*` model. To replace a service-account key, open OpenCode Console and go to **Keys → Add Service Account → Add API Key**.",
+].join(" ")
+
 export function toSessionError(cause: unknown): SessionError.Error {
   if (cause instanceof AIError) {
     switch (cause.reason._tag) {
@@ -96,9 +101,13 @@ export function contentFilterError(summary: string, reason: FinishReasonDetails)
 
 function providerError(type: string, reason: AIError["reason"]): SessionError.Error {
   const status = reason.http?.status
+  const goExpiredKey =
+    type === "provider.auth" && status === 401 && reason.body?.includes("Signing in again will not renew this key.")
   return {
     type,
-    message: Object.entries(tokenSharingMessages).find(([code]) => reason.body?.includes(code))?.[1] ?? reason.message,
+    message:
+      Object.entries(tokenSharingMessages).find(([code]) => reason.body?.includes(code))?.[1] ??
+      (goExpiredKey ? goExpiredKeyMessage : reason.message),
     ...(status === undefined ? {} : { status }),
     ...(reason.body === undefined ? {} : { response: { body: reason.body } }),
   }

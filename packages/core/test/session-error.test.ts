@@ -160,6 +160,34 @@ describe("toSessionError", () => {
     }
   })
 
+  test("adds recovery steps to the expired OpenCode Go API key authentication error", () => {
+    const message =
+      "This API key has expired. Create a new API key in OpenCode Console and replace it in your client or secret store. Signing in again will not renew this key."
+    const body = JSON.stringify({
+      error: {
+        message,
+      },
+    })
+    const error = toSessionError(
+      llm(
+        new AuthenticationError({
+          message,
+          body,
+          http: new HttpContext({ url: "https://opencode.ai/zen/v1/models", status: 401, headers: {} }),
+        }),
+      ),
+    )
+    expect(error).toEqual({
+      type: "provider.auth",
+      message: [
+        "Your OpenCode Go API key has expired. Run `/connect`, select **OpenCode**, and sign in to the workspace with your Go subscription to restore access.",
+        "Then select an `opencode-go/*` model. To replace a service-account key, open OpenCode Console and go to **Keys → Add Service Account → Add API Key**.",
+      ].join(" "),
+      status: 401,
+      response: { body },
+    })
+  })
+
   test("preserves unresolved provider endpoint errors", () => {
     const error = new ModelResolver.UnresolvedProviderVariablesError({
       providerID: Provider.ID.make("cloudflare-workers-ai"),
