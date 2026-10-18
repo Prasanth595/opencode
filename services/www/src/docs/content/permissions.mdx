@@ -124,6 +124,23 @@ currently use these actions and resources:
 | `opencode_read_mcp_resource`  | `<server>:<uri>`                                                   |
 | `execute`            | `*`; a deny removes Code Mode and the tools reached only through it, while nested tools enforce their rules |
 
+### Shell rules do not restrict files a command reads
+
+Shell permissions match the scanner-produced command string, not every file the command opens. For example, this deny
+does not stop the allowed recursive search `rg SECRET .` from returning matching contents from `.env` files:
+
+```jsonc
+{
+  "permissions": [
+    { "action": "shell", "resource": "*", "effect": "allow" },
+    { "action": "shell", "resource": "*.env*", "effect": "deny" },
+  ],
+}
+```
+
+Treat shell rules as command-use guardrails, not a filesystem sandbox or the only protection for secrets. Use operating
+system access controls or an isolated environment when commands must not be able to read sensitive files.
+
 For example, allow one skill and deny all other skills:
 
 ```jsonc
