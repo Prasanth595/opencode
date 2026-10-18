@@ -562,7 +562,11 @@ for (const device of ["Pixel 7", "iPhone 13"]) {
 
         if (!handoff.held) await devtools.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] })
 
-        if (handoff.key === "latest") await latest.click()
+        if (handoff.key === "latest") {
+          await latest.click()
+          // The hidden button no longer covers the timeline, so a resting pointer would hover it and keep the thumb shown.
+          await page.mouse.move(0, 0)
+        }
 
         if (handoff.key !== "latest" && !usesScrollbar) await scroller.press(handoff.key)
 

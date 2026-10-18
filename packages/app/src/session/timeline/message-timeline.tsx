@@ -73,7 +73,7 @@ type MessageTimelineProps = {
   background: SessionBackground
   actions?: SessionUserActions
   scroll: { overflow: boolean; jump: boolean }
-  onResumeScroll: () => void
+  onResumeScroll: (behavior?: ScrollBehavior) => void
   setScrollRef: (el: HTMLDivElement | undefined) => void
   onScheduleScrollState: (el: HTMLDivElement) => void
   onPin: () => void
@@ -87,7 +87,7 @@ type MessageTimelineProps = {
   setContentRef: (el: HTMLDivElement) => void
   anchor: (id: string) => string
   setRevealMessage?: (fn: (id: string, partID?: string) => void) => void
-  setScrollToEnd?: (fn: () => void) => void
+  setScrollToEnd?: (fn: (behavior?: ScrollBehavior) => void) => void
   reveal?: { target: () => string | undefined; done: () => void }
   search?: JSX.Element
 }

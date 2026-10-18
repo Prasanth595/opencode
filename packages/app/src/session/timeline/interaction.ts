@@ -59,7 +59,7 @@ export function createSessionTimelineInteraction(session: SessionModel) {
   // The active timeline's navigation, registered by its virtualizer.
   let revealMessage = (_id: string, _partID?: string) => {}
 
-  let scrollToEnd = () => {}
+  let scrollToEnd = (_behavior?: ScrollBehavior) => {}
 
   let scrollMark = 0
   let messageMark = 0
@@ -160,10 +160,10 @@ export function createSessionTimelineInteraction(session: SessionModel) {
     consumePendingMessage: (key) => layout.pendingMessage.consume(key),
   })
 
-  const resume = () => {
+  const resume = (behavior?: ScrollBehavior) => {
     setState("messageID", undefined)
     pin()
-    scrollToEnd()
+    scrollToEnd(behavior)
     clearMessageHash()
 
     if (scroller) scheduleScrollState(scroller)
@@ -397,7 +397,7 @@ export function createSessionTimelineInteraction(session: SessionModel) {
         },
       },
       setScrollRef,
-      setScrollToEnd: (scroll: () => void) => {
+      setScrollToEnd: (scroll: (behavior?: ScrollBehavior) => void) => {
         scrollToEnd = scroll
       },
       unpin,

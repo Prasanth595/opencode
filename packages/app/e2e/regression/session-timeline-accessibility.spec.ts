@@ -38,6 +38,30 @@ test("space activates a focused timeline button instead of scrolling", async ({ 
   expect(await scroller.evaluate((element) => element.scrollTop)).toBe(before)
 })
 
+test("jump to latest is reachable only while it is shown", async ({ page }) => {
+  await setupTimeline(page, {
+    messages: [userMessage(), assistantMessage([textPart("prt_jump_latest_text", "Latest response.")])],
+    seedHistory: true,
+  })
+  const scroller = page.locator(".scroll-view__viewport", { has: page.locator("[data-timeline-row]") })
+  const jump = page.getByRole("button", { name: "Jump to latest", exact: true })
+  const latest = page.getByText("Latest response.", { exact: true })
+  await expect(latest).toBeInViewport()
+  await jump.focus()
+  await expect(jump).not.toBeFocused()
+
+  await scroller.hover()
+  await page.mouse.wheel(0, -3000)
+  await expect(latest).not.toBeInViewport()
+  await jump.click()
+  await expect
+    .poll(() => scroller.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop))
+    .toBeLessThanOrEqual(1)
+  await expect(latest).toBeInViewport()
+  // The click focused the button; hiding it must not leave focus on an invisible control.
+  await expect(jump).not.toBeFocused()
+})
+
 function lines(count: number) {
   return Array.from({ length: count }, (_, index) => `line ${index + 1}`).join("\n")
 }

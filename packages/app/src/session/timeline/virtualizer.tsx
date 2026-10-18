@@ -63,7 +63,7 @@ type Input = {
   /** True while the timeline follows the newest content. Drives every anchoring decision. */
   pinned: Accessor<boolean>
   scroll: Accessor<{ overflow: boolean; jump: boolean }>
-  onResumeScroll: () => void
+  onResumeScroll: (behavior?: ScrollBehavior) => void
   setScrollRef: (element: HTMLDivElement | undefined) => void
   setContentRef: (element: HTMLDivElement) => void
   onScheduleScrollState: (element: HTMLDivElement) => void
@@ -77,7 +77,7 @@ type Input = {
     disclosure: Readonly<Record<string, boolean | undefined>>,
   ) => boolean
   setRevealMessage?: (fn: (id: string, partID?: string) => void) => void
-  setScrollToEnd?: (fn: () => void) => void
+  setScrollToEnd?: (fn: (behavior?: ScrollBehavior) => void) => void
   /** A tool call the route asks this timeline to open on; `done` clears it once revealed. */
   reveal?: { target: () => string | undefined; done: () => void }
 }
@@ -528,11 +528,17 @@ export function createTimelineVirtualizer(input: Input) {
       prepareNavigation()
       virtualizer.scrollToIndex(index, { align: "center" })
     })
-    input.setScrollToEnd?.(() => {
-      if (!active() || !listRoot()?.isConnected) return
+    input.setScrollToEnd?.((behavior) => {
+      const root = listRoot()
+
+      if (!active() || !root?.isConnected) return
       prepareNavigation()
       input.onPin()
-      virtualizer.scrollToEnd()
+
+      // Glide only the final screen. Crossing the whole history smoothly would stream every row through the virtualizer.
+      if (behavior === "smooth")
+        virtualizer.scrollToOffset(Math.max(root.scrollTop, root.scrollHeight - root.clientHeight * 2))
+      virtualizer.scrollToEnd({ behavior })
     })
   })
 
@@ -847,23 +853,27 @@ export function createTimelineVirtualizer(input: Input) {
         data-local-session={!props.workspaceSession() ? "" : undefined}
       >
         <div
-          class="absolute left-1/2 -translate-x-1/2 z-[60] pointer-events-none transition-all duration-200 ease-out"
+          class="absolute left-1/2 -translate-x-1/2 z-[60] pointer-events-none transition-[opacity,translate]"
           classList={{
             "bottom-8": true,
-            "opacity-100 translate-y-0 scale-100": input.scroll().overflow && input.scroll().jump,
-            "opacity-0 translate-y-2 pointer-events-none": !input.scroll().overflow || !input.scroll().jump,
-            "scale-[0.8]": !input.scroll().overflow || !input.scroll().jump,
+            "opacity-100 translate-y-0 duration-150 ease-[cubic-bezier(.2,.8,.2,1)]":
+              input.scroll().overflow && input.scroll().jump,
+            "opacity-0 translate-y-1 motion-reduce:translate-y-0 duration-[110ms] ease-[cubic-bezier(.4,0,1,1)]":
+              !input.scroll().overflow || !input.scroll().jump,
           }}
+          inert={!input.scroll().overflow || !input.scroll().jump}
         >
           <button
             type="button"
             aria-label={language.t("session.messages.jumpToLatest")}
-            class="pointer-events-auto flex items-center justify-center w-8 h-7 px-2 py-1.5 rounded-lg border-none cursor-pointer text-v2-text-text-base backdrop-blur-[2px]"
+            class="pointer-events-auto flex items-center justify-center w-8 h-7 px-2 py-1.5 rounded-lg border-none cursor-pointer text-v2-text-text-base backdrop-blur-[2px] outline-none hover:bg-[linear-gradient(var(--v2-overlay-simple-overlay-hover),var(--v2-overlay-simple-overlay-hover))] active:bg-[linear-gradient(var(--v2-overlay-simple-overlay-pressed),var(--v2-overlay-simple-overlay-pressed))] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-v2-border-border-focus"
             style={{
-              background: "color-mix(in srgb, var(--v2-background-bg-base) 92%, transparent)",
+              "background-color": "color-mix(in srgb, var(--v2-background-bg-base) 92%, transparent)",
               "box-shadow": "var(--v2-elevation-raised), 0px 2px 8px var(--v2-background-bg-base)",
             }}
-            onClick={input.onResumeScroll}
+            onClick={() =>
+              input.onResumeScroll(matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth")
+            }
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path
