@@ -164,6 +164,17 @@ const getBase = (appId: string): Configuration => {
       icon: `resources/icons/icon.icns`,
       extendInfo: {
         NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac: true,
+        // A workspace can be any folder the user picks, and macOS gates Documents,
+        // Desktop and Downloads behind TCC. Without the matching usage description
+        // the system denies access without prompting, the app never appears under
+        // Privacy & Security → Files and Folders, and every location-scoped request
+        // fails with EPERM. The description is what turns the denial into a prompt.
+        NSDocumentsFolderUsageDescription:
+          "OpenCode needs access to the folders you open as workspaces, including folders inside your Documents folder.",
+        NSDesktopFolderUsageDescription:
+          "OpenCode needs access to the folders you open as workspaces, including folders inside your Desktop folder.",
+        NSDownloadsFolderUsageDescription:
+          "OpenCode needs access to the folders you open as workspaces, including folders inside your Downloads folder.",
       },
       hardenedRuntime: true,
       gatekeeperAssess: false,

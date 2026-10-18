@@ -84,6 +84,20 @@ test("shared packaging defaults", async () => {
   ])
 })
 
+test("declares a macOS usage description for every folder a workspace can live in", () => {
+  const extendInfo = load("dev").mac?.extendInfo ?? {}
+  // macOS shows the folder-access prompt only when the bundle carries a non-empty
+  // usage description. A missing or empty one is not treated as "no reason given":
+  // TCC denies the folder outright and the app never appears under Files and Folders.
+
+  for (const key of [
+    "NSDocumentsFolderUsageDescription",
+    "NSDesktopFolderUsageDescription",
+    "NSDownloadsFolderUsageDescription",
+  ])
+    expect(extendInfo[key]).toMatch(/\S/)
+})
+
 test("trims external dependencies without excluding runtime files", () => {
   const fileStats = statSync(import.meta.filename)
   const dirStats = statSync(import.meta.dirname)
