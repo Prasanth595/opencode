@@ -14817,6 +14817,32 @@
           "$ref": "#/components/schemas/Form.Value"
         }
       },
+      "Form.Attachment": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Prompt.Base64"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": ["data", "mime"],
+        "additionalProperties": false
+      },
+      "Form.Attachments": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/Form.Attachment"
+          }
+        },
+        "description": "Images associated with form field keys, separate from scalar answers"
+      },
       "Form.BooleanField": {
         "type": "object",
         "properties": {
@@ -15135,6 +15161,9 @@
           "custom": {
             "type": "boolean"
           },
+          "attachments": {
+            "type": "boolean"
+          },
           "default": {
             "type": "array",
             "items": {
@@ -15231,6 +15260,9 @@
         "properties": {
           "answer": {
             "$ref": "#/components/schemas/Form.Answer"
+          },
+          "attachments": {
+            "$ref": "#/components/schemas/Form.Attachments"
           }
         },
         "required": ["answer"],
@@ -15258,6 +15290,9 @@
               },
               "answer": {
                 "$ref": "#/components/schemas/Form.Answer"
+              },
+              "attachments": {
+                "$ref": "#/components/schemas/Form.Attachments"
               }
             },
             "required": ["status", "answer"],
@@ -15335,6 +15370,9 @@
             }
           },
           "custom": {
+            "type": "boolean"
+          },
+          "attachments": {
             "type": "boolean"
           }
         },

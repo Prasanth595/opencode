@@ -19,6 +19,7 @@ const assertions: Permission.AssertInput[] = []
 let captured: Form.CreateInput | undefined
 let reject = false
 let deny = false
+let attachments: Form.Reply["attachments"]
 const capturedInput = () => captured
 const questionInput = {
   questions: [
@@ -53,7 +54,13 @@ const form = Layer.mock(Form.Service, {
       Effect.andThen(
         Effect.sync(
           (): Form.TerminalState =>
-            reject ? { status: "cancelled" } : { status: "answered", answer: { q0: "Build", q1: ["Dev"] } },
+            reject
+              ? { status: "cancelled" }
+              : {
+                  status: "answered",
+                  answer: { q0: "Build", q1: ["Dev"] },
+                  ...(attachments === undefined ? {} : { attachments }),
+                },
         ),
       ),
     ),
@@ -186,6 +193,7 @@ describe("QuestionTool", () => {
             description: "What should happen?",
             options: [{ value: "Build", label: "Build", description: "Build it" }],
             custom: true,
+            attachments: true,
             type: "string",
           },
           {
@@ -194,6 +202,7 @@ describe("QuestionTool", () => {
             description: "Which environment?",
             options: [{ value: "Dev", label: "Dev", description: "Development" }],
             custom: true,
+            attachments: true,
             type: "multiselect",
           },
           {
@@ -202,6 +211,7 @@ describe("QuestionTool", () => {
             description: "Anything else?",
             options: [],
             custom: true,
+            attachments: true,
             type: "string",
           },
         ],
@@ -232,6 +242,7 @@ describe("QuestionTool", () => {
             description: "Continue?",
             options: [{ value: "Yes", label: "Yes", description: "Continue" }],
             custom: true,
+            attachments: true,
             type: "string",
           },
         ],
@@ -258,6 +269,51 @@ describe("QuestionTool", () => {
         expect(error).toBeInstanceOf(QuestionTool.CancelledError)
         expect(error).toHaveProperty("message", "The user dismissed this question")
       }
+    }),
+  )
+
+  it.effect("delivers images with their question without inserting them into scalar answers", () =>
+    Effect.gen(function* () {
+      reject = false
+      deny = false
+      attachments = {
+        q0: [{ mime: "image/png", data: "AQID", name: "first.png" }],
+        q2: [{ mime: "image/jpeg", data: "BAUG", name: "second.jpg" }],
+      }
+      yield* Effect.addFinalizer(() => Effect.sync(() => (attachments = undefined)))
+      const registry = yield* Tool.Service
+      const result = yield* executeTool(registry, {
+        sessionID,
+        ...toolIdentity,
+        call: {
+          type: "tool-call",
+          id: "call-question-images",
+          name: "question",
+          input: {
+            questions: [
+              ...questionInput.questions,
+              { question: "Which environment?", header: "Environment", options: [], multiple: true },
+              { question: "Which layout?", header: "Layout", options: [] },
+            ],
+          },
+        },
+      })
+      expect(result).toMatchObject({
+        status: "completed",
+        output: { answers: [["Build"], ["Dev"], []] },
+        metadata: { answers: [["Build"], ["Dev"], []] },
+      })
+      if (result.status !== "completed") throw new Error("Question tool failed")
+      expect(result.content).toEqual([
+        {
+          type: "text",
+          text: 'User has answered your questions: "Continue?"="Build", "Which environment?"="Dev", "Which layout?"="Images attached". You can now continue with the user\'s answers in mind.',
+        },
+        { type: "text", text: 'Images supplied for question "Continue?":' },
+        { type: "file", uri: "data:image/png;base64,AQID", mime: "image/png", name: "first.png" },
+        { type: "text", text: 'Images supplied for question "Which layout?":' },
+        { type: "file", uri: "data:image/jpeg;base64,BAUG", mime: "image/jpeg", name: "second.jpg" },
+      ])
     }),
   )
 })

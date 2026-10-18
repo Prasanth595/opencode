@@ -1,4 +1,4 @@
-import { createStore, unwrap } from "solid-js/store"
+import { createStore } from "solid-js/store"
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { usePaste, useRenderer, useTerminalDimensions } from "@opentui/solid"
 import {
@@ -19,6 +19,9 @@ import { useToast } from "../../ui/toast"
 import { Keymap } from "../../context/keymap"
 import { useInteractivity } from "../../context/interactivity"
 import { useConfig } from "../../config"
+import { Form } from "@opencode/schema/form"
+import { resolvePastedAttachments } from "../../component/prompt/local-attachment"
+import { useTuiTerminalEnvironment } from "../../context/runtime"
 import { errorMessage } from "../../util/error"
 import {
   formCustom,
@@ -45,16 +48,17 @@ type FormDraft = {
   tab: number
   answers: Record<string, FormValue | undefined>
   custom: Record<string, string | undefined>
+  attachments: Record<string, Form.Attachment[]>
+  pasting: number
   externalReady: Record<string, boolean>
   selected: number
   editing: boolean
   error: string
 }
 
-// Holds in-progress answers per form across FormPrompt remounts, since the
-// session route is keyed by sessionID and unmounts on tab switch. Mirrors
-// component/prompt/draft-stash.ts: a draft is consumed on take.
-const drafts = new Map<string, FormDraft>()
+// Share drafts and paste work across session-tab remounts so an image finishing
+// asynchronously still updates its original form, including a restored editor.
+const drafts = new Map<string, { state: ReturnType<typeof createStore<FormDraft>>; pasteQueue: Promise<void> }>()
 
 export function FormPrompt(props: { form: FormWithLocation }) {
   const data = useData()
@@ -66,25 +70,29 @@ export function FormPrompt(props: { form: FormWithLocation }) {
   const active = () => enabled() && keymap.mode.current() === FORM_MODE
   const config = useConfig().data
   const clipboard = useClipboard()
+  const terminalEnvironment = useTuiTerminalEnvironment()
   const toast = useToast()
   const configuredFields = props.form.fields.filter(isFormAnswerField)
   const initial = formInitialValues(props.form.fields)
-  const draft = drafts.get(props.form.id)
-  drafts.delete(props.form.id)
-
-  const [tabHover, setTabHover] = createSignal<number | "confirm" | null>(null)
-  const [reviewContentHeight, setReviewContentHeight] = createSignal(0)
-  const [store, setStore] = createStore<FormDraft>(
-    draft ?? {
+  const draft = drafts.get(props.form.id) ?? {
+    state: createStore<FormDraft>({
       tab: 0,
       answers: initial.answers,
       custom: initial.custom,
+      attachments: {},
+      pasting: 0,
       externalReady: {},
       selected: formSelected(configuredFields[0], configuredFields[0]?.default),
       editing: false,
       error: "",
-    },
-  )
+    }),
+    pasteQueue: Promise.resolve(),
+  }
+  drafts.set(props.form.id, draft)
+
+  const [tabHover, setTabHover] = createSignal<number | "confirm" | null>(null)
+  const [reviewContentHeight, setReviewContentHeight] = createSignal(0)
+  const [store, setStore] = draft.state
 
   let textarea: TextareaRenderable | undefined
   const [inputTarget, setInputTarget] = createSignal<TextareaRenderable>()
@@ -122,7 +130,7 @@ export function FormPrompt(props: { form: FormWithLocation }) {
   })
   const completed = (item: FormField) => {
     const value = store.answers[item.key]
-    if (value === undefined) return false
+    if (value === undefined && !store.attachments[item.key]?.length) return false
     if (item.type === "external") return value === true
     return formValidateValue(item, value) === undefined
   }
@@ -184,6 +192,10 @@ export function FormPrompt(props: { form: FormWithLocation }) {
   })
   const other = createMemo(() => custom() && store.selected === rows().length)
   const input = createMemo(() => store.custom[answerField()?.key ?? ""] ?? "")
+  const images = createMemo(() => store.attachments[answerField()?.key ?? ""] ?? [])
+  const allowsAttachments = (current = answerField()) => {
+    return (current?.type === "string" || current?.type === "multiselect") && current.attachments === true
+  }
   const customPicked = createMemo(() => {
     const value = input()
     if (!value) return false
@@ -214,17 +226,13 @@ export function FormPrompt(props: { form: FormWithLocation }) {
     const pending = data.session.form
       .list(props.form.sessionID, props.form.location)
       ?.some((item) => item.id === props.form.id)
-    if (!pending) return
+    if (!pending) {
+      drafts.delete(props.form.id)
+      return
+    }
     // Textual answers live in the editor until committed, so capture them here.
     const current = answerField()
-    const snapshot = unwrap(store)
-    drafts.set(props.form.id, {
-      ...snapshot,
-      custom:
-        current && textarea && !textarea.isDestroyed
-          ? { ...snapshot.custom, [current.key]: textarea.plainText }
-          : snapshot.custom,
-    })
+    if (current && textarea && !textarea.isDestroyed) setStore("custom", current.key, textarea.plainText)
   })
 
   // Refs publish after initialization so burst typing stays with the interceptor until the editor is ready.
@@ -267,13 +275,28 @@ export function FormPrompt(props: { form: FormWithLocation }) {
   }
 
   function reply(answer: FormAnswer) {
+    if (store.pasting) return
+    const attachments = Object.fromEntries(
+      fields().flatMap((field) => {
+        const files = store.attachments[field.key]
+        return files?.length ? [[field.key, files]] : []
+      }),
+    )
     void data.session.form
-      .reply({ sessionID: props.form.sessionID, formID: props.form.id, answer }, props.form.location)
+      .reply(
+        {
+          sessionID: props.form.sessionID,
+          formID: props.form.id,
+          answer,
+          ...(Object.keys(attachments).length ? { attachments } : {}),
+        },
+        props.form.location,
+      )
       .catch(showError)
   }
 
-  function replySingle(field: FormAnswerField, value: FormValue) {
-    reply({ [field.key]: value })
+  function replySingle(field: FormAnswerField, value: FormValue | undefined) {
+    reply(value === undefined ? {} : { [field.key]: value })
   }
 
   function pick(value: FormValue, customValue?: string) {
@@ -312,6 +335,7 @@ export function FormPrompt(props: { form: FormWithLocation }) {
   }
 
   function selectTab(index: number) {
+    if (store.pasting) return
     const next = fields()[index]
     setStore("tab", index)
     setStore("selected", next && isFormAnswerField(next) ? formSelected(next, store.answers[next.key]) : 0)
@@ -320,6 +344,7 @@ export function FormPrompt(props: { form: FormWithLocation }) {
   }
 
   function selectOption() {
+    if (store.pasting) return
     if (other()) {
       if (!multi()) {
         setStore("editing", true)
@@ -351,9 +376,65 @@ export function FormPrompt(props: { form: FormWithLocation }) {
     return true
   }
 
+  function addImages(current: FormAnswerField, files: Form.Attachment[]) {
+    if (drafts.get(props.form.id) !== draft) return
+    setStore("attachments", current.key, (previous = []) => [...previous, ...files])
+    setStore("error", "")
+    // An attachment is independent of the scalar answer: only open an empty
+    // custom answer when there is no existing selection or text to preserve.
+    if (!formCustom(current) || store.answers[current.key] !== undefined) return
+    setStore("selected", formRows(current).length)
+    setStore("editing", true)
+  }
+
+  function enqueuePaste(action: () => Promise<void>) {
+    setStore("pasting", (count) => count + 1)
+    draft.pasteQueue = draft.pasteQueue
+      .then(action)
+      .catch(toast.error)
+      .finally(() => setStore("pasting", (count) => count - 1))
+    return draft.pasteQueue
+  }
+
+  async function pasteText(value: string, current: FormAnswerField) {
+    if (drafts.get(props.form.id) !== draft) return
+    if (allowsAttachments(current)) {
+      const files = await resolvePastedAttachments(value, terminalEnvironment.platform)
+      if (files?.length && files.every((file) => file.type === "file" && file.uri.startsWith("data:image/"))) {
+        addImages(
+          current,
+          files.flatMap((file) => {
+            if (file.type !== "file") return []
+            const comma = file.uri.indexOf(",")
+            return [
+              Form.Attachment.make({
+                mime: file.uri.slice(5, comma - ";base64".length),
+                data: file.uri.slice(comma + 1),
+                name: file.filename,
+              }),
+            ]
+          }),
+        )
+        return
+      }
+    }
+    if (!active() || field()?.key !== current.key || confirm()) return
+    if (store.editing || textual()) {
+      textarea?.insertText(value)
+      return
+    }
+    pasteCustom(value)
+  }
+
   usePaste((event) => {
     if (!active()) return
     const value = stripAnsiSequences(decodePasteBytes(event.bytes)).replace(/\r\n?/g, "\n")
+    const current = answerField()
+    if (!confirm() && current && allowsAttachments(current)) {
+      event.preventDefault()
+      void enqueuePaste(() => pasteText(value, current))
+      return
+    }
     if (store.editing && renderer.currentFocusedEditor === textarea) {
       textarea.insertText(value)
       event.preventDefault()
@@ -364,21 +445,21 @@ export function FormPrompt(props: { form: FormWithLocation }) {
   })
 
   function pasteClipboard() {
-    return clipboard
-      .read()
-      .then((content) => {
-        if (!active() || content?.mime !== "text/plain") return
-        const value = stripAnsiSequences(content.data).replace(/\r\n?/g, "\n")
-        if (store.editing || textual()) {
-          textarea?.insertText(value)
-          return
-        }
-        pasteCustom(value)
-      })
-      .catch(toast.error)
+    const current = answerField()
+    if (!current) return
+    return enqueuePaste(async () => {
+      const content = await clipboard.read()
+      if (content?.mime.startsWith("image/") && allowsAttachments(current)) {
+        addImages(current, [Form.Attachment.make({ mime: content.mime, data: content.data, name: "clipboard" })])
+        return
+      }
+      if (content?.mime !== "text/plain") return
+      await pasteText(stripAnsiSequences(content.data).replace(/\r\n?/g, "\n"), current)
+    })
   }
 
   function commitInput(text: string) {
+    if (store.pasting) return false
     const current = answerField()
     if (!current) return false
     const isTextual = textual()
@@ -549,6 +630,19 @@ export function FormPrompt(props: { form: FormWithLocation }) {
           return pasteClipboard()
         },
       },
+      ...(images().length
+        ? [
+            {
+              bind: "ctrl+d",
+              title: "Remove last image",
+              group: "Form",
+              run: () => {
+                const current = answerField()
+                if (current) setStore("attachments", current.key, (files) => files.slice(0, -1))
+              },
+            },
+          ]
+        : []),
     ],
   }))
 
@@ -628,9 +722,9 @@ export function FormPrompt(props: { form: FormWithLocation }) {
             return
           }
           const wasMulti = multi()
-          if (!commitInput(text) || wasMulti || !text) return
+          if (!commitInput(text) || wasMulti || (!text && !images().length)) return
           if (single()) {
-            replySingle(current, text)
+            replySingle(current, text || undefined)
             return
           }
           selectTab(store.tab + 1)
@@ -798,11 +892,7 @@ export function FormPrompt(props: { form: FormWithLocation }) {
               {(item, index) => {
                 const isTab = () => index() === store.tab
                 const color = () =>
-                  isTab()
-                    ? theme.text.base
-                    : tabHover() === index()
-                      ? theme.text.formfield.focused
-                      : theme.text.muted
+                  isTab() ? theme.text.base : tabHover() === index() ? theme.text.formfield.focused : theme.text.muted
                 return (
                   <box
                     paddingRight={2}
@@ -864,9 +954,7 @@ export function FormPrompt(props: { form: FormWithLocation }) {
               >
                 {external().url}
               </text>
-              <text
-                fg={store.answers[external().key] === true ? theme.text.feedback.success.base : theme.text.muted}
-              >
+              <text fg={store.answers[external().key] === true ? theme.text.feedback.success.base : theme.text.muted}>
                 {store.answers[external().key] === true
                   ? "✓ Acknowledged"
                   : store.externalReady[external().key]
@@ -928,18 +1016,10 @@ export function FormPrompt(props: { form: FormWithLocation }) {
                         }}
                       >
                         <box flexDirection="row">
-                          <box
-                            backgroundColor={theme.background.raised.base}
-                            paddingRight={1}
-                          >
-                            <text
-                              fg={active() ? theme.text.formfield.focused : theme.text.muted}
-                            >{`${i() + 1}.`}</text>
+                          <box backgroundColor={theme.background.raised.base} paddingRight={1}>
+                            <text fg={active() ? theme.text.formfield.focused : theme.text.muted}>{`${i() + 1}.`}</text>
                           </box>
-                          <box
-                            backgroundColor={theme.background.raised.base}
-                            flexDirection="row"
-                          >
+                          <box backgroundColor={theme.background.raised.base} flexDirection="row">
                             <Show when={multi()}>
                               <text
                                 width={4}
@@ -982,19 +1062,12 @@ export function FormPrompt(props: { form: FormWithLocation }) {
                     }}
                   >
                     <box flexDirection="row">
-                      <box
-                        backgroundColor={theme.background.raised.base}
-                        paddingRight={1}
-                      >
+                      <box backgroundColor={theme.background.raised.base} paddingRight={1}>
                         <text fg={other() ? theme.text.formfield.focused : theme.text.muted}>
                           {`${rows().length + 1}.`}
                         </text>
                       </box>
-                      <box
-                        flexDirection="row"
-                        flexGrow={1}
-                        backgroundColor={theme.background.raised.base}
-                      >
+                      <box flexDirection="row" flexGrow={1} backgroundColor={theme.background.raised.base}>
                         <Show when={multi()}>
                           <text
                             width={4}
@@ -1082,9 +1155,7 @@ export function FormPrompt(props: { form: FormWithLocation }) {
                           <span style={{ fg: theme.text.muted }}>{truncate(formLabel(item), 40)}:</span>{" "}
                           <span
                             style={{
-                              fg: acknowledged()
-                                ? theme.text.feedback.success.base
-                                : theme.text.feedback.error.base,
+                              fg: acknowledged() ? theme.text.feedback.success.base : theme.text.feedback.error.base,
                             }}
                           >
                             {acknowledged() ? "Acknowledged" : "(acknowledgement required)"}
@@ -1097,6 +1168,7 @@ export function FormPrompt(props: { form: FormWithLocation }) {
                   const answered = () => store.answers[item.key] !== undefined
                   const missing = () => !answered() && item.required === true
                   const invalid = () => formValidateValue(item, store.answers[item.key])
+                  const count = () => store.attachments[item.key]?.length ?? 0
                   return (
                     <box paddingLeft={1}>
                       <text>
@@ -1111,8 +1183,16 @@ export function FormPrompt(props: { form: FormWithLocation }) {
                                   : theme.text.muted,
                           }}
                         >
-                          {invalid() ?? (answered() ? value() : missing() ? "(required)" : "(not answered)")}
+                          {invalid() ??
+                            (answered()
+                              ? value()
+                              : missing()
+                                ? "(required)"
+                                : count()
+                                  ? "(images only)"
+                                  : "(not answered)")}
                         </span>
+                        <Show when={count()}> · {count()} image(s)</Show>
                       </text>
                     </box>
                   )
@@ -1120,6 +1200,26 @@ export function FormPrompt(props: { form: FormWithLocation }) {
               </For>
             </box>
           </scrollbox>
+        </Show>
+        <Show when={!confirm() && images().length}>
+          <box paddingLeft={1}>
+            <For each={images()}>
+              {(image, index) => (
+                <text
+                  fg={theme.text.formfield.base}
+                  onMouseUp={() => {
+                    const current = answerField()
+                    if (current) setStore("attachments", current.key, (files) => files.filter((_, i) => i !== index()))
+                  }}
+                >
+                  [Image {index() + 1}] {image.name ?? ""} · remove
+                </text>
+              )}
+            </For>
+          </box>
+        </Show>
+        <Show when={store.pasting}>
+          <text fg={theme.text.muted}>Attaching…</text>
         </Show>
       </box>
       <box
@@ -1165,6 +1265,11 @@ export function FormPrompt(props: { form: FormWithLocation }) {
           <text fg={theme.text.base} onMouseUp={cancel}>
             esc <span style={{ fg: theme.text.muted }}>{store.editing && !textual() ? "close" : "dismiss"}</span>
           </text>
+          <Show when={!confirm() && images().length}>
+            <text fg={theme.text.base}>
+              ctrl+d <span style={{ fg: theme.text.muted }}>remove image</span>
+            </text>
+          </Show>
         </box>
         <Show when={store.error}>
           <text fg={theme.text.feedback.error.base}>{store.error}</text>

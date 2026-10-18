@@ -3,7 +3,7 @@ import { testRender } from "@opentui/solid"
 import { expect, test } from "bun:test"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
-import { onMount, Show } from "solid-js"
+import { createSignal, onMount, Show } from "solid-js"
 import { DataProvider, useData, type FormWithLocation } from "../../../src/context/data"
 import { ClientProvider } from "../../../src/context/client"
 import { ThemeProvider } from "../../../src/context/theme"
@@ -14,14 +14,15 @@ import { emptyThemeSource, tmpdir } from "../../fixture/fixture"
 import { TestTuiContexts } from "../../fixture/tui-environment"
 import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
 import { createApi, createEventStream, createFetch, json } from "../../fixture/tui-client"
+import type { ClipboardContent } from "../../../src/context/clipboard"
 
 async function mountForm(
   root: string,
   width = 80,
   fields?: FormWithLocation["fields"],
   height = 20,
-  clipboardText?: string,
-  response?: { reply?: 404 | 409; cancel?: 404 | 409; syncFailure?: boolean },
+  clipboardText?: string | ClipboardContent | (() => Promise<ClipboardContent | undefined>),
+  response?: { reply?: 404 | 409; cancel?: 404 | 409; syncFailure?: boolean; navigation?: boolean },
 ) {
   const state = path.join(root, "state")
   await mkdir(state, { recursive: true })
@@ -29,12 +30,13 @@ async function mountForm(
   const replies: unknown[] = []
   const cancellations: unknown[] = []
   const copied: string[] = []
+  const [visible, setVisible] = createSignal(true)
   let terminal = false
   let formLists = 0
   const events = createEventStream()
   const config = createTuiResolvedConfig()
   const form = {
-    id: "frm_test",
+    id: `frm_${crypto.randomUUID()}`,
     sessionID: "ses_test",
     title: "Authorization required",
     fields: fields ?? [
@@ -62,12 +64,12 @@ async function mountForm(
       return response?.syncFailure && formLists++ > 0
         ? json({ message: "Could not refresh forms" }, { status: 500 })
         : json({ data: terminal ? [] : [form] })
-    if (url.pathname === "/api/session/ses_test/form/frm_test/reply")
+    if (url.pathname === `/api/session/ses_test/form/${form.id}/reply`)
       return request.json().then((answer) => {
         replies.push(answer)
         return response?.reply ? failure(response.reply) : new Response(null, { status: 204 })
       })
-    if (url.pathname === "/api/session/ses_test/form/frm_test" && request.method === "DELETE") {
+    if (url.pathname === `/api/session/ses_test/form/${form.id}` && request.method === "DELETE") {
       cancellations.push(true)
       return response?.cancel ? failure(response.cancel) : new Response(null, { status: 204 })
     }
@@ -78,8 +80,10 @@ async function mountForm(
     const data = useData()
     onMount(() => void data.session.form.sync(form.sessionID))
     return (
-      <Show when={data.session.form.list(form.sessionID)?.[0]} keyed fallback={<text>Composer ready</text>}>
-        {(current) => <FormPrompt form={current} />}
+      <Show when={visible()} fallback={<text>Other session</text>}>
+        <Show when={data.session.form.list(form.sessionID)?.[0]} keyed fallback={<text>Composer ready</text>}>
+          {(current) => <FormPrompt form={current} />}
+        </Show>
       </Show>
     )
   }
@@ -95,7 +99,8 @@ async function mountForm(
         }}
         clipboard={{
           async read() {
-            return clipboardText === undefined ? undefined : { data: clipboardText, mime: "text/plain" }
+            if (typeof clipboardText === "function") return clipboardText()
+            return typeof clipboardText === "string" ? { data: clipboardText, mime: "text/plain" } : clipboardText
           },
           write(text) {
             copied.push(text)
@@ -121,7 +126,7 @@ async function mountForm(
   const app = await testRender(() => <Harness />, { width, height, kittyKeyboard: true })
   app.renderer.start()
   await app.waitForFrame((frame) => frame.includes("Authorization required"))
-  return { app, cancellations, copied, replies }
+  return { app, cancellations, copied, replies, setVisible }
 }
 
 function mountRecoveringForm(root: string, response: { reply?: 404 | 409; cancel?: 404 | 409; syncFailure?: boolean }) {
@@ -362,6 +367,275 @@ test("clipboard shortcut opens a custom choice editor without submitting", async
     await prompt.app.waitForFrame((frame) => frame.includes("production"))
     expect(prompt.app.captureCharFrame()).not.toContain("Type your own answer")
     expect(prompt.replies).toEqual([])
+  } finally {
+    prompt.app.renderer.destroy()
+  }
+})
+
+const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jX1sAAAAASUVORK5CYII="
+
+for (const mode of ["drop", "clipboard"] as const) {
+  test(`${mode} preserves a selected string answer when attaching an image`, async () => {
+    await using tmp = await tmpdir()
+    const file = path.join(tmp.path, "screenshot.png")
+    await Bun.write(file, Buffer.from(png, "base64"))
+    const prompt = await mountForm(
+      tmp.path,
+      100,
+      [
+        {
+          key: "q0",
+          type: "string",
+          options: [{ value: "staging", label: "Staging" }],
+          default: "staging",
+          custom: true,
+          attachments: true,
+        },
+        { key: "q1", type: "string", options: [], custom: true, attachments: true },
+      ],
+      25,
+      { mime: "image/png", data: png },
+    )
+    try {
+      if (mode === "drop") await prompt.app.mockInput.pasteBracketedText(`"${file}"`)
+      if (mode === "clipboard") prompt.app.mockInput.pressKey("v", { ctrl: true })
+      await prompt.app.waitForFrame((frame) => frame.includes("[Image 1]") && !frame.includes("Attaching"))
+      prompt.app.mockInput.pressTab()
+      await prompt.app.waitForFrame((frame) => !frame.includes("[Image 1]"))
+      prompt.app.mockInput.pressTab()
+      await prompt.app.waitForFrame((frame) => frame.includes("enter submit"))
+      prompt.app.mockInput.pressEnter()
+      await prompt.app.waitFor(() => prompt.replies.length === 1)
+      expect(prompt.replies).toEqual([
+        {
+          answer: { q0: "staging" },
+          attachments: {
+            q0: [{ mime: "image/png", data: png, name: mode === "drop" ? "screenshot.png" : "clipboard" }],
+          },
+        },
+      ])
+    } finally {
+      prompt.app.renderer.destroy()
+    }
+  })
+}
+
+for (const finish of ["hidden", "remounted"] as const) {
+  test(`pending clipboard images survive navigation when resolved ${finish}`, async () => {
+    await using tmp = await tmpdir()
+    const content = Promise.withResolvers<ClipboardContent>()
+    let reads = 0
+    const prompt = await mountForm(
+      tmp.path,
+      100,
+      [
+        {
+          key: "q0",
+          type: "string",
+          options: [{ value: "staging", label: "Staging" }],
+          default: "staging",
+          custom: true,
+          attachments: true,
+        },
+        { key: "q1", type: "string", options: [], custom: true, attachments: true },
+      ],
+      25,
+      () => {
+        reads++
+        return content.promise
+      },
+      { navigation: true },
+    )
+    try {
+      prompt.app.mockInput.pressTab()
+      await prompt.app.waitForFrame((frame) => !frame.includes("Staging"))
+      prompt.app.mockInput.pressKey("v", { ctrl: true })
+      await prompt.app.waitFor(() => reads === 1)
+      prompt.setVisible(false)
+      await prompt.app.waitForFrame((frame) => frame.includes("Other session"))
+      if (finish === "remounted") {
+        prompt.setVisible(true)
+        await prompt.app.waitForFrame((frame) => frame.includes("Attaching"))
+        prompt.app.mockInput.pressTab()
+        prompt.app.mockInput.pressEnter()
+        expect(prompt.replies).toEqual([])
+      }
+      content.resolve({ mime: "image/png", data: png })
+      await content.promise
+      if (finish === "hidden") {
+        // Drain the clipboard continuation deterministically before restoring the form.
+        await prompt.app.renderOnce()
+        prompt.setVisible(true)
+      }
+      await prompt.app.waitForFrame((frame) => frame.includes("[Image 1]") && !frame.includes("Attaching"))
+      prompt.app.mockInput.pressTab()
+      await prompt.app.waitForFrame((frame) => frame.includes("enter submit"))
+      prompt.app.mockInput.pressEnter()
+      await prompt.app.waitFor(() => prompt.replies.length === 1)
+      expect(prompt.replies).toEqual([
+        {
+          answer: { q0: "staging" },
+          attachments: { q1: [{ mime: "image/png", data: png, name: "clipboard" }] },
+        },
+      ])
+    } finally {
+      content.resolve({ mime: "image/png", data: png })
+      prompt.app.renderer.destroy()
+    }
+  })
+}
+
+test("a selected single-question answer submits with its image without opening a custom editor", async () => {
+  await using tmp = await tmpdir()
+  const prompt = await mountForm(
+    tmp.path,
+    80,
+    [
+      {
+        key: "q0",
+        type: "string",
+        options: [{ value: "staging", label: "Staging" }],
+        default: "staging",
+        custom: true,
+        attachments: true,
+      },
+    ],
+    20,
+    { mime: "image/png", data: png },
+  )
+  try {
+    prompt.app.mockInput.pressKey("v", { ctrl: true })
+    await prompt.app.waitForFrame((frame) => frame.includes("[Image 1]") && !frame.includes("Attaching"))
+    expect(prompt.app.renderer.currentFocusedEditor).toBeNull()
+    prompt.app.mockInput.pressEnter()
+    await prompt.app.waitFor(() => prompt.replies.length === 1)
+    expect(prompt.replies).toEqual([
+      {
+        answer: { q0: "staging" },
+        attachments: { q0: [{ mime: "image/png", data: png, name: "clipboard" }] },
+      },
+    ])
+  } finally {
+    prompt.app.renderer.destroy()
+  }
+})
+
+test("restoring a form retains unfinished text alongside pending clipboard images", async () => {
+  await using tmp = await tmpdir()
+  const content = Promise.withResolvers<ClipboardContent>()
+  let reads = 0
+  const prompt = await mountForm(
+    tmp.path,
+    80,
+    [{ key: "q0", type: "string", attachments: true }],
+    20,
+    () => {
+      reads++
+      return content.promise
+    },
+    { navigation: true },
+  )
+  try {
+    await prompt.app.mockInput.typeText("unfinished reference")
+    await prompt.app.waitFor(() => prompt.app.renderer.currentFocusedEditor?.plainText === "unfinished reference")
+    prompt.app.mockInput.pressKey("v", { ctrl: true })
+    await prompt.app.waitFor(() => reads === 1)
+    prompt.setVisible(false)
+    await prompt.app.waitForFrame((frame) => frame.includes("Other session"))
+    prompt.setVisible(true)
+    await prompt.app.waitForFrame((frame) => frame.includes("Attaching"))
+    await prompt.app.waitFor(() => prompt.app.renderer.currentFocusedEditor?.plainText === "unfinished reference")
+    content.resolve({ mime: "image/png", data: png })
+    await prompt.app.waitForFrame((frame) => frame.includes("[Image 1]") && !frame.includes("Attaching"))
+    prompt.app.mockInput.pressTab()
+    await prompt.app.waitForFrame((frame) => frame.includes("enter submit"))
+    prompt.app.mockInput.pressEnter()
+    await prompt.app.waitFor(() => prompt.replies.length === 1)
+    expect(prompt.replies).toEqual([
+      {
+        answer: { q0: "unfinished reference" },
+        attachments: { q0: [{ mime: "image/png", data: png, name: "clipboard" }] },
+      },
+    ])
+  } finally {
+    content.resolve({ mime: "image/png", data: png })
+    prompt.app.renderer.destroy()
+  }
+})
+
+for (const mode of ["drop", "clipboard"] as const) {
+  test(`${mode} attaches images to their fields and keeps scalar answers intact`, async () => {
+    await using tmp = await tmpdir()
+    const file = path.join(tmp.path, "screen shot.png")
+    await Bun.write(file, Buffer.from(png, "base64"))
+    const prompt = await mountForm(
+      tmp.path,
+      100,
+      [
+        { key: "q0", type: "string", options: [], custom: true, attachments: true },
+        {
+          key: "q1",
+          type: "multiselect",
+          options: [{ value: "staging", label: "Staging" }],
+          default: ["staging"],
+          custom: true,
+          attachments: true,
+        },
+      ],
+      25,
+      { mime: "image/png", data: png },
+    )
+    const paste = async () => {
+      if (mode === "drop") await prompt.app.mockInput.pasteBracketedText(`"${file}"`)
+      if (mode === "clipboard") prompt.app.mockInput.pressKey("v", { ctrl: true })
+    }
+    try {
+      await paste()
+      await prompt.app.waitForFrame((frame) => frame.includes("[Image 1]"))
+      await prompt.app.waitFor(() => prompt.app.renderer.currentFocusedEditor !== null)
+      expect(prompt.app.renderer.currentFocusedEditor?.plainText).toBe("")
+      expect(prompt.replies).toEqual([])
+      await prompt.app.mockInput.typeText("reference")
+      prompt.app.mockInput.pressTab()
+      await prompt.app.waitForFrame((frame) => frame.includes("[✓] Staging"))
+      await paste()
+      await prompt.app.waitForFrame((frame) => frame.includes("[Image 1]"))
+      await paste()
+      await prompt.app.waitForFrame((frame) => frame.includes("[Image 2]"))
+      prompt.app.mockInput.pressKey("d", { ctrl: true })
+      await prompt.app.waitForFrame((frame) => !frame.includes("[Image 2]"))
+      prompt.app.mockInput.pressTab()
+      await prompt.app.waitForFrame((frame) => frame.includes("enter submit"))
+      prompt.app.mockInput.pressEnter()
+      await prompt.app.waitFor(() => prompt.replies.length === 1)
+      const image = { mime: "image/png", data: png, name: mode === "drop" ? "screen shot.png" : "clipboard" }
+      expect(prompt.replies).toEqual([
+        { answer: { q0: "reference", q1: ["staging"] }, attachments: { q0: [image], q1: [image] } },
+      ])
+    } finally {
+      prompt.app.renderer.destroy()
+    }
+  })
+}
+
+test("an image-only custom answer submits without inventing scalar text", async () => {
+  await using tmp = await tmpdir()
+  const prompt = await mountForm(
+    tmp.path,
+    80,
+    [{ key: "q0", type: "string", options: [], custom: true, attachments: true }],
+    20,
+    { mime: "image/png", data: png },
+  )
+  try {
+    prompt.app.mockInput.pressKey("v", { ctrl: true })
+    await prompt.app.waitForFrame((frame) => frame.includes("[Image 1]"))
+    await prompt.app.waitFor(() => prompt.app.renderer.currentFocusedEditor !== null)
+    prompt.app.mockInput.pressEnter()
+    await prompt.app.waitFor(() => prompt.replies.length === 1)
+    expect(prompt.replies).toEqual([
+      { answer: {}, attachments: { q0: [{ mime: "image/png", data: png, name: "clipboard" }] } },
+    ])
   } finally {
     prompt.app.renderer.destroy()
   }

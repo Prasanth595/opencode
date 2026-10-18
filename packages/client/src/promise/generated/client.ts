@@ -1051,7 +1051,7 @@ export function make(options: ClientOptions) {
             {
               method: "POST",
               path: `/api/session/${encodeURIComponent(input.sessionID)}/form/${encodeURIComponent(input.formID)}/reply`,
-              body: { answer: input["answer"] },
+              body: { answer: input["answer"], attachments: input["attachments"] },
               successStatus: 204,
               declaredStatuses: [400, 401, 404, 409],
               empty: true,
