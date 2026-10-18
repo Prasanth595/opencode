@@ -100,6 +100,49 @@ const backgroundResult = (shellID: string, file: string) => ({
   status: "running" as const,
 })
 
+const reclaimBackground = (
+  jobs: Job.Interface,
+  sessions: Session.Interface,
+  background: Job.Background,
+): Effect.Effect<void, unknown> =>
+  Effect.gen(function* () {
+    const recovery = background.recovery
+    if (recovery.kind !== "shell") return
+    const info = (yield* jobs.wait({ id: background.id })).info
+    if (!info || info.status === "running") return
+    const text =
+      info.status === "completed"
+        ? (info.output ?? background.output ?? "Command completed")
+        : info.status === "error"
+          ? (info.error ?? background.error ?? "Command failed")
+          : "Cancelled"
+    yield* sessions
+      .synthetic({
+        id: background.notificationID,
+        sessionID: recovery.sessionID,
+        description: recovery.command,
+        ...ShellResult.notification({
+          jobID: background.id,
+          shellID: recovery.shellID,
+          command: recovery.command,
+          state: info.status,
+          text,
+        }),
+      })
+      .pipe(Effect.catchTag("Session.NotFoundError", () => Effect.void))
+    yield* jobs.completeBackground(background.notificationID)
+  })
+
+const reclaimBackgrounds = (jobs: Job.Interface, sessions: Session.Interface): Effect.Effect<void, unknown> =>
+  Effect.gen(function* () {
+    const pending = yield* jobs.pendingBackground
+    yield* Effect.forEach(
+      pending.filter((background) => background.recovery.kind === "shell"),
+      (background) => reclaimBackground(jobs, sessions, background),
+      { concurrency: "unbounded", discard: true },
+    )
+  })
+
 export const Plugin = {
   id: "opencode.tool.shell",
   effect: Effect.fn("ShellTool.Plugin")(function* (ctx: Context) {
@@ -187,6 +230,11 @@ export const Plugin = {
       },
       Effect.forkIn(scope, { startImmediately: true }),
     )
+
+    // A rebuilt activation closes the scope that owned the previous notification observers. Reclaim
+    // persisted backgrounds owned by this process so their completion still reaches the Session.
+    // Jobs from a previous process are unknown here and stay for restart recovery.
+    yield* reclaimBackgrounds(jobs, sessions).pipe(Effect.forkIn(scope, { startImmediately: true }))
 
     yield* ctx.tool
       .transform((editor) =>
