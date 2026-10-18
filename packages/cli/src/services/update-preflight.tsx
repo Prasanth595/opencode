@@ -4,6 +4,7 @@
 import { createCliRenderer, RGBA, TextAttributes, type CliRenderer, type ThemeMode } from "@opentui/core"
 import { render, useTerminalDimensions } from "@opentui/solid"
 import { OPENCODE_VERSION } from "../version"
+import { isNewerRelease } from "./updater-action"
 import { registerOpencodeSpinner } from "@opencode-ai/tui/component/register-spinner"
 import { SPINNER_FRAMES } from "@opencode-ai/tui/component/spinner"
 import { go } from "@opencode-ai/tui/logo"
@@ -242,6 +243,69 @@ const phrase = (...segments: ReadonlyArray<readonly [string, RGBA, boolean?]>): 
     ...styled(segment[0], segment[1], segment[2]),
   ])
 
+type Role = "muted" | "accent" | "accentDim"
+type Segment = readonly [text: string, role: Role, bold?: boolean]
+
+const ink: Record<Role, RGBA> = { muted: colors.muted, accent: colors.accent, accentDim: colors.accentDim }
+const inkCells = (segments: ReadonlyArray<Segment>) =>
+  phrase(...segments.map((segment) => [segment[0], ink[segment[1]], segment[2]] as const))
+
+// The replaced service can be newer than this CLI (stale binary on PATH,
+// desktop-bundled service); that replacement is a downgrade and must not read
+// as an update with seemingly swapped versions.
+export type Wording = {
+  readonly running: ReadonlyArray<Segment>
+  readonly completed: ReadonlyArray<Segment>
+  readonly paused: ReadonlyArray<Segment>
+}
+
+export function footerWording(previous: string | undefined, current: string): Wording {
+  if (previous !== undefined && isNewerRelease(previous, current))
+    return {
+      running: [
+        ["OpenCode", "muted", true],
+        ["is replacing", "muted"],
+        [previous, "accentDim"],
+        ["with", "muted"],
+        [current, "accent"],
+      ],
+      completed: [
+        ["OpenCode", "muted", true],
+        ["replaced", "muted"],
+        [previous, "accentDim"],
+        ["with", "muted"],
+        [current, "accent"],
+      ],
+      paused: [
+        ["OpenCode", "muted", true],
+        ["replacement paused", "muted"],
+      ],
+    }
+  return {
+    running: [
+      ["OpenCode", "muted", true],
+      ["is updating", "muted"],
+      ...(previous
+        ? ([
+            ["from", "muted"],
+            [previous, "accentDim"],
+          ] as const)
+        : []),
+      ["to", "muted"],
+      [current, "accent"],
+    ],
+    completed: [
+      ["OpenCode", "muted", true],
+      ["updated to", "muted"],
+      [current, "accent"],
+    ],
+    paused: [
+      ["OpenCode", "muted", true],
+      ["update paused", "muted"],
+    ],
+  }
+}
+
 function Monogram(props: { ink: () => RGBA }) {
   const shadow = createMemo(() => {
     const ink = props.ink()
@@ -345,25 +409,10 @@ function UpdateFooter(props: {
   const [pulse, setPulse] = createSignal(0)
   const headerFade = createFade()
   const statusSweep = createSweep()
-  const runningHeader = () =>
-    phrase(
-      ["OpenCode", colors.muted, true],
-      ["is updating", colors.muted],
-      ...(props.from
-        ? ([
-            ["from", colors.muted],
-            [props.from, colors.accentDim],
-          ] as const)
-        : []),
-      ["to", colors.muted],
-      [OPENCODE_VERSION, colors.accent],
-    )
-  const completedHeader = phrase(
-    ["OpenCode", colors.muted, true],
-    ["updated to", colors.muted],
-    [OPENCODE_VERSION, colors.accent],
-  )
-  const pausedHeader = phrase(["OpenCode", colors.muted, true], ["update paused", colors.muted])
+  const wording = footerWording(props.from, OPENCODE_VERSION)
+  const runningHeader = () => inkCells(wording.running)
+  const completedHeader = () => inkCells(wording.completed)
+  const pausedHeader = () => inkCells(wording.paused)
   const outcomeStatus = () =>
     props.outcome() === "success"
       ? [...styled("✓", colors.success), ...styled(" Ready", colors.text)]
@@ -384,7 +433,7 @@ function UpdateFooter(props: {
       (outcome) => {
         if (outcome === "running") return
         const visibleStatus = untrack(statusSweep.cells) ?? styled(previousStage, colors.text)
-        headerFade.start(runningHeader(), outcome === "success" ? completedHeader : pausedHeader)
+        headerFade.start(runningHeader(), outcome === "success" ? completedHeader() : pausedHeader())
         statusSweep.start([...styled("  ", colors.text), ...visibleStatus], outcomeStatus(), props.onOutcomeSettled)
       },
       { defer: true },
@@ -394,9 +443,9 @@ function UpdateFooter(props: {
     () =>
       headerFade.cells() ??
       (props.outcome() === "success"
-        ? completedHeader
+        ? completedHeader()
         : props.outcome() === "failure"
-          ? pausedHeader
+          ? pausedHeader()
           : runningHeader()),
   )
   const monogramInk = createMemo(() =>

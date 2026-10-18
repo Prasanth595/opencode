@@ -31,6 +31,43 @@ export function parseReleaseVersion(input: string) {
   }
 }
 
+/** True when `version` is a strictly newer release than `other` (semver order:
+ * core numerically, then prerelease identifiers per semver; unparseable is never newer). */
+export function isNewerRelease(version: string, other: string) {
+  const left = parseReleaseVersion(version)
+  const right = parseReleaseVersion(other)
+  if (!left || !right) return false
+  return compareRelease(left, right) > 0
+}
+
+function compareRelease(
+  left: NonNullable<ReturnType<typeof parseReleaseVersion>>,
+  right: NonNullable<ReturnType<typeof parseReleaseVersion>>,
+) {
+  const [majorA, minorA, patchA] = left.core.split(".").map(Number)
+  const [majorB, minorB, patchB] = right.core.split(".").map(Number)
+  if (majorA !== majorB) return majorA - majorB
+  if (minorA !== minorB) return minorA - minorB
+  if (patchA !== patchB) return patchA - patchB
+  // A release with no prerelease outranks any prerelease of the same core.
+  if (left.prerelease.length === 0) return right.prerelease.length === 0 ? 0 : 1
+  if (right.prerelease.length === 0) return -1
+  for (let index = 0; index < Math.min(left.prerelease.length, right.prerelease.length); index++) {
+    const compared = compareIdentifier(left.prerelease[index], right.prerelease[index])
+    if (compared !== 0) return compared
+  }
+  return left.prerelease.length - right.prerelease.length
+}
+
+function compareIdentifier(left: string, right: string) {
+  const leftNumeric = /^[0-9]+$/.test(left)
+  const rightNumeric = /^[0-9]+$/.test(right)
+  if (leftNumeric && rightNumeric) return Number(left) - Number(right)
+  if (leftNumeric) return -1
+  if (rightNumeric) return 1
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
 function sameRelease(current: NonNullable<ReturnType<typeof parseReleaseVersion>>, latest: typeof current) {
   if (current.core !== latest.core || current.prerelease.length !== latest.prerelease.length) return false
   return current.prerelease.every((identifier, index) => {

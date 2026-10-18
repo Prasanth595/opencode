@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { action } from "./updater-action"
+import { action, isNewerRelease } from "./updater-action"
 import { decodePolicy } from "./updater"
 
 describe("updater", () => {
@@ -78,6 +78,30 @@ describe("updater", () => {
   test("preserves equality for oversized numeric prerelease identifiers", () => {
     expect(action("1.0.0-9007199254740992", "1.0.0-9007199254740993", "notify")).toBe("none")
     expect(action("1.0.0-9007199254740991", "1.0.0-9007199254740992", "notify")).toBe("notify")
+  })
+
+  test("orders release versions for downgrade detection", () => {
+    expect(isNewerRelease("2.0.32", "2.0.29")).toBe(true)
+    expect(isNewerRelease("2.0.29", "2.0.32")).toBe(false)
+    expect(isNewerRelease("2.0.10", "2.0.9")).toBe(true)
+    expect(isNewerRelease("2.1.0", "2.0.32")).toBe(true)
+    expect(isNewerRelease("2.0.29", "2.0.29")).toBe(false)
+    expect(isNewerRelease("v2.0.32", "2.0.29")).toBe(true)
+    expect(isNewerRelease("local", "2.0.29")).toBe(false)
+    expect(isNewerRelease("2.0.29", "local")).toBe(false)
+  })
+
+  test("orders prereleases by semver for downgrade detection", () => {
+    expect(isNewerRelease("2.0.33-beta.1", "2.0.32")).toBe(true)
+    expect(isNewerRelease("2.0.32-beta.2", "2.0.32-beta.1")).toBe(true)
+    expect(isNewerRelease("2.0.32-beta.1", "2.0.32")).toBe(false)
+    expect(isNewerRelease("2.0.32", "2.0.32-beta.1")).toBe(true)
+    expect(isNewerRelease("2.0.32-beta.2", "2.0.32-beta.2")).toBe(false)
+    expect(isNewerRelease("0.0.0-dev-17404", "0.0.0-dev-17403")).toBe(true)
+    expect(isNewerRelease("0.0.0-dev-17403", "0.0.0-dev-17404")).toBe(false)
+    expect(isNewerRelease("2.0.32-beta.2", "2.0.32-beta.2.1")).toBe(false)
+    expect(isNewerRelease("2.0.32-2", "2.0.32-beta.1")).toBe(false)
+    expect(isNewerRelease("2.0.32-alpha", "2.0.32-2")).toBe(true)
   })
 
   test("rejects versions longer than semver's limit before trimming", () => {
