@@ -57,3 +57,194 @@ export const Basic = {
     )
   },
 }
+
+// A large, offline, screenshot-style bitmap with small text that is only legible once zoomed in.
+export const Screenshot = {
+  render: () => {
+    const dialog = useDialog()
+    const src = screenshot()
+
+    const open = () => dialog.show(() => <mod.ImagePreview src={src} alt="Editor screenshot" />)
+
+    onMount(open)
+
+    return (
+      <Button variant="neutral" onClick={open}>
+        Open screenshot preview
+      </Button>
+    )
+  },
+}
+
+function screenshot() {
+  const canvas = document.createElement("canvas")
+  canvas.width = 2880
+  canvas.height = 1800
+  const ctx = canvas.getContext("2d")
+  ctx.scale(2, 2)
+
+  ctx.fillStyle = "#1d1e22"
+  ctx.fillRect(0, 0, 1440, 900)
+  ctx.fillStyle = "#2a2b31"
+  ctx.fillRect(0, 0, 1440, 38)
+  ;["#ff5f57", "#febc2e", "#28c840"].forEach((color, index) => {
+    ctx.fillStyle = color
+    ctx.beginPath()
+    ctx.arc(20 + index * 20, 19, 6, 0, Math.PI * 2)
+    ctx.fill()
+  })
+  ctx.fillStyle = "#a9abb3"
+  ctx.font = "13px -apple-system, system-ui, sans-serif"
+  ctx.textAlign = "center"
+  ctx.fillText("orchard.ts — lumen-garden", 720, 24)
+  ctx.textAlign = "left"
+
+  ctx.fillStyle = "#23242a"
+  ctx.fillRect(0, 38, 240, 836)
+  ctx.fillStyle = "#7d808a"
+  ctx.font = "600 10px -apple-system, system-ui, sans-serif"
+  ctx.fillText("EXPLORER", 16, 64)
+  ;[
+    "src",
+    "  orchard.ts",
+    "  greenhouse.ts",
+    "  sprinkler.ts",
+    "  seeds",
+    "    tomato.json",
+    "    basil.json",
+    "    marigold.json",
+    "test",
+    "  orchard.test.ts",
+    "README.md",
+    "package.json",
+  ].forEach((name, index) => {
+    if (index === 1) {
+      ctx.fillStyle = "#33353d"
+      ctx.fillRect(0, 76 + index * 24, 240, 24)
+    }
+
+    ctx.fillStyle = index === 1 ? "#e6e7eb" : "#a9abb3"
+    ctx.font = "12px -apple-system, system-ui, sans-serif"
+    ctx.fillText(name.trimStart(), 20 + (name.length - name.trimStart().length) * 6, 92 + index * 24)
+  })
+
+  const code = [
+    [
+      ["#c792ea", "import "],
+      ["#e6e7eb", "{ Sprinkler } "],
+      ["#c792ea", "from "],
+      ["#c3e88d", '"./sprinkler"'],
+    ],
+    [
+      ["#c792ea", "import "],
+      ["#e6e7eb", "{ Greenhouse } "],
+      ["#c792ea", "from "],
+      ["#c3e88d", '"./greenhouse"'],
+    ],
+    [],
+    [["#5c6370", "// Waters each bed once the soil sensor drops below its threshold."]],
+    [
+      ["#c792ea", "export function "],
+      ["#82aaff", "tend"],
+      ["#e6e7eb", "(garden: Greenhouse, now: Date) {"],
+    ],
+    [
+      ["#c792ea", "  const "],
+      ["#e6e7eb", "dry = garden.beds."],
+      ["#82aaff", "filter"],
+      ["#e6e7eb", "((bed) => bed.moisture < bed.threshold)"],
+    ],
+    [
+      ["#c792ea", "  if "],
+      ["#e6e7eb", "(dry.length === "],
+      ["#f78c6c", "0"],
+      ["#e6e7eb", ") "],
+      ["#c792ea", "return"],
+    ],
+    [],
+    [
+      ["#c792ea", "  for "],
+      ["#e6e7eb", "("],
+      ["#c792ea", "const "],
+      ["#e6e7eb", "bed "],
+      ["#c792ea", "of "],
+      ["#e6e7eb", "dry) {"],
+    ],
+    [
+      ["#c792ea", "    const "],
+      ["#e6e7eb", "minutes = Math."],
+      ["#82aaff", "ceil"],
+      ["#e6e7eb", "((bed.threshold - bed.moisture) * "],
+      ["#f78c6c", "4"],
+      ["#e6e7eb", ")"],
+    ],
+    [
+      ["#e6e7eb", "    Sprinkler."],
+      ["#82aaff", "open"],
+      ["#e6e7eb", "(bed.valve, { minutes, startedAt: now })"],
+    ],
+    [
+      ["#e6e7eb", "    garden.log."],
+      ["#82aaff", "push"],
+      ["#e6e7eb", "(`watered ${bed.name} for ${minutes}m`)"],
+    ],
+    [["#e6e7eb", "  }"]],
+    [],
+    [
+      ["#c792ea", "  return "],
+      ["#e6e7eb", "dry."],
+      ["#82aaff", "map"],
+      ["#e6e7eb", "((bed) => bed.name)"],
+    ],
+    [["#e6e7eb", "}"]],
+  ]
+
+  ctx.font = "13px Menlo, ui-monospace, monospace"
+  code.forEach((line, index) => {
+    const y = 76 + index * 22
+    ctx.fillStyle = "#4b4e57"
+    ctx.textAlign = "right"
+    ctx.fillText(String(index + 1), 296, y)
+    ctx.textAlign = "left"
+    line.reduce((x, [color, text]) => {
+      ctx.fillStyle = color
+      ctx.fillText(text, x, y)
+
+      return x + ctx.measureText(text).width
+    }, 320)
+  })
+
+  ctx.fillStyle = "#26272d"
+  ctx.fillRect(1080, 38, 360, 836)
+  ctx.fillStyle = "#e6e7eb"
+  ctx.font = "600 12px -apple-system, system-ui, sans-serif"
+  ctx.fillText("Soil moisture", 1100, 70)
+  ;[0.62, 0.31, 0.48, 0.27, 0.71, 0.55].forEach((value, index) => {
+    const y = 92 + index * 34
+    ctx.fillStyle = "#a9abb3"
+    ctx.font = "11px -apple-system, system-ui, sans-serif"
+    ctx.fillText(`Bed ${String.fromCharCode(65 + index)}`, 1100, y + 12)
+    ctx.fillStyle = "#33353d"
+    ctx.fillRect(1160, y + 3, 220, 10)
+    ctx.fillStyle = value < 0.35 ? "#f78c6c" : "#7fd88f"
+    ctx.fillRect(1160, y + 3, 220 * value, 10)
+    ctx.fillStyle = "#7d808a"
+    ctx.font = "8px -apple-system, system-ui, sans-serif"
+    ctx.fillText(`${Math.round(value * 100)}% · threshold 35%`, 1386 - 64, y + 26)
+  })
+  ctx.fillStyle = "#7d808a"
+  ctx.font = "7px -apple-system, system-ui, sans-serif"
+  ;[
+    "Sensor readings refresh every 90 seconds.",
+    "Beds below their threshold are watered on the next tick.",
+    "Valve 4 was serviced on 12 March; calibration offset +0.02.",
+  ].forEach((text, index) => ctx.fillText(text, 1100, 330 + index * 11))
+
+  ctx.fillStyle = "#3b5bdb"
+  ctx.fillRect(0, 874, 1440, 26)
+  ctx.fillStyle = "#ffffff"
+  ctx.font = "11px -apple-system, system-ui, sans-serif"
+  ctx.fillText("main  ·  0 problems  ·  Ln 6, Col 42  ·  UTF-8  ·  TypeScript", 12, 891)
+
+  return canvas.toDataURL("image/png")
+}
