@@ -17,6 +17,7 @@ import {
   type RequestPermissionResponse,
   type SessionNotification,
 } from "@agentclientprotocol/sdk"
+import type { WireStream as ACPWireStream } from "@agentclientprotocol/sdk/experimental/v2"
 import { OpenCode } from "@opencode/client/effect"
 import type { OpenCodeEventEncoded } from "@opencode/protocol/groups/event"
 import type { Agent } from "@opencode/schema/agent"
@@ -427,10 +428,13 @@ export async function startWire(options: WireOptions = {}) {
   const agentToClient = new TransformStream<Uint8Array, Uint8Array>()
   const logs: Array<Pick<Logger.Options<unknown>, "message" | "cause">> = []
   const agentScope = Scope.makeUnsafe()
-  const agentConnection = await Effect.runPromise(
+  await Effect.runPromise(
     OpenCode.make({ baseUrl: server.url }).pipe(
       Effect.provide(FetchHttpClient.layer),
-      Effect.flatMap((client) => ACP.connect(client, ndJsonStream(agentToClient.writable, clientToAgent.readable))),
+      Effect.flatMap((client) => ACP.router(client)),
+      Effect.map((protocol) => {
+        protocol.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable) as unknown as ACPWireStream)
+      }),
       Scope.provide(agentScope),
       (effect) =>
         options.cancelDrainTimeout === undefined
@@ -537,7 +541,6 @@ export async function startWire(options: WireOptions = {}) {
       until(() => updates.find(predicate), description),
     async [Symbol.asyncDispose]() {
       connection.close()
-      agentConnection.close()
       await Effect.runPromise(Scope.close(agentScope, Exit.void))
       await server.stop()
     },
@@ -564,7 +567,7 @@ export async function rpcError(promise: Promise<unknown>) {
   return { code: error.code, message: error.message, data: error.data }
 }
 
-function startServer(options: WireOptions, changed: () => void) {
+export function startServer(options: WireOptions, changed: () => void) {
   const encoder = new TextEncoder()
   const streams = new Set<ReadableStreamDefaultController<Uint8Array>>()
   const counter = { sessions: 0, events: 0 }
@@ -692,6 +695,7 @@ function startServer(options: WireOptions, changed: () => void) {
         .then((recorded) => recorded.override ?? new Response(null, { status: 404 }))
         .finally(changed),
     routes: {
+      "/api/session/active": { GET: route(() => Response.json({ data: {} })) },
       "/api/event": {
         GET: route(() => {
           const state: { stream?: ReadableStreamDefaultController<Uint8Array> } = {}
@@ -778,6 +782,27 @@ function startServer(options: WireOptions, changed: () => void) {
       },
       "/api/session/:sessionID/message": {
         GET: route((req, query) => Response.json(page(fake.messages.get(req.params.sessionID) ?? [], query, 200))),
+      },
+      "/api/session/:sessionID/inbox/:inboxID": {
+        DELETE: route(() => noContent()),
+      },
+      "/api/session/:sessionID/message/:messageID": {
+        GET: route((req) => {
+          const message = fake.messages
+            .get(req.params.sessionID)
+            ?.find((message) => message.id === req.params.messageID)
+          return message
+            ? Response.json({ data: message })
+            : Response.json(
+                {
+                  _tag: "MessageNotFoundError",
+                  sessionID: req.params.sessionID,
+                  messageID: req.params.messageID,
+                  message: "message not found",
+                },
+                { status: 404 },
+              )
+        }),
       },
       "/api/session/:sessionID/prompt": {
         POST: body(PromptBody, async (req, input) => {
