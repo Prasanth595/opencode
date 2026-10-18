@@ -31,6 +31,34 @@ export function parseReleaseVersion(input: string) {
   }
 }
 
+export function isNewerRelease(candidate: string, reference: string): boolean {
+  const a = parseReleaseVersion(candidate)
+  const b = parseReleaseVersion(reference)
+  if (!a || !b) return false
+  const ac = a.core.split(".").map(Number)
+  const bc = b.core.split(".").map(Number)
+  for (let i = 0; i < 3; i++) {
+    if (ac[i] !== bc[i]) return ac[i] > bc[i]
+  }
+  // Same core: a full release outranks any prerelease (semver 11.3).
+  if (a.prerelease.length === 0 || b.prerelease.length === 0) return a.prerelease.length !== 0 ? false : b.prerelease.length !== 0
+  for (let i = 0; i < Math.max(a.prerelease.length, b.prerelease.length); i++) {
+    const x = a.prerelease[i]
+    const y = b.prerelease[i]
+    if (x === undefined) return false
+    if (y === undefined) return true
+    const xn = /^[0-9]+$/.test(x)
+    const yn = /^[0-9]+$/.test(y)
+    if (xn && yn) {
+      if (Number(x) !== Number(y)) return Number(x) > Number(y)
+      continue
+    }
+    if (xn !== yn) return !xn
+    if (x !== y) return x > y
+  }
+  return false
+}
+
 function sameRelease(current: NonNullable<ReturnType<typeof parseReleaseVersion>>, latest: typeof current) {
   if (current.core !== latest.core || current.prerelease.length !== latest.prerelease.length) return false
   return current.prerelease.every((identifier, index) => {

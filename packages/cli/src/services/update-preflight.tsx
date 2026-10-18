@@ -4,6 +4,7 @@
 import { createCliRenderer, RGBA, TextAttributes, type CliRenderer } from "@opentui/core"
 import { render, useTerminalDimensions } from "@opentui/solid"
 import { OPENCODE_VERSION } from "../version"
+import { isNewerRelease } from "./updater-action"
 import { registerOpencodeSpinner } from "@opencode/tui/component/register-spinner"
 import { SPINNER_FRAMES } from "@opencode/tui/component/spinner"
 import { go } from "@opencode/tui/logo"
@@ -323,10 +324,11 @@ function UpdateFooter(props: {
   const [pulse, setPulse] = createSignal(0)
   const headerFade = createFade()
   const statusSweep = createSweep()
+  const downgrade = () => (props.from ? isNewerRelease(props.from, OPENCODE_VERSION) : false)
   const runningHeader = () =>
     phrase(
       ["OpenCode", colors.muted, true],
-      ["is updating", colors.muted],
+      [downgrade() ? "is downgrading" : "is updating", colors.muted],
       ...(props.from
         ? ([
             ["from", colors.muted],
@@ -338,7 +340,7 @@ function UpdateFooter(props: {
     )
   const completedHeader = phrase(
     ["OpenCode", colors.muted, true],
-    ["updated to", colors.muted],
+    [downgrade() ? "downgraded to" : "updated to", colors.muted],
     [OPENCODE_VERSION, colors.accent],
   )
   const pausedHeader = phrase(["OpenCode", colors.muted, true], ["update paused", colors.muted])
