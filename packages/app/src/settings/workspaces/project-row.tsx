@@ -54,7 +54,7 @@ export function SettingsProjectRow(props: {
 
     setStore("editor", "saving", true)
     const context = global.ensureServerCtx(props.server)
-    const value = name === getFilename(props.project.worktree) ? "" : name
+    const value = name === (props.project.repository || getFilename(props.project.worktree)) ? "" : name
 
     const saved = await (props.project.id && props.project.id !== "global"
       ? context.sdk.api.project

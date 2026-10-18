@@ -2,12 +2,7 @@ import type { SessionInfo } from "@opencode/client/promise"
 import { Icon } from "@opencode/ui/icon"
 import { IconButton } from "@opencode/ui/icon-button"
 import { Menu } from "@opencode/ui/menu"
-import {
-  displayName,
-  getProjectAvatarSource,
-  getProjectAvatarVariant,
-  ProjectAvatar,
-} from "@opencode/ui/project-avatar"
+import { displayName, getProjectAvatarVariant, ProjectAvatar } from "@opencode/ui/project-avatar"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useNavigate } from "@solidjs/router"
@@ -28,6 +23,7 @@ import { showToast } from "@/shell/notifications/toast"
 import { sessionTitle } from "./title"
 import { SessionWorkingIndicator } from "./header/session-working-indicator"
 import { CollapsedSidebarToggleSpace } from "@/shell/sidebar-toggle"
+import { projectAvatarSource } from "@/runtime/server/project-icons"
 import "./session-identity-header.css"
 
 export function SessionTitleHeader(props: ParentProps) {
@@ -142,8 +138,8 @@ export function SessionProjectMenu(props: {
                   class="shrink-0"
                   aria-hidden="true"
                   fallback={projectName()}
-                  src={getProjectAvatarSource(props.project?.id, props.project?.icon)}
-                  variant={getProjectAvatarVariant(props.project?.icon?.color)}
+                  src={projectAvatarSource(props.project?.id, props.project?.icon)}
+                  variant={getProjectAvatarVariant(props.project?.icon?.color, props.project?.id)}
                 />
                 <bdi
                   ref={(element) =>

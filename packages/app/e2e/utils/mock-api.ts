@@ -164,6 +164,7 @@ const Group = HttpApiGroup.make("mock")
   )
   .add(HttpApiEndpoint.get("mcpResource", "/api/mcp/resource", { success: Json }))
   .add(HttpApiEndpoint.get("projectList", "/api/project", { success: Json }))
+  .add(HttpApiEndpoint.get("projectIcons", "/api/project/icons", { success: Json }))
   .add(
     HttpApiEndpoint.patch("projectUpdate", "/api/project/:projectID", {
       params: { projectID: Schema.String },

@@ -7,12 +7,7 @@ import { AutoScroller, Feedback, PointerActivationConstraints } from "@dnd-kit/d
 import { RestrictToVerticalAxis } from "@dnd-kit/abstract/modifiers"
 import { RestrictToElement } from "@dnd-kit/dom/modifiers"
 import { ScrollView } from "@opencode/ui/scroll-view"
-import {
-  displayName,
-  getProjectAvatarSource,
-  getProjectAvatarVariant,
-  ProjectAvatar,
-} from "@opencode/ui/project-avatar"
+import { displayName, getProjectAvatarVariant, ProjectAvatar } from "@opencode/ui/project-avatar"
 import { Icon } from "@opencode/ui/icon"
 import { IconButton } from "@opencode/ui/icon-button"
 import { Button } from "@opencode/ui/button"
@@ -28,6 +23,7 @@ import { ServerHealthIndicator } from "@/servers/registry/row"
 import { type ServerHealth } from "@/runtime/server/health"
 import { fileManagerApp } from "@/home/projects/file-manager"
 import { CollapsedSidebarToggleSpace } from "@/shell/sidebar-toggle"
+import { projectAvatarSource } from "@/runtime/server/project-icons"
 import "./view.css"
 
 const HOME_PROJECT_NAV_LABEL = "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
@@ -843,8 +839,8 @@ function HomeProjectAvatar(props: { project: LocalProject; outline?: boolean }) 
   return (
     <ProjectAvatar
       fallback={name()}
-      src={props.outline ? undefined : getProjectAvatarSource(props.project.id, props.project.icon)}
-      variant={props.outline ? "outline" : getProjectAvatarVariant(props.project.icon?.color)}
+      src={props.outline ? undefined : projectAvatarSource(props.project.id, props.project.icon)}
+      variant={props.outline ? "outline" : getProjectAvatarVariant(props.project.icon?.color, props.project.id)}
     />
   )
 }

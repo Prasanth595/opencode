@@ -234,8 +234,6 @@ export type McpResourceTemplate = {
 
 export type ProjectVcs = string
 
-export type ProjectIcon = { url?: string; override?: string; color?: string }
-
 export type ProjectCommands = { start?: string }
 
 export type ProjectTime = { created: number; updated: number; active: number; archived?: number }
@@ -399,6 +397,10 @@ export type SessionMessageCompactionRunning = {
   summary: string
   recent: string
 }
+
+export type ProjectDiscoveredIcon = { url: string; path?: RelativePath }
+
+export type ProjectIconCandidate = { path: RelativePath; url: string }
 
 export type FileSystemEntry = { path: RelativePath; type: "file" | "directory" }
 
@@ -708,17 +710,6 @@ export type McpServer = {
 
 export type McpResourceCatalog = { resources: Array<McpResource>; templates: Array<McpResourceTemplate> }
 
-export type Project = {
-  id: ProjectID
-  canonical: AbsolutePath
-  vcs?: ProjectVcs
-  name?: string
-  icon?: ProjectIcon
-  commands?: ProjectCommands
-  time: ProjectTime
-  sandboxes: Array<string>
-}
-
 export type PermissionRequest = {
   id: PermissionID
   sessionID: SessionID
@@ -917,6 +908,8 @@ export type ModelVariant = {
 }
 
 export type PermissionRuleset = Array<PermissionRule>
+
+export type ProjectIcon = { url?: string; override?: string; color?: string; discovered?: ProjectDiscoveredIcon }
 
 export type SessionMessageUser = {
   id: SessionMessageID
@@ -1597,24 +1590,6 @@ export type PluginUpdated = {
   data: {}
 }
 
-export type ProjectUpdated = {
-  id: EventID
-  created: number
-  metadata?: { [x: string]: any }
-  type: "project.updated"
-  location?: LocationRef
-  data: {
-    id: ProjectID
-    canonical: AbsolutePath
-    vcs?: ProjectVcs
-    name?: string
-    icon?: ProjectIcon
-    commands?: ProjectCommands
-    time: ProjectTime
-    sandboxes: Array<string>
-  }
-}
-
 export type WorktreeUpdated = {
   id: EventID
   created: number
@@ -2162,6 +2137,7 @@ export type ConfigEntry =
         share?: "manual" | "auto" | "disabled"
         enterprise?: { url?: string }
         username?: string
+        icon?: string
         permissions?: PermissionRuleset
         policies?: Array<{
           action: "provider.use" | "tool.use" | "integration.use"
@@ -2328,6 +2304,37 @@ export type ConfigEntry =
       }
     }
   | { type: "directory"; path: AbsolutePath }
+
+export type Project = {
+  id: ProjectID
+  canonical: AbsolutePath
+  vcs?: ProjectVcs
+  name?: string
+  repository?: string
+  icon?: ProjectIcon
+  commands?: ProjectCommands
+  time: ProjectTime
+  sandboxes: Array<string>
+}
+
+export type ProjectUpdated = {
+  id: EventID
+  created: number
+  metadata?: { [x: string]: any }
+  type: "project.updated"
+  location?: LocationRef
+  data: {
+    id: ProjectID
+    canonical: AbsolutePath
+    vcs?: ProjectVcs
+    name?: string
+    repository?: string
+    icon?: ProjectIcon
+    commands?: ProjectCommands
+    time: ProjectTime
+    sandboxes: Array<string>
+  }
+}
 
 export type SessionInboxUser = {
   id: SessionMessageID
@@ -2839,6 +2846,10 @@ export type ProjectNotFoundError = {
 export const isProjectNotFoundError = (value: unknown): value is ProjectNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ProjectNotFoundError"
 
+export type FileNotFoundError = { readonly _tag: "FileNotFoundError"; readonly path: string; readonly message: string }
+export const isFileNotFoundError = (value: unknown): value is FileNotFoundError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "FileNotFoundError"
+
 export type PermissionNotFoundError = {
   readonly _tag: "PermissionNotFoundError"
   readonly requestID: string
@@ -2846,10 +2857,6 @@ export type PermissionNotFoundError = {
 }
 export const isPermissionNotFoundError = (value: unknown): value is PermissionNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "PermissionNotFoundError"
-
-export type FileNotFoundError = { readonly _tag: "FileNotFoundError"; readonly path: string; readonly message: string }
-export const isFileNotFoundError = (value: unknown): value is FileNotFoundError =>
-  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "FileNotFoundError"
 
 export type RpcError = {
   readonly _tag: "RpcError"
@@ -6166,6 +6173,19 @@ export type CredentialRemoveOutput = void
 export type ProjectListInput = { readonly archived?: { readonly archived?: boolean | undefined }["archived"] }
 
 export type ProjectListOutput = Array<Project>
+
+export type ProjectIconsInput = {
+  readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
+}
+
+export type ProjectIconsOutput = Array<ProjectIconCandidate>
+
+export type ProjectIconInput = {
+  readonly projectID: { readonly projectID: string }["projectID"]
+  readonly v?: { readonly v?: string | undefined }["v"]
+}
+
+export type ProjectIconOutput = globalThis.Uint8Array
 
 export type ProjectUpdateInput = {
   readonly projectID: { readonly projectID: string }["projectID"]

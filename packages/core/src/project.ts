@@ -1,20 +1,22 @@
 export * as Project from "./project.js"
 
-import { Context, Duration, Effect, Layer, Schedule, Schema } from "effect"
+import { Context, Duration, Effect, Layer, Schedule, Schema, Scope } from "effect"
 import { ChildProcess } from "effect/process"
 import { and, asc, desc, eq, gte, isNotNull, isNull, lt, lte, ne, sql } from "drizzle-orm"
 import path from "path"
-import { AbsolutePath } from "./schema.js"
+import { AbsolutePath, RelativePath } from "./schema.js"
 import { Bus } from "./bus.js"
 import { Database } from "./database/database.js"
 import { Worktree } from "@opencode/schema/worktree"
+import { iconUrl, type IconCandidate } from "@opencode/schema/project"
 import { FSUtil } from "@opencode/util/fs-util"
 import { Git } from "./git.js"
 import { AppProcess } from "@opencode/util/process"
 import { makeGlobalNode } from "@opencode/util/effect/app-node"
 import { Hash } from "@opencode/util/hash"
 import { ProjectSchema } from "./project/schema.js"
-import { ProjectTable, upsertProject } from "./project/sql.js"
+import { ProjectIcon } from "./project/icon.js"
+import { type DiscoveredIcon, ProjectTable, upsertProject } from "./project/sql.js"
 import { WorktreeTable } from "./worktree/sql.js"
 
 export const ID = ProjectSchema.ID
@@ -43,6 +45,8 @@ export interface Resolved {
   // This checkout's main directory; the stored project canonical may be another clone.
   readonly canonical: AbsolutePath
   readonly vcs?: Vcs
+  /** Repository name from the git origin remote. */
+  readonly repository?: string
 }
 
 // Keep this filesystem-only; permission checks use it and should not execute VCS commands.
@@ -59,6 +63,37 @@ export const root = Effect.fn("Project.root")(function* (
 
 const ACTIVATE_INTERVAL = 60_000
 const SWEEP_INTERVAL = Duration.hours(1)
+const ICON_INTERVAL = 10 * 60_000
+const ICON_CANDIDATES = 12
+
+/** Last path segment of a git remote, such as `team-board` for `git@github.com:kitlangton/team-board.git`. */
+export function repositoryName(origin: string) {
+  return remoteKey(origin)?.split("/").at(-1)
+}
+
+// Normalizes a git remote to `host/path` so SSH and HTTPS clones of one repository share an identity.
+function remoteKey(input: string) {
+  const value = input.trim()
+  if (!value) return undefined
+
+  const parsed = URL.parse(value)
+  if (parsed) {
+    if (parsed.protocol === "file:") return undefined
+    return remoteParts(parsed.hostname, parsed.pathname)
+  }
+  const scp = value.match(/^([^@/:]+@)?([^/:]+):(.+)$/)
+  if (scp) return remoteParts(scp[2], scp[3])
+  return undefined
+}
+
+function remoteParts(host: string, name: string) {
+  const pathname = name
+    .replace(/^\/+/, "")
+    .replace(/\.git\/?$/, "")
+    .replace(/\/+$/, "")
+  if (!host || !pathname) return undefined
+  return `${host.toLowerCase()}/${pathname}`
+}
 
 export interface ListInput {
   /** Includes archived Projects when true. */
@@ -67,6 +102,12 @@ export interface ListInput {
 
 export interface Interface {
   readonly list: (input?: ListInput) => Effect.Effect<ReadonlyArray<Info>>
+  /** Ranked icon candidates in a directory, as data URLs, for choosing an override. */
+  readonly icons: (directory: AbsolutePath) => Effect.Effect<ReadonlyArray<IconCandidate>>
+  /** The discovered icon file of a Project, or nothing when it has none or the icon is a URL. */
+  readonly icon: (projectID: ID) => Effect.Effect<ProjectIcon.Image | undefined, NotFoundError>
+  /** Rediscovers the automatic icon of every unarchived Project. */
+  readonly refreshIcons: () => Effect.Effect<void>
   readonly update: (input: UpdateInput) => Effect.Effect<Info, NotFoundError>
   /** Records Project activity for recency ordering, at most once per minute per Project. */
   readonly activate: (projectID: ID) => Effect.Effect<void>
@@ -79,12 +120,18 @@ export interface Interface {
 export class Service extends Context.Service<Service, Interface>()("@opencode/Project") {}
 
 function fromRow(row: typeof ProjectTable.$inferSelect): Info {
+  const discovered = row.icon_discovered ?? undefined
   const icon =
-    row.icon_url || row.icon_url_override || row.icon_color
+    row.icon_url || row.icon_url_override || row.icon_color || discovered
       ? {
           url: row.icon_url ?? undefined,
           override: row.icon_url_override ?? undefined,
           color: row.icon_color ?? undefined,
+          discovered: !discovered
+            ? undefined
+            : "url" in discovered
+              ? { url: discovered.url }
+              : { url: iconUrl(row.id, discovered.hash), path: RelativePath.make(discovered.path) },
         }
       : undefined
   return {
@@ -92,6 +139,7 @@ function fromRow(row: typeof ProjectTable.$inferSelect): Info {
     canonical: row.worktree,
     vcs: row.vcs ?? undefined,
     name: row.name ?? undefined,
+    repository: row.repository ?? undefined,
     icon,
     commands: row.commands ?? undefined,
     time: {
@@ -112,11 +160,12 @@ const layer = Layer.effect(
     const proc = yield* AppProcess.Service
     const bus = yield* Bus.Service
     const db = (yield* Database.Service).db
+    const scope = yield* Scope.Scope
 
     const announcing = new Set<string>()
     const persist = Effect.fnUntraced(function* (project: Resolved) {
       const previous = yield* db
-        .select({ canonical: ProjectTable.worktree })
+        .select({ canonical: ProjectTable.worktree, repository: ProjectTable.repository })
         .from(ProjectTable)
         .where(eq(ProjectTable.id, project.id))
         .get()
@@ -129,6 +178,18 @@ const layer = Layer.effect(
         .returning()
         .get()
         .pipe(Effect.orDie)
+      // Only git resolution knows the remote; a removed origin clears the stored name. New rows insert it.
+      const repository = project.vcs?.type === "git" ? (project.repository ?? null) : undefined
+      const named =
+        previous && repository !== undefined && previous.repository !== repository
+          ? yield* db
+              .update(ProjectTable)
+              .set({ repository, time_updated: sql`${ProjectTable.time_updated}` })
+              .where(eq(ProjectTable.id, project.id))
+              .returning()
+              .get()
+              .pipe(Effect.orDie)
+          : undefined
       // Clones share a project ID; only replace a canonical directory that is gone.
       const replaced =
         previous &&
@@ -142,7 +203,7 @@ const layer = Layer.effect(
               .get()
               .pipe(Effect.orDie)
           : undefined
-      const changed = replaced ?? unarchived
+      const changed = replaced ?? named ?? unarchived
       if (changed) yield* bus.publish(ProjectSchema.Event.Updated, fromRow(changed))
       if (!project.vcs) return project
       const directories: Array<{ projectID: ID; directory: AbsolutePath; strategy?: string }> = [
@@ -229,6 +290,111 @@ const layer = Layer.effect(
       return rows.map(fromRow)
     })
 
+    const icons = Effect.fn("Project.icons")(function* (directory: AbsolutePath) {
+      const candidates = yield* ProjectIcon.discover(fs, directory)
+      const images = yield* Effect.forEach(
+        candidates.flatMap((candidate) => (candidate.type === "file" ? [candidate] : [])).slice(0, ICON_CANDIDATES),
+        (candidate) =>
+          ProjectIcon.read(fs, candidate.file).pipe(
+            Effect.map((image) =>
+              image
+                ? [
+                    {
+                      path: RelativePath.make(candidate.path),
+                      url: `data:${image.type};base64,${Buffer.from(image.bytes).toString("base64")}`,
+                    },
+                  ]
+                : [],
+            ),
+          ),
+      )
+      return images.flat()
+    })
+
+    // Background discovery keeps the best candidate per Project; user overrides live in other columns.
+    // The stored canonical directory is searched first, then `extra` checkouts when it has no icon.
+    const refreshIcon = Effect.fn("Project.refreshIcon")(function* (projectID: ID, extra: readonly AbsolutePath[]) {
+      const row = yield* db
+        .select({ canonical: ProjectTable.worktree, discovered: ProjectTable.icon_discovered })
+        .from(ProjectTable)
+        .where(eq(ProjectTable.id, projectID))
+        .get()
+        .pipe(Effect.orDie)
+      if (!row) return
+      const best = yield* discoverBest([row.canonical, ...extra])
+      const image = best?.type === "file" ? yield* ProjectIcon.read(fs, best.file) : undefined
+      const next: DiscoveredIcon | null =
+        best?.type === "url"
+          ? { url: best.url }
+          : best && image
+            ? { file: best.file, path: best.path, hash: image.hash }
+            : null
+      if (JSON.stringify(row.discovered) === JSON.stringify(next)) return
+      const updated = yield* db
+        .update(ProjectTable)
+        .set({ icon_discovered: next, time_updated: sql`${ProjectTable.time_updated}` })
+        .where(eq(ProjectTable.id, projectID))
+        .returning()
+        .get()
+        .pipe(Effect.orDie)
+      if (updated) yield* bus.publish(ProjectSchema.Event.Updated, fromRow(updated))
+    })
+
+    // Later roots are searched only when earlier ones have no icon.
+    const discoverBest = Effect.fnUntraced(function* (roots: readonly AbsolutePath[]) {
+      for (const root of new Set(roots)) {
+        const best = (yield* ProjectIcon.discover(fs, root))[0]
+        if (best) return best
+      }
+    })
+
+    const iconChecked = new Map<ID, number>()
+    const scheduleIcon = (projectID: ID, extra: readonly AbsolutePath[] = []) =>
+      Effect.suspend(() => {
+        const now = Date.now()
+        if (projectID === ID.global || now - (iconChecked.get(projectID) ?? 0) < ICON_INTERVAL) return Effect.void
+        iconChecked.set(projectID, now)
+        return refreshIcon(projectID, extra).pipe(
+          Effect.ignoreCause({ log: "Warn", message: "Project icon discovery failed" }),
+          Effect.forkIn(scope),
+          Effect.asVoid,
+        )
+      })
+
+    const refreshIcons = Effect.fn("Project.refreshIcons")(function* () {
+      const projects = yield* db
+        .select({ id: ProjectTable.id })
+        .from(ProjectTable)
+        .where(and(isNull(ProjectTable.time_archived), ne(ProjectTable.id, ID.global)))
+        .all()
+        .pipe(Effect.orDie)
+      yield* Effect.forEach(
+        projects,
+        (project) => {
+          iconChecked.set(project.id, Date.now())
+          return refreshIcon(project.id, []).pipe(
+            Effect.ignoreCause({ log: "Warn", message: "Project icon discovery failed" }),
+          )
+        },
+        { concurrency: 2, discard: true },
+      )
+    })
+
+    const icon = Effect.fn("Project.icon")(function* (projectID: ID) {
+      const row = yield* db
+        .select({ discovered: ProjectTable.icon_discovered })
+        .from(ProjectTable)
+        .where(eq(ProjectTable.id, projectID))
+        .get()
+        .pipe(Effect.orDie)
+      if (!row) return yield* new NotFoundError({ projectID })
+      if (!row.discovered || !("file" in row.discovered)) return undefined
+      const image = yield* ProjectIcon.read(fs, row.discovered.file)
+      // A changed or missing file means the stored choice is stale.
+      if (image?.hash !== row.discovered.hash) yield* scheduleIcon(projectID)
+      return image
+    })
+
     const update = Effect.fn("Project.update")(function* (input: UpdateInput) {
       const row = yield* db
         .update(ProjectTable)
@@ -279,35 +445,9 @@ const layer = Layer.effect(
       )
     })
 
-    const remote = Effect.fnUntraced(function* (repo: Git.Repository) {
-      const origin = yield* git.remote.get(repo)
-      if (!origin) return undefined
-      const normalized = url(origin)
-      if (!normalized) return undefined
-      return ID.make(Hash.fast(`git-remote:${normalized}`))
-    })
-
-    function url(input: string) {
-      const value = input.trim()
-      if (!value) return undefined
-
-      const parsed = URL.parse(value)
-      if (parsed) {
-        if (parsed.protocol === "file:") return undefined
-        return parts(parsed.hostname, parsed.pathname)
-      }
-      const scp = value.match(/^([^@/:]+@)?([^/:]+):(.+)$/)
-      if (scp) return parts(scp[2], scp[3])
-      return undefined
-    }
-
-    function parts(host: string, name: string) {
-      const pathname = name
-        .replace(/^\/+/, "")
-        .replace(/\.git\/?$/, "")
-        .replace(/\/+$/, "")
-      if (!host || !pathname) return undefined
-      return `${host.toLowerCase()}/${pathname}`
+    function remote(origin: string | undefined) {
+      const key = origin ? remoteKey(origin) : undefined
+      return key ? ID.make(Hash.fast(`git-remote:${key}`)) : undefined
     }
 
     const rootCommit = Effect.fnUntraced(function* (repo: Git.Repository) {
@@ -351,6 +491,12 @@ const layer = Layer.effect(
       }
     })
 
+    const record = Effect.fnUntraced(function* (project: Resolved) {
+      const persisted = yield* persist(project)
+      yield* scheduleIcon(project.id, [project.canonical, project.directory])
+      return persisted
+    })
+
     const resolve = Effect.fn("Project.resolve")(function* (input: AbsolutePath) {
       const directory = AbsolutePath.make(yield* fs.resolve(input))
       const native = yield* fs.up({ targets: [".git", ".hg"], start: directory, mode: "first" }).pipe(
@@ -363,7 +509,8 @@ const layer = Layer.effect(
           : undefined
       if (repo) {
         const previous = yield* cached(repo.commonDirectory)
-        const id = (yield* remote(repo)) ?? previous ?? (yield* rootCommit(repo))
+        const origin = yield* git.remote.get(repo)
+        const id = remote(origin) ?? previous ?? (yield* rootCommit(repo))
         const canonical =
           repo.gitDirectory === repo.commonDirectory
             ? repo.worktree
@@ -371,24 +518,25 @@ const layer = Layer.effect(
                 Effect.map((items) => items.find((item) => item.kind === "main")?.directory ?? repo.worktree),
                 Effect.orElseSucceed(() => repo.worktree),
               )
-        return yield* persist({
+        return yield* record({
           previous,
           id: id ?? ID.global,
           directory: repo.worktree,
           canonical,
           vcs: { type: "git" as const, store: repo.commonDirectory },
+          repository: origin ? repositoryName(origin) : undefined,
         })
       }
 
       const hg = native && path.basename(native) === ".hg" ? yield* hgDiscover(AbsolutePath.make(native)) : undefined
       if (hg) {
-        return yield* persist({
+        return yield* record({
           ...hg,
           canonical: hg.directory,
         })
       }
 
-      return yield* persist({
+      return yield* record({
         id: ID.make(Hash.fast(`directory:${directory}`)),
         directory,
         canonical: directory,
@@ -442,7 +590,7 @@ const layer = Layer.effect(
       )
     })
 
-    return Service.of({ list, update, activate, resolve, sweep })
+    return Service.of({ list, icons, icon, refreshIcons, update, activate, resolve, sweep })
   }),
 )
 
@@ -450,6 +598,19 @@ export const node = makeGlobalNode({
   service: Service,
   layer: layer,
   deps: [Bus.node, Database.node, FSUtil.node, Git.node, AppProcess.node],
+})
+
+export const iconNode = makeGlobalNode({
+  name: "project-icon-refresh",
+  layer: Layer.effectDiscard(
+    Effect.gen(function* () {
+      const project = yield* Service
+      yield* project
+        .refreshIcons()
+        .pipe(Effect.repeat(Schedule.spaced(SWEEP_INTERVAL)), Effect.delay(Duration.seconds(5)), Effect.forkScoped)
+    }),
+  ),
+  deps: [node],
 })
 
 export const sweepNode = makeGlobalNode({

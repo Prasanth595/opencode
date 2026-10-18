@@ -66,6 +66,8 @@ export interface MockServerConfig {
   project: unknown
   // Replaces the `/api/project` inventory, which defaults to `[project]`.
   projects?: Resolvable<unknown[]>
+  // Icon candidates for project settings (`/api/project/icons`), which default to none.
+  projectIcons?: Resolvable<unknown[]>
   sessions: MockSession[]
   pageMessages: (
     sessionId: string,
@@ -960,6 +962,7 @@ function mockHandlers(
 
             return [{ ...projectFields(config), canonical: seed?.canonical ?? seed?.worktree ?? config.directory }]
           }),
+        projectIcons: () => Effect.sync(() => resolve(config.projectIcons ?? [])),
         projectUpdate: (ctx) =>
           Effect.succeed({
             ...projectFields(config),

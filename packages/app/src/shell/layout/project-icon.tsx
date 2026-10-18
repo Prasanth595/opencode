@@ -1,12 +1,12 @@
 import {
   displayName,
-  getProjectAvatarSource,
   getProjectAvatarVariant,
   ProjectAvatar,
   type ProjectAvatarProps,
 } from "@opencode/ui/project-avatar"
 import { splitProps } from "solid-js"
 import type { LocalProject } from "@/shell/state/layout"
+import { projectAvatarSource } from "@/runtime/server/project-icons"
 
 type ProjectIconProps = Omit<ProjectAvatarProps, "fallback" | "src" | "variant"> & {
   project: Pick<LocalProject, "id" | "name" | "worktree" | "icon">
@@ -22,8 +22,8 @@ export function ProjectIcon(props: ProjectIconProps) {
     <ProjectAvatar
       {...rest}
       fallback={local.fallback ?? displayName(local.project)}
-      src={getProjectAvatarSource(local.project.id, icon())}
-      variant={getProjectAvatarVariant(icon()?.color)}
+      src={projectAvatarSource(local.project.id, icon())}
+      variant={getProjectAvatarVariant(icon()?.color, local.project.id)}
     />
   )
 }

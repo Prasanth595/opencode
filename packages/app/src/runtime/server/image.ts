@@ -22,7 +22,7 @@ export async function readLocalImage(
   const drive = /^[a-z]:\//i.test(path)
 
   if (/^[\\/]{2}/.test(path) || (!drive && /^[a-z][a-z\d+.-]*:/i.test(path))) return
-  const type = types.get(path.match(/\.([^./]+)$/)?.[1]?.toLowerCase() ?? "")
+  const type = imageType(path)
 
   if (!type) return
   const absolute = drive || path.startsWith("/")
@@ -37,4 +37,8 @@ export async function readLocalImage(
   )
 
   return new Blob([new Uint8Array(bytes)], { type })
+}
+
+export function imageType(path: string) {
+  return types.get(path.match(/\.([^./]+)$/)?.[1]?.toLowerCase() ?? "")
 }

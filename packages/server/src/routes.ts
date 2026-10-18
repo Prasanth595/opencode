@@ -58,6 +58,7 @@ const applicationServiceNodes = [
   Job.node,
   Project.node,
   Project.sweepNode,
+  Project.iconNode,
   Worktree.node,
   Session.node,
   Instance.node,

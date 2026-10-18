@@ -13,6 +13,7 @@ import { Menu } from "@opencode/ui/menu"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { useDialog } from "@opencode/ui/context/dialog"
 import { containsDirectory, getFilename } from "@opencode/util/path"
+import { displayName } from "@opencode/ui/project-avatar"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useServer } from "@/runtime/server/current"
 import { showToast } from "@/shell/notifications/toast"
@@ -91,11 +92,10 @@ export const SettingsWorkspaces: Component<{
   const inventory = createMemo(() => (projectQuery.isPending ? [] : (projectQuery.data ?? [])))
   const workspaces = createMemo(() => workspaceInventory(inventory()))
   const projects = createMemo(() => inventory().filter((project) => managedWorkspaceDirectories(project).length > 0))
-  const projectName = (project: Project) => project.name || getFilename(project.worktree)
 
   const projectOptions = createMemo(() => [
     { id: "all", label: language.t("settings.workspaces.filter.all") },
-    ...projects().map((project) => ({ id: project.id, label: projectName(project) })),
+    ...projects().map((project) => ({ id: project.id, label: displayName(project) })),
   ])
 
   const selectedProject = createMemo(() =>
@@ -175,7 +175,7 @@ export const SettingsWorkspaces: Component<{
     if (!count && sessionQuery.isError) return language.t("common.requestFailed")
 
     if (selectedProject() !== "all") return language.plural("settings.workspaces.sessions.filtered", count, { count })
-    const project = projectName(workspace.project)
+    const project = displayName(workspace.project)
 
     const label = language.plural("settings.workspaces.sessions", count, {
       count,

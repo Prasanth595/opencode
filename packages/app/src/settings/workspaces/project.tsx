@@ -45,6 +45,7 @@ export const SettingsProjectGeneral: Component<{
                 color: model.store.color,
                 url: props.project.icon?.url,
                 override: model.store.iconOverride,
+                discovered: props.project.icon?.discovered,
               }}
               class="!size-8 shrink-0 [&_[data-slot=project-avatar-surface]]:!rounded-[6px] [&_[data-slot=project-avatar-surface]]:!text-[16px]"
             />
@@ -76,7 +77,7 @@ export const SettingsProjectGeneral: Component<{
                 type="text"
                 appearance="base"
                 value={model.store.name}
-                placeholder={model.folderName()}
+                placeholder={model.automaticName()}
                 aria-label={language.t("project.settings.name.title")}
                 onInput={(event) => model.setStore("name", event.currentTarget.value)}
                 onBlur={model.saveName}
@@ -108,6 +109,7 @@ export const SettingsProjectGeneral: Component<{
                   color: model.store.color,
                   url: props.project.icon?.url,
                   override: model.store.iconOverride,
+                  discovered: props.project.icon?.discovered,
                 }}
                 class="!size-8 [&_[data-slot=project-avatar-surface]]:!rounded-[6px] [&_[data-slot=project-avatar-surface]]:!text-[16px]"
               />
@@ -124,6 +126,55 @@ export const SettingsProjectGeneral: Component<{
             />
           </SettingsRow>
 
+          <Show when={model.icons.data?.length}>
+            <SettingsRow
+              title={language.t("project.settings.icon.detected.title")}
+              description={language.t("project.settings.icon.detected.description")}
+            >
+              <div class="project-settings-colors" data-action="settings-project-icon-candidates">
+                <button
+                  type="button"
+                  title={language.t("project.settings.icon.automatic")}
+                  aria-label={language.t("project.settings.icon.automatic")}
+                  aria-pressed={!model.store.iconOverride && !model.store.color}
+                  class="project-settings-color"
+                  classList={{ "project-settings-color--selected": !model.store.iconOverride && !model.store.color }}
+                  onClick={() => model.selectAutomaticIcon()}
+                >
+                  <ProjectIcon
+                    project={props.project}
+                    fallback={model.store.name || model.defaultName()}
+                    icon={{ url: props.project.icon?.url, discovered: props.project.icon?.discovered }}
+                    class="!size-5 [&_[data-slot=project-avatar-surface]]:!rounded-[6px]"
+                  />
+                </button>
+                <For each={model.icons.data}>
+                  {(candidate) => {
+                    const selected = () => model.store.iconOverride === candidate.url
+
+                    return (
+                      <button
+                        type="button"
+                        title={candidate.path}
+                        aria-label={language.t("dialog.project.edit.icon.select", { path: candidate.path })}
+                        aria-pressed={selected()}
+                        class="project-settings-color"
+                        classList={{ "project-settings-color--selected": selected() }}
+                        onClick={() => model.selectIcon(candidate.url)}
+                      >
+                        <ProjectAvatar
+                          fallback=""
+                          src={candidate.url}
+                          class="!size-5 [&_[data-slot=project-avatar-surface]]:!rounded-[6px]"
+                        />
+                      </button>
+                    )
+                  }}
+                </For>
+              </div>
+            </SettingsRow>
+          </Show>
+
           <Show when={!model.store.iconOverride}>
             <SettingsRow
               title={language.t("dialog.project.edit.color")}
@@ -132,7 +183,7 @@ export const SettingsProjectGeneral: Component<{
               <div class="project-settings-colors" data-action="settings-project-color">
                 <For each={PROJECT_AVATAR_VARIANTS}>
                   {(color) => {
-                    const selected = () => getProjectAvatarVariant(model.store.color) === color
+                    const selected = () => !!model.store.color && getProjectAvatarVariant(model.store.color) === color
 
                     return (
                       <button

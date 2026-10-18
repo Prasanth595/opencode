@@ -7,6 +7,11 @@ import type { AbsolutePath } from "../schema.js"
 import { ProjectSchema } from "./schema.js"
 
 type DatabaseClient = EffectDrizzleSqlite.EffectSQLiteDatabase
+
+/** The automatic icon: a project file served by hash, or a URL from project config. */
+export type DiscoveredIcon =
+  | { readonly file: AbsolutePath; readonly path: string; readonly hash: string }
+  | { readonly url: string }
 type Transaction = Parameters<Parameters<DatabaseClient["transaction"]>[0]>[0]
 
 export const ProjectTable = sqliteTable("project", {
@@ -14,9 +19,11 @@ export const ProjectTable = sqliteTable("project", {
   worktree: absoluteColumn().notNull(),
   vcs: text().$type<ProjectSchema.Vcs["type"]>(),
   name: text(),
+  repository: text(),
   icon_url: text(),
   icon_url_override: text(),
   icon_color: text(),
+  icon_discovered: text({ mode: "json" }).$type<DiscoveredIcon>(),
   ...Timestamps,
   time_initialized: integer(),
   time_active: integer()
@@ -48,12 +55,17 @@ export const ProjectDirectoryTable = sqliteTable(
 
 export function upsertProject(
   db: DatabaseClient | Transaction,
-  project: { readonly id: ProjectSchema.ID; readonly canonical: AbsolutePath; readonly vcs?: ProjectSchema.Vcs },
+  project: {
+    readonly id: ProjectSchema.ID
+    readonly canonical: AbsolutePath
+    readonly vcs?: ProjectSchema.Vcs
+    readonly repository?: string
+  },
 ) {
   const vcs = project.vcs?.type
   return db
     .insert(ProjectTable)
-    .values({ id: project.id, worktree: project.canonical, vcs, sandboxes: [] })
+    .values({ id: project.id, worktree: project.canonical, vcs, repository: project.repository, sandboxes: [] })
     .onConflictDoUpdate({
       target: ProjectTable.id,
       set: { vcs: vcs ?? null },

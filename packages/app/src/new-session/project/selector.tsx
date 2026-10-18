@@ -11,16 +11,12 @@ import {
 import { createStore } from "solid-js/store"
 import { Menu } from "@opencode/ui/menu"
 import { Icon } from "@opencode/ui/icon"
-import {
-  displayName,
-  getProjectAvatarSource,
-  getProjectAvatarVariant,
-  ProjectAvatar,
-} from "@opencode/ui/project-avatar"
+import { displayName, getProjectAvatarVariant, ProjectAvatar } from "@opencode/ui/project-avatar"
 import { useLanguage } from "@/runtime/i18n/language"
 import { pathKey } from "@/workspaces/path-key"
 import { handleDocumentSearchKeydown } from "@/shell/commands/search-keydown"
 import { createMenuDismissController } from "@/shell/commands/menu-dismiss"
+import { projectAvatarSource } from "@/runtime/server/project-icons"
 
 export type PromptProject = {
   name?: string
@@ -542,8 +538,8 @@ function ProjectTrigger(props: ComponentProps<"button"> & { controller: PromptPr
         {(item) => (
           <ProjectAvatar
             fallback={displayName(item())}
-            src={getProjectAvatarSource(item().id, item().icon)}
-            variant={getProjectAvatarVariant(item().icon?.color)}
+            src={projectAvatarSource(item().id, item().icon)}
+            variant={getProjectAvatarVariant(item().icon?.color, item().id)}
           />
         )}
       </Show>
@@ -578,8 +574,8 @@ function ProjectItem(props: {
     >
       <ProjectAvatar
         fallback={displayName(props.project)}
-        src={getProjectAvatarSource(props.project.id, props.project.icon)}
-        variant={getProjectAvatarVariant(props.project.icon?.color)}
+        src={projectAvatarSource(props.project.id, props.project.icon)}
+        variant={getProjectAvatarVariant(props.project.icon?.color, props.project.id)}
       />
       <span class="min-w-0 truncate leading-5">{displayName(props.project)}</span>
     </Menu.RadioItem>

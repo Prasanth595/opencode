@@ -99,6 +99,9 @@ describe("node build", () => {
         acquisitions++
         return Project.Service.of({
           list: () => Effect.succeed([]),
+          icons: () => Effect.succeed([]),
+          icon: () => Effect.succeed(undefined),
+          refreshIcons: () => Effect.void,
           update: () => Effect.die("not implemented"),
           activate: () => Effect.void,
           sweep: () => Effect.void,
