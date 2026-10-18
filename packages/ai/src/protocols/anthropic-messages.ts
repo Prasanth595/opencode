@@ -6,7 +6,7 @@ import { Auth } from "../route/auth.js"
 import { Endpoint } from "../route/endpoint.js"
 import { Framing } from "../route/framing.js"
 import { Protocol } from "../route/protocol.js"
-import { Headers } from "effect/unstable/http"
+import { Headers } from "effect/http"
 import { HttpTransport } from "../route/transport/index.js"
 import {
   AIError,
@@ -25,7 +25,7 @@ import {
   type ToolDefinition,
   type ToolResultPart,
 } from "../schema/index.js"
-import { JsonObject, knownString, optionalArray, optionalNull, ProviderShared } from "./shared.js"
+import { JsonObject, knownString, optionalArray, optionalNull, ProviderShared, withUntypedFrames } from "./shared.js"
 import { classifyProviderFailure } from "../provider-error.js"
 import { effortUpdate, resolveEffortUpdates } from "../effort-updates.js"
 import * as Cache from "./utils/cache.js"
@@ -467,7 +467,7 @@ const AnthropicStreamDelta = Schema.StructWithRest(
 type AnthropicStreamDelta = Schema.Schema.Type<typeof AnthropicStreamDelta>
 const decodeAnthropicStreamDelta = Schema.decodeUnknownOption(AnthropicStreamDelta)
 
-const AnthropicEvent = Schema.StructWithRest(
+const TypedAnthropicEvent = Schema.StructWithRest(
   Schema.Struct({
     type: Schema.String,
     index: Schema.optional(Schema.Number),
@@ -490,6 +490,7 @@ const AnthropicEvent = Schema.StructWithRest(
   }),
   [JsonObject],
 )
+const AnthropicEvent = withUntypedFrames(TypedAnthropicEvent)
 type AnthropicEvent = Schema.Schema.Type<typeof AnthropicEvent>
 
 interface ParserState {

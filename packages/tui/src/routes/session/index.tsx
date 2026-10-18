@@ -23,7 +23,15 @@ import { useTuiTerminalEnvironment } from "../../context/runtime"
 import { Spinner, SPINNER_FRAMES } from "../../component/spinner"
 import { PatchDiff } from "../../component/patch-diff"
 import { useTheme, useThemes } from "../../context/theme"
-import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA, MouseEvent } from "@opentui/core"
+import {
+  BoxRenderable,
+  ScrollBoxRenderable,
+  addDefaultParsers,
+  TextAttributes,
+  RGBA,
+  MouseEvent,
+  type Renderable,
+} from "@opentui/core"
 import { Prompt, type PromptRef } from "../../component/prompt"
 import type {
   SessionMessageInfo,
@@ -78,7 +86,7 @@ import { FormPrompt } from "./form"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
 import { DialogExportResult } from "../../ui/dialog-export-result"
 import { sessionEpilogue } from "../../util/presentation"
-import { useConfig } from "../../config"
+import { useConfig, useNewDesigns } from "../../config"
 import { useClipboard } from "../../context/clipboard"
 import { nextThinkingMode, type ThinkingMode } from "../../context/thinking"
 import { getScrollAcceleration } from "../../util/scroll"
@@ -118,7 +126,7 @@ import { INLINE_TOOL_ICON_WIDTH, InlineToolRow, ReasoningPart, TextPart, toolDis
 import { defaultVerbosity, type GroupKind, type SessionEntry } from "./grouping/session"
 import { SessionGroupView } from "./group-view"
 import { useEntryAnchor } from "./anchor-view"
-import { containsAnchor, createTimelineAnchors } from "./anchors"
+import { containsAnchor, createTimelineAnchors, groupID } from "./anchors"
 import { rowsAfter, rowsBefore, rowWeight } from "./mount-budget"
 export { InlineToolRow } from "./message-parts"
 export { toolDisplay } from "./message-parts"
@@ -370,6 +378,7 @@ export function Session(props: {
     firstJump()?.()
     if (!scroll || scroll.isDestroyed) return
     scroll.verticalScrollBar.off("change", updateAwayFromBottom)
+    scroll.content.off("resize", holdAnchor)
     saveScrollAnchor(true)
   })
   const [prompt, setPrompt] = createSignal<PromptRef>()
@@ -389,6 +398,16 @@ export function Session(props: {
         continuation()
       })
     })
+  }
+
+  // Keeps a toggled disclosure's header on its viewport row. The content resize fires inside the
+  // layout pass, before rows take their screen positions, so the correction lands in the same frame.
+  // Renderable positions are still stale at that point; read the computed layout instead.
+  let held: { node: Renderable; top: number } | undefined
+  const layoutTop = (node: Renderable): number =>
+    node === scroll.content || !node.parent ? 0 : node.getLayoutNode().getComputedTop() + layoutTop(node.parent)
+  const holdAnchor = () => {
+    if (held && !held.node.isDestroyed) scroll.scrollTo(layoutTop(held.node) - held.top)
   }
 
   // Tail-first transcript mounting: only the newest rows mount when the session opens. Older rows
@@ -628,6 +647,8 @@ export function Session(props: {
     dialog.replace(() => (
       <DialogSelect
         title="Queued prompts"
+        searchInTitle
+        titlePlaceholder="Search queued prompts"
         options={queuedPrompts().map((prompt, index) => ({
           title: prompt.text,
           value: prompt.id,
@@ -670,14 +691,9 @@ export function Session(props: {
             },
           },
         ]}
-        footerHints={[{ title: "steer", label: "enter" }]}
+        footerHints={[{ title: "steer", label: "enter", group: "primary" }]}
       />
     ))
-  const unavailable = (feature: string) => {
-    toast.show({ message: `${feature} is not implemented for V2 sessions yet`, variant: "error", duration: 5000 })
-    dialog.clear()
-  }
-
   const alignMessage = (messageID: string, top: number) => {
     scroll.stickyScroll = false
     setNavigationMessage(messageID)
@@ -887,14 +903,6 @@ export function Session(props: {
   ]
 
   const baseCommands = createMemo(() => [
-    {
-      title: "Share session",
-      id: "session.share",
-      suggested: route.type === "session",
-      group: "Session",
-      slash: { name: "share" },
-      run: () => unavailable("Sharing"),
-    },
     {
       title: "Rename session",
       id: "session.rename",
@@ -1128,9 +1136,12 @@ export function Session(props: {
       title: "Copy last assistant message",
       id: "messages.copy",
       group: "Session",
+      slash: {
+        name: "copy",
+      },
       run: () => {
         const lastAssistantMessage = messagesBeforeRevert().findLast(
-          (msg): msg is SessionMessageAssistant => msg.type === "assistant",
+          (msg) => msg.type === "assistant" || (msg.type === "compaction" && msg.status === "completed" && msg.summary.trim() !== ""),
         )
         if (!lastAssistantMessage) {
           toast.show({ message: "No assistant messages found", variant: "error" })
@@ -1138,17 +1149,16 @@ export function Session(props: {
           return
         }
 
-        const textParts = lastAssistantMessage.content.filter((part) => part.type === "text")
-        if (textParts.length === 0) {
-          toast.show({ message: "No text parts found in last assistant message", variant: "error" })
-          dialog.clear()
-          return
-        }
-
-        const text = textParts
-          .map((part) => part.text)
-          .join("\n")
-          .trim()
+        const text =
+          lastAssistantMessage.type === "assistant"
+            ? lastAssistantMessage.content
+                .filter((part) => part.type === "text")
+                .map((part) => part.text)
+                .join("\n")
+                .trim()
+            : lastAssistantMessage.type === "compaction" && lastAssistantMessage.status === "completed"
+              ? lastAssistantMessage.summary.trim()
+              : ""
         if (!text) {
           toast.show({
             message: "No text content found in last assistant message",
@@ -1181,9 +1191,6 @@ export function Session(props: {
       title: "Copy session transcript",
       id: "session.copy",
       group: "Session",
-      slash: {
-        name: "copy",
-      },
       run: async () => {
         try {
           const sessionData = session()
@@ -1334,8 +1341,18 @@ export function Session(props: {
       value={{
         anchors,
         groupExpanded,
-        setGroupExpanded: (groupID, expanded) => {
-          sessionTabs.setGroupExpanded(sessionID, groupID, expanded)
+        setGroupExpanded: (id, expanded, anchor) => {
+          // A group that ends the transcript would open off screen while the reader follows the bottom.
+          const last = rows.findLast((row) => row.type !== "assistant-footer" && row.type !== "turn-usage")
+          const ending = last?.type === "group" && groupID(last, 0) === id
+          if (anchor && !(ending && !isAwayFromBottom())) {
+            const hold = { node: anchor, top: layoutTop(anchor) - scroll.scrollTop }
+            held = hold
+            afterLayout(() => {
+              if (held === hold) held = undefined
+            })
+          }
+          sessionTabs.setGroupExpanded(sessionID, id, expanded)
           afterLayout(saveScrollAnchor)
         },
         get width() {
@@ -1377,6 +1394,7 @@ export function Session(props: {
                   scroll = r
                   props.scrollRef?.(r)
                   scroll.verticalScrollBar.on("change", updateAwayFromBottom)
+                  scroll.content.on("resize", holdAnchor)
                 }}
                 viewportOptions={{
                   paddingRight: showScrollbar() ? 1 : 0,
@@ -1807,7 +1825,19 @@ function SessionMessageView(props: { message: SessionMessageInfo }) {
       <Match when={props.message.type === "compaction"}>
         <CompactionMessage message={props.message as Extract<SessionMessageInfo, { type: "compaction" }>} />
       </Match>
+      <Match when={props.message.type === "idle" ? props.message.error : undefined}>
+        {(error) => <ExecutionError error={error()} />}
+      </Match>
     </Switch>
+  )
+}
+
+function ExecutionError(props: { error: NonNullable<Extract<SessionMessageInfo, { type: "idle" }>["error"]> }) {
+  const theme = useTheme()
+  return (
+    <box paddingLeft={3}>
+      <text fg={theme.text.feedback.error.base}>Error: {errorMessage(props.error)}</text>
+    </box>
   )
 }
 
@@ -2184,6 +2214,7 @@ function ShellMessage(props: { message: Extract<SessionMessageInfo, { type: "she
 
 function UserMessage(props: { message: SessionMessageUser }) {
   const ctx = use()
+  const newDesigns = useNewDesigns()
   const data = useData()
   const local = useLocal()
   const files = createMemo(() => deduplicateVisibleImages(props.message.files ?? []))
@@ -2229,6 +2260,7 @@ function UserMessage(props: { message: SessionMessageUser }) {
               dialog.replace(() => (
                 <DialogSelect
                   title="Pending steer"
+                  renderFilter={!newDesigns()}
                   options={[
                     { title: "Move to queue", value: "queue" as const },
                     { title: "Delete", value: "cancel" as const },
