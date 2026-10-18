@@ -17,7 +17,6 @@ import {
   type RequestPermissionResponse,
   type SessionNotification,
 } from "@agentclientprotocol/sdk"
-import type { WireStream as ACPWireStream } from "@agentclientprotocol/sdk/experimental/v2"
 import { OpenCode } from "@opencode/client/effect"
 import type { OpenCodeEventEncoded } from "@opencode/protocol/groups/event"
 import type { Agent } from "@opencode/schema/agent"
@@ -428,13 +427,10 @@ export async function startWire(options: WireOptions = {}) {
   const agentToClient = new TransformStream<Uint8Array, Uint8Array>()
   const logs: Array<Pick<Logger.Options<unknown>, "message" | "cause">> = []
   const agentScope = Scope.makeUnsafe()
-  await Effect.runPromise(
+  const agentConnection = await Effect.runPromise(
     OpenCode.make({ baseUrl: server.url }).pipe(
       Effect.provide(FetchHttpClient.layer),
-      Effect.flatMap((client) => ACP.router(client)),
-      Effect.map((protocol) => {
-        protocol.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable) as unknown as ACPWireStream)
-      }),
+      Effect.flatMap((client) => ACP.connect(client, ndJsonStream(agentToClient.writable, clientToAgent.readable))),
       Scope.provide(agentScope),
       (effect) =>
         options.cancelDrainTimeout === undefined
@@ -541,6 +537,7 @@ export async function startWire(options: WireOptions = {}) {
       until(() => updates.find(predicate), description),
     async [Symbol.asyncDispose]() {
       connection.close()
+      agentConnection.close()
       await Effect.runPromise(Scope.close(agentScope, Exit.void))
       await server.stop()
     },

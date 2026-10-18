@@ -33,6 +33,43 @@ import {
 } from "./wire-fixture"
 
 describe("acp v2 wire protocol", () => {
+  test.each(["close", "cancel"] as const)(
+    "%s settles every pending prompt and interrupts after an inbox cancellation fails",
+    async (operation) => {
+      await using wire = await startV2({
+        onPrompt: () => [],
+        fetch: (request) =>
+          request.method === "DELETE" && request.path.includes("/inbox/")
+            ? new Response("temporary failure", { status: 503 })
+            : undefined,
+      })
+      await wire.clientConnection.agent.request("initialize", {
+        protocolVersion: 2,
+        info: { name: "test", version: "1" },
+      })
+      const session = await wire.clientConnection.agent.request("session/new", { cwd: "/workspace" })
+      const prompts = ["first", "second"].map((text) =>
+        wire.clientConnection.agent
+          .request("session/prompt", { sessionId: session.sessionId, prompt: [{ type: "text", text }] })
+          .catch((error: Error) => error),
+      )
+      await wire.until(() => wire.server.submissions.length === 2)
+      if (operation === "close")
+        await wire.clientConnection.agent.request("session/close", { sessionId: session.sessionId })
+      if (operation === "cancel")
+        await wire.clientConnection.agent.notify("session/cancel", { sessionId: session.sessionId })
+      expect(await Promise.all(prompts)).toEqual([
+        expect.objectContaining({ code: -32800 }),
+        expect.objectContaining({ code: -32800 }),
+      ])
+      await wire.until(() => wire.server.interrupts.length === 1)
+      expect(
+        wire.server.requests.filter((request) => request.method === "DELETE" && request.path.includes("/inbox/")),
+      ).toHaveLength(2)
+      expect(wire.logs).toContainEqual(expect.objectContaining({ message: ["ACP inbox cancellation failed"] }))
+    },
+  )
+
   test("streams compaction updates instead of dropping the v1 capability", async () => {
     await using wire = await startV2({
       onPrompt: ({ sessionID, id }) =>

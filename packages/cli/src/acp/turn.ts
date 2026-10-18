@@ -495,9 +495,32 @@ export const make = Effect.fnUntraced(function* (input: {
       return turn
     })
     return yield* setup.pipe(
-      Effect.tapError((error) => Deferred.fail(observer.ready, error)),
+      Effect.tapCause((cause) => Deferred.failCause(observer.ready, cause)),
       Effect.onError(() => Effect.sync(() => observers.delete(sessionID))),
     )
+  })
+
+  const stopObserver = Effect.fn("cli.acp.session.stopObserver")(function* (sessionID: string, observer: Observer) {
+    const id = yield* ACPClient.decodeSessionID(sessionID)
+    const ready = yield* Deferred.await(observer.ready).pipe(Effect.exit)
+    yield* FiberMap.remove(turns, sessionID)
+    if (Exit.isSuccess(ready)) yield* Deferred.succeed(ready.value.cancelled, undefined)
+    // Settle every request before making remote calls: one failed cancellation must
+    // not strand another pending acknowledgment or skip the session interruption.
+    const pending = [...observer.pending]
+    yield* Effect.forEach(pending, ([, prompt]) => Deferred.fail(prompt.accepted, RequestError.requestCancelled()), {
+      discard: true,
+    })
+    yield* Effect.forEach(
+      pending,
+      ([inboxID]) =>
+        input.client.session.inbox.cancel({ sessionID: id, inboxID }).pipe(
+          Effect.catch(ACPClient.classify),
+          Effect.catchCause((cause) => Effect.logWarning("ACP inbox cancellation failed", cause)),
+        ),
+      { discard: true },
+    )
+    yield* input.client.session.interrupt({ sessionID: id }).pipe(Effect.catch(ACPClient.classify))
   })
 
   return {
@@ -588,36 +611,14 @@ export const make = Effect.fnUntraced(function* (input: {
     cancel: Effect.fnUntraced(function* (params) {
       const observer = observers.get(params.sessionId)
       if (observer) {
-        const turn = yield* Deferred.await(observer.ready).pipe(Effect.orDie)
-        yield* FiberMap.remove(turns, params.sessionId)
-        yield* Deferred.succeed(turn.cancelled, undefined)
-        for (const [id, pending] of observer.pending) {
-          yield* input.client.session.inbox
-            .cancel({ sessionID: turn.ctx.sessionID, inboxID: id })
-            .pipe(Effect.catch(ACPClient.classify), Effect.ignore)
-          yield* Deferred.fail(pending.accepted, RequestError.requestCancelled())
-        }
-        yield* input.client.session
-          .interrupt({ sessionID: turn.ctx.sessionID })
-          .pipe(Effect.catch(ACPClient.classify), Effect.ignore)
-        return
+        return yield* stopObserver(params.sessionId, observer).pipe(Effect.ignore)
       }
       yield* FiberMap.remove(turns, params.sessionId)
     }),
     close: Effect.fn("cli.acp.turn.close")(function* (sessionID) {
       const observer = observers.get(sessionID)
       if (observer) {
-        const turn = yield* Deferred.await(observer.ready).pipe(Effect.orDie)
-        yield* FiberMap.remove(turns, sessionID)
-        yield* Deferred.succeed(turn.cancelled, undefined)
-        for (const [id, pending] of observer.pending) {
-          yield* input.client.session.inbox
-            .cancel({ sessionID: turn.ctx.sessionID, inboxID: id })
-            .pipe(Effect.catch(ACPClient.classify))
-          yield* Deferred.fail(pending.accepted, RequestError.requestCancelled())
-        }
-        yield* input.client.session.interrupt({ sessionID: turn.ctx.sessionID }).pipe(Effect.catch(ACPClient.classify))
-        return
+        return yield* stopObserver(sessionID, observer)
       }
       if (FiberMap.hasUnsafe(turns, sessionID)) return yield* FiberMap.remove(turns, sessionID)
       yield* ACPClient.decodeSessionID(sessionID).pipe(

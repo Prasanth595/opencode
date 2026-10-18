@@ -9,14 +9,13 @@ import {
   type JsonRpcId,
   type Stream,
 } from "@agentclientprotocol/sdk"
-import { agentProtocolRouter, type WireStream } from "@agentclientprotocol/sdk/experimental/v2"
+import type { WireStream } from "@agentclientprotocol/sdk/experimental/v2"
 import type { OpenCodeClient } from "@opencode/client/effect"
 import { Cause, Deferred, Effect, Ref, type Scope } from "effect"
 import { ACPCapabilities } from "./capabilities"
 import { ACPCatalog } from "./catalog"
 import { ACPClient } from "./client"
 import { ACPConnection } from "./connection"
-import { ACPAgentV2 } from "./agent-v2"
 import { ACPError } from "./error"
 import { ACPService } from "./service"
 import { ACPSessions } from "./sessions"
@@ -135,6 +134,8 @@ export const router = Effect.fnUntraced(function* (
   client: OpenCodeClient,
   options: { readonly experimentalV2?: boolean } = {},
 ) {
+  const { agentProtocolRouter } = yield* Effect.promise(() => import("@agentclientprotocol/sdk/experimental/v2"))
+  const { ACPAgentV2 } = yield* Effect.promise(() => import("./agent-v2"))
   const run = Effect.runPromiseWith(yield* Effect.context<Scope.Scope>())
   return {
     connect(stream: WireStream) {
