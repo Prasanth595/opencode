@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { NO_PROVIDER, T0, provider } from "../utils/app"
 import { openDraft, openSession } from "../utils/workspace"
+import { assistantMessage, textPart, userMessage, userText } from "../utils/timeline"
 
 test.use({ permissions: ["clipboard-read", "clipboard-write"] })
 
@@ -508,4 +509,150 @@ test("shows thinking on hover or a non-default selection while preserving keyboa
   await expect(control).toBeFocused()
   await page.keyboard.press("Tab")
   await expect(control).toHaveCSS("opacity", "0")
+})
+
+const normal = "Ask anything, / for commands, @ for context…"
+
+const prediction = "Add a regression test for empty input."
+
+async function openPredictions(page: Page, options: Pick<Parameters<typeof openSession>[1], "generate" | "seed"> = {}) {
+  const generated: { sessionID: string; prompt: string }[] = []
+  const prompts: unknown[] = []
+  const sessionID = "ses_composer_prediction"
+  const messages = [
+    userMessage([userText("Fix the empty input validation.")]),
+    assistantMessage([textPart("prt_prediction_reply", "Fixed the empty input validation.")]),
+  ]
+  const view = await openSession(page, {
+    name: "ComposerPrediction",
+    sessions: [{ id: sessionID, title: "Input validation" }],
+    sessionStatus: { [sessionID]: { type: "running" } },
+    pageMessages: () => ({ items: messages }),
+    seed: { settings: { general: { composerPredictions: true } } },
+    ...options,
+    generate: (input) => {
+      generated.push(input)
+
+      return options.generate?.(input) ?? { text: prediction }
+    },
+    onPrompt: (input) => void prompts.push(input.body),
+  })
+  let sequence = 0
+  const finish = () =>
+    view.push([
+      {
+        id: `evt_prediction_finished_${sequence++}`,
+        created: T0 + 2_000 + sequence,
+        type: "session.execution.succeeded",
+        durable: { aggregateID: sessionID, seq: sequence, version: 1 },
+        location: { directory: view.directory },
+        data: { sessionID },
+      },
+    ])
+
+  await expect(page.locator('[data-component="composer-scroll"]')).toHaveText(followUp)
+
+  return { ...view, sessionID, generated, prompts, finish }
+}
+
+test("predicts a follow-up after completion and Tab accepts an editable draft without sending", async ({
+  page,
+}, testInfo) => {
+  const view = await openPredictions(page)
+  expect(view.generated).toEqual([])
+  await view.finish()
+  await expect(page.getByText(prediction, { exact: true })).toBeVisible()
+  await expect(view.editor).toHaveText("")
+  await expect(page.getByText("Tab to accept", { exact: true })).toBeVisible()
+  expect(view.generated).toHaveLength(1)
+  expect(view.generated[0]?.sessionID).toBe(view.sessionID)
+  await testInfo.attach("prediction-preview", { body: await page.screenshot(), contentType: "image/png" })
+
+  await view.editor.press("Enter")
+  await expect(view.editor).toHaveText("")
+  expect(view.prompts).toEqual([])
+  await view.editor.press("Tab")
+  await expect(view.editor).toHaveText(prediction)
+  await expect(view.editor).toBeFocused()
+  expect(view.prompts).toEqual([])
+  await view.editor.pressSequentially(" Include whitespace.")
+  await expect(view.editor).toHaveText(`${prediction} Include whitespace.`)
+  await view.editor.press("Enter")
+  await expect
+    .poll(() => view.prompts)
+    .toEqual([expect.objectContaining({ text: `${prediction} Include whitespace.` })])
+})
+
+test("Escape and typing dismiss a prediction without restoring it into a cleared draft", async ({ page }) => {
+  const view = await openPredictions(page)
+  await view.finish()
+  await expect(page.getByText(prediction, { exact: true })).toBeVisible()
+  await view.editor.press("Escape")
+  await expect(page.getByText(prediction, { exact: true })).toHaveCount(0)
+  await view.editor.press("Tab")
+  await expect(view.editor).toHaveText("")
+
+  await view.finish()
+  await expect(page.getByText(prediction, { exact: true })).toBeVisible()
+  await view.editor.fill("Explain the validation instead.")
+  await expect(page.getByText(prediction, { exact: true })).toHaveCount(0)
+  await view.editor.fill("")
+  await expect(page.locator('[data-component="composer-scroll"]')).toHaveText(normal)
+  expect(view.prompts).toEqual([])
+})
+
+for (const action of ["typing", "execution", "navigation"] as const) {
+  test(`discards a pending prediction on ${action}`, async ({ page }) => {
+    const response = Promise.withResolvers<{ text: string }>()
+    const arrived = Promise.withResolvers<void>()
+    const view = await openPredictions(page, {
+      generate: () => {
+        arrived.resolve()
+
+        return response.promise
+      },
+    })
+    await view.finish()
+    await arrived.promise
+    const failed = page.waitForEvent("requestfailed", {
+      predicate: (request) => new URL(request.url()).pathname === `/api/session/${view.sessionID}/generate`,
+    })
+
+    if (action === "typing") await view.editor.fill("Keep this draft.")
+
+    if (action === "execution")
+      await view.push([
+        {
+          id: "evt_prediction_next_execution",
+          created: T0 + 3_000,
+          type: "session.execution.started",
+          durable: { aggregateID: view.sessionID, seq: 2, version: 1 },
+          location: { directory: view.directory },
+          data: { sessionID: view.sessionID },
+        },
+      ])
+
+    if (action === "navigation") await page.getByRole("button", { name: "New session", exact: true }).click()
+
+    await failed
+    response.resolve({ text: prediction })
+    await expect(page.getByText(prediction, { exact: true })).toHaveCount(0)
+    await expect(page.locator('[data-component="composer-editor"]')).toHaveText(
+      action === "typing" ? "Keep this draft." : "",
+    )
+    expect(view.prompts).toEqual([])
+  })
+}
+
+test("leaves the composer usable when no prediction is appropriate", async ({ page }) => {
+  const view = await openPredictions(page, { generate: () => ({ text: "NO_SUGGESTION" }) })
+  const response = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === `/api/session/${view.sessionID}/generate`,
+  )
+  await view.finish()
+  expect((await response).ok()).toBe(true)
+  await expect(page.locator('[data-component="composer-scroll"]')).toHaveText(normal)
+  await view.editor.fill("Explain the change.")
+  await expect(view.editor).toHaveText("Explain the change.")
+  expect(view.prompts).toEqual([])
 })
