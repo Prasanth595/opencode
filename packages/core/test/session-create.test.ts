@@ -429,6 +429,36 @@ describe("Session.create", () => {
     }),
   )
 
+  it.effect("normalizes legacy permission action names on create and update", () =>
+    Effect.gen(function* () {
+      const session = yield* Session.Service
+      const legacy = [
+        { action: "bash", resource: "*", effect: "deny" as const },
+        { action: "write", resource: "src/*", effect: "deny" as const },
+        { action: "patch", resource: "**", effect: "ask" as const },
+        { action: "task", resource: "*", effect: "ask" as const },
+      ]
+
+      const created = yield* session.create({ location, permissions: legacy })
+      const normalized = [
+        { action: "shell", resource: "*", effect: "deny" as const },
+        { action: "edit", resource: "src/*", effect: "deny" as const },
+        { action: "edit", resource: "**", effect: "ask" as const },
+        { action: "subagent", resource: "*", effect: "ask" as const },
+      ]
+      expect(created.permissions).toEqual(normalized)
+      expect((yield* session.create({ parentID: created.id })).permissions).toEqual(normalized)
+
+      yield* session.setPermissions({
+        sessionID: created.id,
+        permissions: [{ action: "bash", resource: "git *", effect: "allow" as const }],
+      })
+      expect((yield* session.get(created.id)).permissions).toEqual([
+        { action: "shell", resource: "git *", effect: "allow" },
+      ])
+    }),
+  )
+
   it.effect("inherits location from an existing parent when omitted", () =>
     Effect.gen(function* () {
       const session = yield* Session.Service

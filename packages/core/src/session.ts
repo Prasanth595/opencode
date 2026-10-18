@@ -66,6 +66,7 @@ import { Job } from "./job.js"
 import type { Command } from "./command.js"
 import { SessionEnvironment } from "./session/environment.js"
 import { InstructionEntry } from "./session/instruction-entry.js"
+import { ConfigMigrateV1 } from "./v1/config/migrate.js"
 
 // get project -> project.locations
 //
@@ -93,6 +94,11 @@ type CreateBaseInput = {
 }
 type CreateInput = CreateBaseInput &
   ({ location: Location.Ref; parentID?: never } | { parentID: SessionSchema.ID; location?: never })
+
+function normalizePermissions(permissions: Permission.Ruleset | undefined): Permission.Ruleset | undefined {
+  if (permissions === undefined) return undefined
+  return permissions.map((rule) => ({ ...rule, action: ConfigMigrateV1.normalizeAction(rule.action) }))
+}
 
 type CompactInput = Parameters<Session.Handle["compact"]>[0] & { sessionID: SessionSchema.ID }
 
@@ -294,7 +300,7 @@ const layer = Layer.effect(
               // Children inherit metadata and permissions the way they inherit
               // location, so host policies that read them treat the family uniformly.
               metadata: input.metadata ?? parent?.metadata,
-              permissions: input.permissions ?? parent?.permissions,
+              permissions: normalizePermissions(input.permissions ?? parent?.permissions),
               model: input.model
                 ? {
                     id: Model.ID.make(input.model.id),
@@ -466,7 +472,11 @@ const layer = Layer.effect(
       switchModel: (input) => sessions.forSession(input.sessionID).switchModel(input),
       rename: (input) => sessions.forSession(input.sessionID).rename(input),
       setMetadata: (input) => sessions.forSession(input.sessionID).setMetadata(input),
-      setPermissions: (input) => sessions.forSession(input.sessionID).setPermissions(input),
+      setPermissions: (input) =>
+        sessions.forSession(input.sessionID).setPermissions({
+          ...input,
+          permissions: normalizePermissions(input.permissions) ?? [],
+        }),
       move: moves.move,
       compact: (input) => sessions.forSession(input.sessionID).compact(input),
       wait: (sessionID) => sessions.forSession(sessionID).wait(),
