@@ -244,6 +244,11 @@ export const layer = Layer.effect(
       // A compaction just completed; let the runner rebuild the request from it first.
       const last = messages.at(-1)
       if (last?.type === "compaction" && last.status === "completed") return false
+      // A summary the provider truncates at its output limit fails identically until the model or
+      // provider changes. Stop automatic retries; a manual /compact still tries, and a completed
+      // checkpoint later in the history clears this guard.
+      const latest = messages.findLast((message) => message.type === "compaction")
+      if (latest?.status === "failed" && latest.error.type === "compaction.failed") return false
       // An encrypted native window estimates as nothing, so wait for a response to measure it.
       const measured = messages.findLastIndex((message) => hasMeasuredPrompt(message, context.model.ref))
       if (measured < messages.findLastIndex(SessionProviderContext.isCheckpoint)) return false

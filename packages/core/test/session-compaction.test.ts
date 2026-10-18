@@ -295,6 +295,40 @@ it.effect("auto compaction estimates current content against the buffered prompt
   }),
 )
 
+it.effect("stops automatic compaction after a truncated summary", () =>
+  Effect.gen(function* () {
+    const compaction = yield* SessionCompaction.Service
+    const session = yield* insertSession(Session.ID.make("ses_truncated_compaction"))
+    const assistant = Schema.decodeUnknownSync(SessionMessage.Assistant)({
+      id: SessionMessage.ID.create(),
+      type: "assistant",
+      agent: Agent.defaultID,
+      model: { id: "summary-model", providerID: "test" },
+      content: [{ type: "text", text: "Done" }],
+      tokens: { input: 84_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      time: { created: 0, completed: 0 },
+    })
+    const failed = Schema.decodeUnknownSync(SessionMessage.CompactionFailed)({
+      id: SessionMessage.ID.create(),
+      type: "compaction",
+      status: "failed",
+      reason: "auto",
+      error: { type: "compaction.failed", message: "Compaction summary reached the output token limit" },
+      time: { created: 0, completed: 0 },
+    })
+    const context = {
+      ...loaded(session, [assistant, failed]),
+      model: SessionRunnerModel.resolved(model, {
+        capabilities: { tools: true, input: ["text"], output: ["text"] },
+        cost: [],
+        limit: { context: 100_000, output: 10_000 },
+      }),
+    }
+    // 84k measured tokens cross the 84k ceiling, but the latest compaction failed at the output limit.
+    expect(yield* compaction.compact({ reason: "auto", context })).toMatchObject({ status: "skipped" })
+  }),
+)
+
 /** Seeds the global project plus one session row, returning the projected session. */
 const insertSession = (id: Session.ID, overrides?: Partial<typeof SessionTable.$inferInsert>) =>
   Effect.gen(function* () {
