@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import type { OpenCodeEvent, WorktreeDirectory } from "@opencode/client/promise"
-import { draftHref, expectPath, provider, sessionHref } from "../utils/app"
+import { draftHref, expectPath, project, provider, sessionHref } from "../utils/app"
 import type { MockAnswer } from "../utils/mock-server"
 import { openDraft, openSession, openWorktreeDraft, type WorkspaceInput } from "../utils/workspace"
 
@@ -502,6 +502,85 @@ for (const row of [
     await expectBackground(stop, "icon-button-contrast")
   })
 }
+
+test("hovering project options keeps focus in the project search", async ({ page }) => {
+  const roots = ["C:/OpenCode/ProjectFocusA", "C:/OpenCode/ProjectFocusB", "C:/OpenCode/ProjectFocusC"]
+
+  await openDraft(page, {
+    name: "ProjectFocusA",
+    directory: roots[0],
+    projects: roots.map((directory, index) => project({ id: `proj_focus_${index}`, directory })),
+    seed: { projects: { local: roots.map((worktree, index) => ({ worktree, expanded: index === 0 })) } },
+  })
+
+  await page.locator('[data-component="new-session"] [data-action="prompt-project"]').click()
+  const menu = page.locator("#prompt-project-menu")
+  await expect(menu).toBeVisible()
+  const search = menu.locator('input[placeholder="Search projects"]')
+  await expect(search).toBeFocused()
+
+  // Every focus target while the menu is open: only the search input may receive focus, because each steal
+  // restarts the caret blink (the reported flash) and can interrupt typing into the search box.
+  await page.evaluate(() => {
+    const log: string[] = []
+    const input = document.querySelector('#prompt-project-menu input')
+
+    ;(window as unknown as { __focusLog: string[] }).__focusLog = log
+    document.addEventListener(
+      "focusin",
+      (event) => {
+        const target = event.target as HTMLElement | null
+        log.push(target === input ? "search" : (target?.tagName ?? "unknown"))
+      },
+      { capture: true },
+    )
+  })
+
+  for (const label of ["ProjectFocusA", "ProjectFocusB", "ProjectFocusC", "ProjectFocusB"]) {
+    await menu.locator("[data-option-key]", { hasText: label }).hover()
+  }
+
+  await expect(search).toBeFocused()
+  const steals = await page.evaluate(
+    () => (window as unknown as { __focusLog: string[] }).__focusLog.filter((entry) => entry !== "search"),
+  )
+  expect(steals).toEqual([])
+})
+
+test("the worktree submenu keeps search focus while hover highlights and Enter selects", async ({ page }) => {
+  const root = "C:/OpenCode/SubmenuTrees"
+  const worktrees: WorktreeDirectory[] = [
+    { directory: root },
+    ...Array.from({ length: 10 }, (_, index) => ({
+      directory: `${root}/.worktrees/tree${String(index + 1).padStart(2, "0")}`,
+      strategy: "git" as const,
+    })),
+  ]
+
+  await openDraft(page, { name: "SubmenuTrees", directory: root, worktrees: () => worktrees })
+
+  await page.getByRole("button", { name: "Local", exact: true }).click()
+  // Ten worktrees make the submenu searchable; clicking its trigger focuses the search field.
+  await page.getByRole("menuitem", { name: "Worktree", exact: true }).click()
+  const submenu = page.locator('[data-slot="workspace-submenu"]')
+  await expect(submenu).toBeVisible()
+  const search = submenu.getByPlaceholder("Search worktrees", { exact: true })
+  await expect(search).toBeFocused()
+
+  const hovered = submenu.getByRole("menuitem", { name: "tree03", exact: true })
+  const background = (element: Locator) => element.evaluate((node) => getComputedStyle(node).backgroundColor)
+  const before = await background(hovered)
+
+  await hovered.hover()
+
+  // The hovered row shows the highlight Kobalte derives from its focused key…
+  await expect.poll(() => background(hovered)).not.toBe(before)
+  // …while focus stays in the search field (hover must not steal it)…
+  await expect(search).toBeFocused()
+  // …and Enter from the search field selects the hovered row.
+  await search.press("Enter")
+  await expect(page.getByRole("button", { name: "tree03", exact: true })).toBeVisible()
+})
 
 function renamed(sessionID: string) {
   return {
