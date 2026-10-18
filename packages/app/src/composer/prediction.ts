@@ -1,5 +1,6 @@
 import { createEffect, onCleanup, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
+import { makeEventListener } from "@solid-primitives/event-listener"
 import type { ServerSDK } from "@/runtime/server/client"
 
 const prompt = `Predict the user's next message from the conversation so far.
@@ -14,7 +15,15 @@ export function createComposerPrediction(input: {
   eligible: Accessor<boolean>
   sdk: Pick<ServerSDK, "api" | "event">
 }) {
-  const [state, setState] = createStore({ text: undefined as string | undefined })
+  const [state, setState] = createStore({
+    text: undefined as string | undefined,
+    active: document.visibilityState === "visible" && document.hasFocus(),
+  })
+  const update = () => setState("active", document.visibilityState === "visible" && document.hasFocus())
+  makeEventListener(window, "focus", update)
+  makeEventListener(window, "blur", update)
+  makeEventListener(document, "visibilitychange", update)
+  const eligible = () => state.active && input.eligible()
   let request: AbortController | undefined
   let completed: string | undefined
 
@@ -25,7 +34,7 @@ export function createComposerPrediction(input: {
   }
 
   createEffect(() => {
-    if (!input.eligible()) dismiss()
+    if (!eligible()) dismiss()
   })
 
   const unsubscribe = input.sdk.event.on("session.execution.succeeded", (event) => {
@@ -33,16 +42,22 @@ export function createComposerPrediction(input: {
     completed = event.id
     dismiss()
 
-    if (!input.eligible()) return
+    if (!eligible()) return
     const current = new AbortController()
     request = current
     void input.sdk.api.session.generate({ sessionID: input.sessionID, prompt }, { signal: current.signal }).then(
       (result) => {
-        if (current.signal.aborted || !input.eligible()) return
+        if (current.signal.aborted || !eligible()) return
         request = undefined
-        const text = result.text.trim()
+        if (result.text.trimStart().startsWith("```")) return
+        const text = result.text
+          .trim()
+          .split(/[\r\n\u2028\u2029]/u, 1)[0]!
+          .trim()
+          .replace(/^(?:"(.*)"|'(.*)'|`(.*)`|“(.*)”|‘(.*)’)$/u, "$1$2$3$4$5")
+          .trim()
 
-        if (text && text !== "NO_SUGGESTION") setState("text", text)
+        if (text && text.length <= 200 && text !== "NO_SUGGESTION") setState("text", text)
       },
       () => {
         if (request === current) request = undefined

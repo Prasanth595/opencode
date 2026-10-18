@@ -583,6 +583,56 @@ test("predicts a follow-up after completion and Tab accepts an editable draft wi
     .toEqual([expect.objectContaining({ text: `${prediction} Include whitespace.` })])
 })
 
+test("normalizes prediction replies before preview and Tab acceptance", async ({ page }) => {
+  let reply = ""
+  const view = await openPredictions(page, { generate: () => ({ text: reply }) })
+
+  for (const text of [
+    `  "${prediction}"  \r\nIgnore the rest.`,
+    `‘${prediction}’`,
+    `\`${prediction}\``,
+    "x".repeat(200),
+  ]) {
+    reply = text
+    const expected = text.startsWith("x") ? text : prediction
+    await view.finish()
+    await expect(page.getByText(expected, { exact: true })).toBeVisible()
+    await view.editor.press("Tab")
+    await expect(view.editor).toHaveText(expected)
+    await view.editor.fill("")
+  }
+
+  expect(view.prompts).toEqual([])
+})
+
+test("only the visible focused window requests predictions", async ({ page }) => {
+  const view = await openPredictions(page)
+
+  for (const inactive of ["hidden", "unfocused"] as const) {
+    await page.evaluate((inactive) => {
+      Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        value: inactive === "hidden" ? "hidden" : "visible",
+      })
+      Object.defineProperty(document, "hasFocus", { configurable: true, value: () => inactive !== "unfocused" })
+      document.dispatchEvent(new Event("visibilitychange"))
+      window.dispatchEvent(new Event("blur"))
+    }, inactive)
+    await view.finish()
+    await expect(page.locator('[data-component="composer-scroll"]')).toHaveText(normal)
+    expect(view.generated).toEqual([])
+  }
+
+  await page.evaluate(() => {
+    delete (document as { visibilityState?: string }).visibilityState
+    delete (document as { hasFocus?: () => boolean }).hasFocus
+    window.dispatchEvent(new Event("focus"))
+  })
+  await view.finish()
+  await expect(page.getByText(prediction, { exact: true })).toBeVisible()
+  expect(view.generated).toHaveLength(1)
+})
+
 test("Escape and typing dismiss a prediction without restoring it into a cleared draft", async ({ page }) => {
   const view = await openPredictions(page)
   await view.finish()
@@ -601,7 +651,7 @@ test("Escape and typing dismiss a prediction without restoring it into a cleared
   expect(view.prompts).toEqual([])
 })
 
-for (const action of ["typing", "execution", "navigation"] as const) {
+for (const action of ["typing", "execution", "navigation", "visibility", "blur"] as const) {
   test(`discards a pending prediction on ${action}`, async ({ page }) => {
     const response = Promise.withResolvers<{ text: string }>()
     const arrived = Promise.withResolvers<void>()
@@ -632,6 +682,18 @@ for (const action of ["typing", "execution", "navigation"] as const) {
         },
       ])
 
+    if (action === "visibility")
+      await page.evaluate(() => {
+        Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" })
+        document.dispatchEvent(new Event("visibilitychange"))
+      })
+
+    if (action === "blur")
+      await page.evaluate(() => {
+        Object.defineProperty(document, "hasFocus", { configurable: true, value: () => false })
+        window.dispatchEvent(new Event("blur"))
+      })
+
     if (action === "navigation") await page.getByRole("button", { name: "New session", exact: true }).click()
 
     await failed
@@ -644,14 +706,23 @@ for (const action of ["typing", "execution", "navigation"] as const) {
   })
 }
 
-test("leaves the composer usable when no prediction is appropriate", async ({ page }) => {
-  const view = await openPredictions(page, { generate: () => ({ text: "NO_SUGGESTION" }) })
-  const response = page.waitForResponse(
-    (response) => new URL(response.url()).pathname === `/api/session/${view.sessionID}/generate`,
-  )
-  await view.finish()
-  expect((await response).ok()).toBe(true)
-  await expect(page.locator('[data-component="composer-scroll"]')).toHaveText(normal)
+test("leaves the composer usable for empty, oversized, or declined predictions", async ({ page }) => {
+  let reply = ""
+  const view = await openPredictions(page, { generate: () => ({ text: reply }) })
+
+  for (const text of ["NO_SUGGESTION", " ", "x".repeat(201), "```text\nA paragraph of explanation.\n```"]) {
+    reply = text
+    const response = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === `/api/session/${view.sessionID}/generate`,
+    )
+    await view.finish()
+    expect((await response).ok()).toBe(true)
+    await (await response).finished()
+    await view.editor.press("Tab")
+    await expect(view.editor).toBeEmpty()
+    await expect(page.locator('[data-component="composer-scroll"]')).toHaveText(normal)
+  }
+
   await view.editor.fill("Explain the change.")
   await expect(view.editor).toHaveText("Explain the change.")
   expect(view.prompts).toEqual([])

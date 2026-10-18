@@ -2,7 +2,7 @@ import { createEffect, createMemo, on, type Accessor } from "solid-js"
 import type { ComposerControls } from "@/composer/adapter"
 import { setCursorPosition } from "@/composer/editor/dom"
 import { createComposerModel } from "@/composer/model"
-import { createComposerPrediction, type ComposerPrediction } from "@/composer/prediction"
+import { createComposerPrediction } from "@/composer/prediction"
 import { useDialog } from "@opencode/ui/context/dialog"
 import { useServerSDK } from "@/runtime/server/client"
 import { useSettings } from "@/settings/model"
@@ -50,7 +50,8 @@ export function createSessionComposerController(input: {
   })
 
   const editable = createMemo(() => region.showComposer() && !region.child())
-  const prediction: ComposerPrediction = createComposerPrediction({
+  const composer = createComposerModel(adapter, { queue })
+  composer.view.prediction = createComposerPrediction({
     sessionID: input.sessionID,
     sdk: server,
     eligible: () =>
@@ -68,7 +69,6 @@ export function createSessionComposerController(input: {
       adapter.state.context.items().length === 0 &&
       adapter.state.current().every((part) => part.type === "text" && part.content.length === 0),
   })
-  const composer = createComposerModel(adapter, { queue, prediction })
   // Requests hide the view without disposing its draft or queue edit.
   createEffect(on(editable, () => composer.onDragLeave()))
 
