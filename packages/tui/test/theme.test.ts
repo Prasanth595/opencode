@@ -115,6 +115,13 @@ function terminalColors(defaultBackground: string | null, palette: Array<string 
   }
 }
 
+test("tint keeps a solid base solid under a translucent overlay", () => {
+  const base = RGBA.fromInts(26, 26, 26, 255)
+  const overlay = RGBA.fromInts(42, 26, 21, 153)
+  const mixed = tint(base, overlay, 153 / 255)
+  expect(mixed.a).toBe(1)
+})
+
 test("tint preserves transparent alpha instead of forcing opaque", () => {
   const transparent = RGBA.fromInts(0, 0, 0, 0)
   const mixed = tint(transparent, transparent, 0.5)
