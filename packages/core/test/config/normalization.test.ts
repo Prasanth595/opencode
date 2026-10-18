@@ -603,6 +603,86 @@ describe("ConfigNormalize", () => {
     ])
   })
 
+  test("names the replacement for V1 spellings under the native providers key", () => {
+    const result = normalized({
+      providers: {
+        example: {
+          id: "example-provider",
+          npm: "@ai-sdk/openai-compatible",
+          options: { baseURL: "https://example.test/v1" },
+          models: { some: { name: "Some Model" } },
+        },
+      },
+    })
+
+    // The entry is still decoded, so the provider keeps being advertised; what changes is that the
+    // fields the native struct does not carry are reported instead of vanishing.
+    expect(result.encoded.providers).toMatchObject({ example: { models: { some: { name: "Some Model" } } } })
+    expect(result.diagnostics.map((item) => [item.kind, item.path, item.message])).toEqual([
+      ["unsupported", ["providers", "example", "id"], "omitted legacy spelling; use `canonical`"],
+      ["unsupported", ["providers", "example", "npm"], "omitted legacy spelling; use `package`"],
+      [
+        "unsupported",
+        ["providers", "example", "options"],
+        "omitted legacy spelling; use `settings`, `headers` and `body`",
+      ],
+    ])
+  })
+
+  test("names the replacement for V1 model spellings under the native providers key", () => {
+    const result = normalized({
+      providers: {
+        example: {
+          models: {
+            some: {
+              id: "some-model",
+              options: { baseURL: "https://example.test/v1" },
+              provider: { npm: "@ai-sdk/openai" },
+            },
+          },
+        },
+      },
+    })
+
+    expect(result.diagnostics.map((item) => [item.kind, item.path, item.message])).toEqual([
+      ["unsupported", ["providers", "example", "models", "some", "id"], "omitted legacy spelling; use `modelID`"],
+      [
+        "unsupported",
+        ["providers", "example", "models", "some", "options"],
+        "omitted legacy spelling; use `settings`, `headers` and `body`",
+      ],
+      [
+        "unsupported",
+        ["providers", "example", "models", "some", "provider", "npm"],
+        "omitted legacy spelling; use `package`",
+      ],
+    ])
+  })
+
+  test("reports nothing for a provider written in the native spelling", () => {
+    const result = normalized({
+      providers: {
+        example: {
+          canonical: "example-provider",
+          package: "@ai-sdk/openai-compatible",
+          settings: { baseURL: "https://example.test/v1" },
+          headers: { "x-test": "one" },
+          body: { temperature: 0 },
+          models: { some: { modelID: "some-model", name: "Some Model" } },
+        },
+      },
+    })
+
+    expect(result.diagnostics).toEqual([])
+    expect(result.encoded.providers).toMatchObject({
+      example: {
+        package: "@ai-sdk/openai-compatible",
+        settings: { baseURL: "https://example.test/v1" },
+        models: { some: { modelID: "some-model" } },
+      },
+    })
+  })
+
   test("migrates the legacy thinking block-binding opt-out into model compatibility", () => {
     const result = normalized({
       provider: {
