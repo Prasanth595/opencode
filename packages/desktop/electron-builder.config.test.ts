@@ -75,6 +75,15 @@ test("shared packaging defaults", async () => {
   expect(config.mac?.sign).toBeFunction()
   expect(config.dmg?.sign).not.toBe(true)
   expect(config.mac?.extendInfo?.NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac).toBe(true)
+  // macOS shows the folder-access prompt only when the bundle carries a non-empty usage
+  // description; a missing or empty one is denied outright with no prompt at all.
+
+  for (const key of [
+    "NSDocumentsFolderUsageDescription",
+    "NSDesktopFolderUsageDescription",
+    "NSDownloadsFolderUsageDescription",
+  ])
+    expect(config.mac?.extendInfo?.[key]).toMatch(/\S/)
   const include = path.join(import.meta.dirname, "resources/windows/installer.nsh")
   expect(config.nsis?.include).toBe(include)
   expect(await Bun.file(include).exists()).toBe(true)
@@ -82,20 +91,6 @@ test("shared packaging defaults", async () => {
   expect(config.extraResources).toEqual([
     { from: "resources/", to: "", filter: ["opencode-cli", "opencode-cli.exe", "opencode-cli.version"] },
   ])
-})
-
-test("declares a macOS usage description for every folder a workspace can live in", () => {
-  const extendInfo = load("dev").mac?.extendInfo ?? {}
-  // macOS shows the folder-access prompt only when the bundle carries a non-empty
-  // usage description. A missing or empty one is not treated as "no reason given":
-  // TCC denies the folder outright and the app never appears under Files and Folders.
-
-  for (const key of [
-    "NSDocumentsFolderUsageDescription",
-    "NSDesktopFolderUsageDescription",
-    "NSDownloadsFolderUsageDescription",
-  ])
-    expect(extendInfo[key]).toMatch(/\S/)
 })
 
 test("trims external dependencies without excluding runtime files", () => {
