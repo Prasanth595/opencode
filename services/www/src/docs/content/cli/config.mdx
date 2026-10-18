@@ -111,7 +111,7 @@ Configure mouse capture, scrolling, editor context, pastes, and prompt image pre
 
 ## Voice
 
-Hold the `prompt.voice.push_to_talk` key to record from the microphone; releasing it (or pressing it again) transcribes the recording into the prompt. Recording needs `ffmpeg` or `sox` installed, and transcription runs your own shell command. Key release must reach the terminal (Kitty keyboard protocol with release reporting) or only the press half fires.
+Press the `prompt.voice.push_to_talk` key to start recording from the microphone, and press it again to stop and transcribe the recording into the prompt. Presses within a second of the previous one are treated as key repeat, so holding the key does not toggle. Recording needs `ffmpeg` or `sox` installed, and transcription runs your own shell command. OpenCode does not enable terminal key-release reporting, so releasing the key does not stop a recording today.
 
 ```json title="cli.json"
 {

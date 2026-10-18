@@ -13,6 +13,8 @@ import { delimiter, join } from "node:path"
 
 /** Holds shorter than this are treated as taps, not dictation. */
 export const VOICE_MIN_HOLD_MS = 350
+/** Presses closer together than this are the key repeating, not new presses. */
+export const VOICE_REPEAT_GUARD_MS = 1000
 /** Recordings stop automatically after this long. */
 export const VOICE_MAX_RECORD_MS = 120_000
 /** Placeholder replaced with the recorded wav path in the transcribe command. */
@@ -186,4 +188,15 @@ export function transcribeAudio(wavFile: string, template: string): Promise<stri
 /** True when the key was held for such a short time it counts as a tap. */
 export function shouldDiscardTap(holdMs: number): boolean {
   return holdMs < VOICE_MIN_HOLD_MS
+}
+
+/**
+ * True when a press is the key being held down rather than a fresh press.
+ * Without terminal event reporting, auto-repeat arrives as ordinary presses
+ * with no marker, so presses closer together than the guard window count as
+ * repeats. The window must outlast the OS initial repeat delay (about 500 to
+ * 660ms by default) and chains: every press, repeat or not, restarts it.
+ */
+export function isRepeatPress(sinceLastPressMs: number, repeated?: boolean): boolean {
+  return repeated === true || sinceLastPressMs < VOICE_REPEAT_GUARD_MS
 }

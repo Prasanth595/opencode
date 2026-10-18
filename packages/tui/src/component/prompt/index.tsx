@@ -45,6 +45,7 @@ import {
   findRecorder,
   transcribeAudio,
   shouldDiscardTap,
+  isRepeatPress,
   VOICE_MAX_RECORD_MS,
 } from "./voice"
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
@@ -958,11 +959,17 @@ export function Prompt(props: PromptProps) {
   let voiceStartTime = 0
   let voiceStopTimer: ReturnType<typeof setTimeout> | undefined
   let voiceStarting = false
+  let voiceLastPress = 0
 
   async function startVoiceRecording(event?: KeyEvent) {
-    // Key repeat fires the press binding while the key is held; only a real
-    // press may start or stop, so holding the key records without toggling.
-    if (event?.eventType === "repeat") return
+    // Holding the key fires this binding again for every auto-repeat, and the
+    // TUI does not enable terminal event reporting, so repeats carry no marker.
+    // Presses that follow the previous one closely are the key being held; only
+    // a fresh press (after a quiet gap) may start or stop a recording.
+    const now = Date.now()
+    const repeating = isRepeatPress(now - voiceLastPress, event?.repeated)
+    voiceLastPress = now
+    if (repeating) return
     if (voiceRecorder?.recording) {
       void stopVoiceRecording("")
       return
@@ -1033,7 +1040,7 @@ export function Prompt(props: PromptProps) {
       bindings: [
         ...press.map((binding) => ({
           ...binding,
-          desc: "Start voice recording (release or press again to transcribe)",
+          desc: "Start voice recording (press again to transcribe)",
           group: "Prompt",
           cmd: (context: CommandContext<Renderable, KeyEvent>) => void startVoiceRecording(context.event),
         })),
@@ -1702,7 +1709,7 @@ export function Prompt(props: PromptProps) {
 
   const placeholderText = createMemo(() => {
     const value = (() => {
-      if (voiceRecording()) return "Recording voice… release or press again to stop"
+      if (voiceRecording()) return "Recording voice… press the key again to stop"
       if (store.mode === "shell") {
         if (!shell().length) return undefined
         return `Run a command… "${shell()[store.placeholder % shell().length]}"`

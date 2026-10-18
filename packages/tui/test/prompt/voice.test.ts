@@ -7,12 +7,14 @@ import {
   buildTranscribeShellCommand,
   ffmpegArgs,
   findRecorder,
+  isRepeatPress,
   shouldDiscardTap,
   soxArgs,
   transcribeAudio,
   VOICE_FILE_PLACEHOLDER,
   VOICE_MAX_RECORD_MS,
   VOICE_MIN_HOLD_MS,
+  VOICE_REPEAT_GUARD_MS,
 } from "../../src/component/prompt/voice"
 
 const originalPath = process.env.PATH
@@ -136,6 +138,30 @@ describe("component.prompt.voice", () => {
 
     test("rejects when the command fails", () => {
       return expect(transcribeAudio("/tmp/a.wav", "exit 7")).rejects.toThrow("Voice transcription failed")
+    })
+  })
+
+  describe("isRepeatPress", () => {
+    test("treats a press right after the previous one as key repeat", () => {
+      expect(isRepeatPress(33)).toBe(true)
+      expect(isRepeatPress(VOICE_REPEAT_GUARD_MS - 1)).toBe(true)
+    })
+
+    test("treats a press after a quiet gap as a fresh press", () => {
+      expect(isRepeatPress(VOICE_REPEAT_GUARD_MS)).toBe(false)
+      expect(isRepeatPress(60_000)).toBe(false)
+    })
+
+    test("honors the terminal's repeat marker regardless of timing", () => {
+      expect(isRepeatPress(60_000, true)).toBe(true)
+      expect(isRepeatPress(60_000, false)).toBe(false)
+    })
+
+    test("a held key chains: each repeat restarts the window", () => {
+      // First press at 0, OS initial delay 660ms, then repeats every 33ms.
+      const presses = [0, 660, 693, 726, 759]
+      const results = presses.map((now, index) => (index === 0 ? false : isRepeatPress(now - presses[index - 1]!)))
+      expect(results).toEqual([false, true, true, true, true])
     })
   })
 
