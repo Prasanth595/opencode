@@ -1,5 +1,5 @@
 import { createStore } from "solid-js/store"
-import { createEffect, createMemo, For, Match, on, Show, Switch } from "solid-js"
+import { createMemo, For, Match, Show, Switch } from "solid-js"
 import { Portal, useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
 import type { TextareaRenderable } from "@opentui/core"
 import { useTheme, useThemes } from "../../context/theme"
@@ -113,15 +113,9 @@ function EditBody(props: { file?: string; diff?: string; patch?: string }) {
 export function PermissionPrompt(props: { request: PermissionRequest; directory?: string }) {
   const data = useData()
   const toast = useToast()
-  const config = useConfig().data
-  const requestID = createMemo(() => props.request.id)
   const [store, setStore] = createStore({
     stage: "permission" as PermissionStage,
-    expanded: config.permission_prompt?.default_expanded === true,
   })
-  createEffect(
-    on(requestID, () => setStore("expanded", config.permission_prompt?.default_expanded === true), { defer: true }),
-  )
   const pathFormatter = usePathFormatter()
   const session = createMemo(() => data.session.get(props.request.sessionID))
 
@@ -246,8 +240,6 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
               }
               escapeKey="reject"
               fullscreen
-              expanded={store.expanded}
-              onToggleFullscreen={() => setStore("expanded", (value) => !value)}
               onSelect={(option) => {
                 if (option === "always") {
                   reply("always")
@@ -424,8 +416,6 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
   options: T
   escapeKey?: keyof T
   fullscreen?: boolean
-  expanded?: boolean
-  onToggleFullscreen?: () => void
   onSelect: (option: keyof T) => void
 }) {
   const theme = useTheme()
@@ -434,14 +424,15 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
   const keys = Object.keys(props.options) as (keyof T)[]
   const [store, setStore] = createStore({
     selected: keys[0],
+    expanded: props.fullscreen === true && config.session.permission_prompt?.default_expanded === true,
   })
   const narrow = createMemo(() => dimensions().width < 80)
   const shortcuts = Keymap.useShortcuts()
   const id = () => props.id ?? "session.permission"
   const group = () => props.group ?? "Permission"
   const dismiss = () => {
-    if (props.expanded) {
-      props.onToggleFullscreen?.()
+    if (store.expanded) {
+      setStore("expanded", false)
       return
     }
     if (props.escapeKey) props.onSelect(props.escapeKey)
@@ -468,7 +459,7 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
               title: "Toggle permission fullscreen",
               group: group(),
               bind: false as const,
-              run: () => props.onToggleFullscreen?.(),
+              run: () => setStore("expanded", (value) => !value),
             },
           ]
         : []),
@@ -505,7 +496,7 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
     bindings: [...(props.escapeKey ? ["app.exit"] : []), ...(props.fullscreen ? ["permission.prompt.fullscreen"] : [])],
   }))
 
-  const hint = createMemo(() => (props.expanded ? "minimize" : "fullscreen"))
+  const hint = createMemo(() => (store.expanded ? "minimize" : "fullscreen"))
   useRenderer()
 
   const content = () => (
@@ -515,17 +506,17 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
         instance: props.instance,
         role: "dialog",
         label: props.semanticLabel ?? props.title,
-        expanded: props.expanded,
+        expanded: store.expanded,
       }))}
       backgroundColor={theme.background.raised.base}
       border={["left"]}
       borderColor={theme.background.action.primary.focused}
       customBorderChars={SplitBorder.customBorderChars}
-      {...(props.expanded
+      {...(store.expanded
         ? { top: dimensions().height * -1 + 1, bottom: 1, left: 2, right: 2, position: "absolute" }
         : {
             top: 0,
-            maxHeight: config.permission_prompt?.max_height ?? 15,
+            maxHeight: config.session.permission_prompt?.max_height ?? 15,
             bottom: 0,
             left: 0,
             right: 0,
@@ -625,7 +616,7 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
   )
 
   return (
-    <Show when={!props.expanded} fallback={<Portal>{content()}</Portal>}>
+    <Show when={!store.expanded} fallback={<Portal>{content()}</Portal>}>
       {content()}
     </Show>
   )
