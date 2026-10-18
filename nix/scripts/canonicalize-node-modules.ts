@@ -1,5 +1,5 @@
 import { lstat, mkdir, readdir, rm, symlink } from "fs/promises"
-import { dirname, join, relative } from "path"
+import { join, relative } from "path"
 
 type Entry = {
   dir: string
@@ -53,29 +53,6 @@ for (const [slug, list] of versions) {
   if (first) selections.set(slug, first)
 }
 
-// The TUI and theme must share one OpenTUI core instance (#56856). Do not
-// canonicalize other packages: same-version entries can have different
-// transitive dependency links.
-const canonical = new Map<string, Entry>()
-
-for (const entry of versions.get("@opentui/core") ?? []) {
-  const version = entry.version.split("+")[0]
-  if (!canonical.has(version)) canonical.set(version, entry)
-}
-
-const collapsed: string[] = []
-
-for (const entry of versions.get("@opentui/core") ?? []) {
-  const selected = canonical.get(entry.version.split("+")[0])
-  if (!selected || entry.dir === selected.dir) continue
-  await rm(entry.dir, { recursive: true, force: true })
-  // A symlink at entry.dir resolves relative to dirname(entry.dir), not
-  // entry.dir itself. Keep the target relative for the copied Nix store.
-  const target = relative(dirname(entry.dir), selected.dir) || "."
-  await symlink(target, entry.dir)
-  collapsed.push("@opentui/core " + entry.dir + " -> " + selected.dir)
-}
-
 await rm(linkRoot, { recursive: true, force: true })
 await mkdir(linkRoot, { recursive: true })
 
@@ -107,15 +84,6 @@ for (const line of rewrites.slice(0, 20)) {
   console.log("  ", line)
 }
 if (rewrites.length > 20) {
-  console.log("  ...")
-}
-
-collapsed.sort()
-console.log("[canonicalize-node-modules] collapsed", collapsed.length, "duplicate store entries")
-for (const line of collapsed.slice(0, 20)) {
-  console.log("  ", line)
-}
-if (collapsed.length > 20) {
   console.log("  ...")
 }
 
