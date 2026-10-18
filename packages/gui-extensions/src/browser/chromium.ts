@@ -7,6 +7,7 @@ import { createCdp, abortError, waitFor } from "./cdp"
 import { createBrowserFiles } from "./files"
 import { createDiagnostics } from "./diagnostics"
 import { loadIcon } from "./icon"
+import { pageLetter } from "./keys"
 import { createProfiling, type Recording } from "./profiling"
 import type { BrowserNetwork } from "./network"
 import {
@@ -192,7 +193,7 @@ export function createBrowserPage(
     if (input.alt || !(process.platform === "darwin" ? input.meta : input.control)) return
 
     // The same chord as Chromium DevTools' element picker.
-    if (input.shift && input.code === "KeyC") {
+    if (input.shift && pageLetter(input) === "c") {
       event.preventDefault()
       void toggleInspect(!inspecting)
 
@@ -200,7 +201,7 @@ export function createBrowserPage(
     }
 
     // The system browser's address shortcut. The app's own focus moves to the address field.
-    if (!input.shift && input.code === "KeyL") {
+    if (!input.shift && pageLetter(input) === "l") {
       event.preventDefault()
       options.address?.()
 

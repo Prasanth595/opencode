@@ -147,6 +147,44 @@ story("closes a blank browser tab from its address field without closing the ses
   await expect(root.getByTestId("session-state")).toHaveText("open")
 })
 
+story("toggles the element picker from the shortcut only inside the browser pane", async ({ page }) => {
+  const root = page.getByTestId("browser-region-fixture")
+  const outside = root.getByRole("button", { name: "Beta", exact: true })
+  await expect(root.getByText("Registrations: 1", { exact: true })).toBeVisible()
+  await outside.click()
+  await expect(root.getByText("Registrations: 2", { exact: true })).toBeVisible()
+
+  await root.getByRole("button", { name: "Blank page", exact: true }).click()
+  const inspect = root.getByRole("button", { name: "Select an element to comment on", exact: true })
+  const address = root.getByRole("combobox", { name: "Browser address", exact: true })
+  await expect(inspect).toBeDisabled()
+  await address.click()
+  await address.press("ControlOrMeta+Shift+c")
+  await expect(root.getByTestId("browser-inspects")).toHaveText("[]")
+
+  await root.getByRole("button", { name: "First inventory", exact: true }).click()
+  await expect(inspect).toBeEnabled()
+
+  await outside.focus()
+  await outside.press("ControlOrMeta+Shift+c")
+  await expect(inspect).toHaveAttribute("aria-pressed", "false")
+  await expect(root.getByTestId("browser-inspects")).toHaveText("[]")
+
+  await address.click()
+  await expect(address).toBeFocused()
+  await address.press("ControlOrMeta+Shift+c")
+  await expect(inspect).toHaveAttribute("aria-pressed", "true")
+  await expect(root.getByTestId("browser-inspects")).toHaveText(
+    '[{"tabID":"tab_33333333-3333-3333-3333-333333333333","enabled":true}]',
+  )
+
+  await address.press("ControlOrMeta+Shift+c")
+  await expect(inspect).toHaveAttribute("aria-pressed", "false")
+  await expect(root.getByTestId("browser-inspects")).toHaveText(
+    '[{"tabID":"tab_33333333-3333-3333-3333-333333333333","enabled":true},{"tabID":"tab_33333333-3333-3333-3333-333333333333","enabled":false}]',
+  )
+})
+
 story("keeps a restored browser tab selected and undrawn until the desktop's first inventory", async ({ page }) => {
   const root = page.getByTestId("browser-region-fixture")
   const tabs = root.getByRole("tab")
