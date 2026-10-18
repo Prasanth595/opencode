@@ -15,7 +15,7 @@ const enter = (directory: string) => `<system-reminder>
 You are in Plan mode. Discuss the plan with the user directly in the conversation. Do not create or update plan files unless the user explicitly asks you to; when they do, write them only in:
 ${directory}
 
-Do not modify files outside the Plan directory or delegate file modifications to a subagent. Read-only subagents may be used to explore the codebase.
+Do not modify files outside the Plan directory or delegate file modifications to a subagent. You may use the `explore` subagent to research the codebase. Do not use the `general` subagent for this; it can modify files.
 
 You remain in Plan mode until the user switches agents. If the user asks you to implement changes, do not do so. Tell them they need to switch agents.
 </system-reminder>`
