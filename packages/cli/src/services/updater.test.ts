@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { action } from "./updater-action"
+import { action, isNewerRelease } from "./updater-action"
 import { decodePolicy } from "./updater"
 
 describe("updater", () => {
@@ -23,6 +23,20 @@ describe("updater", () => {
     expect(action("1.2.3", "1.2.3", "notify")).toBe("none")
   })
 
+
+  test("orders releases for downgrade wording", () => {
+    expect(isNewerRelease("2.0.32", "2.0.29")).toBe(true)
+    expect(isNewerRelease("2.0.29", "2.0.32")).toBe(false)
+    expect(isNewerRelease("2.0.32", "2.0.32")).toBe(false)
+    expect(isNewerRelease("2.1.0", "2.0.99")).toBe(true)
+    expect(isNewerRelease("3.0.0", "2.9.9")).toBe(true)
+    expect(isNewerRelease("2.0.32", "2.0.32-next.1")).toBe(true)
+    expect(isNewerRelease("2.0.32-next.1", "2.0.32")).toBe(false)
+    expect(isNewerRelease("2.0.32-next.2", "2.0.32-next.10")).toBe(false)
+    expect(isNewerRelease("2.0.32-next.10", "2.0.32-next.2")).toBe(true)
+    expect(isNewerRelease("local", "2.0.29")).toBe(false)
+    expect(isNewerRelease("2.0.29", "local")).toBe(false)
+  })
   test("automatically installs every available release when enabled", () => {
     expect(action("1.2.3", "1.2.4", "auto")).toBe("auto")
     expect(action("1.2.3", "1.2.3", "auto")).toBe("none")
