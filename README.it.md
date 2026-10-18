@@ -51,14 +51,12 @@ curl -fsSL https://opencode.ai/v2/install | bash
 
 # Package manager
 npm i -g @opencode/cli@latest      # oppure bun/pnpm/yarn
-scoop install opencode             # Windows
-choco install opencode             # Windows
-brew install anomalyco/tap/opencode # macOS e Linux (consigliato, sempre aggiornato)
+brew install anomalyco/tap/opencode-v2 # macOS e Linux (consigliato, sempre aggiornato)
 brew install opencode              # macOS e Linux (formula brew ufficiale, aggiornata meno spesso)
 sudo pacman -S opencode            # Arch Linux (Stable)
-paru -S opencode-bin               # Arch Linux (Latest from AUR)
+paru -S opencode-beta              # Arch Linux (Latest from AUR)
 mise use -g opencode               # Qualsiasi OS
-nix run nixpkgs#opencode           # oppure github:anomalyco/opencode per l’ultima branch di sviluppo
+nix run github:anomalyco/opencode  # Nix
 ```
 
 > [!TIP]
@@ -66,20 +64,18 @@ nix run nixpkgs#opencode           # oppure github:anomalyco/opencode per l’ul
 
 ### App Desktop (BETA)
 
-OpenCode è disponibile anche come applicazione desktop. Puoi scaricarla direttamente dalla [pagina delle release](https://github.com/anomalyco/opencode/releases) oppure da [opencode.ai/download](https://opencode.ai/download).
+OpenCode è disponibile anche come applicazione desktop. Puoi scaricarla da [opencode.ai/download](https://opencode.ai/download).
 
 | Piattaforma           | Download                           |
 | --------------------- | ---------------------------------- |
 | macOS (Apple Silicon) | `opencode-desktop-mac-arm64.dmg`   |
 | macOS (Intel)         | `opencode-desktop-mac-x64.dmg`     |
-| Windows               | `opencode-desktop-windows-x64.exe` |
+| Windows               | `opencode-desktop-win-x64.exe`     |
 | Linux                 | `.deb`, `.rpm`, oppure AppImage    |
 
 ```bash
 # macOS (Homebrew)
 brew install --cask opencode-desktop
-# Windows (Scoop)
-scoop bucket add extras; scoop install extras/opencode-desktop
 ```
 
 #### Directory di installazione

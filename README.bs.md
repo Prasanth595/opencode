@@ -51,14 +51,12 @@ curl -fsSL https://opencode.ai/v2/install | bash
 
 # Package manageri
 npm i -g @opencode/cli@latest      # ili bun/pnpm/yarn
-scoop install opencode             # Windows
-choco install opencode             # Windows
-brew install anomalyco/tap/opencode # macOS i Linux (preporučeno, uvijek ažurno)
+brew install anomalyco/tap/opencode-v2 # macOS i Linux (preporučeno, uvijek ažurno)
 brew install opencode              # macOS i Linux (zvanična brew formula, rjeđe se ažurira)
 sudo pacman -S opencode            # Arch Linux (Stable)
-paru -S opencode-bin               # Arch Linux (Latest from AUR)
+paru -S opencode-beta              # Arch Linux (Latest from AUR)
 mise use -g opencode               # Bilo koji OS
-nix run nixpkgs#opencode           # ili github:anomalyco/opencode za najnoviji dev branch
+nix run github:anomalyco/opencode  # Nix
 ```
 
 > [!TIP]
@@ -66,20 +64,18 @@ nix run nixpkgs#opencode           # ili github:anomalyco/opencode za najnoviji 
 
 ### Desktop aplikacija (BETA)
 
-OpenCode je dostupan i kao desktop aplikacija. Preuzmi je direktno sa [stranice izdanja](https://github.com/anomalyco/opencode/releases) ili sa [opencode.ai/download](https://opencode.ai/download).
+OpenCode je dostupan i kao desktop aplikacija. Preuzmi je sa [opencode.ai/download](https://opencode.ai/download).
 
 | Platforma             | Preuzimanje                        |
 | --------------------- | ---------------------------------- |
 | macOS (Apple Silicon) | `opencode-desktop-mac-arm64.dmg`   |
 | macOS (Intel)         | `opencode-desktop-mac-x64.dmg`     |
-| Windows               | `opencode-desktop-windows-x64.exe` |
+| Windows               | `opencode-desktop-win-x64.exe`     |
 | Linux                 | `.deb`, `.rpm`, ili AppImage       |
 
 ```bash
 # macOS (Homebrew)
 brew install --cask opencode-desktop
-# Windows (Scoop)
-scoop bucket add extras; scoop install extras/opencode-desktop
 ```
 
 #### Instalacijski direktorij
