@@ -299,7 +299,9 @@ interface RequestDescriptor {
   readonly binary?: true
 }
 
-const maxSseEventBytes = 16 * 1024 * 1024
+// The budget applies to one decoded event, so it counts UTF-16 code units rather than UTF-8 bytes: multibyte text
+// may pass here carrying more bytes than the number names. Frame boundaries decide it, never chunk boundaries.
+const maxSseEventLength = 16 * 1024 * 1024
 
 export function make(options: ClientOptions) {
   const fetch = options.fetch ?? globalThis.fetch
@@ -388,7 +390,6 @@ export function make(options: ClientOptions) {
           }
           if (!next.done) requestOptions?.onActivity?.()
           buffer += decoder.decode(next.value, { stream: !next.done })
-          if (buffer.length > maxSseEventBytes) throw new ClientError("SseEventTooLarge")
           const trailingCarriageReturn = !next.done && buffer.endsWith("\r")
           if (trailingCarriageReturn) buffer = buffer.slice(0, -1)
           buffer = buffer.replaceAll("\r\n", "\n").replaceAll("\r", "\n")
@@ -397,6 +398,7 @@ export function make(options: ClientOptions) {
           let boundary = buffer.indexOf("\n\n")
           while (boundary >= 0) {
             const block = buffer.slice(0, boundary)
+            if (block.length > maxSseEventLength) throw new ClientError("SseEventTooLarge")
             buffer = buffer.slice(boundary + 2)
             const data = block
               .split("\n")
@@ -411,6 +413,8 @@ export function make(options: ClientOptions) {
             }
             boundary = buffer.indexOf("\n\n")
           }
+          // What is left can only be an unfinished frame, so this is the bound that keeps a delimiter-less stream finite.
+          if (buffer.length > maxSseEventLength) throw new ClientError("SseEventTooLarge")
           if (next.done) return
         }
       } finally {
