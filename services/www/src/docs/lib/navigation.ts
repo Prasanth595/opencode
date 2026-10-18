@@ -153,6 +153,15 @@ export const docsSections: DocsSection[] = [
         ],
       },
       {
+        title: "API",
+        items: [
+          { title: "Overview", slug: "console/api" },
+          { title: "Inference", slug: "console/api/inference" },
+          { title: "Providers", slug: "console/api/providers" },
+          { title: "Budgets", slug: "console/api/budgets" },
+        ],
+      },
+      {
         title: "Harnesses",
         items: [
           { title: "Overview", slug: "console/harnesses" },
@@ -161,15 +170,6 @@ export const docsSections: DocsSection[] = [
           { title: "Hermes", slug: "console/harnesses/hermes" },
           { title: "Pi", slug: "console/harnesses/pi" },
           { title: "Raycast", slug: "console/harnesses/raycast" },
-        ],
-      },
-      {
-        title: "API",
-        items: [
-          { title: "Overview", slug: "console/api" },
-          { title: "Inference", slug: "console/api/inference" },
-          { title: "Providers", slug: "console/api/providers" },
-          { title: "Budgets", slug: "console/api/budgets" },
         ],
       },
     ],

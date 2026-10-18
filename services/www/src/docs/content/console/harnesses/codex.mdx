@@ -50,14 +50,18 @@ wire_api = "responses"
 
 ## Models
 
-Set `model` to a model whose endpoint is `/openai/v1/responses` in the [Console](/console/models#endpoints) or
-[Go](/console/go#endpoints) table. Override it for one run with `--model`.
+Set `model` to a model that accepts the Responses API. Override it for one run with `--model`.
+
+| Plan          | Models                                 |
+| ------------- | -------------------------------------- |
+| Pay-as-you-go | GPT, Grok, and Muse Spark models       |
+| Go            | GPT, Grok, Muse Spark, and DeepSeek V4 |
 
 ```bash
 codex --model grok-4.7
 ```
 
-Claude, Gemini, and open models are not available in Codex yet. Use [Pi](/console/harnesses/pi) or
+Claude, Gemini, and most open models are not available in Codex yet. Use [Pi](/console/harnesses/pi) or
 [Hermes](/console/harnesses/hermes) for them in the meantime.
 
 <Callout>Support for every model in every harness is coming soon.</Callout>

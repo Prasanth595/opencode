@@ -49,16 +49,17 @@ https://opencode.ai/inference/go/openai/v1/chat/completions
 
 ## Choose an API
 
-Each model is served by one API. A harness can only use the models whose endpoint matches the API it speaks. Check the
-endpoint column in the [Console](/console/models#endpoints) or [Go](/console/go#endpoints) table.
+A harness can only use the models that accept the API it speaks. Most models accept one API, and some accept several.
+The endpoint column in the [Console](/console/models#endpoints) and [Go](/console/go#endpoints) tables lists one API per
+model, so check the harness page for the full list.
 
 Hermes, Pi, and the Raycast extension pick the right API for each model, so they can use every model. Claude Code and
 Codex speak a single API and only reach part of the catalog.
 
-| Harness     | API                | Models                             |
-| ----------- | ------------------ | ---------------------------------- |
-| Claude Code | Anthropic Messages | Claude, Qwen, and MiniMax M3 on Go |
-| Codex       | OpenAI Responses   | GPT, Grok, and Muse Spark          |
+| Harness     | API                | Models                                                           |
+| ----------- | ------------------ | ---------------------------------------------------------------- |
+| Claude Code | Anthropic Messages | Claude and Qwen, plus Kimi K3, DeepSeek V4, and MiniMax M3 on Go |
+| Codex       | OpenAI Responses   | GPT, Grok, and Muse Spark, plus DeepSeek V4 on Go                |
 
 <Callout>Support for every model in every harness is coming soon.</Callout>
 
