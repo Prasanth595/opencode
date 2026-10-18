@@ -29,6 +29,14 @@ The service is designed primarily for international users and provides stable gl
    /models
    ```
 
+### If a Go API key expires
+
+Run `/connect`, select **OpenCode**, and sign in to the workspace with your Go subscription. This restores the Console
+connection; it does not renew the API key. Then select a Go model whose ID starts with `opencode-go/`.
+
+To create or replace a service-account API key, open the [OpenCode Console](https://opencode.ai/console) and go to
+**Keys → Add Service Account → Add API Key**. Connect that key with `/connect` → **OpenCode Go** → **Use API key**.
+
 <Callout>
   Go and Go Plus are for workspaces with a single member, such as the **Personal** workspace created when you sign up. A
   workspace with a Go subscription cannot invite members.

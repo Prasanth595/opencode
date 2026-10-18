@@ -594,7 +594,13 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
         return
       case "provider-error":
         providerFailed = true
-        yield* failAssistant({ type: "provider.unknown", message: event.message })
+        yield* failAssistant({
+          type: "provider.unknown",
+          message:
+            input.model.providerID === "opencode-go" && /API key has expired/i.test(event.message)
+              ? "Your OpenCode Go API key has expired. Run `/connect`, select **OpenCode**, and sign in to the workspace with your Go subscription to restore access. Then select an `opencode-go/*` model. To create or replace a service-account key, open OpenCode Console and go to **Keys → Add Service Account → Add API Key**."
+              : event.message,
+        })
         return
     }
   }, Effect.uninterruptible)
