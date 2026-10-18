@@ -2,14 +2,6 @@
 
 Release notes for OpenCode V2, newest first.
 
-## Unreleased
-
-### Packaging
-
-#### Bug fixes
-
-- Include root dependencies in Nix installs to preserve OpenTUI module identity and prevent TUI startup color crashes. ([#56856](https://github.com/anomalyco/opencode/issues/56856))
-
 ## v2.0.32 — 2026-10-16
 
 ### Highlights
