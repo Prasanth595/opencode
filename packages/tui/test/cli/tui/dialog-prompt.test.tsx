@@ -208,7 +208,7 @@ test("ctrl+v pastes clipboard text into the dialog prompt", async () => {
     if (!(textarea instanceof TextareaRenderable)) throw new Error("expected focused dialog textarea")
 
     prompt.app.mockInput.pressKey("v", { ctrl: true })
-    await wait(() => textarea.plainText === "draft-sk-test\n")
+    await wait(() => textarea.plainText === "draft-sk-test")
 
     expect(confirmed).toEqual([])
   } finally {

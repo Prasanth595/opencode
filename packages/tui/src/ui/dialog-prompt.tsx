@@ -54,7 +54,7 @@ export function DialogPrompt(props: DialogPromptProps) {
       .read()
       .then((content) => {
         if (content?.mime !== "text/plain" || textarea.isDestroyed) return
-        textarea.insertText(stripAnsiSequences(content.data).replace(/\r\n?/g, "\n"))
+        textarea.insertText(stripAnsiSequences(content.data).replace(/\r\n?/g, "\n").replace(/\n+$/, ""))
       })
       .catch(toast.error)
   }
