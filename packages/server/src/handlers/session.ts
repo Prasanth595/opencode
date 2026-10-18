@@ -22,11 +22,20 @@ import {
   SkillNotFoundError,
 } from "@opencode/protocol/errors"
 import { AbsolutePath } from "@opencode/core/schema"
+import { normalizeAction } from "@opencode/core/v1/config/migrate"
+import { Permission } from "@opencode/schema/permission"
 import { locationErrors } from "../location"
 import { failedMessageDecode, failedSnapshot, missingMessage, missingSession } from "./session-error"
 
 function missingForm(id: Form.ID) {
   return new FormNotFoundError({ id, message: `Form not found: ${id}` })
+}
+
+function normalizePermissions(permissions: Permission.Ruleset): Permission.Ruleset
+function normalizePermissions(permissions: Permission.Ruleset | undefined): Permission.Ruleset | undefined
+function normalizePermissions(permissions: Permission.Ruleset | undefined) {
+  if (!permissions) return undefined
+  return permissions.map((rule) => ({ ...rule, action: normalizeAction(rule.action) }))
 }
 
 export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handlers) =>
@@ -100,7 +109,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 agent: ctx.payload.agent,
                 model: ctx.payload.model,
                 metadata: ctx.payload.metadata,
-                permissions: ctx.payload.permissions,
+                permissions: normalizePermissions(ctx.payload.permissions),
                 ...(ctx.payload.parentID === undefined
                   ? { location: ctx.payload.location ?? { directory: AbsolutePath.make(process.cwd()) } }
                   : { parentID: ctx.payload.parentID }),
@@ -242,7 +251,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               .pipe(Effect.catchTag("Session.NotFoundError", missingSession))
           if (ctx.payload.permissions !== undefined)
             yield* session
-              .setPermissions({ sessionID: ctx.params.sessionID, permissions: ctx.payload.permissions })
+              .setPermissions({ sessionID: ctx.params.sessionID, permissions: normalizePermissions(ctx.payload.permissions) })
               .pipe(Effect.catchTag("Session.NotFoundError", missingSession))
           return HttpApiSchema.NoContent.make()
         }),

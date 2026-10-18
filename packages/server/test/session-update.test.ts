@@ -36,3 +36,34 @@ it.live("updates session metadata through PATCH", () =>
     expect(updated.data.metadata).toEqual({ source: "patch" })
   }).pipe(Effect.scoped),
 )
+
+it.live("normalizes legacy permission action names on update", () =>
+  Effect.gen(function* () {
+    const handler = yield* ServerFetch.make({
+      app: { version: "test" },
+      database: { path: ":memory:" },
+      fs: { filewatcher: false },
+      models: { fetch: false },
+    })
+    const request = (path: string, method: string, body?: unknown) =>
+      Effect.promise(async () => {
+        const response = await handler(
+          new Request(`http://opencode.local${path}`, {
+            method,
+            headers: { "content-type": "application/json" },
+            body: body === undefined ? undefined : JSON.stringify(body),
+          }),
+        )
+        expect(response.status).toBe(method === "PATCH" ? 204 : 200)
+        return response.status === 204 ? undefined : response.json()
+      })
+    const created = Schema.decodeUnknownSync(SessionResponse)(
+      yield* request("/api/session", "POST", { title: "Legacy update" }),
+    )
+    yield* request(`/api/session/${created.data.id}`, "PATCH", {
+      permissions: [{ action: "bash", resource: "*", effect: "deny" }],
+    })
+    const updated = Schema.decodeUnknownSync(SessionResponse)(yield* request(`/api/session/${created.data.id}`, "GET"))
+    expect(updated.data.permissions).toEqual([{ action: "shell", resource: "*", effect: "deny" }])
+  }).pipe(Effect.scoped),
+)

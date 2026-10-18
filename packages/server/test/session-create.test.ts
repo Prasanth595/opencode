@@ -63,3 +63,39 @@ it.live("returns not found when creating a child of a missing session", () =>
     })
   }).pipe(Effect.scoped),
 )
+
+it.live("normalizes legacy permission action names on create", () =>
+  Effect.gen(function* () {
+    const handler = yield* ServerFetch.make({
+      app: { version: "test" },
+      database: { path: ":memory:" },
+      fs: { filewatcher: false },
+      models: { fetch: false },
+    })
+    const response = yield* Effect.promise(() =>
+      handler(
+        new Request("http://opencode.local/api/session", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            title: "Legacy permissions",
+            permissions: [
+              { action: "bash", resource: "*", effect: "deny" },
+              { action: "write", resource: "src/*", effect: "deny" },
+              { action: "task", resource: "*", effect: "ask" },
+              { action: "shell", resource: "git *", effect: "allow" },
+            ],
+          }),
+        }),
+      ),
+    )
+    expect(response.status).toBe(200)
+    const session = Schema.decodeUnknownSync(SessionResponse)(yield* Effect.promise(() => response.json())).data
+    expect(session.permissions).toEqual([
+      { action: "shell", resource: "*", effect: "deny" },
+      { action: "edit", resource: "src/*", effect: "deny" },
+      { action: "subagent", resource: "*", effect: "ask" },
+      { action: "shell", resource: "git *", effect: "allow" },
+    ])
+  }).pipe(Effect.scoped),
+)
