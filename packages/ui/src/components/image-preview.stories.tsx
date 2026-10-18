@@ -14,10 +14,12 @@ Use for full-size image inspection; keep images optimized.
 - Optional: \`alt\` text.
 
 ### Variants and states
-- Single layout with close action.
+- Single layout with zoom controls and a close action.
 
 ### Behavior
 - Intended to be used via \`useDialog().show\`.
+- Pinch or Cmd/Ctrl + wheel zooms at the cursor; wheel and drag pan while zoomed.
+- Double-click toggles between fit and 100%; Cmd/Ctrl + =, - and 0 zoom in, out and to fit.
 
 ### Accessibility
 - Uses localized aria-label for close button.
