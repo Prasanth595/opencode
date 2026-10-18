@@ -1,5 +1,5 @@
 import { lstat, mkdir, readdir, rm, symlink } from "fs/promises"
-import { join, relative } from "path"
+import { dirname, join, relative } from "path"
 
 type Entry = {
   dir: string
@@ -53,6 +53,38 @@ for (const [slug, list] of versions) {
   if (first) selections.set(slug, first)
 }
 
+// Bun's isolated install can materialize the same package version as several
+// store entries (name@version+hash) when transitive peer resolution differs
+// between workspace subgraphs. Workspace packages link straight into those
+// entries, so duplicates become duplicate module instances in the bundled
+// binary (#56856). Collapse duplicate entries of the same version into a
+// symlink to one canonical entry so every resolution path shares one copy.
+// Keep different versions distinct: other packages may depend on them.
+const canonical = new Map<string, Entry>()
+
+for (const [slug, list] of versions) {
+  for (const entry of list) {
+    const key = slug + "@" + entry.version.split("+")[0]
+    if (!canonical.has(key)) canonical.set(key, entry)
+  }
+}
+
+const collapsed: string[] = []
+
+for (const [slug, list] of versions) {
+  for (const entry of list) {
+    const selected = canonical.get(slug + "@" + entry.version.split("+")[0])
+    if (!selected || entry.dir === selected.dir) continue
+    await rm(entry.dir, { recursive: true, force: true })
+    // A symlink at entry.dir resolves relative to dirname(entry.dir), not
+    // entry.dir itself. The target must stay relative so the copied
+    // node_modules keeps working inside the Nix store.
+    const target = relative(dirname(entry.dir), selected.dir) || "."
+    await symlink(target, entry.dir)
+    collapsed.push(slug + " " + entry.dir + " -> " + selected.dir)
+  }
+}
+
 await rm(linkRoot, { recursive: true, force: true })
 await mkdir(linkRoot, { recursive: true })
 
@@ -84,6 +116,15 @@ for (const line of rewrites.slice(0, 20)) {
   console.log("  ", line)
 }
 if (rewrites.length > 20) {
+  console.log("  ...")
+}
+
+collapsed.sort()
+console.log("[canonicalize-node-modules] collapsed", collapsed.length, "duplicate store entries")
+for (const line of collapsed.slice(0, 20)) {
+  console.log("  ", line)
+}
+if (collapsed.length > 20) {
   console.log("  ...")
 }
 
