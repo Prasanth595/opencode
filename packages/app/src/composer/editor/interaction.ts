@@ -282,7 +282,7 @@ export function createComposerEditor(input: {
         const text = prediction.text()!
         prediction.dismiss()
         draft.setText(text)
-        restoreFocus(text.length)
+        setEditorCursor(editor, text.length)
 
         return true
       }

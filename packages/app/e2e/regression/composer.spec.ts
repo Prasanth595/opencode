@@ -538,12 +538,12 @@ async function openPredictions(page: Page, options: Pick<Parameters<typeof openS
     onPrompt: (input) => void prompts.push(input.body),
   })
   let sequence = 0
-  const finish = () =>
+  const execution = (type: "session.execution.started" | "session.execution.succeeded") =>
     view.push([
       {
-        id: `evt_prediction_finished_${sequence++}`,
+        id: `evt_prediction_${type}_${sequence++}`,
         created: T0 + 2_000 + sequence,
-        type: "session.execution.succeeded",
+        type,
         durable: { aggregateID: sessionID, seq: sequence, version: 1 },
         location: { directory: view.directory },
         data: { sessionID },
@@ -552,7 +552,14 @@ async function openPredictions(page: Page, options: Pick<Parameters<typeof openS
 
   await expect(page.locator('[data-component="composer-scroll"]')).toHaveText(followUp)
 
-  return { ...view, sessionID, generated, prompts, finish }
+  return {
+    ...view,
+    sessionID,
+    generated,
+    prompts,
+    start: () => execution("session.execution.started"),
+    finish: () => execution("session.execution.succeeded"),
+  }
 }
 
 test("predicts a follow-up after completion and Tab accepts an editable draft without sending", async ({
@@ -609,6 +616,8 @@ test("only the visible focused window requests predictions", async ({ page }) =>
   const view = await openPredictions(page)
 
   for (const inactive of ["hidden", "unfocused"] as const) {
+    await view.start()
+    await expect(page.locator('[data-component="composer-scroll"]')).toHaveText(followUp)
     await page.evaluate((inactive) => {
       Object.defineProperty(document, "visibilityState", {
         configurable: true,
@@ -670,17 +679,7 @@ for (const action of ["typing", "execution", "navigation", "visibility", "blur"]
 
     if (action === "typing") await view.editor.fill("Keep this draft.")
 
-    if (action === "execution")
-      await view.push([
-        {
-          id: "evt_prediction_next_execution",
-          created: T0 + 3_000,
-          type: "session.execution.started",
-          durable: { aggregateID: view.sessionID, seq: 2, version: 1 },
-          location: { directory: view.directory },
-          data: { sessionID: view.sessionID },
-        },
-      ])
+    if (action === "execution") await view.start()
 
     if (action === "visibility")
       await page.evaluate(() => {
