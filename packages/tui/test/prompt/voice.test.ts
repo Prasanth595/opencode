@@ -152,8 +152,10 @@ describe("component.prompt.voice", () => {
   })
 
   describe("VoiceRecorder", () => {
-    // Exits cleanly on SIGINT so stop() resolves without the SIGKILL fallback.
-    const fakeRecorder = "#!/bin/sh\ntrap 'exit 0' INT\ntouch \"$1\"\nsleep 30\n"
+    // Foreground sleep would delay the INT trap until it finishes; backgrounding
+    // it lets the trap exit immediately so stop() resolves without the SIGKILL
+    // fallback.
+    const fakeRecorder = "#!/bin/sh\ntrap 'exit 0' INT\ntouch \"$1\"\nsleep 30 & wait\n"
 
     function listVoiceFiles(dir: string): string[] {
       return readdirSync(dir).filter((name) => name.startsWith("opencode-voice-"))

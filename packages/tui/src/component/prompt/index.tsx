@@ -6,7 +6,9 @@ import {
   PasteEvent,
   decodePasteBytes,
   type KeyEvent,
+  type Renderable,
 } from "@opentui/core"
+import type { CommandContext } from "@opentui/keymap"
 import { createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match, For } from "solid-js"
 import path from "path"
 import { useLocal } from "../../context/local"
@@ -955,17 +957,25 @@ export function Prompt(props: PromptProps) {
   let voiceRecorder: VoiceRecorder | undefined
   let voiceStartTime = 0
   let voiceStopTimer: ReturnType<typeof setTimeout> | undefined
+  let voiceStarting = false
 
-  async function startVoiceRecording() {
+  async function startVoiceRecording(event?: KeyEvent) {
+    // Key repeat fires the press binding while the key is held; only a real
+    // press may start or stop, so holding the key records without toggling.
+    if (event?.eventType === "repeat") return
     if (voiceRecorder?.recording) {
       void stopVoiceRecording("")
       return
     }
+    if (voiceStarting) return
     if (!config.voice?.transcribe_command) {
       toast.show({ variant: "error", message: "Voice input needs voice.transcribe_command to be set" })
       return
     }
+    // findRecorder awaits device enumeration on Windows; guard re-entry.
+    voiceStarting = true
     const spec = await findRecorder()
+    voiceStarting = false
     if (!spec) {
       toast.show({ variant: "error", message: "Voice input needs ffmpeg or sox installed to record audio" })
       return
@@ -1025,7 +1035,7 @@ export function Prompt(props: PromptProps) {
           ...binding,
           desc: "Start voice recording (release or press again to transcribe)",
           group: "Prompt",
-          cmd: () => void startVoiceRecording(),
+          cmd: (context: CommandContext<Renderable, KeyEvent>) => void startVoiceRecording(context.event),
         })),
         // Releasing the same key stops the recording, so one configured key
         // covers both halves of push-to-talk without extra configuration.
