@@ -387,13 +387,38 @@ export const layer = (options?: Options) =>
             (yield* Effect.filter(candidates, fs.isFile)).at(-1) ?? path.join(directory, "opencode.jsonc")
           const text = (yield* fs.readFileStringSafe(filepath)) ?? "{}\n"
           const updated = yield* Effect.try({
-            try: () =>
-              applyEdits(
-                text,
-                modify(text, ["shell"], patch.shell ?? undefined, {
-                  formattingOptions: { tabSize: 2, insertSpaces: true },
-                }),
-              ),
+            try: () => {
+              const formattingOptions = { tabSize: 2, insertSpaces: true }
+              const providerIDs = Object.keys(patch.providers ?? {})
+              // Saving a provider also re-enables it: a V1 `disabled_providers` entry would otherwise keep the
+              // provider denied by policy even though its configuration was just written.
+              const disabled = (parse(text) as { disabled_providers?: unknown } | undefined)?.disabled_providers
+              const document =
+                !providerIDs.length || !Array.isArray(disabled)
+                  ? text
+                  : applyEdits(
+                      text,
+                      modify(
+                        text,
+                        ["disabled_providers"],
+                        disabled.filter((id: unknown) => typeof id !== "string" || !providerIDs.includes(id)),
+                        { formattingOptions },
+                      ),
+                    )
+              // Each step re-parses the document so later edits see earlier ones. jsonc-parser creates missing
+              // intermediate objects, and patching `providers` never replaces unrelated providers.
+              const steps: Array<{ path: (string | number)[]; value: unknown }> = [
+                ...(patch.shell === undefined ? [] : [{ path: ["shell"], value: patch.shell ?? undefined }]),
+                ...Object.entries(patch.providers ?? {}).map(([id, provider]) => ({
+                  path: ["providers", id],
+                  value: provider,
+                })),
+              ]
+              return steps.reduce(
+                (current, step) => applyEdits(current, modify(current, step.path, step.value, { formattingOptions })),
+                document,
+              )
+            },
             catch: (cause) => new FSUtil.FileSystemError({ method: "config.update", cause }),
           })
           yield* fs.writeWithDirs(filepath, updated.endsWith("\n") ? updated : `${updated}\n`)

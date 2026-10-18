@@ -23,6 +23,7 @@ import { Location } from "@opencode/core/location"
 import { Project } from "@opencode/core/project"
 import { Provider } from "@opencode/core/provider"
 import { AbsolutePath } from "@opencode/core/schema"
+import { parse } from "jsonc-parser"
 import { WellKnown } from "@opencode/core/wellknown"
 import { KV } from "@opencode/core/kv"
 import { ManagedPolicy } from "@opencode/core/managed-policy"
@@ -2011,6 +2012,57 @@ describe("Config", () => {
             ),
           )
         })
+      }),
+    ),
+  )
+
+  it.live("writes provider patches into the global config and re-enables them", () =>
+    Effect.acquireDisposable(Effect.promise(() => tmpdir())).pipe(
+      Effect.flatMap((tmp) => {
+        const global = path.join(tmp.path, "global")
+        const file = path.join(global, "opencode.jsonc")
+        return Effect.promise(async () => {
+          await fs.mkdir(global, { recursive: true })
+          await fs.writeFile(
+            file,
+            `{
+  // keep this comment
+  "shell": "/bin/sh",
+  "disabled_providers": ["custom", "other"],
+}
+`,
+          )
+        }).pipe(
+          Effect.andThen(
+            Effect.gen(function* () {
+              const config = yield* Config.Service
+              yield* config.update!({
+                providers: {
+                  custom: {
+                    name: "Custom",
+                    package: "aisdk:@ai-sdk/openai-compatible",
+                    settings: { baseURL: "https://api.example.com" },
+                    models: { "model-a": { name: "Model A" } },
+                  },
+                },
+              })
+              const text = yield* Effect.promise(() => fs.readFile(file, "utf8"))
+              expect(text).toContain("// keep this comment")
+              expect(parse(text)).toEqual({
+                shell: "/bin/sh",
+                disabled_providers: ["other"],
+                providers: {
+                  custom: {
+                    name: "Custom",
+                    package: "aisdk:@ai-sdk/openai-compatible",
+                    settings: { baseURL: "https://api.example.com" },
+                    models: { "model-a": { name: "Model A" } },
+                  },
+                },
+              })
+            }).pipe(Effect.provide(testLayer(path.join(tmp.path, "project"), global))),
+          ),
+        )
       }),
     ),
   )
