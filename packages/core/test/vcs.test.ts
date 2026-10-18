@@ -582,32 +582,47 @@ describe("Vcs", () => {
   )
 
   it.live("reports tracking divergence against upstream", () =>
-    withTmp((directory) =>
-      Effect.promise(async () => {
-        await initRepo(directory)
-        const remote = path.join(directory, "upstream.git")
-        await $`git init --bare ${remote}`.quiet()
-        await fs.writeFile(path.join(directory, "file.txt"), "one\n")
-        await commitAll(directory, "initial")
-        await $`git remote add origin ${remote}`.cwd(directory).quiet()
-        await $`git push -u origin main`.cwd(directory).quiet()
-        await fs.writeFile(path.join(directory, "file.txt"), "two\n")
-        await commitAll(directory, "second")
-      }).pipe(
-        Effect.andThen(
-          Effect.gen(function* () {
-            const vcs = yield* Vcs.Service
-            const context = host()
-            yield* VcsGitPlugin.Plugin.effect({
-              ...context,
-              vcs: { ...context.vcs, transform: vcs.transform, reload: vcs.reload },
-            })
-            const info = yield* vcs.info()
-            expect(info.ahead).toBe(1)
-            expect(info.behind).toBe(0)
-          }).pipe(provide(directory, { git: true, worktree: directory })),
-        ),
-      ),
+    withGit((directory) =>
+      Effect.gen(function* () {
+        yield* Effect.promise(async () => {
+          await fs.writeFile(path.join(directory, "file.txt"), "one\n")
+          await commitAll(directory, "initial")
+          await $`git remote add origin ${directory}`.cwd(directory).quiet()
+          await $`git update-ref refs/remotes/origin/main HEAD`.cwd(directory).quiet()
+          await $`git config branch.main.remote origin`.cwd(directory).quiet()
+          await $`git config branch.main.merge refs/heads/main`.cwd(directory).quiet()
+          await fs.writeFile(path.join(directory, "file.txt"), "two\n")
+          await commitAll(directory, "second")
+        })
+        const vcs = yield* Vcs.Service
+        const bus = yield* Bus.Service
+        const committed = yield* bus
+          .subscribe(VcsEvent.BranchUpdated)
+          .pipe(Stream.take(1), Stream.runHead, Effect.forkScoped({ startImmediately: true }))
+        yield* bus.publish(FileSystem.Event.Changed, {
+          file: path.join(directory, ".git", "refs", "heads", "main"),
+          event: "change",
+        })
+        expect(yield* Fiber.join(committed)).toMatchObject({
+          _tag: "Some",
+          value: { location: { directory }, data: { branch: "main" } },
+        })
+        expect(yield* vcs.info()).toMatchObject({ ahead: 1, behind: 0 })
+
+        const pushed = yield* bus
+          .subscribe(VcsEvent.BranchUpdated)
+          .pipe(Stream.take(1), Stream.runHead, Effect.forkScoped({ startImmediately: true }))
+        yield* Effect.promise(() => $`git update-ref refs/remotes/origin/main HEAD`.cwd(directory).quiet())
+        yield* bus.publish(FileSystem.Event.Changed, {
+          file: path.join(directory, ".git", "refs", "remotes", "origin", "main"),
+          event: "change",
+        })
+        expect(yield* Fiber.join(pushed)).toMatchObject({
+          _tag: "Some",
+          value: { location: { directory }, data: { branch: "main" } },
+        })
+        expect(yield* vcs.info()).toMatchObject({ ahead: 0, behind: 0 })
+      }),
     ),
   )
 
