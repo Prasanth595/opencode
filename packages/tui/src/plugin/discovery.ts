@@ -1,7 +1,9 @@
 import { readdir, stat } from "node:fs/promises"
 import path from "node:path"
-import { pathToFileURL } from "node:url"
+import { localSource } from "@opencode/plugin/source"
 import { isMissingPath, localProjectDirectory, projectConfigDirectories } from "../util/config-directories"
+
+export { localSource }
 
 export async function localPluginDirectories(cwd: string, configDirectory: string) {
   const projectDirectory = await localProjectDirectory(cwd)
@@ -50,9 +52,16 @@ export async function discoverPluginTargets(directories: string[]) {
   ).flat()
 }
 
-export function localSource(spec: string, directory: string) {
-  if (spec.startsWith("file://")) return new URL(spec)
-  if (spec.startsWith("./") || spec.startsWith("../") || path.isAbsolute(spec))
-    return pathToFileURL(path.resolve(directory, spec))
-  return undefined
+export function mergePluginTargets<const Target extends { readonly entry: string | { readonly package: string } }>(
+  targets: readonly Target[],
+  directory: string,
+) {
+  return [
+    ...targets
+      .reduce((result, target) => {
+        const value = typeof target.entry === "string" ? target.entry : target.entry.package
+        return result.set(localSource(value, directory)?.href ?? value, target)
+      }, new Map<string, Target>())
+      .values(),
+  ]
 }

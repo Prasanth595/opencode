@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import type { Plugin } from "@opencode-ai/plugin/tui"
+import type { Plugin } from "@opencode/plugin/tui"
 import { BoxRenderable, MouseButton } from "@opentui/core"
 import { Portal, useTerminalDimensions } from "@opentui/solid"
 import { createSignal, onCleanup } from "solid-js"
@@ -12,7 +12,7 @@ export function DiffFileMenu(props: {
   onClose: () => void
 }) {
   const dimensions = useTerminalDimensions()
-  const theme = props.context.theme.contextual.overlay
+  const theme = props.context.theme
   const [hovered, setHovered] = createSignal(false)
   const label = () => (props.reviewed ? "Mark incomplete" : "Mark complete")
   const width = () => Math.min(19, dimensions().width)
@@ -63,7 +63,7 @@ export function DiffFileMenu(props: {
           height={1}
           paddingLeft={1}
           paddingRight={1}
-          backgroundColor={hovered() ? theme.background.action.primary.hovered : theme.background.default}
+          backgroundColor={hovered() ? theme.background.action.primary.hovered : theme.background.raised.high}
           onMouseOver={() => setHovered(true)}
           onMouseOut={() => setHovered(false)}
           onMouseDown={(event) => {
@@ -77,7 +77,7 @@ export function DiffFileMenu(props: {
             if (event.button === MouseButton.LEFT) run()
           }}
         >
-          <text fg={theme.text.default} selectable={false} wrapMode="none" truncate>
+          <text fg={theme.text.base} selectable={false} wrapMode="none" truncate>
             {label()}
           </text>
         </box>

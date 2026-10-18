@@ -1,9 +1,9 @@
-import { PersistentPty } from "@opencode-ai/schema/persistent-pty"
-import { Pty } from "@opencode-ai/schema/pty"
-import { PtyTicket } from "@opencode-ai/schema/pty-ticket"
-import { Session } from "@opencode-ai/schema/session"
+import { PersistentPty } from "@opencode/schema/persistent-pty"
+import { Pty } from "@opencode/schema/pty"
+import { PtyTicket } from "@opencode/schema/pty-ticket"
+import { Session } from "@opencode/schema/session"
 import { Schema } from "effect"
-import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
 import { ForbiddenError, InvalidRequestError, PtyNotFoundError, ServiceUnavailableError } from "../errors.js"
 import { PTY_CONNECT_TICKET_QUERY, PTY_CONNECT_TOKEN_HEADER, PTY_CONNECT_TOKEN_HEADER_VALUE } from "./pty.js"
 
@@ -106,7 +106,7 @@ export const PersistentPtyGroup = HttpApiGroup.make("server.experimental")
       error: [ForbiddenError, PtyNotFoundError, ServiceUnavailableError],
     }).annotateMerge(
       OpenApi.annotations({
-        identifier: "v2.persistentPty.connect",
+        identifier: "persistentPty.connect",
         summary: "Connect to a persistent PTY",
         description: "Stream persistent PTY output through the OpenCode server.",
         transform: (operation) => ({

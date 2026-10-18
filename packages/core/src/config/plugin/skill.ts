@@ -1,9 +1,9 @@
 export * as ConfigSkillPlugin from "./skill.js"
 
-import { define } from "@opencode-ai/plugin/effect/plugin"
-import type { Entry } from "@opencode-ai/schema/config"
-import { FSUtil } from "@opencode-ai/util/fs-util"
-import { Global } from "@opencode-ai/util/global"
+import { define } from "@opencode/plugin/effect/plugin"
+import type { Entry } from "@opencode/schema/config"
+import { FSUtil } from "@opencode/util/fs-util"
+import { Global } from "@opencode/util/global"
 import path from "path"
 import { Effect, FiberMap, PubSub, Semaphore, Stream } from "effect"
 import { Config } from "../../config.js"
@@ -80,13 +80,8 @@ export const Plugin = define({
         if (result.some((item) => Skill.Source.equals(item, source))) return
         result.push(source)
       }
-      const claude = loaded.entries.flatMap((entry) => (entry.type === "claude" ? [entry.path] : []))
-      const agents = loaded.entries.flatMap((entry) => (entry.type === "agents" ? [entry.path] : []))
       const directories = loaded.entries.flatMap((entry) => (entry.type === "directory" ? [entry.path] : []))
       const items = loaded.entries.flatMap((entry) => (entry.type === "document" ? (entry.info.skills ?? []) : []))
-      for (const directory of [...claude, ...agents]) {
-        add(Skill.DirectorySource.make({ type: "directory", path: AbsolutePath.make(path.join(directory, "skills")) }))
-      }
       for (const directory of directories) {
         add(Skill.DirectorySource.make({ type: "directory", path: AbsolutePath.make(path.join(directory, "skill")) }))
         add(Skill.DirectorySource.make({ type: "directory", path: AbsolutePath.make(path.join(directory, "skills")) }))

@@ -1,15 +1,15 @@
 import { describe, expect, test } from "bun:test"
-import { Money } from "@opencode-ai/schema/money"
+import { Money } from "@opencode/schema/money"
 import { Effect, Fiber, Layer, Ref, Scope, Stream } from "effect"
-import { HttpClient, HttpClientResponse } from "effect/unstable/http"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNodePlatform } from "@opencode-ai/util/effect/app-node-platform"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Bus } from "@opencode-ai/core/bus"
-import { KV } from "@opencode-ai/core/kv"
-import { Model } from "@opencode-ai/core/model"
-import { bodyDigest, ModelsDev } from "@opencode-ai/core/models-dev"
-import { Provider } from "@opencode-ai/core/provider"
+import { HttpClient, HttpClientResponse } from "effect/http"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { LayerNodePlatform } from "@opencode/util/effect/app-node-platform"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Bus } from "@opencode/core/bus"
+import { KV } from "@opencode/core/kv"
+import { Model } from "@opencode/core/model"
+import { bodyDigest, ModelsDev } from "@opencode/core/models-dev"
+import { Provider } from "@opencode/core/provider"
 import { it } from "./lib/effect"
 
 const cacheKey = "models-dev:catalog"
@@ -49,7 +49,7 @@ const fixtureSnapshot = [
       id: Provider.ID.make("acme"),
       name: "Acme",
       activation: "auto",
-      package: Provider.aisdk("@ai-sdk/openai-compatible"),
+      package: "@opencode/ai/providers/openai-compatible",
     },
     models: [
       {
@@ -60,7 +60,7 @@ const fixtureSnapshot = [
         compatibility: { reasoningField: "vendor_reasoning" },
         family: undefined,
         package: undefined,
-        settings: undefined,
+        settings: { provider: "acme" },
         capabilities: { tools: true, input: [], output: [] },
         variants: [],
         time: { released: Date.parse("2026-01-01") },
@@ -112,7 +112,7 @@ const fixture2Snapshot = [
       id: Provider.ID.make("beta"),
       name: "Beta",
       activation: "auto",
-      package: Provider.aisdk("@ai-sdk/openai-compatible"),
+      package: "@opencode/ai/providers/openai-compatible",
     },
     models: [
       {
@@ -122,7 +122,7 @@ const fixture2Snapshot = [
         name: "Beta One",
         family: undefined,
         package: undefined,
-        settings: undefined,
+        settings: { provider: "beta" },
         capabilities: { tools: false, input: [], output: [] },
         variants: [],
         time: { released: Date.parse("2026-02-01") },
@@ -234,7 +234,7 @@ describe("ModelsDev Service", () => {
     }),
   )
 
-  it.live("normalizes provider and model AI SDK packages from models.dev", () =>
+  it.live("maps models.dev npm packages onto native packages", () =>
     Effect.gen(function* () {
       const cache = makeCache()
       writeCache(cache, {
@@ -247,6 +247,31 @@ describe("ModelsDev Service", () => {
             },
           },
         },
+        "cloudflare-workers-ai": {
+          id: "cloudflare-workers-ai",
+          name: "Cloudflare Workers AI",
+          env: ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_KEY"],
+          npm: "@ai-sdk/openai-compatible",
+          api: "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1",
+          models: {},
+        },
+        azure: {
+          id: "azure",
+          name: "Azure",
+          env: ["AZURE_RESOURCE_NAME", "AZURE_API_KEY"],
+          npm: "@ai-sdk/azure",
+          models: {
+            "gpt-5": {
+              ...fixture.acme.models["acme-1"],
+              id: "gpt-5",
+            },
+            "custom-chat": {
+              ...fixture.acme.models["acme-1"],
+              id: "custom-chat",
+              provider: { shape: "completions" },
+            },
+          },
+        },
       })
       const state = yield* Ref.make(initialState)
       const result = yield* provided(
@@ -254,8 +279,15 @@ describe("ModelsDev Service", () => {
         cache,
         ModelsDev.Service.use((service) => service.get()),
       )
-      expect(result[0]?.info.package).toBe(Provider.aisdk("@ai-sdk/openai-compatible"))
-      expect(result[0]?.models[0]?.package).toBe(Provider.aisdk("@ai-sdk/openai"))
+      expect(result[0]?.info.package).toBe("@opencode/ai/providers/openai-compatible")
+      expect(result[0]?.models[0]?.package).toBe("@opencode/ai/providers/openai")
+      expect(result[1]?.info.package).toBe("@opencode/ai/providers/cloudflare-workers-ai")
+      expect(result[1]?.info.settings).toBeUndefined()
+      expect(result[2]?.info.package).toBe("@opencode/ai/providers/azure/responses")
+      expect(result[2]?.models.find((model) => model.id === "gpt-5")?.package).toBeUndefined()
+      expect(result[2]?.models.find((model) => model.id === "custom-chat")?.package).toBe(
+        "@opencode/ai/providers/azure/chat",
+      )
     }),
   )
 

@@ -1,8 +1,9 @@
+import type { FileSystem } from "@opencode/core/filesystem"
 import fs from "fs/promises"
 import path from "path"
 import { describe, expect } from "bun:test"
-import { Config } from "@opencode-ai/schema/config"
-import { Money } from "@opencode-ai/schema/money"
+import { Config } from "@opencode/schema/config"
+import { Money } from "@opencode/schema/money"
 import {
   Cause,
   DateTime,
@@ -22,24 +23,23 @@ import {
   Stream,
 } from "effect"
 import { TestClock } from "effect/testing"
-import { Agent } from "@opencode-ai/core/agent"
-import { Catalog } from "@opencode-ai/core/catalog"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Global } from "@opencode-ai/util/global"
-import { LocationServiceMap, type LocationServices } from "@opencode-ai/core/location-services"
-import { LocationActivity } from "@opencode-ai/core/location-activity"
-import { Location } from "@opencode-ai/core/location"
-import { LocationWatcher } from "@opencode-ai/core/filesystem/location-watcher"
-import { Plugin } from "@opencode-ai/core/plugin"
-import { Model } from "@opencode-ai/core/model"
-import { Project } from "@opencode-ai/core/project"
-import { Provider } from "@opencode-ai/core/provider"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Session } from "@opencode-ai/core/session"
-import { Workspace } from "@opencode-ai/core/workspace"
-import { SessionEvent } from "@opencode-ai/core/session/event"
-import { SessionRunnerModel } from "@opencode-ai/core/session/runner/model"
+import { Agent } from "@opencode/core/agent"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Global } from "@opencode/util/global"
+import { LocationServiceMap, type LocationServices } from "@opencode/core/location-services"
+import { LocationActivity } from "@opencode/core/location-activity"
+import { Location } from "@opencode/core/location"
+import { LocationWatcher } from "@opencode/core/filesystem/location-watcher"
+import { Plugin } from "@opencode/core/plugin"
+import { Model } from "@opencode/core/model"
+import { Project } from "@opencode/core/project"
+import { Provider } from "@opencode/core/provider"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Session } from "@opencode/core/session"
+import { Workspace } from "@opencode/core/workspace"
+import { SessionEvent } from "@opencode/core/session/event"
+import { SessionRunnerModel } from "@opencode/core/session/runner/model"
 import { tmpdir, tmpdirScoped } from "./fixture/tmpdir"
 import { tempGlobalLayer } from "./fixture/global"
 import { offlineModels } from "./fixture/models"
@@ -68,7 +68,7 @@ const activityLocations = Layer.effect(
           workspaceID: ref.workspaceID,
           project: { id: Project.ID.global, directory: ref.directory, canonical: ref.directory },
         }),
-      ) as unknown as Layer.Layer<LocationServices>,
+      ) as unknown as Layer.Layer<LocationServices, FileSystem.DirectoryNotFoundError>,
     { idleTimeToLive: Duration.infinity },
   ),
 )
@@ -282,7 +282,8 @@ describe("LocationServiceMap", () => {
 
       yield* read
       yield* TestClock.adjust("59 minutes")
-      yield* bus.publish(Catalog.Event.Updated, {}, { location: ref })
+      yield* bus.publish(Provider.Event.Updated, {}, { location: ref })
+      yield* bus.publish(Model.Event.Updated, {}, { location: ref })
       yield* TestClock.adjust("2 minutes")
       expect(Array.from(yield* RcMap.keys(locations.rcMap))).toEqual([])
 
@@ -450,7 +451,7 @@ describe("LocationServiceMap", () => {
     ),
   )
 
-  it.live("isolates catalog state by location", () =>
+  it.live("isolates provider state by location", () =>
     Effect.acquireRelease(
       Effect.promise(() => Promise.all([tmpdir(), tmpdir()])),
       (dirs) => Effect.promise(() => Promise.all(dirs.map((dir) => dir[Symbol.asyncDispose]())).then(() => undefined)),
@@ -460,13 +461,13 @@ describe("LocationServiceMap", () => {
           const update = (directory: string, providerID: Provider.ID) =>
             Effect.gen(function* () {
               yield* Reference.Service
-              const catalog = yield* Catalog.Service
-              yield* catalog.transform((editor) => editor.provider.update(providerID, () => {}))
+              const providers = yield* Provider.Service
+              yield* providers.transform((editor) => editor.update(providerID, () => {}))
               const plugins = yield* Plugin.Service
               yield* plugins.awaitActivation
               const registry = yield* Tool.Service
               return {
-                providers: yield* catalog.provider.all(),
+                providers: yield* providers.all(),
                 tools: yield* toolDefinitions(registry),
               }
             }).pipe(
@@ -568,7 +569,7 @@ describe("LocationServiceMap", () => {
             ),
           )
           const failure = yield* Effect.gen(function* () {
-            const catalog = yield* Catalog.Service
+            const modelState = yield* Model.Service
             const models = yield* SessionRunnerModel.Service
             return yield* models.resolve(
               Session.Info.make({
@@ -584,7 +585,7 @@ describe("LocationServiceMap", () => {
                 time: { created: DateTime.makeUnsafe(0), updated: DateTime.makeUnsafe(0) },
                 location,
               }),
-              catalog.model.available,
+              modelState.available,
             )
           }).pipe(Effect.provide(LocationServiceMap.Service.get(location)), Effect.flip)
 
@@ -611,7 +612,7 @@ describe("LocationServiceMap", () => {
             ["google-vertex-anthropic", "google-vertex"],
           ] as const) {
             const failure = yield* Effect.gen(function* () {
-              const catalog = yield* Catalog.Service
+              const modelState = yield* Model.Service
               const models = yield* SessionRunnerModel.Service
               return yield* models.resolve(
                 Session.Info.make({
@@ -627,7 +628,7 @@ describe("LocationServiceMap", () => {
                   time: { created: DateTime.makeUnsafe(0), updated: DateTime.makeUnsafe(0) },
                   location,
                 }),
-                catalog.model.available,
+                modelState.available,
               )
             }).pipe(Effect.provide(LocationServiceMap.Service.get(location)), Effect.flip)
 
@@ -654,12 +655,13 @@ describe("LocationServiceMap", () => {
         Effect.gen(function* () {
           const location = Location.Ref.make({ directory: AbsolutePath.make(dir.path) })
           const resolved = yield* Effect.gen(function* () {
-            const catalog = yield* Catalog.Service
-            yield* catalog.transform((editor) => {
-              editor.provider.update(Provider.ID.make("aliased"), (provider) => {
-                provider.package = Provider.aisdk("@ai-sdk/openai")
+            const providers = yield* Provider.Service
+            const modelState = yield* Model.Service
+            yield* providers.transform((editor) => {
+              editor.update(Provider.ID.make("aliased"), (provider) => {
+                provider.package = "@opencode/ai/providers/openai"
               })
-              editor.model.update(Provider.ID.make("aliased"), Model.ID.make("fast"), (model) => {
+              editor.models.update(Provider.ID.make("aliased"), Model.ID.make("fast"), (model) => {
                 // Catalog id and package model id intentionally differ, like gpt-5.5-fast -> gpt-5.5.
                 model.modelID = Model.ID.make("base")
                 model.variants = [{ id: Model.VariantID.make("high") }]
@@ -681,7 +683,7 @@ describe("LocationServiceMap", () => {
                 time: { created: DateTime.makeUnsafe(0), updated: DateTime.makeUnsafe(0) },
                 location,
               }),
-              catalog.model.available,
+              modelState.available,
             )
           }).pipe(Effect.provide(LocationServiceMap.Service.get(location)))
 

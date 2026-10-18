@@ -1,22 +1,19 @@
 import { createStore, reconcile } from "solid-js/store"
 import { Schema } from "effect"
-import { SessionError } from "@opencode-ai/schema/session-error"
-import { type Accessor, batch, createEffect, createMemo, createRoot, getOwner, onCleanup } from "solid-js"
-import { createSimpleContext } from "@opencode-ai/ui/context"
+import { SessionError } from "@opencode/schema/session-error"
+import { batch, createEffect, onCleanup } from "solid-js"
 import type { ServerSDK } from "@/runtime/server/client"
-import type { Data } from "@opencode-ai/client/solid"
+import type { Data } from "@opencode/client/solid"
 import { usePlatform } from "@/runtime/platform/platform"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useSettings } from "@/settings/model"
-import { decode64 } from "@/runtime/persistence/base64"
 import { Persist, persisted } from "@/runtime/persistence/storage"
 import { Persistence } from "@/runtime/persistence/schema"
-import { playSoundByIdOnce } from "@/shell/notifications/sound"
-import { useGlobal } from "@/runtime/server/runtime"
-import { ServerConnection, useServers } from "@/runtime/server/registry"
+import { playSoundById } from "@/shell/notifications/sound"
+import type { createNotificationCoordinator } from "@/shell/notifications/coordinator"
+import { ServerConnection } from "@/runtime/server/registry"
 import { sessionIDHasOpenTab, useTabs } from "@/shell/tabs/tabs"
-import { requireServerKey, sessionHref } from "@/shell/routes/session"
-import type { ServerScope } from "@/runtime/server/scope"
+import { sessionHref } from "@/shell/routes/session"
 import { useServer } from "@/runtime/server/current"
 
 const NotificationBase = {
@@ -26,11 +23,14 @@ const NotificationBase = {
   time: Schema.Finite,
   viewed: Schema.Boolean,
 }
+
 export const Notification = Schema.Union([
   Persistence.struct({ ...NotificationBase, type: Schema.Literal("turn-complete") }),
   Persistence.struct({ ...NotificationBase, type: Schema.Literal("error"), error: SessionError.Error }),
 ])
+
 export type Notification = typeof Notification.Type
+
 export const NotificationStore = Persistence.struct({ list: Persistence.array(Notification) })
 
 type NotificationIndex = {
@@ -52,18 +52,22 @@ type NotificationTabs = Pick<ReturnType<typeof useTabs>, "addSessionTab" | "reme
 
 export function openNotificationSession(tabs: NotificationTabs, server: ServerConnection.Key, sessionID: string) {
   const tab = tabs.addSessionTab({ server, sessionId: sessionID })
+
   if (tab.type !== "session") return
   tabs.rememberSessionRoute(tab, sessionID)
   tabs.select(tab)
 }
 
 const MAX_NOTIFICATIONS = 500
+
 const NOTIFICATION_TTL_MS = 1000 * 60 * 60 * 24 * 30
 
 function pruneNotifications(list: Notification[]) {
   const cutoff = Date.now() - NOTIFICATION_TTL_MS
   const pruned = list.filter((n) => n.time >= cutoff)
+
   if (pruned.length <= MAX_NOTIFICATIONS) return pruned
+
   return pruned.slice(pruned.length - MAX_NOTIFICATIONS)
 }
 
@@ -91,10 +95,12 @@ function buildNotificationIndex(list: Notification[]) {
     if (notification.session) {
       const all = index.session.all[notification.session] ?? []
       index.session.all[notification.session] = [...all, notification]
+
       if (!notification.viewed) {
         const unseen = index.session.unseen[notification.session] ?? []
         index.session.unseen[notification.session] = [...unseen, notification]
         index.session.unseenCount[notification.session] = unseen.length + 1
+
         if (notification.type === "error") index.session.unseenHasError[notification.session] = true
       }
     }
@@ -102,10 +108,12 @@ function buildNotificationIndex(list: Notification[]) {
     if (notification.directory) {
       const all = index.project.all[notification.directory] ?? []
       index.project.all[notification.directory] = [...all, notification]
+
       if (!notification.viewed) {
         const unseen = index.project.unseen[notification.directory] ?? []
         index.project.unseen[notification.directory] = [...unseen, notification]
         index.project.unseenCount[notification.directory] = unseen.length + 1
+
         if (notification.type === "error") index.project.unseenHasError[notification.directory] = true
       }
     }
@@ -114,7 +122,12 @@ function buildNotificationIndex(list: Notification[]) {
   return index
 }
 
-export function createServerNotificationState(input: { sdk: ServerSDK; data: Data; key: ServerConnection.Key }) {
+export function createServerNotificationState(input: {
+  sdk: ServerSDK
+  data: Data
+  key: ServerConnection.Key
+  coordinator: ReturnType<typeof createNotificationCoordinator>
+}) {
   const platform = usePlatform()
   const settings = useSettings()
   const language = useLanguage()
@@ -126,6 +139,7 @@ export function createServerNotificationState(input: { sdk: ServerSDK; data: Dat
     NotificationStore,
     { list: [] },
   )
+
   const [index, setIndex] = createStore<NotificationIndex>(buildNotificationIndex(store.list))
 
   const meta = { pruned: false, disposed: false }
@@ -144,18 +158,22 @@ export function createServerNotificationState(input: { sdk: ServerSDK; data: Dat
   const appendToIndex = (notification: Notification) => {
     if (notification.session) {
       setIndex("session", "all", notification.session, (all = []) => [...all, notification])
+
       if (!notification.viewed) {
         setIndex("session", "unseen", notification.session, (unseen = []) => [...unseen, notification])
         setIndex("session", "unseenCount", notification.session, (count = 0) => count + 1)
+
         if (notification.type === "error") setIndex("session", "unseenHasError", notification.session, true)
       }
     }
 
     if (notification.directory) {
       setIndex("project", "all", notification.directory, (all = []) => [...all, notification])
+
       if (!notification.viewed) {
         setIndex("project", "unseen", notification.directory, (unseen = []) => [...unseen, notification])
         setIndex("project", "unseenCount", notification.directory, (count = 0) => count + 1)
+
         if (notification.type === "error") setIndex("project", "unseenHasError", notification.directory, true)
       }
     }
@@ -164,6 +182,7 @@ export function createServerNotificationState(input: { sdk: ServerSDK; data: Dat
   const removeFromIndex = (notification: Notification) => {
     if (notification.session) {
       setIndex("session", "all", notification.session, (all = []) => all.filter((n) => n !== notification))
+
       if (!notification.viewed) {
         const unseen = (index.session.unseen[notification.session] ?? empty).filter((n) => n !== notification)
         updateUnseen("session", notification.session, unseen)
@@ -172,6 +191,7 @@ export function createServerNotificationState(input: { sdk: ServerSDK; data: Dat
 
     if (notification.directory) {
       setIndex("project", "all", notification.directory, (all = []) => all.filter((n) => n !== notification))
+
       if (!notification.viewed) {
         const unseen = (index.project.unseen[notification.directory] ?? empty).filter((n) => n !== notification)
         updateUnseen("project", notification.directory, unseen)
@@ -181,6 +201,7 @@ export function createServerNotificationState(input: { sdk: ServerSDK; data: Dat
 
   createEffect(() => {
     if (!ready()) return
+
     if (meta.pruned) return
     meta.pruned = true
     const list = pruneNotifications(store.list)
@@ -205,7 +226,9 @@ export function createServerNotificationState(input: { sdk: ServerSDK; data: Dat
   const lookup = async (sessionID?: string) => {
     if (!sessionID) return undefined
     const session = input.data.session.get(sessionID)
+
     if (session) return session
+
     return input.data.session
       .sync(sessionID)
       .then(() => input.data.session.get(sessionID))
@@ -219,11 +242,15 @@ export function createServerNotificationState(input: { sdk: ServerSDK; data: Dat
   const handleSessionIdle = (sessionID: string, eventID: string, time: number) => {
     void lookup(sessionID).then((session) => {
       if (meta.disposed) return
+
       if (!session) return
+
       if (session.parentID) return
 
-      if (sessionIDHasOpenTab(tabs.store, input.key, sessionID) && settings.sounds.agentEnabled()) {
-        void playSoundByIdOnce(settings.sounds.agent(), `${input.key}\0${eventID}`)
+      const hasOpenTab = sessionIDHasOpenTab(tabs.store, input.key, sessionID)
+
+      if (hasOpenTab && settings.sounds.agentEnabled()) {
+        void input.coordinator.sound(`${input.key}\0${eventID}`, () => playSoundById(settings.sounds.agent()))
       }
 
       append({
@@ -234,9 +261,11 @@ export function createServerNotificationState(input: { sdk: ServerSDK; data: Dat
         session: sessionID,
       })
 
-      if (settings.notifications.agent()) {
-        void platform.notify(language.t("notification.session.responseReady.title"), session.title ?? sessionID, () =>
-          openNotificationSession(tabs, input.key, sessionID),
+      if (hasOpenTab && settings.notifications.agent()) {
+        void input.coordinator.system(`${input.key}\0${eventID}`, () =>
+          platform.notify(language.t("notification.session.responseReady.title"), session.title ?? sessionID, () =>
+            openNotificationSession(tabs, input.key, sessionID),
+          ),
         )
       }
     })
@@ -245,10 +274,13 @@ export function createServerNotificationState(input: { sdk: ServerSDK; data: Dat
   const handleSessionError = (sessionID: string, error: SessionError.Error, eventID: string, time: number) => {
     void lookup(sessionID).then((session) => {
       if (meta.disposed) return
+
       if (session?.parentID) return
 
-      if (sessionIDHasOpenTab(tabs.store, input.key, sessionID) && settings.sounds.errorsEnabled()) {
-        void playSoundByIdOnce(settings.sounds.errors(), `${input.key}\0${eventID}`)
+      const hasOpenTab = sessionIDHasOpenTab(tabs.store, input.key, sessionID)
+
+      if (hasOpenTab && settings.sounds.errorsEnabled()) {
+        void input.coordinator.sound(`${input.key}\0${eventID}`, () => playSoundById(settings.sounds.errors()))
       }
 
       append({
@@ -259,12 +291,16 @@ export function createServerNotificationState(input: { sdk: ServerSDK; data: Dat
         session: sessionID,
         error,
       })
+
       const description =
         session?.title ??
         (typeof error === "string" ? error : language.t("notification.session.error.fallbackDescription"))
-      if (settings.notifications.errors()) {
-        void platform.notify(language.t("notification.session.error.title"), description, () =>
-          openNotificationSession(tabs, input.key, sessionID),
+
+      if (hasOpenTab && settings.notifications.errors()) {
+        void input.coordinator.system(`${input.key}\0${eventID}`, () =>
+          platform.notify(language.t("notification.session.error.title"), description, () =>
+            openNotificationSession(tabs, input.key, sessionID),
+          ),
         )
       }
     })
@@ -274,12 +310,16 @@ export function createServerNotificationState(input: { sdk: ServerSDK; data: Dat
     if (event.type !== "session.execution.succeeded" && event.type !== "session.execution.failed") return
 
     const time = Date.now()
+
     if (event.type === "session.execution.failed") {
       handleSessionError(event.data.sessionID, event.data.error, event.id, time)
+
       return
     }
+
     handleSessionIdle(event.data.sessionID, event.id, time)
   })
+
   onCleanup(() => {
     meta.disposed = true
     unsub()
@@ -302,11 +342,13 @@ export function createServerNotificationState(input: { sdk: ServerSDK; data: Dat
       },
       markViewed(session: string) {
         const unseen = index.session.unseen[session] ?? empty
+
         if (!unseen.length) return
 
         const projects = [
           ...new Set(unseen.flatMap((notification) => (notification.directory ? [notification.directory] : []))),
         ]
+
         batch(() => {
           setStore("list", (n) => n.session === session && !n.viewed, "viewed", true)
           updateUnseen("session", session, [])
@@ -314,6 +356,7 @@ export function createServerNotificationState(input: { sdk: ServerSDK; data: Dat
             const next = (index.project.unseen[directory] ?? empty).filter(
               (notification) => notification.session !== session,
             )
+
             updateUnseen("project", directory, next)
           })
         })
@@ -334,11 +377,13 @@ export function createServerNotificationState(input: { sdk: ServerSDK; data: Dat
       },
       markViewed(directory: string) {
         const unseen = index.project.unseen[directory] ?? empty
+
         if (!unseen.length) return
 
         const sessions = [
           ...new Set(unseen.flatMap((notification) => (notification.session ? [notification.session] : []))),
         ]
+
         batch(() => {
           setStore("list", (n) => n.directory === directory && !n.viewed, "viewed", true)
           updateUnseen("project", directory, [])
@@ -346,6 +391,7 @@ export function createServerNotificationState(input: { sdk: ServerSDK; data: Dat
             const next = (index.session.unseen[session] ?? empty).filter(
               (notification) => notification.directory !== directory,
             )
+
             updateUnseen("session", session, next)
           })
         })
@@ -356,5 +402,6 @@ export function createServerNotificationState(input: { sdk: ServerSDK; data: Dat
 
 export const useNotification = () => {
   const server = useServer()
+
   return server.ctx.notification
 }

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { createTestRenderer } from "@opentui/core/testing"
 import { InputRenderable } from "@opentui/core"
 import { Effect, FileSystem } from "effect"
-import { Global } from "@opencode-ai/util/global"
+import { Global } from "@opencode/util/global"
 import { createEventStream, createFetch, directory, json } from "./fixture/tui-client"
 import { tmpdir } from "./fixture/fixture"
 
@@ -150,7 +150,7 @@ test.each(["first", "second"])(
             id: (await request.json()).id,
             sessionID,
             type: "compaction",
-            timeCreated: 10,
+            time: { created: 10 },
             payload: {},
             delivery: "steer",
           },
@@ -169,7 +169,7 @@ test.each(["first", "second"])(
             id: body.id,
             sessionID,
             type: "user",
-            timeCreated: 10,
+            time: { created: 10 },
             payload: { text: body.text },
             delivery: "steer",
           },

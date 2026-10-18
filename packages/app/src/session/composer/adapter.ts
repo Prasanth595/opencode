@@ -19,6 +19,7 @@ export function createActiveComposerAdapter(input: {
   const data = useData()
   const server = useServerSDK()
   const location = useWorkspaceLocation()
+
   const adapter: ActiveComposerAdapter = {
     kind: "active-session",
     state,
@@ -37,9 +38,10 @@ export function createActiveComposerAdapter(input: {
     }),
     interrupt: () =>
       server.api.session
-        .interrupt({ sessionID: id, continue: true })
+        .interrupt({ sessionID: id, resume: true })
         .then(() => undefined)
         .catch(() => undefined),
   }
+
   return adapter
 }

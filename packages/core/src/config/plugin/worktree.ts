@@ -1,13 +1,13 @@
 export * as ConfigWorktreePlugin from "./worktree.js"
 
-import { define } from "@opencode-ai/plugin/effect/plugin"
+import { define } from "@opencode/plugin/effect/plugin"
 import { Effect } from "effect"
 import path from "path"
 import { Config } from "../../config.js"
-import { Global } from "@opencode-ai/util/global"
+import { Global } from "@opencode/util/global"
 import { Location } from "../../location.js"
 import { AbsolutePath } from "../../schema.js"
-import { Worktree } from "../../worktree.js"
+import { WorktreeStrategies } from "../../worktree/strategies.js"
 import { ConfigEntryObserver } from "./entry-observer.js"
 
 export const Plugin = define({
@@ -16,7 +16,7 @@ export const Plugin = define({
     const config = yield* Config.Service
     const location = yield* Location.Service
     const global = yield* Global.Service
-    const worktrees = yield* Worktree.Service
+    const worktrees = yield* WorktreeStrategies.Service
     const loaded = yield* ConfigEntryObserver.observe(config, ctx.event, worktrees.reload())
     yield* worktrees.transform((editor) => {
       for (const entry of loaded.entries) {
@@ -26,7 +26,7 @@ export const Plugin = define({
           directory: AbsolutePath.make(
             directory.startsWith("~/")
               ? path.join(global.home, directory.slice(2))
-              : path.resolve(entry.path ? path.dirname(entry.path) : location.directory, directory),
+              : path.resolve(location.project.canonical, directory),
           ),
         })
       }

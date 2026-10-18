@@ -1,10 +1,8 @@
-* {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: geometricPrecision;
-}
+@import "../submit.css";
 
 [data-component="button-v2"] {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -22,6 +20,10 @@
   user-select: none;
   cursor: pointer;
   outline: none;
+}
+
+[data-component="button-v2"] > * {
+  pointer-events: none;
 }
 
 [data-component="button-v2"]:focus {
@@ -231,16 +233,19 @@
 [data-component="button-v2"][data-variant="ghost-muted"] {
   background-color: transparent;
   color: var(--v2-text-text-muted);
+  font-weight: 440;
 }
 
 [data-component="button-v2"][data-variant="ghost-muted"] [data-slot="icon-svg"] {
   color: var(--v2-icon-icon-muted);
 }
 
-[data-component="button-v2"][data-variant="ghost-muted"]:is(:hover, [data-state="hover"]):not(:disabled):not(
-    [data-expanded]
-  ) {
-  background-color: var(--v2-overlay-simple-overlay-hover);
+@media (hover: hover) {
+  [data-component="button-v2"][data-variant="ghost-muted"]:is(:hover, [data-state="hover"]):not(:disabled):not(
+      [data-expanded]
+    ) {
+    background-color: var(--v2-overlay-simple-overlay-hover);
+  }
 }
 
 [data-component="button-v2"][data-variant="ghost-muted"]:is(:active, [data-state="pressed"]):not(:disabled) {

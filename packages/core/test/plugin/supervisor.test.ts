@@ -1,18 +1,18 @@
 import { describe, expect } from "bun:test"
 import { Deferred, Duration, Effect, Layer, LayerMap, Stream } from "effect"
 import { TestClock } from "effect/testing"
-import { define } from "@opencode-ai/plugin/effect/plugin"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Global } from "@opencode-ai/util/global"
-import { Command } from "@opencode-ai/core/command"
-import { ConfigPluginSource } from "@opencode-ai/core/config/plugin/source"
-import { Instance } from "@opencode-ai/core/instance"
-import { LocationServiceMap } from "@opencode-ai/core/location-services"
-import { Location } from "@opencode-ai/core/location"
-import { Plugin } from "@opencode-ai/core/plugin"
-import { SdkPlugins } from "@opencode-ai/core/plugin/sdk"
-import { AbsolutePath } from "@opencode-ai/core/schema"
+import { define } from "@opencode/plugin/effect/plugin"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Global } from "@opencode/util/global"
+import { Command } from "@opencode/core/command"
+import { ConfigPluginSource } from "@opencode/core/config/plugin/source"
+import { Instance } from "@opencode/core/instance"
+import { LocationServiceMap } from "@opencode/core/location-services"
+import { Location } from "@opencode/core/location"
+import { Plugin } from "@opencode/core/plugin"
+import { SdkPlugins } from "@opencode/core/plugin/sdk"
+import { AbsolutePath } from "@opencode/core/schema"
 import { Database } from "../../src/database/database"
 import { Bus } from "../../src/bus"
 import { tempGlobalLayer } from "../fixture/global"
@@ -32,14 +32,14 @@ const greeter = (command: string, plugin: string = id) =>
   })
 
 // Every supervisor activation scans the config plugin operations once, so counting scans counts activations.
-const source = { activations: 0 }
+const source: { activations: number; operations: ConfigPluginSource.Operation[] } = { activations: 0, operations: [] }
 const sourceLayer = Layer.succeed(
   ConfigPluginSource.Service,
   ConfigPluginSource.Service.of({
     operations: () =>
       Effect.sync(() => {
         source.activations++
-        return []
+        return source.operations
       }),
     changes: () => Stream.never,
   }),
@@ -201,6 +201,36 @@ describe("PluginSupervisor", () => {
       expect(source.activations).toBe(2)
     }),
   )
+
+  for (const targets of [["opencode.config.policy", "opencode.provider.opencode", "opencode.config.agent"], ["*"]]) {
+    it.effect(`keeps policy enforcement and the Console connection through plugin removals: ${targets}`, () =>
+      Effect.gen(function* () {
+        source.operations = targets.map((target) => ({ type: "remove", target }))
+        const directory = yield* tmpdirScoped()
+        const locations = yield* LocationServiceMap.Service
+        const inventory = yield* Effect.gen(function* () {
+          const plugins = yield* Plugin.Service
+          yield* plugins.awaitActivation
+          return yield* plugins.list()
+        }).pipe(
+          Effect.scoped,
+          Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory.path) }))),
+        )
+        const status = (id: string) => inventory.find((plugin) => plugin.id === id)?.state.status
+        expect(status("opencode.config.policy")).toBe("active")
+        expect(status("opencode.provider.opencode")).toBe("active")
+        // Removals still apply to everything else, including instance and builtin plugins.
+        expect(status("opencode.config.agent")).toBeUndefined()
+        expect(inventory.some((plugin) => plugin.id === id)).toBe(targets[0] !== "*")
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            source.operations = []
+          }),
+        ),
+      ),
+    )
+  }
 
   it.effect("coalesces a burst of reload triggers after the initial generation into one activation", () =>
     Effect.gen(function* () {

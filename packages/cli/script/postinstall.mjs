@@ -12,10 +12,11 @@ const require = createRequire(import.meta.url)
 const packageJson = JSON.parse(fs.readFileSync(path.join(directory, "package.json"), "utf8"))
 const command = Object.keys(packageJson.bin ?? {})[0]
 if (!command) throw new Error("OpenCode package does not declare a binary")
+const sourceCommand = packageJson.opencodeSourceBinary ?? command
 
 const platform = { darwin: "darwin", linux: "linux", win32: "windows" }[os.platform()] ?? os.platform()
 const arch = { x64: "x64", arm64: "arm64", arm: "arm" }[os.arch()] ?? os.arch()
-const sourceBinary = platform === "windows" ? `${command}.exe` : command
+const sourceBinary = platform === "windows" ? `${sourceCommand}.exe` : sourceCommand
 const targetBinary = path.resolve(directory, packageJson.bin[command])
 const dependencies = packageJson.optionalDependencies ?? {}
 const base = Object.keys(dependencies).find((name) => name.endsWith(`-${platform}-${arch}`))
@@ -100,7 +101,11 @@ function packageNames() {
 function copyBinary(source) {
   if (!fs.existsSync(source)) throw new Error(`Binary not found at ${source}`)
   fs.mkdirSync(path.dirname(targetBinary), { recursive: true })
-  if (fs.existsSync(targetBinary)) fs.unlinkSync(targetBinary)
+  if (fs.existsSync(targetBinary)) {
+    try {
+      fs.unlinkSync(targetBinary)
+    } catch {}
+  }
   try {
     fs.linkSync(source, targetBinary)
   } catch {
@@ -111,6 +116,10 @@ function copyBinary(source) {
 
 function resolveBinary(name) {
   const packagePath = require.resolve(`${name}/package.json`)
+  // Package managers keep an older platform package when the matching version is not yet on the registry,
+  // which would silently install the previous release under the new launcher.
+  const version = JSON.parse(fs.readFileSync(packagePath, "utf8")).version
+  if (version !== dependencies[name]) throw new Error(`${name} is ${version}, expected ${dependencies[name]}`)
   return path.join(path.dirname(packagePath), "bin", sourceBinary)
 }
 

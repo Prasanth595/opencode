@@ -2,16 +2,16 @@ import { describe, expect } from "bun:test"
 import { Deferred, Effect, Fiber, Layer, Stream } from "effect"
 import fs from "fs/promises"
 import path from "path"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { Bus } from "@opencode-ai/core/bus"
-import { ConfigInstructionPlugin } from "@opencode-ai/core/config/plugin/instruction"
-import { Watcher } from "@opencode-ai/core/filesystem/watcher"
-import { InstructionDiscovery } from "@opencode-ai/core/instruction-discovery"
-import { Location } from "@opencode-ai/core/location"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { FSUtil } from "@opencode-ai/util/fs-util"
-import { Global } from "@opencode-ai/util/global"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { Bus } from "@opencode/core/bus"
+import { ConfigInstructionPlugin } from "@opencode/core/config/plugin/instruction"
+import { Watcher } from "@opencode/core/filesystem/watcher"
+import { InstructionDiscovery } from "@opencode/core/instruction-discovery"
+import { Location } from "@opencode/core/location"
+import { AbsolutePath } from "@opencode/core/schema"
+import { FSUtil } from "@opencode/util/fs-util"
+import { Global } from "@opencode/util/global"
+import { LayerNode } from "@opencode/util/effect/layer-node"
 import { tempGlobalLayer } from "./fixture/global"
 import { location } from "./fixture/location"
 import { tmpdir } from "./fixture/tmpdir"
@@ -364,6 +364,53 @@ describe("ConfigInstructionPlugin.Plugin", () => {
     ),
   )
 
+  // A client CWD can spell the drive `c:` while git reports the project root as `C:`.
+  ;(process.platform === "win32" ? it.live : it.live.skip)(
+    "stops at the project root when the location drive letter differs in case",
+    () =>
+      Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+      ).pipe(
+        Effect.flatMap((tmp) => {
+          const global = path.join(tmp.path, "global")
+          const home = path.join(tmp.path, "home")
+          const project = path.join(tmp.path, "repo")
+          const directory = project[0].toLowerCase() + project.slice(1)
+          return Effect.gen(function* () {
+            yield* Effect.promise(() => fs.mkdir(project, { recursive: true }))
+            yield* Effect.promise(() => fs.writeFile(path.join(project, "AGENTS.md"), "project"))
+            yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "AGENTS.md"), "outside"))
+            const discovery = yield* start()
+            const watcher = yield* Watcher.Test
+            expect(yield* watcher.subscriptions()).toEqual([
+              { path: path.join(global, "AGENTS.md"), type: "file" },
+              { path: path.join(directory, "AGENTS.md"), type: "file" },
+            ])
+            expect((yield* readInitial(yield* discovery.load())).text).toBe(
+              `Instructions from: ${path.join(directory, "AGENTS.md")}\nproject`,
+            )
+          }).pipe(
+            Effect.provide(
+              instructionLayer({
+                config: global,
+                home,
+                locationServiceLayer: Layer.succeed(
+                  Location.Service,
+                  Location.Service.of(
+                    location(
+                      { directory: AbsolutePath.make(directory) },
+                      { projectDirectory: AbsolutePath.make(project) },
+                    ),
+                  ),
+                ),
+              }),
+            ),
+          )
+        }),
+      ),
+  )
+
   it.effect("isolates source failure without failing activation", () => {
     const failingFS = Layer.effect(
       FSUtil.Service,
@@ -431,7 +478,7 @@ describe("ConfigInstructionPlugin.Plugin", () => {
 
   it.effect("canonicalizes boundaries and honors project opt-out", () =>
     Effect.gen(function* () {
-      const observed: { values: { targets: string[]; start: string; stop?: string }[] } = { values: [] }
+      const observed: { values: FSUtil.UpOptions[] } = { values: [] }
       const observingFS = Layer.effect(
         FSUtil.Service,
         FSUtil.Service.pipe(
@@ -487,7 +534,7 @@ describe("ConfigInstructionPlugin.Plugin", () => {
       )
 
       const repo = path.resolve("/repo")
-      expect(observed.values).toEqual([{ targets: ["AGENTS.md"], start: repo, stop: repo }])
+      expect(observed.values).toEqual([{ targets: ["AGENTS.md"], start: repo, stop: repo, type: "file" }])
     }),
   )
 })

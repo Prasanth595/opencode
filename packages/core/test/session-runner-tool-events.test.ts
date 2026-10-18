@@ -1,27 +1,27 @@
 import { expect, test } from "bun:test"
 import { Cause, Deferred, Effect, Exit, Fiber, Schema } from "effect"
 import { eq } from "drizzle-orm"
-import { LLMEvent } from "@opencode-ai/ai"
-import { Money } from "@opencode-ai/schema/money"
-import { Bus } from "@opencode-ai/core/bus"
-import { Database } from "@opencode-ai/core/database/database"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { EventTable } from "@opencode-ai/core/event/sql"
-import { Event } from "@opencode-ai/schema/event"
-import { Agent } from "@opencode-ai/core/agent"
-import { SessionEvent } from "@opencode-ai/core/session/event"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { Session } from "@opencode-ai/core/session"
-import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { SessionMessageTable, SessionTable } from "@opencode-ai/core/session/sql"
-import { Project } from "@opencode-ai/core/project"
-import { ProjectTable } from "@opencode-ai/core/project/sql"
-import { Model } from "@opencode-ai/core/model"
-import { Provider } from "@opencode-ai/core/provider"
-import { AbsolutePath, RelativePath } from "@opencode-ai/core/schema"
-import { Snapshot } from "@opencode-ai/core/snapshot"
-import { createLLMEventPublisher } from "@opencode-ai/core/session/runner/publish-llm-event"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
+import { LLMEvent } from "@opencode/ai"
+import { Money } from "@opencode/schema/money"
+import { Bus } from "@opencode/core/bus"
+import { Database } from "@opencode/core/database/database"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { EventTable } from "@opencode/core/event/sql"
+import { Event } from "@opencode/schema/event"
+import { Agent } from "@opencode/core/agent"
+import { SessionEvent } from "@opencode/core/session/event"
+import { SessionMessage } from "@opencode/core/session/message"
+import { Session } from "@opencode/core/session"
+import { SessionProjector } from "@opencode/core/session/projector"
+import { SessionMessageTable, SessionTable } from "@opencode/core/session/sql"
+import { Project } from "@opencode/core/project"
+import { ProjectTable } from "@opencode/core/project/sql"
+import { Model } from "@opencode/core/model"
+import { Provider } from "@opencode/core/provider"
+import { AbsolutePath, RelativePath } from "@opencode/core/schema"
+import { Snapshot } from "@opencode/core/snapshot"
+import { createLLMEventPublisher } from "@opencode/core/session/runner/publish-llm-event"
+import { LayerNode } from "@opencode/util/effect/layer-node"
 import { it, testEffect } from "./lib/effect"
 import { TestClock } from "effect/testing"
 
@@ -30,7 +30,11 @@ const base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"
 
 const capture = (
   providerMetadataKey = "anthropic",
-  options?: { readonly interruptProgress?: boolean; readonly beforeTextDelta?: Effect.Effect<void> },
+  options?: {
+    readonly interruptProgress?: boolean
+    readonly beforeTextDelta?: Effect.Effect<void>
+    readonly pendingSnapshot?: Effect.Effect<Snapshot.ID | undefined>
+  },
 ) => {
   const published: Array<{ readonly type: string; readonly data: unknown }> = []
   const bus: Pick<Bus.Interface, "publish"> = {
@@ -60,6 +64,8 @@ const capture = (
         providerID: Provider.ID.opencode,
       },
       providerMetadataKey,
+      pendingSnapshot: options?.pendingSnapshot,
+      started: 0,
       assistantMessageID: SessionMessage.ID.create(),
     }),
   }
@@ -163,6 +169,7 @@ testEffect(
         agent: Agent.defaultID,
         model: { id: Model.ID.make("test-model"), providerID: Provider.ID.opencode },
         providerMetadataKey: "openai",
+        started: 0,
       },
     )
     yield* publisher.publish(LLMEvent.toolCall({ ...call, providerExecuted: true }))
@@ -385,6 +392,46 @@ it.effect("batches text deltas and flushes pending text before the terminal even
   }),
 )
 
+it.effect("publishes batched deltas before the next block starts", () =>
+  Effect.gen(function* () {
+    const { published, publisher } = capture()
+    const types = () =>
+      published
+        .map((event) => event.type)
+        .filter((type) => type !== "session.step.started.1" && type !== "session.step.streamed")
+    yield* Effect.forEach(
+      [
+        LLMEvent.reasoningStart({ id: "reasoning" }),
+        LLMEvent.reasoningDelta({ id: "reasoning", text: "Plan the edits." }),
+        LLMEvent.textStart({ id: "text" }),
+        LLMEvent.textDelta({ id: "text", text: "Now the edits:" }),
+        LLMEvent.toolInputStart({ id: "call", name: "edit" }),
+      ],
+      publisher.publish,
+      { discard: true },
+    )
+    expect(types()).toEqual([
+      "session.reasoning.started.1",
+      "session.reasoning.delta",
+      "session.text.started.1",
+      "session.text.delta",
+      "session.tool.input.started.1",
+    ])
+
+    // Blocks stay open: later chunks still batch, and nothing is published twice.
+    yield* publisher.publish(LLMEvent.textDelta({ id: "text", text: " more" }))
+    yield* TestClock.adjust("1 second")
+    yield* publisher.publish(LLMEvent.textEnd({ id: "text" }))
+    expect(published.filter((event) => event.type === "session.text.delta").map((event) => event.data)).toMatchObject([
+      { delta: "Now the edits:" },
+      { delta: " more" },
+    ])
+    expect(published.find((event) => event.type === "session.text.ended.1")?.data).toMatchObject({
+      text: "Now the edits: more",
+    })
+  }),
+)
+
 it.effect("retains new chunks and orders text-end behind an in-flight timer publication", () =>
   Effect.gen(function* () {
     const entered = yield* Deferred.make<void>()
@@ -538,6 +585,20 @@ test("success event data can carry provider-executed result state", () => {
   expect(decoded.resultState).toMatchObject({ result: { type: "content" } })
 })
 
+test("step start waits for the pending start snapshot", async () => {
+  const snapshot = Effect.runSync(Deferred.make<Snapshot.ID | undefined>())
+  const { published, publisher } = capture("anthropic", { pendingSnapshot: Deferred.await(snapshot) })
+  const started = Effect.runFork(publisher.publish(LLMEvent.stepStart({ index: 0 })))
+  await Effect.runPromise(Effect.yieldNow)
+  expect(published).toEqual([])
+
+  Effect.runSync(Deferred.succeed(snapshot, Snapshot.ID.make("tree-start")))
+  await Effect.runPromise(Fiber.join(started))
+  expect(published.map((event) => [event.type, (event.data as { snapshot?: string }).snapshot])).toEqual([
+    ["session.step.started.1", "tree-start"],
+  ])
+})
+
 test("step finish records settlement without publishing step ended", async () => {
   const { published, publisher } = capture()
   await Effect.runPromise(publisher.publish(LLMEvent.stepStart({ index: 0 })))
@@ -623,5 +684,31 @@ test("content-filter finish preserves partial streamed text and never ends the s
   expect(published.find((event) => event.type === "session.text.ended.1")?.data).toMatchObject({ text: "Partial" })
   expect(published.find((event) => event.type === "session.step.failed.1")?.data).toMatchObject({
     error: { type: "provider.content-filter" },
+  })
+})
+
+test("content-filter failure explains the refusal when the provider gives a reason", async () => {
+  const { published, publisher } = capture()
+  await Effect.runPromise(publisher.publish(LLMEvent.stepStart({ index: 0 })))
+  await Effect.runPromise(
+    publisher.publish(
+      LLMEvent.stepFinish({
+        index: 0,
+        reason: {
+          normalized: "content-filter",
+          raw: "refusal",
+          category: "cyber",
+          explanation: "This request was declined because it could enable cyber harm.",
+        },
+      }),
+    ),
+  )
+  await Effect.runPromise(publisher.publishStepFailure())
+
+  expect(published.at(-1)?.data).toMatchObject({
+    error: {
+      type: "provider.content-filter",
+      message: "Provider blocked the response (cyber): This request was declined because it could enable cyber harm.",
+    },
   })
 })

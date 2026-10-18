@@ -9,11 +9,12 @@ import type {
   SessionMessageInfo,
   SessionMessageUser,
   SessionStatus,
-} from "@opencode-ai/client/promise"
+} from "@opencode/client/promise"
 import type { SessionDocument } from "../document"
 import type { SessionUserPresentation } from "../timeline/session-timeline"
 
 export const CURRENT_SESSION_ID = "session_current_story"
+
 export const STORY_TIME = 1_735_689_600_000
 
 export const STORY_MODEL = {
@@ -998,6 +999,8 @@ export const compactionDocument = document([
     reason: "auto",
     summary: "The Session timeline now consumes current nested assistant content.",
     recent: "Add deterministic stories and verify Storybook.",
+    cost: 0.0142,
+    tokens: { input: 3_180, output: 412, reasoning: 96, cache: { read: 8_704, write: 0 } },
     time: { created: STORY_TIME + 63_000 },
   },
   assistant({
@@ -1135,6 +1138,7 @@ const largeMessages = Array.from({ length: 16 }, (_, index) => {
   const offset = 110_000 + index * 5_000
   const userID = `msg_user_large_${String(index + 1).padStart(2, "0")}`
   const assistantID = `msg_assistant_large_${String(index + 1).padStart(2, "0")}`
+
   const context =
     index % 4 === 0
       ? [
@@ -1148,6 +1152,7 @@ const largeMessages = Array.from({ length: 16 }, (_, index) => {
           }),
         ]
       : []
+
   return [
     user(userID, `Complete deterministic Session UI checkpoint ${index + 1}.`, offset),
     assistant({

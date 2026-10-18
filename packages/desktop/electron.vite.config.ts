@@ -1,16 +1,21 @@
 import { defineConfig } from "electron-vite"
+import type { Plugin } from "vite"
 import { pickerPlugin } from "./scripts/picker"
 
 const channel = (() => {
   const raw = process.env.OPENCODE_CHANNEL
+
   if (raw === "local" || raw === "dev" || raw === "beta" || raw === "prod") return raw
+
   if (process.env.OPENCODE_CHANNEL === "latest") return "prod"
+
   return "dev"
 })()
 
 const nodePtyPkg = `@lydell/node-pty-${process.platform}-${process.arch}`
 
-const appPlugin = (await import("@opencode-ai/app/vite")).default
+const appPlugin = (await import("@opencode/app/vite")).default
+
 const sentry =
   process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT
     ? (await import("@sentry/vite-plugin")).sentryVitePlugin({
@@ -27,6 +32,24 @@ const sentry =
         },
       })
     : false
+
+// Every module the entry reaches through static imports lands in one chunk. Automatic splitting
+// otherwise fragments the initial graph into ~50 files shared with lazy routes, and each file costs
+// the renderer a main-thread request round trip through the main process before first paint.
+// Rolldown hands every chunk-name call a fresh context, so the graph is walked once per output.
+const initialGraph = new Set<string>()
+
+const initialChunk: Plugin = {
+  name: "opencode-desktop:initial-chunk",
+  renderStart() {
+    const entries = [...this.getModuleIds()].filter((id) => this.getModuleInfo(id)?.isEntry)
+    initialGraph.clear()
+    entries.forEach((id) => initialGraph.add(id))
+
+    // A Set's iterator also visits members added while iterating, so this reaches every static import.
+    for (const id of initialGraph) this.getModuleInfo(id)?.importedIds.forEach((imported) => initialGraph.add(imported))
+  },
+}
 
 export default defineConfig(({ command }) => ({
   main: {
@@ -45,6 +68,9 @@ export default defineConfig(({ command }) => ({
         // corrupt bundled TypeScript, while an output banner places the shim safely.
         output: {
           format: "es",
+          // DesktopPaths resolves resources from the main output directory,
+          // including when the lazy desktop entry shares it with other chunks.
+          chunkFileNames: "[name]-[hash].js",
           banner: `
 // -- CommonJS Shims --
 import __cjs_mod__ from 'node:module';
@@ -55,9 +81,9 @@ const require = __cjs_mod__.createRequire(import.meta.url);
         },
       },
       externalizeDeps: {
-        // Bundle the Effect family together; native MessagePack acceleration stays optional and external.
+        // Bundle the Effect family together.
         exclude: ["effect", "@effect/platform-node", "@effect/platform-node-shared", "drizzle-orm"],
-        include: [nodePtyPkg, "msgpackr-extract"],
+        include: [nodePtyPkg],
       },
     },
     plugins: [
@@ -66,6 +92,7 @@ const require = __cjs_mod__.createRequire(import.meta.url);
         enforce: "pre",
         resolveId(s) {
           if (s === "@lydell/node-pty") return nodePtyPkg
+
           return undefined
         },
       },
@@ -78,7 +105,10 @@ const require = __cjs_mod__.createRequire(import.meta.url);
         input: { index: "src/preload/index.ts" },
         output: {
           format: "cjs",
-          entryFileNames: "[name].js",
+          // The package is "type": "module". Under --no-sandbox Electron loads the preload
+          // through Node's module loader, which treats a .js file as ESM and fails on
+          // require("electron"). The sandboxed path ignores the extension.
+          entryFileNames: "[name].cjs",
         },
       },
     },
@@ -90,8 +120,11 @@ const require = __cjs_mod__.createRequire(import.meta.url);
     define: {
       "import.meta.env.OPENCODE_VERSION": JSON.stringify(process.env.OPENCODE_VERSION),
       "import.meta.env.VITE_OPENCODE_CHANNEL": JSON.stringify(channel),
+      "import.meta.env.OPENCODE_TEST_ONBOARDING": JSON.stringify(
+        command === "serve" && process.env.OPENCODE_TEST_ONBOARDING === "1",
+      ),
     },
-    plugins: [pickerPlugin(), appPlugin, sentry],
+    plugins: [pickerPlugin(), appPlugin, initialChunk, sentry],
     publicDir: "../../../app/public",
     root: "src/renderer",
     build: {
@@ -100,6 +133,11 @@ const require = __cjs_mod__.createRequire(import.meta.url);
       rolldownOptions: {
         input: {
           main: "src/renderer/index.html",
+        },
+        output: {
+          codeSplitting: {
+            groups: [{ name: (id) => (initialGraph.has(id) ? "app" : null), priority: 10 }],
+          },
         },
       },
     },

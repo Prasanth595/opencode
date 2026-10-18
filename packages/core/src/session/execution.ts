@@ -5,14 +5,13 @@ import { Bus } from "../bus.js"
 import { Database } from "../database/database.js"
 import { Job } from "../job.js"
 import { Instance } from "../instance/service.js"
-import { makeGlobalNode } from "@opencode-ai/util/effect/app-node"
+import { makeGlobalNode } from "@opencode/util/effect/app-node"
 import { SessionEvent } from "./event.js"
 import { SessionRunCoordinator } from "./run-coordinator.js"
 import { SessionRunner } from "./runner/index.js"
 import { SessionSchema } from "./schema.js"
 import { SessionStore } from "./store.js"
 import { toSessionError } from "./to-session-error.js"
-import { UserInterruptedError } from "./error.js"
 import { SessionInbox } from "./inbox.js"
 
 export interface Interface {
@@ -28,9 +27,17 @@ export interface Interface {
    * Interrupt active work owned by this process. Idle interruption is a no-op. Resolves once
    * the interruption is accepted; cleanup settles asynchronously in the execution fiber.
    * Returns whether an active execution was interrupted. Compose with `awaitIdle` when
-   * settlement matters.
+   * settlement matters. `awaitSettlement` waits only for the interrupted execution,
+   * rather than fresh work admitted during its cleanup.
    */
-  readonly interrupt: (sessionID: SessionSchema.ID, options?: { readonly continue?: boolean }) => Effect.Effect<boolean>
+  readonly interrupt: (
+    sessionID: SessionSchema.ID,
+    options?: {
+      readonly resume?: boolean
+      readonly reason?: "user" | "inactivity"
+      readonly awaitSettlement?: boolean
+    },
+  ) => Effect.Effect<boolean>
   /** Resolves once this process owns no active execution for the Session. Returns immediately when idle and never starts work. */
   readonly awaitIdle: (sessionID: SessionSchema.ID) => Effect.Effect<void>
 }
@@ -38,14 +45,12 @@ export interface Interface {
 /** Routes execution from a Session ID to its selected instance's runner. */
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionExecution") {}
 
-type InterruptReason = "user" | "shutdown"
+type InterruptReason = "user" | "shutdown" | "inactivity"
 
 export function terminal(exit: Exit.Exit<void, SessionRunner.RunError>, reason?: InterruptReason) {
   if (Exit.isSuccess(exit)) return { type: "succeeded" as const }
   if (Cause.hasInterrupts(exit.cause)) return { type: "interrupted" as const, reason: reason ?? "shutdown" }
-  const failure = Cause.squash(exit.cause)
-  if (failure instanceof UserInterruptedError) return { type: "interrupted" as const, reason: "user" as const }
-  return { type: "failed" as const, error: toSessionError(failure) }
+  return { type: "failed" as const, error: toSessionError(Cause.squash(exit.cause)) }
 }
 
 /** Process-local execution: drains run in this process using the selected instance. */
@@ -100,6 +105,7 @@ export const layer = Layer.effect(
       return yield* SessionRunner.DrainResult.$match(result, {
         Complete: () => Effect.void,
         Moved: (result) => drain(sessionID, false, result.continuation, promotable),
+        Reloaded: (result) => drain(sessionID, result.force, result.continuation, promotable),
       })
     })
     const coordinator = yield* SessionRunCoordinator.make<SessionSchema.ID, SessionRunner.RunError, InterruptReason>({
@@ -120,9 +126,8 @@ export const layer = Layer.effect(
               return
             }
             if (outcome.type === "interrupted") {
-              // A user cancel releases the claim: the turn must not resurrect at the next
-              // boot. Shutdown interruption keeps it for restart continuity.
-              if (outcome.reason === "user") yield* jobs.cancel(sessionID)
+              // Deliberate stops release the claim; shutdown keeps it for restart continuity.
+              if (outcome.reason !== "shutdown") yield* jobs.cancel(sessionID)
               yield* bus.publish(
                 SessionEvent.Execution.Interrupted,
                 { sessionID, reason: outcome.reason },
@@ -147,8 +152,8 @@ export const layer = Layer.effect(
       isActive: coordinator.isActive,
       interrupt: (sessionID, options) =>
         Effect.gen(function* () {
-          const interrupted = yield* coordinator.interrupt(sessionID, "user")
-          if (!options?.continue) return interrupted
+          const interrupted = yield* coordinator.interrupt(sessionID, options?.reason ?? "user", options)
+          if (!options?.resume) return interrupted
           // Resume steering input and between-turn control work from the interrupted
           // intent. Queued next-turn prompts stay parked: a steer-scoped drain never
           // promotes them, and a control item behind a queued prompt waits its turn.

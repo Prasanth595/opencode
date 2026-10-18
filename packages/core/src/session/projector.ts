@@ -5,22 +5,22 @@ import { DateTime, Effect, Layer, Schema, Stream } from "effect"
 import path from "path"
 import { Database } from "../database/database.js"
 import { Bus } from "../bus.js"
-import { makeGlobalNode } from "@opencode-ai/util/effect/app-node"
-import { Agent } from "@opencode-ai/schema/agent"
-import { Model } from "@opencode-ai/schema/model"
+import { makeGlobalNode } from "@opencode/util/effect/app-node"
+import { Agent } from "@opencode/schema/agent"
+import { Model } from "@opencode/schema/model"
 import { SessionEvent } from "./event.js"
 import { SessionMessage } from "./message.js"
 import { SessionMessageUpdater } from "./message-updater.js"
 import { SessionInbox } from "./inbox.js"
-import { Workspace } from "@opencode-ai/schema/workspace"
+import { Workspace } from "@opencode/schema/workspace"
 import { InstructionState } from "./instruction-state.js"
 import { SessionInboxTable, SessionMessageTable, SessionTable } from "./sql.js"
 import { InstructionEntry } from "./instruction-entry.js"
 import { Slug } from "../util/slug.js"
-import { FSUtil } from "@opencode-ai/util/fs-util"
-import { Money } from "@opencode-ai/schema/money"
-import { Worktree } from "@opencode-ai/schema/worktree"
-import { Project } from "@opencode-ai/schema/project"
+import { FSUtil } from "@opencode/util/fs-util"
+import { Money } from "@opencode/schema/money"
+import { Worktree } from "@opencode/schema/worktree"
+import { Project } from "@opencode/schema/project"
 import { AbsolutePath, RelativePath } from "../schema.js"
 import type { SessionSchema } from "./schema.js"
 import { ProjectTable } from "../project/sql.js"
@@ -55,7 +55,7 @@ const forkTitle = (value?: string) => {
   return `${value} (fork #1)`
 }
 
-function applyUsage(db: DatabaseService, sessionID: SessionSchema.ID, value: Usage) {
+function applyUsage(db: DatabaseService, sessionID: SessionSchema.ID, value: Usage, timeUpdated?: number) {
   return db
     .update(SessionTable)
     .set({
@@ -65,9 +65,18 @@ function applyUsage(db: DatabaseService, sessionID: SessionSchema.ID, value: Usa
       tokens_reasoning: sql`${SessionTable.tokens_reasoning} + ${value.tokens.reasoning}`,
       tokens_cache_read: sql`${SessionTable.tokens_cache_read} + ${value.tokens.cache.read}`,
       tokens_cache_write: sql`${SessionTable.tokens_cache_write} + ${value.tokens.cache.write}`,
-      time_updated: sql`${SessionTable.time_updated}`,
+      time_updated: timeUpdated ?? sql`${SessionTable.time_updated}`,
     })
     .where(eq(SessionTable.id, sessionID))
+    .run()
+    .pipe(Effect.orDie)
+}
+
+function touch(db: DatabaseService, event: MessageEvent) {
+  return db
+    .update(SessionTable)
+    .set({ time_updated: event.created })
+    .where(eq(SessionTable.id, event.data.sessionID))
     .run()
     .pipe(Effect.orDie)
 }
@@ -160,6 +169,7 @@ const projectFork = Effect.fn("SessionProjector.projectFork")(function* (
       agent: parent.agent,
       model: parent.model,
       metadata: parent.metadata,
+      permission: parent.permission,
       version: parent.version,
       cost: 0,
       tokens_input: 0,
@@ -450,6 +460,7 @@ const layer = Layer.effectDiscard(
             agent: event.data.agent,
             model: event.data.model,
             metadata: event.data.metadata,
+            permission: event.data.permissions,
             version: event.data.version,
             time_created: event.created,
             time_updated: event.created,
@@ -571,6 +582,22 @@ const layer = Layer.effectDiscard(
         .run()
         .pipe(Effect.orDie),
     )
+    yield* bus.project(SessionEvent.MetadataUpdated, (event) =>
+      db
+        .update(SessionTable)
+        .set({ metadata: event.data.metadata, time_updated: event.created })
+        .where(eq(SessionTable.id, event.data.sessionID))
+        .run()
+        .pipe(Effect.orDie),
+    )
+    yield* bus.project(SessionEvent.Permissions, (event) =>
+      db
+        .update(SessionTable)
+        .set({ permission: event.data.permissions, time_updated: event.created })
+        .where(eq(SessionTable.id, event.data.sessionID))
+        .run()
+        .pipe(Effect.orDie),
+    )
     yield* bus.project(SessionEvent.Viewed, (event) => {
       const idle = event.data.idle
       return db
@@ -663,19 +690,30 @@ const layer = Layer.effectDiscard(
     yield* bus.project(SessionEvent.Skill.Activated, (event) => run(db, event))
     yield* bus.project(SessionEvent.Shell.Started, (event) => run(db, event))
     yield* bus.project(SessionEvent.Shell.Ended, (event) => run(db, event))
-    yield* bus.project(SessionEvent.Step.Started, (event) => run(db, event))
+    yield* bus.project(SessionEvent.Step.Started, (event) =>
+      Effect.gen(function* () {
+        yield* run(db, event)
+        yield* touch(db, event)
+      }),
+    )
     yield* bus.project(SessionEvent.Step.Streamed, (event) => run(db, event))
     yield* bus.project(SessionEvent.Step.Ended, (event) =>
       Effect.gen(function* () {
         yield* run(db, event)
-        yield* applyUsage(db, event.data.sessionID, event.data)
+        yield* applyUsage(db, event.data.sessionID, event.data, event.created)
       }),
     )
     yield* bus.project(SessionEvent.Step.Failed, (event) =>
       Effect.gen(function* () {
         yield* run(db, event)
         if (event.data.cost !== undefined && event.data.tokens !== undefined)
-          yield* applyUsage(db, event.data.sessionID, { cost: event.data.cost, tokens: event.data.tokens })
+          yield* applyUsage(
+            db,
+            event.data.sessionID,
+            { cost: event.data.cost, tokens: event.data.tokens },
+            event.created,
+          )
+        else yield* touch(db, event)
       }),
     )
     yield* bus.project(SessionEvent.Text.Started, (event) => run(db, event))

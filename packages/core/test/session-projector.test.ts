@@ -1,36 +1,37 @@
 import { describe, expect } from "bun:test"
 import { DateTime, Effect, Fiber, Option, Schema, Stream } from "effect"
+import { TestClock } from "effect/testing"
 import { asc, eq, sql } from "drizzle-orm"
-import { Database } from "@opencode-ai/core/database/database"
-import { Agent } from "@opencode-ai/core/agent"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { Bus } from "@opencode-ai/core/bus"
-import { Event } from "@opencode-ai/schema/event"
-import { EventTable } from "@opencode-ai/core/event/sql"
-import { Model } from "@opencode-ai/core/model"
-import { Project } from "@opencode-ai/core/project"
-import { ProjectTable } from "@opencode-ai/core/project/sql"
-import { Provider } from "@opencode-ai/core/provider"
-import { AbsolutePath, RelativePath } from "@opencode-ai/core/schema"
-import { Session } from "@opencode-ai/core/session"
-import { SessionEvent } from "@opencode-ai/core/session/event"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { Money } from "@opencode-ai/schema/money"
-import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { SessionExecution } from "@opencode-ai/core/session/execution"
-import { fromRow } from "@opencode-ai/core/session/info"
-import { SessionInbox } from "@opencode-ai/core/session/inbox"
-import { SessionStore } from "@opencode-ai/core/session/store"
-import { Shell } from "@opencode-ai/schema/shell"
+import { Database } from "@opencode/core/database/database"
+import { Agent } from "@opencode/core/agent"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { Bus } from "@opencode/core/bus"
+import { Event } from "@opencode/schema/event"
+import { EventTable } from "@opencode/core/event/sql"
+import { Model } from "@opencode/core/model"
+import { Project } from "@opencode/core/project"
+import { ProjectTable } from "@opencode/core/project/sql"
+import { Provider } from "@opencode/core/provider"
+import { AbsolutePath, RelativePath } from "@opencode/core/schema"
+import { Session } from "@opencode/core/session"
+import { SessionEvent } from "@opencode/core/session/event"
+import { SessionMessage } from "@opencode/core/session/message"
+import { Money } from "@opencode/schema/money"
+import { SessionProjector } from "@opencode/core/session/projector"
+import { SessionExecution } from "@opencode/core/session/execution"
+import { fromRow } from "@opencode/core/session/info"
+import { SessionInbox } from "@opencode/core/session/inbox"
+import { SessionStore } from "@opencode/core/session/store"
+import { Shell } from "@opencode/schema/shell"
 import {
   InstructionStateTable,
   SessionInboxTable,
   SessionMessageTable,
   SessionTable,
-} from "@opencode-ai/core/session/sql"
+} from "@opencode/core/session/sql"
 import { testEffect } from "./lib/effect"
-import { Snapshot } from "@opencode-ai/core/snapshot"
+import { Snapshot } from "@opencode/core/snapshot"
 
 const it = testEffect(
   AppNodeBuilder.build(
@@ -485,6 +486,7 @@ describe("SessionProjector", () => {
           assistantMessageID: id,
           agent: build,
           model,
+          started: 0,
         })
         .pipe(Effect.exit)
 
@@ -501,7 +503,13 @@ describe("SessionProjector", () => {
       const bus = yield* Bus.Service
       const first = SessionMessage.ID.make("msg_retry_first")
       const second = SessionMessage.ID.make("msg_retry_second")
-      yield* bus.publish(SessionEvent.Step.Started, { sessionID, assistantMessageID: first, agent: build, model })
+      yield* bus.publish(SessionEvent.Step.Started, {
+        sessionID,
+        assistantMessageID: first,
+        agent: build,
+        model,
+        started: 0,
+      })
       yield* bus.publish(SessionEvent.RetryScheduled, {
         sessionID,
         assistantMessageID: first,
@@ -523,7 +531,13 @@ describe("SessionProjector", () => {
         retry: { attempt: 2, at: DateTime.makeUnsafe(2_000), error: { type: "provider.transport" } },
       })
 
-      yield* bus.publish(SessionEvent.Step.Started, { sessionID, assistantMessageID: second, agent: build, model })
+      yield* bus.publish(SessionEvent.Step.Started, {
+        sessionID,
+        assistantMessageID: second,
+        agent: build,
+        model,
+        started: 0,
+      })
       yield* bus.publish(SessionEvent.RetryScheduled, {
         sessionID,
         assistantMessageID: second,
@@ -745,6 +759,53 @@ describe("SessionProjector", () => {
           time: { created },
         }),
       ])
+    }),
+  )
+
+  it.effect("bumps session time_updated on step lifecycle events", () =>
+    Effect.gen(function* () {
+      const db = yield* seedSession({ time_created: 0, time_updated: 0 })
+      const bus = yield* Bus.Service
+      const updated = () =>
+        db.select({ time_updated: SessionTable.time_updated }).from(SessionTable).get().pipe(Effect.orDie)
+      const first = SessionMessage.ID.make("msg_touch_first")
+      const second = SessionMessage.ID.make("msg_touch_second")
+
+      yield* TestClock.setTime(5)
+      yield* bus.publish(SessionEvent.Step.Started, {
+        sessionID,
+        assistantMessageID: first,
+        agent: build,
+        model,
+        started: 5,
+      })
+      expect(yield* updated()).toEqual({ time_updated: 5 })
+
+      yield* TestClock.setTime(9)
+      yield* bus.publish(SessionEvent.Step.Ended, {
+        sessionID,
+        assistantMessageID: first,
+        finish: "stop",
+        cost: Money.USD.make(0),
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      })
+      expect(yield* updated()).toEqual({ time_updated: 9 })
+
+      yield* TestClock.setTime(12)
+      yield* bus.publish(SessionEvent.Step.Started, {
+        sessionID,
+        assistantMessageID: second,
+        agent: build,
+        model,
+        started: 12,
+      })
+      yield* TestClock.setTime(15)
+      yield* bus.publish(SessionEvent.Step.Failed, {
+        sessionID,
+        assistantMessageID: second,
+        error: { type: "provider.invalid-request", message: "Failed" },
+      })
+      expect(yield* updated()).toEqual({ time_updated: 15 })
     }),
   )
 })

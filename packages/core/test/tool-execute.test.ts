@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test"
-import { CodeModeTool } from "@opencode-ai/core/codemode/tool"
-import { Tool } from "@opencode-ai/core/tool"
-import { execute } from "@opencode-ai/core/tool/runtime"
-import { Agent } from "@opencode-ai/schema/agent"
-import { Session } from "@opencode-ai/schema/session"
-import { SessionMessage } from "@opencode-ai/schema/session-message"
-import type { Info } from "@opencode-ai/schema/tool"
+import { CodeModeTool } from "@opencode/core/codemode/tool"
+import { Tool } from "@opencode/core/tool"
+import { execute } from "@opencode/core/tool/runtime"
+import { Agent } from "@opencode/schema/agent"
+import { Session } from "@opencode/schema/session"
+import { SessionMessage } from "@opencode/schema/session-message"
+import type { Info } from "@opencode/schema/tool"
 import { Effect, Schema } from "effect"
 
 const context = {
@@ -22,12 +22,12 @@ const createCodeMode = (tools: ReadonlyMap<string, Info>) =>
 test("execute describes invariant Code Mode behavior", () => {
   expect(createCodeMode(new Map()).description).toBe(
     [
-      "Run JavaScript in a confined Code Mode runtime to orchestrate tool calls and compose their results.",
-      "Imports, direct filesystem access, and timers are unavailable. Do not use `fetch`; all external access goes through `tools`.",
+      "Run JavaScript in a confined Code Mode runtime to script tool calls and HTTP requests and compose their results.",
+      "`fetch` is available for HTTP requests. Imports, direct filesystem access, and timers are unavailable; all other external access goes through `tools`.",
       "Within `{ code }`, the only callable tools are those explicitly listed in the Code Mode catalog instructions or returned by the `search` function. Inside `{ code }`, ignore tools shown outside the Code Mode catalog. They are not available in the Code Mode runtime.",
       'Call tools through `tools` using only exact paths and signatures from the catalog. Do not infer or normalize tool names; preserve bracket notation such as `tools.<namespace>["tool-name"](input)`.',
       "Prefer an explicit `return`; if omitted, the final top-level expression becomes the result.",
-      "Await every call whose completion matters; pending calls are interrupted when execution ends. Run independent calls concurrently with `Promise.all`.",
+      "Await every call whose completion matters; pending calls are interrupted when execution ends. Run independent calls concurrently with `Promise.allSettled`.",
     ].join("\n"),
   )
 })

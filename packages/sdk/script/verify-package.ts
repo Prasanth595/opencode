@@ -15,6 +15,7 @@ const names = [
   "protocol",
   "client",
   "plugin",
+  "plugin-browser",
   "core",
   "simulation",
   "server",
@@ -100,8 +101,8 @@ try {
     ),
     Bun.write(
       join(consumer, "worker.js"),
-      `import { bodyDigest } from "@opencode-ai/core/models-dev"
-import { OpenCodeWorkerd } from "@opencode-ai/sdk/workerd"
+      `import { bodyDigest } from "@opencode/core/models-dev"
+import { OpenCodeWorkerd } from "@opencode/sdk/workerd"
 
 export class OpenCodeDO {
   constructor(state) {
@@ -149,7 +150,7 @@ export class OpenCodeDO {
     if (this.configurations !== 1 || admitted.some(item => item.payload.text !== "Packed prompt:packed-thread")) {
       throw new Error("Packed instance configuration did not share or prepare prompts correctly")
     }
-    return Response.json(await opencode.health.get())
+    return Response.json(await opencode.server.info())
   }
 }
 
@@ -163,12 +164,13 @@ export default {
     Bun.write(
       join(consumer, "boot.mjs"),
       `import { Miniflare } from "miniflare"
+import { fileURLToPath } from "node:url"
 
 const miniflare = new Miniflare({
   compatibilityDate: "2026-07-15",
   compatibilityFlags: ["nodejs_compat"],
   modules: true,
-  scriptPath: new URL("./dist/worker.js", import.meta.url).pathname,
+  scriptPath: fileURLToPath(new URL("./dist/worker.js", import.meta.url)),
   durableObjects: { OPENCODE: { className: "OpenCodeDO", useSQLite: true } },
 })
 
@@ -178,7 +180,7 @@ try {
     "Packed workerd health returned " + response.status + ": " + await response.text(),
   )
   const body = await response.json()
-  if (body.healthy !== true || body.version !== "packed-workerd") {
+  if (body.version !== "packed-workerd" || body.pid !== 1 || !Array.isArray(body.urls)) {
     throw new Error("Unexpected packed workerd health: " + JSON.stringify(body))
   }
 } finally {
@@ -189,10 +191,10 @@ try {
     Bun.write(
       join(consumer, "imports.mjs"),
       `const modules = await Promise.all([
-  import("@opencode-ai/sdk"),
-  import("@opencode-ai/sdk/effect"),
-  import("@opencode-ai/sdk/workerd"),
-  import("@opencode-ai/sdk/workerd/effect"),
+  import("@opencode/sdk"),
+  import("@opencode/sdk/effect"),
+  import("@opencode/sdk/workerd"),
+  import("@opencode/sdk/workerd/effect"),
 ])
 
 for (const module of modules) {
@@ -203,7 +205,7 @@ for (const module of modules) {
     ),
   ])
 
-  const sdk = archives.get("@opencode-ai/sdk")
+  const sdk = archives.get("@opencode/sdk")
   if (!sdk) throw new Error("Packed SDK archive was not created")
   await $`npm install --ignore-scripts --no-audit --no-fund --package-lock=false ${sdk} wrangler@4.110.0`.cwd(consumer)
   const runtimes = (await $`npm ls effect --all --parseable`.cwd(consumer).text()).trim().split("\n")
@@ -211,6 +213,7 @@ for (const module of modules) {
     throw new Error(`Packed SDK consumer resolved multiple Effect runtimes:\n${runtimes.join("\n")}`)
   }
   await $`bun imports.mjs`.cwd(consumer)
+  await $`node imports.mjs`.cwd(consumer)
   await $`bun --conditions=workerd imports.mjs`.cwd(consumer)
   await $`node_modules/.bin/wrangler deploy --dry-run --config wrangler.jsonc --outdir dist`.cwd(consumer)
 

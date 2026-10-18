@@ -1,6 +1,6 @@
 {
-  "name": "@opencode-ai/session-ui",
-  "version": "1.18.15",
+  "name": "@opencode/session-ui",
+  "version": "2.0.26",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -63,9 +63,9 @@
   },
   "dependencies": {
     "@kobalte/core": "catalog:",
-    "@opencode-ai/client": "workspace:*",
-    "@opencode-ai/ui": "workspace:*",
-    "@opencode-ai/util": "workspace:*",
+    "@opencode/client": "workspace:*",
+    "@opencode/ui": "workspace:*",
+    "@opencode/util": "workspace:*",
     "@pierre/diffs": "catalog:",
     "@shikijs/stream": "catalog:",
     "@solid-primitives/event-listener": "catalog:",

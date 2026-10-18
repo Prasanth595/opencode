@@ -1,11 +1,13 @@
 import { createEffect, onCleanup } from "solid-js"
-import type { PermissionRequest } from "@opencode-ai/client/promise"
-import type { Data } from "@opencode-ai/client/solid"
+import type { PermissionRequest } from "@opencode/client/promise"
+import type { Data } from "@opencode/client/solid"
 import type { ServerSDK } from "@/runtime/server/client"
 import { useSettings } from "@/settings/model"
 
 const respondedLimit = 1000
+
 const retryLimit = 2
+
 const retryDelayMs = 1000
 
 // Auto-approves permission requests on one server connection whenever the
@@ -18,6 +20,7 @@ export function createPermissionAutoApprover(input: { sdk: ServerSDK; data: Data
   const unsubscribe = input.sdk.event.on("permission.asked", (event) => {
     if (enabled()) approve(event.data)
   })
+
   onCleanup(() => {
     state.disposed = true
     unsubscribe()
@@ -38,6 +41,7 @@ export function createPermissionAutoApprover(input: { sdk: ServerSDK; data: Data
   // deliberately reads them after an await, outside Solid tracking.
   createEffect(() => {
     if (!enabled()) return
+
     for (const session of input.data.session.list()) {
       for (const request of input.data.session.permission.list(session.id) ?? []) approve(request)
     }
@@ -48,6 +52,7 @@ export function createPermissionAutoApprover(input: { sdk: ServerSDK; data: Data
   // supersedes scheduled retries.
   async function sweepWithRetry(generation: number, attempt: number) {
     const complete = await sweep()
+
     if (complete || attempt >= retryLimit) return
     setTimeout(() => {
       if (state.disposed || !enabled() || generation !== state.generation) return
@@ -57,17 +62,20 @@ export function createPermissionAutoApprover(input: { sdk: ServerSDK; data: Data
 
   async function sweep() {
     const inventory = await sweepLocations()
+
     const listed = await Promise.all(
       inventory.locations.map((location) =>
         input.sdk.api.permission.request
-          .list({ location: { directory: location.directory, workspace: location.workspaceID } })
+          .list({ location: { directory: location.directory } })
           .then((pending) => {
             if (!state.disposed) pending.data.forEach((request) => approve(request))
+
             return true
           })
           .catch(() => false),
       ),
     )
+
     return inventory.complete && listed.every(Boolean)
   }
 
@@ -81,6 +89,7 @@ export function createPermissionAutoApprover(input: { sdk: ServerSDK; data: Data
   async function sweepLocations() {
     const active = await input.sdk.api.session.active().catch(() => undefined)
     const ids = Object.keys(active ?? {})
+
     // Resync every active session rather than trusting cached info: another
     // client may have moved one while this client was disconnected, and the
     // cached location would list permissions from the old location. A failed
@@ -88,22 +97,26 @@ export function createPermissionAutoApprover(input: { sdk: ServerSDK; data: Data
     const synced = await Promise.all(
       ids.map((id) => {
         input.data.session.invalidate(id)
+
         return input.data.session.sync(id).then(
           () => true,
           () => false,
         )
       }),
     )
+
     const locations = [
       ...ids.flatMap((id) => {
         const location = input.data.session.get(id)?.location
+
         return location ? [location] : []
       }),
       ...input.data.session.list().map((session) => session.location),
     ]
+
     return {
       locations: [
-        ...new Map(locations.map((item) => [`${item.directory}\u0000${item.workspaceID ?? ""}`, item])).values(),
+        ...new Map(locations.map((item) => [item.directory, item])).values(),
       ],
       complete: active !== undefined && synced.every(Boolean),
     }
@@ -115,12 +128,13 @@ export function createPermissionAutoApprover(input: { sdk: ServerSDK; data: Data
     if (state.disposed || !enabled() || state.responded.has(permission.id)) return
     remember(permission.id)
     input.sdk.api.permission
-      .reply({ sessionID: permission.sessionID, requestID: permission.id, reply: "once" })
+      .reply({ sessionID: permission.sessionID, requestID: permission.id, decision: "once" })
       .catch(() => {
         // A reply failure leaves the request pending but invisible (the UI
         // hides prompts while auto-approve is on), so retry a bounded number
         // of times. Later sweeps retry it after that.
         state.responded.delete(permission.id)
+
         if (state.disposed || attempt >= retryLimit) return
         setTimeout(() => approve(permission, attempt + 1), retryDelayMs * (attempt + 1))
       })
@@ -128,6 +142,7 @@ export function createPermissionAutoApprover(input: { sdk: ServerSDK; data: Data
 
   function remember(id: string) {
     state.responded.add(id)
+
     for (const oldest of state.responded) {
       if (state.responded.size <= respondedLimit) break
       state.responded.delete(oldest)

@@ -1,13 +1,15 @@
 import { expect, test } from "bun:test"
+import { createRequire } from "node:module"
 import path from "node:path"
 import { mkdir, rename, symlink } from "node:fs/promises"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import { Host } from "@opencode-ai/plugin/host"
+import { Host } from "@opencode/plugin/host"
 import "../src/plugin/runtime-plugin-support.bun"
 import { createPluginSources } from "../src/plugin/source"
 import { createSourceWatcher } from "../src/plugin/watch"
 import { createSignal } from "solid-js"
-import { Plugin } from "@opencode-ai/plugin/tui"
+import { Effect, Option, Schema } from "effect"
+import { Plugin } from "@opencode/plugin/tui"
 import { tmpdir } from "./fixture/fixture"
 
 test("a fresh local plugin generation observes edited helper exports", async () => {
@@ -45,6 +47,15 @@ test("tracks transitive imports through the Solid runtime transform", async () =
   expect(after.module).toMatchObject({ default: "after" })
 })
 
+test("an explicit local entrypoint inside node_modules still reloads", async () => {
+  await using sources = await fixture()
+  const entry = new URL("node_modules/local-plugin/index.ts", sources.url)
+  await Bun.write(entry, 'export default "before"')
+  expect((await sources.read(entry.href)).module).toMatchObject({ default: "before" })
+  await Bun.write(entry, 'export default "after"')
+  expect((await sources.read(entry.href)).module).toMatchObject({ default: "after" })
+})
+
 test("unchanged bytes are a no-op, reverted bytes get a fresh module", async () => {
   await using sources = await fixture()
   const entry = new URL("tui.ts", sources.url)
@@ -80,6 +91,30 @@ test("renamed exports, failed loads, and new dependencies recover without cached
   expect((await sources.read(entry.href)).module).toMatchObject({ default: 3 })
 })
 
+test("a missing package dependency reloads when it is installed", async () => {
+  let changes = 0
+  const watcher = createSourceWatcher(() => {
+    changes++
+  })
+  using _watcher = { [Symbol.dispose]: watcher.dispose }
+  await using sources = await fixture(watcher.wait)
+  const entry = new URL("tui.ts", sources.url)
+  await Bun.write(entry, 'export { default } from "example"')
+  await expect(sources.read(entry.href)).rejects.toThrow("example")
+
+  const count = changes
+  await Bun.write(new URL("node_modules/example/package.json", sources.url), '{"type":"module","main":"index.js"}')
+  await Bun.write(new URL("node_modules/example/index.js", sources.url), 'export default "installed"')
+  const deadline = Date.now() + 3000
+  while (Date.now() < deadline) {
+    if (changes > count) break
+    await Bun.sleep(10)
+  }
+
+  expect(changes).toBeGreaterThan(count)
+  expect((await sources.read(entry.href)).module).toMatchObject({ default: "installed" })
+})
+
 test("shared runtime and ordinary package identities survive plugin generations", async () => {
   await using sources = await fixture()
   const entry = new URL("tui.ts", sources.url)
@@ -92,7 +127,7 @@ test("shared runtime and ordinary package identities survive plugin generations"
     await Bun.write(
       entry,
       `import { createSignal } from "solid-js"
-      import { Plugin } from "@opencode-ai/plugin/tui"
+      import { Plugin } from "@opencode/plugin/tui"
       import value from "example"
       export { createSignal, Plugin, value }; export const label = ${JSON.stringify(label)}`,
     )
@@ -103,6 +138,104 @@ test("shared runtime and ordinary package identities survive plugin generations"
     expect("value" in loaded && loaded.value).toBe(pkg.default)
     expect(loaded).toMatchObject({ label })
   }
+})
+
+test("TUI plugins importing @opencode/plugin/tui and solid-js alongside effect resolve effect and effect/* to the host copy without rewriting host Effect or hijacking plugin dependencies", async () => {
+  const effectPlugin = await import("@opencode/plugin/effect")
+  const req = createRequire(import.meta.url)
+  expect(req("effect").Effect).toBe(Effect)
+  expect(req("effect/Option").some).toBe(Option.some)
+  expect(req("@opencode/plugin/effect").Plugin).toBe(effectPlugin.Plugin)
+  expect(JSON.stringify(Schema.Option(Schema.String).ast)).not.toContain("opentui:runtime-module:")
+
+  const standalone = Bun.spawnSync(
+    [
+      process.execPath,
+      "-e",
+      [
+        `import ${JSON.stringify(fileURLToPath(new URL("../src/plugin/runtime-plugin-support.bun.ts", import.meta.url)))}`,
+        'import assert from "node:assert/strict"',
+        'import { createRequire } from "node:module"',
+        "const req = createRequire(import.meta.url)",
+        'const eff = req("effect")',
+        'const opt = req("effect/Option")',
+        'const plug = req("@opencode/plugin/effect")',
+        'const { Effect } = await import("effect")',
+        'const { some } = await import("effect/Option")',
+        'const { Plugin } = await import("@opencode/plugin/effect")',
+        "assert.equal(eff.Effect, Effect)",
+        "assert.equal(opt.some, some)",
+        "assert.equal(plug.Plugin, Plugin)",
+      ].join("\n"),
+    ],
+    { cwd: fileURLToPath(new URL("..", import.meta.url)), stdout: "pipe", stderr: "pipe" },
+  )
+  expect({ stderr: standalone.stderr.toString(), exit: standalone.exitCode }).toEqual({ stderr: "", exit: 0 })
+
+  const watched: string[] = []
+  await using sources = await fixture(async (file) => {
+    watched.push(file)
+  })
+  const entry = new URL("tui.ts", sources.url)
+  const badEntry = new URL("bad-tui.ts", sources.url)
+  await Promise.all(
+    Object.entries({
+      "node_modules/effect/package.json":
+        '{"name":"effect","version":"3.19.19","type":"module","exports":{".":{"import":"./dist/esm/index.js"},"./Option":{"import":"./dist/esm/Option.js"},"./RemovedSubpath":{"import":"./dist/esm/RemovedSubpath.js"},"./package.json":"./package.json"}}',
+      "node_modules/effect/dist/esm/index.js":
+        "export const Effect = { foreign: true }; export const Schema = { foreign: true }",
+      "node_modules/effect/dist/esm/Option.js": "export const some = () => null",
+      "node_modules/effect/dist/esm/RemovedSubpath.js": "export const removed = true",
+      "node_modules/effect-helper/package.json":
+        '{"name":"effect-helper","type":"module","exports":{".":"./index.js"}}',
+      "node_modules/effect-helper/index.js":
+        'import { Effect, Schema } from "effect"; import { some } from "effect/Option"; export const helper = { Effect, Schema, some }',
+      "node_modules/zod/package.json": '{"name":"zod","type":"module","exports":{".":"./index.js"}}',
+      "node_modules/zod/index.js": "export const fromPluginZod = true",
+      "helper.ts": ['import { fromPluginZod }', 'from "zod"; export { fromPluginZod }'].join(" "),
+      "tui.ts": [
+        "import { createSignal }",
+        'from "solid-js"',
+        "import { Plugin }",
+        'from "@opencode/plugin/tui"',
+        'import { Plugin as HostEffectPlugin } from "@opencode/plugin/effect"',
+        'import { Effect, Schema } from "effect"',
+        'import { some } from "effect/Option"',
+        "import pkg",
+        'from "effect/package.json" with { type: "json" }',
+        'import { helper } from "effect-helper"',
+        'const { fromPluginZod } = await import("./helper.ts")',
+        'const dynOption = await import("effect/Option")',
+        'const dynEffectPlugin = await import("@opencode/plugin/effect")',
+        "export const plugin = { createSignal, Plugin, HostEffectPlugin, Effect, Schema, some, dynSome: dynOption.some, dynEffectPlugin: dynEffectPlugin.Plugin, pkgName: pkg.name, fromPluginZod }",
+        "export { helper }",
+      ].join("\n"),
+      "bad-tui.ts": [
+        "import { Plugin }",
+        'from "@opencode/plugin/tui"; import { removed } from "effect/RemovedSubpath"; export default { Plugin, removed }',
+      ].join(" "),
+    }).map(([file, text]) => Bun.write(new URL(file, sources.url), text)),
+  )
+  const loaded = (await sources.read(entry.href)).module as {
+    plugin: Record<string, unknown>
+    helper: Record<string, unknown>
+  }
+  expect(loaded.plugin.createSignal).toBe(createSignal)
+  expect(loaded.plugin.Plugin).toBe(Plugin)
+  expect(loaded.plugin.HostEffectPlugin).toBe(effectPlugin.Plugin)
+  expect(loaded.plugin.Effect).toBe(Effect)
+  expect(loaded.plugin.Schema).toBe(Schema)
+  expect(loaded.plugin.some).toBe(Option.some)
+  expect(loaded.plugin.dynSome).toBe(Option.some)
+  expect(loaded.plugin.dynEffectPlugin).toBe(effectPlugin.Plugin)
+  expect(loaded.plugin.pkgName).toBe("effect")
+  expect(loaded.plugin.fromPluginZod).toBe(true)
+  expect(loaded.helper.Effect).toBe(Effect)
+  expect(loaded.helper.Schema).toBe(Schema)
+  expect(loaded.helper.some).toBe(Option.some)
+  expect(watched.some((item) => item.replaceAll("\\", "/").endsWith("/node_modules/effect"))).toBe(false)
+  expect(watched.some((item) => item.replaceAll("\\", "/").endsWith("/node_modules/@opencode/plugin"))).toBe(false)
+  await expect(sources.read(badEntry.href)).rejects.toThrow("effect/dist/esm/RemovedSubpath.js")
 })
 
 test("helper import.meta stays anchored to its source, including assets and resolution", async () => {
@@ -214,6 +347,13 @@ test.each(["", "?mode=plugin", "?mode=plugin#section"])(
       assert.equal(new URL(updated.source).pathname, helper.pathname)
       assert.equal(new URL(updated.source).searchParams.get("mode"), suffix ? "plugin" : null)
       assert.equal(new URL(updated.source).hash, suffix.includes("#") ? "#section" : "")
+      const missing = new URL("./missing.mjs", import.meta.url)
+      await writeFile(missing, 'export { default } from "later"')
+      await assert.rejects(sources.read(missing.href), /later/)
+      await mkdir(new URL("./node_modules/later", import.meta.url), { recursive: true })
+      await writeFile(new URL("./node_modules/later/package.json", import.meta.url), '{"type":"module","main":"index.js"}')
+      await writeFile(new URL("./node_modules/later/index.js", import.meta.url), 'export default "installed"')
+      assert.equal((await sources.read(missing.href)).module.default, "installed")
       console.log("node graph reload passed")
     } finally { sources.dispose() }
   `,
@@ -315,7 +455,7 @@ test("each helper resolves packages from its own directory", async () => {
   const entry = new URL("tui.ts", sources.url)
   await Bun.write(
     entry,
-    'import { Plugin } from "@opencode-ai/plugin/tui"; import value from "./nested/helper"; export default { Plugin, value }',
+    'import { Plugin } from "@opencode/plugin/tui"; import value from "./nested/helper"; export default { Plugin, value }',
   )
   await Bun.write(new URL("nested/helper.ts", sources.url), 'import value from "example"; export default value')
   for (const directory of ["", "nested/"]) {
