@@ -625,17 +625,23 @@ const legacyProviderSpelling: Readonly<Record<string, string>> = {
   id: "`canonical`",
   npm: "`package`",
   options: "`settings`, `headers` and `body`",
-  whitelist: "top-level `permissions`",
-  blacklist: "top-level `permissions`",
 }
 const legacyModelSpelling: Readonly<Record<string, string>> = {
   id: "`modelID`",
   options: "`settings`, `headers` and `body`",
+  release_date: "`releaseDate`",
+  tool_call: "`capabilities.tools`",
+  modalities: "`capabilities.input` and `capabilities.output`",
 }
 const legacyModelProviderSpelling: Readonly<Record<string, string>> = {
   api: "`settings.baseURL`",
   npm: "`package`",
 }
+// The legacy keys with no native field to point at keep the plain unsupported wording: `whitelist` and
+// `blacklist` filter models rather than grant tool permissions, and a V1 capability flag is not a rename
+// of the structured `capabilities` field it resembles.
+const unreplacedProviderSpelling = unsupportedProvider.filter((key) => !(key in legacyProviderSpelling))
+const unreplacedModelSpelling = unsupportedModel.filter((key) => !(key in legacyModelSpelling))
 
 function diagnoseNativeProviders(value: unknown, diagnostics: Diagnostic[]) {
   if (!isRecord(value)) return
@@ -643,17 +649,15 @@ function diagnoseNativeProviders(value: unknown, diagnostics: Diagnostic[]) {
     if (!isRecord(provider)) return
     const path = ["providers", name]
     diagnoseLegacySpelling(provider, legacyProviderSpelling, path, diagnostics)
+    unreplacedProviderSpelling.forEach((key) => unsupportedIfPresent(provider, key, [...path, key], diagnostics))
     if (!isRecord(provider.models)) return
     Object.entries(provider.models).forEach(([id, model]) => {
       if (!isRecord(model)) return
-      diagnoseLegacySpelling(model, legacyModelSpelling, [...path, "models", id], diagnostics)
+      const modelPath = [...path, "models", id]
+      diagnoseLegacySpelling(model, legacyModelSpelling, modelPath, diagnostics)
+      unreplacedModelSpelling.forEach((key) => unsupportedIfPresent(model, key, [...modelPath, key], diagnostics))
       if (isRecord(model.provider))
-        diagnoseLegacySpelling(
-          model.provider,
-          legacyModelProviderSpelling,
-          [...path, "models", id, "provider"],
-          diagnostics,
-        )
+        diagnoseLegacySpelling(model.provider, legacyModelProviderSpelling, [...modelPath, "provider"], diagnostics)
     })
   })
 }

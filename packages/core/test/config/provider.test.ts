@@ -345,6 +345,29 @@ describe("ConfigProviderPlugin.Plugin", () => {
     }),
   )
 
+  it.effect("names the missing package when a configured provider is resolved without one", () =>
+    Effect.gen(function* () {
+      const models = yield* Model.Service
+      yield* addPlugin([
+        new Document({
+          type: "document",
+          info: decode({
+            providers: {
+              custom: { models: { chat: {} } },
+            },
+          }),
+        }),
+      ])
+
+      const model = required(yield* models.get(Provider.ID.make("custom"), Model.ID.make("chat")))
+      // The entry registers with an empty package, so normalization's log line is not the only way to learn
+      // about the omission: the request that uses it fails with a message naming the key to add.
+      expect(model.package).toBe("")
+      const failure = yield* ModelResolver.fromCatalogModel(model).pipe(Effect.flip)
+      expect(failure.message).toBe('No package configured for custom/chat: set "package" on its "providers" entry')
+    }),
+  )
+
   it.effect("defaults custom model metadata", () =>
     Effect.gen(function* () {
       const models = yield* Model.Service

@@ -610,6 +610,7 @@ describe("ConfigNormalize", () => {
           id: "example-provider",
           npm: "@ai-sdk/openai-compatible",
           options: { baseURL: "https://example.test/v1" },
+          whitelist: ["some-model"],
           models: { some: { name: "Some Model" } },
         },
       },
@@ -626,6 +627,9 @@ describe("ConfigNormalize", () => {
         ["providers", "example", "options"],
         "omitted legacy spelling; use `settings`, `headers` and `body`",
       ],
+      // Nothing native filters models by id, so this one keeps the plain wording rather than pointing at
+      // `permissions`, which grants tool use and cannot hide a model.
+      ["unsupported", ["providers", "example", "whitelist"], "omitted unsupported legacy setting"],
     ])
   })
 
@@ -637,6 +641,10 @@ describe("ConfigNormalize", () => {
             some: {
               id: "some-model",
               options: { baseURL: "https://example.test/v1" },
+              release_date: "2026-01-01",
+              tool_call: true,
+              modalities: { input: ["text"] },
+              reasoning: true,
               provider: { npm: "@ai-sdk/openai" },
             },
           },
@@ -651,6 +659,23 @@ describe("ConfigNormalize", () => {
         ["providers", "example", "models", "some", "options"],
         "omitted legacy spelling; use `settings`, `headers` and `body`",
       ],
+      [
+        "unsupported",
+        ["providers", "example", "models", "some", "release_date"],
+        "omitted legacy spelling; use `releaseDate`",
+      ],
+      [
+        "unsupported",
+        ["providers", "example", "models", "some", "tool_call"],
+        "omitted legacy spelling; use `capabilities.tools`",
+      ],
+      [
+        "unsupported",
+        ["providers", "example", "models", "some", "modalities"],
+        "omitted legacy spelling; use `capabilities.input` and `capabilities.output`",
+      ],
+      // A V1 boolean flag is not a rename of the structured `capabilities.reasoning` field.
+      ["unsupported", ["providers", "example", "models", "some", "reasoning"], "omitted unsupported legacy setting"],
       [
         "unsupported",
         ["providers", "example", "models", "some", "provider", "npm"],
@@ -668,7 +693,14 @@ describe("ConfigNormalize", () => {
           settings: { baseURL: "https://example.test/v1" },
           headers: { "x-test": "one" },
           body: { temperature: 0 },
-          models: { some: { modelID: "some-model", name: "Some Model" } },
+          models: {
+            some: {
+              modelID: "some-model",
+              name: "Some Model",
+              releaseDate: "2026-01-01",
+              capabilities: { tools: true, input: ["text"], output: ["text"] },
+            },
+          },
         },
       },
     })
@@ -678,7 +710,7 @@ describe("ConfigNormalize", () => {
       example: {
         package: "@ai-sdk/openai-compatible",
         settings: { baseURL: "https://example.test/v1" },
-        models: { some: { modelID: "some-model" } },
+        models: { some: { modelID: "some-model", releaseDate: "2026-01-01" } },
       },
     })
   })
