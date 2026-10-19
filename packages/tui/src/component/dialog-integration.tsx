@@ -329,10 +329,39 @@ function openMethod(
     return
   }
   if (method.type === "external") {
-    void beginExternal(integration, method, location, dialog, onConnected)
+    dialog.replace(() => (
+      <ExternalLoading integration={integration} method={method} location={location} onConnected={onConnected} />
+    ))
     return
   }
   void beginOAuth(integration, method, location, dialog, onConnected)
+}
+
+// Lists omit options that plugins discover from local files, so fetch this integration's form before showing it.
+function ExternalLoading(props: {
+  integration: IntegrationInfo
+  method: Extract<ConnectMethod, { type: "external" }>
+  location: LocationRef
+  onConnected?: OnIntegrationConnected
+}) {
+  const dialog = useDialog()
+  const client = useClient()
+
+  onMount(() => {
+    void client.api.integration
+      .get({ integrationID: props.integration.id, location: locationQuery(props.location) })
+      .then((result) =>
+        result.data.methods.find(
+          (method): method is Extract<ConnectMethod, { type: "external" }> =>
+            method.type === "external" && method.id === props.method.id,
+        ),
+      )
+      .catch(() => undefined)
+      .then((method) =>
+        beginExternal(props.integration, method ?? props.method, props.location, dialog, props.onConnected),
+      )
+  })
+  return <OAuthView title={props.method.label} message="Loading…" />
 }
 
 async function beginExternal(

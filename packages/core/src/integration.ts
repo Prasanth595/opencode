@@ -88,6 +88,8 @@ export interface KeyImplementation {
 export interface ExternalImplementation {
   readonly integrationID: ID
   readonly method: ExternalMethod
+  /** Builds the form when one integration is requested, keeping local discovery out of plugin load and `list`. */
+  readonly resolveForm?: () => Effect.Effect<Form.Fields>
 }
 
 export interface CommandImplementation {
@@ -149,6 +151,7 @@ type Entry = {
   ref: Types.DeepMutable<Ref>
   methods: Types.DeepMutable<Method>[]
   implementations: Map<MethodID, Types.DeepMutable<OAuthImplementation>>
+  forms: Map<MethodID, () => Effect.Effect<Form.Fields>>
 }
 
 type Data = {
@@ -325,6 +328,7 @@ const layer = Layer.effect(
             ref: { id, name: id },
             methods: [],
             implementations: new Map(),
+            forms: new Map(),
           }
           if (!editor.integrations.has(id)) editor.integrations.set(id, current)
           update(current.ref)
@@ -341,6 +345,7 @@ const layer = Layer.effect(
               },
               methods: [],
               implementations: new Map<MethodID, Types.DeepMutable<OAuthImplementation>>(),
+              forms: new Map<MethodID, () => Effect.Effect<Form.Fields>>(),
             }
             if (!editor.integrations.has(implementation.integrationID)) {
               editor.integrations.set(implementation.integrationID, current)
@@ -363,6 +368,9 @@ const layer = Layer.effect(
                 implementation as Types.DeepMutable<OAuthImplementation>,
               )
             }
+            if (implementation.method.type === "external") current.forms.delete(implementation.method.id)
+            if ("resolveForm" in implementation && implementation.resolveForm)
+              current.forms.set(implementation.method.id, implementation.resolveForm)
           },
           remove: (integrationID, method) => {
             const current = editor.integrations.get(integrationID)
@@ -376,6 +384,7 @@ const layer = Layer.effect(
             })
             if (index !== -1) current.methods.splice(index, 1)
             if (method.type === "oauth") current.implementations.delete(method.id)
+            if (method.type === "external") current.forms.delete(method.id)
           },
         },
       }),
@@ -707,7 +716,12 @@ const layer = Layer.effect(
       get: Effect.fn("Integration.get")(function* (id) {
         const entry = state.get().integrations.get(id)
         if (!entry) return undefined
-        return project(entry, resolveConnections(entry, yield* credentials.list(id)))
+        const methods = yield* Effect.forEach(entry.methods, (method) => {
+          const resolve = method.type === "external" ? entry.forms.get(method.id) : undefined
+          if (!resolve) return Effect.succeed(method)
+          return resolve().pipe(Effect.map((form) => ({ ...method, form }) as Types.DeepMutable<Method>))
+        })
+        return project({ ...entry, methods }, resolveConnections(entry, yield* credentials.list(id)))
       }),
       list: Effect.fn("Integration.list")(function* () {
         const saved = Map.groupBy(yield* credentials.all(), (credential) => credential.integrationID)

@@ -1,6 +1,7 @@
-import { Effect } from "effect"
+import { Effect, Stream } from "effect"
 import path from "node:path"
 import { define } from "@opencode/plugin/effect/plugin"
+import { Form } from "@opencode/schema/form"
 import { FSUtil } from "@opencode/util/fs-util"
 import { Global } from "@opencode/util/global"
 import { Provider } from "../../provider.js"
@@ -23,28 +24,39 @@ export const AmazonBedrockPlugin = define({
   id: "opencode.provider.amazon.bedrock",
   effect: Effect.fn(function* (ctx) {
     const fs = yield* FSUtil.Service
-    const paths = [
-      process.env.AWS_CONFIG_FILE ?? path.join(Global.Path.home, ".aws", "config"),
-      process.env.AWS_SHARED_CREDENTIALS_FILE ?? path.join(Global.Path.home, ".aws", "credentials"),
-    ]
-    const files = yield* Effect.all(
-      paths.map((file) => fs.readFileStringSafe(file).pipe(Effect.orElseSucceed(() => undefined))),
-    )
-    // Discover names only. Resolving every profile here could run credential helpers or contact AWS.
-    const profiles = Array.from(
-      new Set(
-        files.flatMap((content, index) =>
-          Array.from((content ?? "").matchAll(/^\s*\[([^\]\r\n]+)\]/gm)).flatMap((match) => {
-            const section = match[1].trim()
-            // The credentials file uses bare names; the config file prefixes all but "default" with "profile ".
-            if (index === 1 || section === "default") return [section]
-            return section.startsWith("profile ") ? [section.slice(8).trim()] : []
-          }),
+    // Runs only when a client opens Bedrock to connect, so loading the plugin never reads AWS files.
+    const discover = Effect.fn("AmazonBedrockPlugin.discover")(function* () {
+      const files = yield* Effect.forEach(
+        [
+          process.env.AWS_CONFIG_FILE ?? path.join(Global.Path.home, ".aws", "config"),
+          process.env.AWS_SHARED_CREDENTIALS_FILE ?? path.join(Global.Path.home, ".aws", "credentials"),
+        ],
+        // Keeps only `[section]` header lines; key and secret lines are dropped as the file streams past.
+        (file) =>
+          fs.stream(file).pipe(
+            Stream.decodeText,
+            Stream.splitLines,
+            Stream.map((line) => line.match(/^\s*\[([^\]\r\n]+)\]/)?.[1].trim()),
+            Stream.filter((section): section is string => Boolean(section)),
+            Stream.runCollect,
+            Effect.orElseSucceed((): string[] => []),
+          ),
+      )
+      // Discover names only. Resolving every profile here could run credential helpers or contact AWS.
+      return Array.from(
+        new Set(
+          files.flatMap((sections, index) =>
+            sections.flatMap((section) => {
+              // The credentials file uses bare names; the config file prefixes all but "default" with "profile ".
+              if (index === 1 || section === "default") return [section]
+              return section.startsWith("profile ") ? [section.slice(8).trim()] : []
+            }),
+          ),
         ),
-      ),
-    )
-      .filter(Boolean)
-      .toSorted()
+      )
+        .filter(Boolean)
+        .toSorted()
+    })
     yield* ctx.integration.transform((editor) => {
       // models.dev advertises AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and
       // AWS_REGION alongside the bearer token. Only the bearer token is a key;
@@ -63,23 +75,9 @@ export const AmazonBedrockPlugin = define({
           id: "aws-profile",
           type: "external",
           label: "AWS profile (SSO or named profile)",
-          form: [
-            {
-              key: "profile",
-              type: "string",
-              title: "AWS profile",
-              description: profiles.length
-                ? `Found ${profiles.length} profile${profiles.length === 1 ? "" : "s"} in your AWS configuration.`
-                : "No profiles found in your AWS configuration.",
-              required: true,
-              minLength: 1,
-              pattern: "\\S",
-              placeholder: "Profile name",
-              custom: true,
-              options: profiles.map((profile) => ({ value: profile, label: profile })),
-            },
-          ],
+          form: profileForm(),
         },
+        resolveForm: () => discover().pipe(Effect.map(profileForm)),
       })
     })
     yield* ctx.provider.transform((evt) => {
@@ -109,3 +107,26 @@ export const AmazonBedrockPlugin = define({
     })
   }),
 })
+
+function profileForm(profiles?: string[]): Form.Fields {
+  return [
+    {
+      key: "profile",
+      type: "string",
+      title: "AWS profile",
+      ...(profiles
+        ? {
+            description: profiles.length
+              ? `Found ${profiles.length} profile${profiles.length === 1 ? "" : "s"} in your AWS configuration.`
+              : "No profiles found in your AWS configuration.",
+            options: profiles.map((profile) => ({ value: profile, label: profile })),
+          }
+        : {}),
+      required: true,
+      minLength: 1,
+      pattern: "\\S",
+      placeholder: "Profile name",
+      custom: true,
+    },
+  ]
+}

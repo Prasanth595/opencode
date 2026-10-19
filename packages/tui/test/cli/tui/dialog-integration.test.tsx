@@ -247,6 +247,44 @@ test("uses the active location for integration data without scoping credential r
   }
 })
 
+test("fetches discovered options before showing an external method form", async () => {
+  const paths: string[] = []
+  const field = { type: "string" as const, key: "profile", title: "AWS profile", required: true, custom: true }
+  const integration = (options?: Array<{ value: string; label: string }>) => ({
+    id: "amazon-bedrock",
+    name: "Amazon Bedrock",
+    methods: [{ type: "external", id: "aws-profile", label: "AWS profile", form: [{ ...field, options }] }],
+    connections: [],
+  })
+  const calls = createFetch(async (url) => {
+    const location = { directory: process.cwd(), project: { id: "proj_test", directory: process.cwd() } }
+    paths.push(url.pathname)
+    if (url.pathname === "/api/integration") return json({ location, data: [integration()] })
+    if (url.pathname === "/api/integration/amazon-bedrock")
+      return json({ location, data: integration([{ value: "work-profile", label: "work-profile" }]) })
+    return undefined
+  }, createEventStream())
+
+  function Probe() {
+    const data = useData()
+    const dialog = useDialog()
+    onMount(() => {
+      void data.location.integration
+        .sync()
+        .then(() => dialog.replace(() => <DialogIntegration integrationID="amazon-bedrock" autoConnect />))
+    })
+    return null
+  }
+
+  const app = await renderTree(calls.fetch, Probe)
+  try {
+    await app.waitForFrame((frame) => frame.includes("work-profile"))
+    expect(paths).toContain("/api/integration/amazon-bedrock")
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
 async function renderIntegration(activeLocation?: LocationRef, form?: FormFields) {
   const events = createEventStream()
   const requests: Array<{ method: string; path: string; body?: unknown }> = []
@@ -356,13 +394,32 @@ async function renderIntegration(activeLocation?: LocationRef, form?: FormFields
     return null
   }
 
+  const app = await renderTree(calls.fetch, Probe)
+  await app.waitForFrame(
+    (frame) => frame.includes("Add account") && frame.includes("Personal") && frame.includes("Work"),
+  )
+  await app.waitFor(() => app.renderer.currentFocusedEditor instanceof InputRenderable)
+
+  return {
+    app,
+    reads,
+    requests,
+    locations,
+    credentialQueries,
+    get accounts() {
+      return accounts
+    },
+  }
+}
+
+async function renderTree(fetch: Parameters<typeof createApi>[0], Probe: () => null) {
   const app = await testRender(
     () => (
       <TestTuiContexts>
         <ConfigProvider config={createTuiResolvedConfig()}>
           <Keymap.Provider>
             <ToastProvider>
-              <ClientProvider api={createApi(calls.fetch)}>
+              <ClientProvider api={createApi(fetch)}>
                 <DataProvider directory={process.cwd()}>
                   <LocationProvider>
                     <ThemeProvider mode="dark" source={emptyThemeSource}>
@@ -380,21 +437,6 @@ async function renderIntegration(activeLocation?: LocationRef, form?: FormFields
     ),
     { width: 100, height: 30, kittyKeyboard: true },
   )
-
   app.renderer.start()
-  await app.waitForFrame(
-    (frame) => frame.includes("Add account") && frame.includes("Personal") && frame.includes("Work"),
-  )
-  await app.waitFor(() => app.renderer.currentFocusedEditor instanceof InputRenderable)
-
-  return {
-    app,
-    reads,
-    requests,
-    locations,
-    credentialQueries,
-    get accounts() {
-      return accounts
-    },
-  }
+  return app
 }

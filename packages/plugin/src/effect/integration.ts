@@ -81,6 +81,11 @@ export type IntegrationMethodRegistration =
   | {
       readonly integrationID: string
       readonly method: IntegrationExternalMethod
+      /**
+       * Builds the method's form when a client requests this integration on its own, such as when opening it to
+       * connect. Use it for options discovered from local files so plugin load and integration lists never read them.
+       */
+      readonly resolveForm?: () => Effect.Effect<Form.Fields>
     }
   | {
       readonly integrationID: string

@@ -1,10 +1,13 @@
 import { describe, expect } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Stream } from "effect"
+import path from "node:path"
+import { FSUtil } from "@opencode/util/fs-util"
 import { Integration } from "@opencode/core/integration"
 import { Plugin } from "@opencode/core/plugin"
 import { PluginHost } from "@opencode/core/plugin/host"
 import { AmazonBedrockPlugin } from "@opencode/core/plugin/provider/amazon-bedrock"
 import { Provider } from "@opencode/core/provider"
+import { withTempDir } from "../fixture/tmpdir"
 import { testEffect } from "../lib/effect"
 import { PluginTestLayer } from "./fixture"
 
@@ -14,6 +17,28 @@ const addPlugin = Effect.fn(function* () {
   const plugin = yield* Plugin.Service
   const host = yield* PluginHost.make(plugin)
   yield* AmazonBedrockPlugin.effect(host)
+})
+
+// Records which files the plugin reads, including later reads through closures captured at load.
+// Whole-file reads are recorded separately from streamed reads, which keep only section headers.
+const addPluginRecordingReads = Effect.fn(function* () {
+  const fs = yield* FSUtil.Service
+  const plugin = yield* Plugin.Service
+  const host = yield* PluginHost.make(plugin)
+  const reads = { streamed: [] as string[], whole: [] as string[] }
+  yield* AmazonBedrockPlugin.effect(host).pipe(
+    Effect.provideService(
+      FSUtil.Service,
+      FSUtil.Service.of({
+        ...fs,
+        readFileStringSafe: (file) =>
+          Effect.sync(() => reads.whole.push(file)).pipe(Effect.andThen(fs.readFileStringSafe(file))),
+        stream: (file, options) =>
+          Stream.unwrap(Effect.sync(() => reads.streamed.push(file)).pipe(Effect.as(fs.stream(file, options)))),
+      }),
+    ),
+  )
+  return reads
 })
 
 function required<T>(value: T | undefined): T {
@@ -107,6 +132,52 @@ describe("AmazonBedrockPlugin", () => {
       expect((yield* integrations.get(integrationID))?.methods.filter((method) => method.type === "env")).toEqual([
         { type: "env", names: ["AWS_BEARER_TOKEN_BEDROCK"] },
       ])
+    }),
+  )
+
+  it.effect("reads AWS profile names only when the integration is requested", () =>
+    withTempDir((tmp) => {
+      const config = path.join(tmp.path, "config")
+      const credentials = path.join(tmp.path, "credentials")
+      return withEnv({ ...noAmbientAWS, AWS_CONFIG_FILE: config, AWS_SHARED_CREDENTIALS_FILE: credentials }, () =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() =>
+            Promise.all([
+              Bun.write(
+                config,
+                "[default]\nregion = us-east-1\n[profile work]\nregion = us-west-2\ncredential_process = config-secret\n[sso-session corp]\n",
+              ),
+              Bun.write(
+                credentials,
+                "[static]\r\naws_access_key_id = AKIAEXAMPLE\r\naws_secret_access_key = [credentials-secret]\r\n",
+              ),
+            ]),
+          )
+          const integrations = yield* Integration.Service
+          const reads = yield* addPluginRecordingReads()
+          const integrationID = Integration.ID.make(Provider.ID.amazonBedrock)
+          const listed = (yield* integrations.list()).find((item) => item.id === integrationID)
+          const profileField = (methods: readonly Integration.Method[] | undefined) =>
+            methods?.find(
+              (method): method is Integration.ExternalMethod =>
+                method.type === "external" && method.id === "aws-profile",
+            )?.form?.[0]
+
+          expect(reads).toEqual({ streamed: [], whole: [] })
+          expect(profileField(listed?.methods)).toMatchObject({ key: "profile", custom: true })
+          expect(profileField(listed?.methods)).not.toHaveProperty("options")
+
+          const requested = yield* integrations.get(integrationID)
+          expect(profileField(requested?.methods)).toMatchObject({
+            description: "Found 3 profiles in your AWS configuration.",
+            options: ["default", "static", "work"].map((profile) => ({ value: profile, label: profile })),
+          })
+          expect(reads.streamed.toSorted()).toEqual([config, credentials])
+          expect(reads.whole).toEqual([])
+          for (const secret of ["AKIAEXAMPLE", "credentials-secret", "config-secret"])
+            expect(JSON.stringify(requested)).not.toContain(secret)
+        }),
+      )
     }),
   )
 

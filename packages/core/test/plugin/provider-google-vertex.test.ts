@@ -1,10 +1,14 @@
 import { describe, expect } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Stream } from "effect"
+import path from "node:path"
+import { FSUtil } from "@opencode/util/fs-util"
+import { Integration } from "@opencode/core/integration"
 import { Model } from "@opencode/core/model"
 import { Plugin } from "@opencode/core/plugin"
 import { PluginHost } from "@opencode/core/plugin/host"
 import { GoogleVertexPlugin } from "@opencode/core/plugin/provider/google-vertex"
 import { Provider } from "@opencode/core/provider"
+import { withTempDir } from "../fixture/tmpdir"
 import { testEffect } from "../lib/effect"
 import { PluginTestLayer } from "./fixture"
 
@@ -14,6 +18,28 @@ const addPlugin = Effect.fn(function* () {
   const plugin = yield* Plugin.Service
   const host = yield* PluginHost.make(plugin)
   yield* GoogleVertexPlugin.effect(host)
+})
+
+// Records which paths the plugin reads, including later reads through closures captured at load.
+const addPluginRecordingReads = Effect.fn(function* () {
+  const fs = yield* FSUtil.Service
+  const plugin = yield* Plugin.Service
+  const host = yield* PluginHost.make(plugin)
+  const reads: string[] = []
+  const record = (file: string) => Effect.sync(() => reads.push(file))
+  yield* GoogleVertexPlugin.effect(host).pipe(
+    Effect.provideService(
+      FSUtil.Service,
+      FSUtil.Service.of({
+        ...fs,
+        readFileStringSafe: (file) => record(file).pipe(Effect.andThen(fs.readFileStringSafe(file))),
+        readDirectory: (directory, options) =>
+          record(directory).pipe(Effect.andThen(fs.readDirectory(directory, options))),
+        stream: (file, options) => Stream.unwrap(record(file).pipe(Effect.as(fs.stream(file, options)))),
+      }),
+    ),
+  )
+  return reads
 })
 
 function required<T>(value: T | undefined): T {
@@ -43,6 +69,71 @@ function withEnv<A, E, R>(vars: Record<string, string | undefined>, effect: () =
 }
 
 describe("GoogleVertexPlugin", () => {
+  it.effect("reads gcloud configuration only when the integration is requested", () =>
+    withTempDir((gcloud) =>
+      withEnv(
+        {
+          CLOUDSDK_CONFIG: gcloud.path,
+          GOOGLE_VERTEX_PROJECT: undefined,
+          GOOGLE_CLOUD_PROJECT: undefined,
+          GCP_PROJECT: undefined,
+          GCLOUD_PROJECT: undefined,
+          GOOGLE_VERTEX_LOCATION: undefined,
+          GOOGLE_CLOUD_LOCATION: undefined,
+          VERTEX_LOCATION: undefined,
+        },
+        () =>
+          Effect.gen(function* () {
+            yield* Effect.promise(() =>
+              Promise.all([
+                Bun.write(path.join(gcloud.path, "active_config"), "work\n"),
+                Bun.write(
+                  path.join(gcloud.path, "configurations", "config_default"),
+                  "[core]\nproject = default-project\n[compute]\nregion = us-central1\n",
+                ),
+                Bun.write(path.join(gcloud.path, "configurations", "config_work"), "[core]\nproject = work-project\n"),
+                Bun.write(
+                  path.join(gcloud.path, "application_default_credentials.json"),
+                  JSON.stringify({
+                    client_secret: "client-secret",
+                    refresh_token: "refresh-secret",
+                    quota_project_id: "quota-project",
+                  }),
+                ),
+              ]),
+            )
+            const integrations = yield* Integration.Service
+            const reads = yield* addPluginRecordingReads()
+            const integrationID = Integration.ID.make(Provider.ID.googleVertex)
+            const listed = (yield* integrations.list()).find((item) => item.id === integrationID)
+            const form = (methods: readonly Integration.Method[] | undefined) =>
+              methods?.find(
+                (method): method is Integration.ExternalMethod =>
+                  method.type === "external" && method.id === "google-adc",
+              )?.form
+
+            expect(reads).toEqual([])
+            expect(form(listed?.methods)?.some((field) => "options" in field)).toBe(false)
+
+            const requested = yield* integrations.get(integrationID)
+            const options = (values: string[]) => values.map((value) => ({ value, label: value }))
+            expect(form(requested?.methods)).toMatchObject([
+              {
+                key: "project",
+                default: "work-project",
+                options: options(["work-project", "default-project"]),
+              },
+              { key: "location", default: "global", options: options(["global", "us", "eu", "us-central1"]) },
+            ])
+            expect(reads).toContain(path.join(gcloud.path, "configurations", "config_work"))
+            expect(reads).not.toContain(path.join(gcloud.path, "application_default_credentials.json"))
+            for (const secret of ["client-secret", "refresh-secret", "quota-project"])
+              expect(JSON.stringify(requested)).not.toContain(secret)
+          }),
+      ),
+    ),
+  )
+
   it.effect("ignores OpenAI-compatible providers that are not Google Vertex", () =>
     Effect.gen(function* () {
       const catalog = yield* Provider.Service

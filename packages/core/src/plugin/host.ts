@@ -690,6 +690,7 @@ function methodImplementation(input: IntegrationMethodRegistration): Integration
     return {
       integrationID: Integration.ID.make(input.integrationID),
       method: { ...input.method, id: Integration.MethodID.make(input.method.id) },
+      ...("resolveForm" in input && input.resolveForm ? { resolveForm: input.resolveForm } : {}),
     }
   }
   return {

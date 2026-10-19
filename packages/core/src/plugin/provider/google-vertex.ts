@@ -1,6 +1,7 @@
-import { Effect, Option, Schema, Stream } from "effect"
+import { Effect, Stream } from "effect"
 import path from "node:path"
 import { define } from "@opencode/plugin/effect/plugin"
+import { Form } from "@opencode/schema/form"
 import { FSUtil } from "@opencode/util/fs-util"
 import { Global } from "@opencode/util/global"
 import { Bus } from "../../bus.js"
@@ -9,10 +10,6 @@ import { Provider } from "../../provider.js"
 import { configuredSettings } from "./configured.js"
 
 const ADC_METHOD = "google-adc"
-
-const decodeADCFile = Schema.decodeUnknownOption(
-  Schema.fromJsonString(Schema.Struct({ quota_project_id: Schema.optional(Schema.String) })),
-)
 
 function resolveProject(options: Record<string, any>) {
   // models.dev advertises GOOGLE_VERTEX_PROJECT for Vertex, while Google SDKs
@@ -55,49 +52,52 @@ export const GoogleVertexPlugin = define({
     const fs = yield* FSUtil.Service
     const credentials = yield* Credential.Service
     const bus = yield* Bus.Service
-    const read = (file: string) => fs.readFileStringSafe(file).pipe(Effect.orElseSucceed(() => undefined))
-    // Same lookup as gcloud itself. Only project IDs are read; nothing here contacts Google.
-    const gcloud =
-      (process.env.CLOUDSDK_CONFIG
-        ? process.env.CLOUDSDK_CONFIG === "~"
-          ? Global.Path.home
-          : process.env.CLOUDSDK_CONFIG.startsWith("~/")
-            ? path.join(Global.Path.home, process.env.CLOUDSDK_CONFIG.slice(2))
-            : process.env.CLOUDSDK_CONFIG
-        : undefined) ??
-      (process.platform === "win32" && process.env.APPDATA
-        ? path.join(process.env.APPDATA, "gcloud")
-        : path.join(Global.Path.home, ".config", "gcloud"))
-    const active = `config_${(yield* read(path.join(gcloud, "active_config")))?.trim() || "default"}`
-    const configs = (yield* fs
-      .readDirectory(path.join(gcloud, "configurations"))
-      .pipe(Effect.orElseSucceed((): string[] => [])))
-      .filter((name) => name.startsWith("config_"))
-      .toSorted((a, b) => Number(b === active) - Number(a === active) || a.localeCompare(b))
-    const contents = yield* Effect.forEach(configs, (name) => read(path.join(gcloud, "configurations", name)))
-    const adcFile = yield* read(path.join(gcloud, "application_default_credentials.json"))
     const configured = (yield* configuredSettings(Provider.ID.googleVertex)) ?? {}
-    const projects = Array.from(
-      new Set(
-        [
-          resolveProject(configured),
-          ...contents.map((content) => content?.match(/^project\s*=\s*(\S+)/m)?.[1]),
-          Option.getOrUndefined(decodeADCFile(adcFile ?? ""))?.quota_project_id,
-        ].filter((project): project is string => Boolean(project)),
-      ),
-    )
-    // Credentials work in every location; locations differ in which models they serve. `global` serves the most.
-    const locations = Array.from(
-      new Set([
-        resolveLocation(configured) ?? "global",
-        "global",
-        "us",
-        "eu",
-        ...contents.flatMap((content) =>
-          Array.from((content ?? "").matchAll(/^region\s*=\s*(\S+)/gm), (match) => match[1]),
+    // Runs only when a client opens Vertex to connect, so loading the plugin never reads gcloud files.
+    const discover = Effect.fn("GoogleVertexPlugin.discover")(function* () {
+      const read = (file: string) => fs.readFileStringSafe(file).pipe(Effect.orElseSucceed(() => undefined))
+      // Same lookup as gcloud itself. Only gcloud configurations are read, never the ADC file with its
+      // refresh token; nothing here contacts Google.
+      const gcloud =
+        (process.env.CLOUDSDK_CONFIG
+          ? process.env.CLOUDSDK_CONFIG === "~"
+            ? Global.Path.home
+            : process.env.CLOUDSDK_CONFIG.startsWith("~/")
+              ? path.join(Global.Path.home, process.env.CLOUDSDK_CONFIG.slice(2))
+              : process.env.CLOUDSDK_CONFIG
+          : undefined) ??
+        (process.platform === "win32" && process.env.APPDATA
+          ? path.join(process.env.APPDATA, "gcloud")
+          : path.join(Global.Path.home, ".config", "gcloud"))
+      const active = `config_${(yield* read(path.join(gcloud, "active_config")))?.trim() || "default"}`
+      const configs = (yield* fs
+        .readDirectory(path.join(gcloud, "configurations"))
+        .pipe(Effect.orElseSucceed((): string[] => [])))
+        .filter((name) => name.startsWith("config_"))
+        .toSorted((a, b) => Number(b === active) - Number(a === active) || a.localeCompare(b))
+      const contents = yield* Effect.forEach(configs, (name) => read(path.join(gcloud, "configurations", name)))
+      const projects = Array.from(
+        new Set(
+          [
+            resolveProject(configured),
+            ...contents.map((content) => content?.match(/^project\s*=\s*(\S+)/m)?.[1]),
+          ].filter((project): project is string => Boolean(project)),
         ),
-      ]),
-    )
+      )
+      // Credentials work in every location; locations differ in which models they serve. `global` serves the most.
+      const locations = Array.from(
+        new Set([
+          resolveLocation(configured) ?? "global",
+          "global",
+          "us",
+          "eu",
+          ...contents.flatMap((content) =>
+            Array.from((content ?? "").matchAll(/^region\s*=\s*(\S+)/gm), (match) => match[1]),
+          ),
+        ]),
+      )
+      return adcForm(projects, locations)
+    })
 
     const load = Effect.fn("GoogleVertexPlugin.load")(function* () {
       const connection = yield* ctx.integration.connection.active(Provider.ID.googleVertex)
@@ -126,38 +126,9 @@ export const GoogleVertexPlugin = define({
           id: ADC_METHOD,
           type: "external",
           label: "Google Cloud credentials (gcloud auth or environment)",
-          form: [
-            {
-              key: "project",
-              type: "string",
-              title: "Google Cloud project",
-              description: projects.length
-                ? `Found ${projects.length} project${projects.length === 1 ? "" : "s"} in your gcloud configuration.`
-                : "No projects found in your gcloud configuration.",
-              required: true,
-              minLength: 1,
-              pattern: "\\S",
-              placeholder: "Project ID",
-              custom: true,
-              default: projects[0],
-              options: projects.map((project) => ({ value: project, label: project })),
-            },
-            {
-              key: "location",
-              type: "string",
-              title: "Location",
-              description:
-                "global serves the most models. Use us, eu, or a single region for data residency or regional quota.",
-              required: true,
-              minLength: 1,
-              pattern: "\\S",
-              placeholder: "Location",
-              custom: true,
-              default: locations[0],
-              options: locations.map((location) => ({ value: location, label: location })),
-            },
-          ],
+          form: adcForm(),
         },
+        resolveForm: discover,
       })
     })
     yield* ctx.provider.transform((evt) => {
@@ -226,3 +197,42 @@ export const GoogleVertexPlugin = define({
     )
   }),
 })
+
+function adcForm(projects?: string[], locations?: string[]): Form.Fields {
+  return [
+    {
+      key: "project",
+      type: "string",
+      title: "Google Cloud project",
+      ...(projects
+        ? {
+            description: projects.length
+              ? `Found ${projects.length} project${projects.length === 1 ? "" : "s"} in your gcloud configuration.`
+              : "No projects found in your gcloud configuration.",
+            default: projects[0],
+            options: projects.map((project) => ({ value: project, label: project })),
+          }
+        : {}),
+      required: true,
+      minLength: 1,
+      pattern: "\\S",
+      placeholder: "Project ID",
+      custom: true,
+    },
+    {
+      key: "location",
+      type: "string",
+      title: "Location",
+      description:
+        "global serves the most models. Use us, eu, or a single region for data residency or regional quota.",
+      required: true,
+      minLength: 1,
+      pattern: "\\S",
+      placeholder: "Location",
+      custom: true,
+      ...(locations
+        ? { default: locations[0], options: locations.map((location) => ({ value: location, label: location })) }
+        : {}),
+    },
+  ]
+}
