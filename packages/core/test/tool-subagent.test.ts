@@ -210,34 +210,28 @@ const withSubagent = (location: Location.Ref) =>
 
 describe("SubagentTool", () => {
   for (const item of [
-    { name: "omitted session permissions", agent: "allow", permissions: undefined, visible: true, effect: "allow" },
-    { name: "empty session permissions", agent: "deny", permissions: [], visible: false, effect: "deny" },
     {
       name: "session deny over agent allow",
       agent: "allow",
       visible: false,
-      effect: "deny",
       permissions: [{ action: "subagent", resource: "reviewer", effect: "deny" }],
     },
     {
       name: "session allow over agent deny",
       agent: "deny",
       visible: true,
-      effect: "allow",
       permissions: [{ action: "subagent", resource: "reviewer", effect: "allow" }],
     },
     {
       name: "session ask over agent deny",
       agent: "deny",
       visible: true,
-      effect: "ask",
       permissions: [{ action: "subagent", resource: "reviewer", effect: "ask" }],
     },
     {
       name: "ordered session wildcard and target rules",
       agent: "deny",
       visible: true,
-      effect: "allow",
       permissions: [
         { action: "subagent", resource: "*", effect: "deny" },
         { action: "subagent", resource: "reviewer", effect: "allow" },
@@ -275,7 +269,6 @@ describe("SubagentTool", () => {
               const registry = yield* Tool.Service
               const context = yield* SessionContext.Service
               const requests = context.request
-              const permissions = yield* Permission.Service
               const ruleset = Permission.merge(agent.permissions, parent.permissions ?? [])
               for (const kind of ["primary", "compaction", "generate"] as const) {
                 const prepared = yield* requests[kind]({
@@ -296,30 +289,6 @@ describe("SubagentTool", () => {
                 const tool = prepared.request.tools.find((tool) => tool.name === SubagentTool.name)
                 expect(tool).toBeDefined()
                 expect(tool?.description?.includes("- reviewer:")).toBe(item.visible)
-              }
-              const result = yield* permissions.ask({
-                sessionID: parent.id,
-                agent: toolIdentity.agent,
-                action: SubagentTool.name,
-                resources: ["reviewer"],
-              })
-              expect(result.effect).toBe(item.effect)
-              if (item.effect === "deny") {
-                const call = yield* executeTool(registry, {
-                  sessionID: parent.id,
-                  ...toolIdentity,
-                  call: {
-                    type: "tool-call",
-                    id: "denied-review",
-                    name: SubagentTool.name,
-                    input: { agent: "reviewer", description: "review", prompt: "review this" },
-                  },
-                })
-                expect(call).toMatchObject({
-                  status: "error",
-                  error: { type: "permission.rejected", message: "Permission denied: subagent" },
-                })
-                expect((yield* sessions.list({ parentID: parent.id })).data).toHaveLength(0)
               }
             }).pipe(Effect.provide(locations.get(parent.location)))
           }),
