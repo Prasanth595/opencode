@@ -62,6 +62,7 @@ type Pin = {
   t0: number
   duration: number
   lift: number
+  fd: number
 }
 
 /**
@@ -101,6 +102,7 @@ function mountPinBoard(back: HTMLCanvasElement, front: HTMLCanvasElement, logo: 
   const pins: Pin[] = GRID.flatMap((row, r) =>
     [...row].flatMap((ch, c) => (ch === "." ? [] : [createPin(c, r, Number(ch))])),
   )
+  const band: Pin[] = []
   const orders = new Map<number, Pin[]>()
   const corners = new Float32Array(8)
   const view = {
@@ -419,7 +421,7 @@ function mountPinBoard(back: HTMLCanvasElement, front: HTMLCanvasElement, logo: 
         p.y + tilt.y * view.depth - LIGHT[1] * offset - size / 2,
         size,
         size,
-        [0, 0, 0, colors.shadow * (1 - pop * 0.65)],
+        [0, 0, 0, colors.shadow[3] * (1 - pop * 0.65)],
       )
     }
     // Cubes further along the extrusion direction sit in front, so stacked pins overlap correctly.
@@ -438,7 +440,7 @@ function mountPinBoard(back: HTMLCanvasElement, front: HTMLCanvasElement, logo: 
   // grid position along the extrusion direction is a correct painter's order for any heights,
   // since pins on the same diagonal never overlap.
   const drawBoard = (now: number) => {
-    const back = layers.back
+    const quads = layers.back
     const sx = tilt.x >= 0 ? 1 : -1
     const sy = tilt.y >= 0 ? 1 : -1
     const ox = tilt.x * view.depth
@@ -449,7 +451,7 @@ function mountPinBoard(back: HTMLCanvasElement, front: HTMLCanvasElement, logo: 
 
     for (const p of pins) {
       if (p.state !== HOME || age < (p.c / COLS) * 0.45) continue
-      back.shadow(
+      quads.shadow(
         p.hx + ox - LIGHT[0] * 2.5 - half - 1,
         p.hy + oy - LIGHT[1] * 2.5 - half - 1,
         size + 2,
@@ -459,13 +461,13 @@ function mountPinBoard(back: HTMLCanvasElement, front: HTMLCanvasElement, logo: 
     }
 
     // An empty socket: a dark rim with its floor visible through the opening, shifted by the tilt.
+    for (const p of pins) if (p.state !== HOME) quads.rect(p.hx + ox - half, p.hy + oy - half, size, size, colors.socketRim)
     for (const p of pins) {
       if (p.state === HOME) continue
-      back.rect(p.hx + ox - half, p.hy + oy - half, size, size, colors.socketRim)
       const w = size - Math.abs(ox * 0.45)
       const h = size - Math.abs(oy * 0.45)
       if (w > 0 && h > 0)
-        back.rect(
+        quads.rect(
           p.hx + ox - half + Math.max(0, ox * 0.45),
           p.hy + oy - half + Math.max(0, oy * 0.45),
           w,
@@ -486,26 +488,63 @@ function mountPinBoard(back: HTMLCanvasElement, front: HTMLCanvasElement, logo: 
     const sideX = sx > 0 ? Math.round(Math.max(0, LIGHT[0]) * SHADES) : 0
     const sideY = sy < 0 ? Math.round(Math.max(0, -LIGHT[1]) * SHADES) : 0
 
+    // Each diagonal goes out grouped by colour, so the 2D fallback can fill each run as one path.
+    const flush = () => {
+      for (let lv = 1; lv <= 3; lv++) {
+        for (const p of band) {
+          if (p.lv !== lv) continue
+          const fx = p.hx + ox * p.fd + sx * half
+          quads.quad(fx, p.hy + oy * p.fd - half, ox * (1 - p.fd), oy * (1 - p.fd), 0, size, colors.side[lv][sideX])
+        }
+        for (const p of band) {
+          if (p.lv !== lv) continue
+          const fy = p.hy + oy * p.fd + sy * half
+          quads.quad(p.hx + ox * p.fd - half, fy, size, 0, ox * (1 - p.fd), oy * (1 - p.fd), colors.side[lv][sideY])
+        }
+      }
+      for (const p of band)
+        quads.rect(
+          p.hx + ox * p.fd - half,
+          p.hy + oy * p.fd - half,
+          size,
+          size,
+          colors.face[p.lv][shadeOf(Math.max(p.e, p.z))],
+        )
+      if (size < 4) return
+      // The lit and shaded edges are split at the corners so no pixel is tinted twice by one of them.
+      for (const p of band) {
+        if (p.lv === 1) continue
+        const x = p.hx + ox * p.fd - half
+        const y = p.hy + oy * p.fd - half
+        quads.rect(x, y, size, 1, colors.highlight)
+        quads.rect(x + size - 1, y + 1, 1, size - 1, colors.highlight)
+      }
+      for (const p of band) {
+        if (p.lv === 1) continue
+        const x = p.hx + ox * p.fd - half
+        const y = p.hy + oy * p.fd - half
+        quads.rect(x, y + size - 1, size, 1, colors.lowlight)
+        quads.rect(x, y, 1, size - 1, colors.lowlight)
+      }
+    }
+
+    let current = NaN
+    band.length = 0
     for (const p of order) {
       if (p.state !== HOME) continue
       const grow = Math.min(1, Math.max(0, (age - (p.c / COLS) * 0.45) / 0.3))
       if (!grow) continue
       const height = (p.lv === 1 ? 0.35 : 1) * (1 - Math.max(0, p.z)) + Math.max(0, -p.z) * 0.6
-      const fd = 1 - height * (1 - Math.pow(1 - grow, 3))
-      const fx = p.hx + ox * fd
-      const fy = p.hy + oy * fd
-      const dx = ox * (1 - fd)
-      const dy = oy * (1 - fd)
-      back.quad(fx + sx * half, fy - half, dx, dy, 0, size, colors.side[p.lv][sideX])
-      back.quad(fx - half, fy + sy * half, size, 0, dx, dy, colors.side[p.lv][sideY])
-      back.rect(fx - half, fy - half, size, size, colors.face[p.lv][shadeOf(Math.max(p.e, p.z))])
-      if (size < 4 || p.lv === 1) continue
-      // The lit and shaded edges are split at the corners so no pixel is tinted twice by one of them.
-      back.rect(fx - half, fy - half, size, 1, colors.highlight)
-      back.rect(fx + half - 1, fy - half + 1, 1, size - 1, colors.highlight)
-      back.rect(fx - half, fy + half - 1, size, 1, colors.lowlight)
-      back.rect(fx - half, fy - half, 1, size - 1, colors.lowlight)
+      p.fd = 1 - height * (1 - Math.pow(1 - grow, 3))
+      const k = p.c * sx + p.r * sy
+      if (k !== current && band.length) {
+        flush()
+        band.length = 0
+      }
+      current = k
+      band.push(p)
     }
+    if (band.length) flush()
   }
 
   // Loose pins are extruded squares. Each visible side is lit by its own normal, so tumbling pins flicker.
@@ -661,6 +700,7 @@ function createPin(c: number, r: number, lv: number): Pin {
     t0: 0,
     duration: 0,
     lift: 0,
+    fd: 0,
   }
 }
 
@@ -697,7 +737,7 @@ function readColors(stage: HTMLElement) {
     face: levels.map((level, lv) => shades((t) => mix(level, brand, t * (lv === 1 ? 0.4 : 0.85)))),
     socketRim: color(mix(bg, black, dark ? 0.6 : 0.16)),
     socketFloor: color(mix(bg, black, dark ? 0.35 : 0.08)),
-    shadow: dark ? 0.3 : 0.12,
+    shadow: color(black, dark ? 0.3 : 0.12),
     highlight: color([255, 255, 255], 0.2),
     lowlight: color(black, 0.2),
   }

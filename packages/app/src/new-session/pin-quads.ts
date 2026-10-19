@@ -1,7 +1,7 @@
 // Draws a pin board layer as a list of filled parallelograms. With WebGL2 the whole list is at most two
 // instanced draws, so a frame costs about the same however many pins there are. A 2D canvas spends a
-// GPU draw call on most shapes, which kept weak machines busy. Without WebGL2 each quad is a transformed
-// 2D rect, which looks the same but costs a canvas call per quad.
+// GPU draw call on most shapes, which kept weak machines busy. Without hardware WebGL2 it falls back to one 2D
+// path fill per run of same-coloured quads, as drawing straight to the canvas would.
 
 export type Rgba = readonly [number, number, number, number]
 export type Quads = ReturnType<typeof createQuads>
@@ -9,7 +9,6 @@ export type Quads = ReturnType<typeof createQuads>
 type Region = { x: number; y: number; w: number; h: number }
 
 const FLOATS = 10
-const BLACK: Rgba = [0, 0, 0, 1]
 
 const VERTEX = `#version 300 es
 in vec2 corner;
@@ -85,10 +84,9 @@ export function createQuads(canvas: HTMLCanvasElement, restored: () => void) {
       data.count = 0
       data.shadows = 0
     },
-    /** Black shadows, all of one alpha, go first and merge where they overlap instead of darkening. */
-    shadow(x: number, y: number, w: number, h: number, alpha: number) {
-      push(x, y, w, 0, 0, h, BLACK)
-      data.list[data.count * FLOATS - 1] = alpha
+    /** Shadows, all in one colour, go first and merge where they overlap instead of darkening. */
+    shadow(x: number, y: number, w: number, h: number, c: Rgba) {
+      push(x, y, w, 0, 0, h, c)
       data.shadows = data.count
     },
     rect(x: number, y: number, w: number, h: number, c: Rgba) {
@@ -154,37 +152,34 @@ export function createQuads(canvas: HTMLCanvasElement, restored: () => void) {
     }
   }
 
+  // Each run of quads in one colour is one path fill. The board emits quads grouped by colour, so this makes
+  // about as many fills as drawing straight to the canvas would. A shared path also merges overlapping shadows.
   function drawCanvas(ctx: CanvasRenderingContext2D, region: Region, scale: number) {
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, canvas.width, canvas.height)
-    const at = (x: number, y: number, ux: number, uy: number, vx: number, vy: number) =>
-      ctx.setTransform(scale * ux, scale * uy, scale * vx, scale * vy, scale * (x - region.x), scale * (y - region.y))
+    ctx.setTransform(scale, 0, 0, scale, -region.x * scale, -region.y * scale)
     const list = data.list
-    // Shadows go down opaque and are faded together, so overlaps stay one shade.
-    ctx.fillStyle = "#000"
-    for (let n = 0; n < data.shadows; n++) {
-      const i = n * FLOATS
-      at(list[i], list[i + 1], list[i + 2], list[i + 3], list[i + 4], list[i + 5])
-      ctx.fillRect(0, 0, 1, 1)
-    }
-    if (data.shadows) {
-      ctx.setTransform(1, 0, 0, 1, 0, 0)
-      ctx.globalCompositeOperation = "destination-in"
-      ctx.globalAlpha = list[9]
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
-      ctx.globalCompositeOperation = "source-over"
-      ctx.globalAlpha = 1
-    }
-    for (let n = data.shadows; n < data.count; n++) {
-      const i = n * FLOATS
+    for (let n = 0; n < data.count; ) {
       const c = data.tints[n]
       ctx.fillStyle = styles.get(c) ?? styles.set(c, `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${c[3]})`).get(c)!
-      at(list[i], list[i + 1], list[i + 2], list[i + 3], list[i + 4], list[i + 5])
-      ctx.fillRect(0, 0, 1, 1)
+      ctx.beginPath()
+      for (; n < data.count && data.tints[n] === c; n++) {
+        const i = n * FLOATS
+        const x = list[i]
+        const y = list[i + 1]
+        if (list[i + 3] === 0 && list[i + 4] === 0) {
+          ctx.rect(x, y, list[i + 2], list[i + 5])
+          continue
+        }
+        ctx.moveTo(x, y)
+        ctx.lineTo(x + list[i + 2], y + list[i + 3])
+        ctx.lineTo(x + list[i + 2] + list[i + 4], y + list[i + 3] + list[i + 5])
+        ctx.lineTo(x + list[i + 4], y + list[i + 5])
+        ctx.closePath()
+      }
+      ctx.fill()
     }
-    ctx.setTransform(1, 0, 0, 1, 0, 0)
   }
-
   // GPU objects are rebuilt after the context is lost and restored.
   function setup(gl: WebGL2RenderingContext) {
     const gpu = {
