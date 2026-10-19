@@ -110,7 +110,13 @@ export function createQuads(canvas: HTMLCanvasElement, restored: () => void) {
   }
 
   function open() {
-    const gl = canvas.getContext("webgl2", { premultipliedAlpha: true, antialias: false, depth: false })
+    // Software WebGL is refused: the browser would read every frame back to composite it, which costs more than 2D.
+    const gl = canvas.getContext("webgl2", {
+      premultipliedAlpha: true,
+      antialias: false,
+      depth: false,
+      failIfMajorPerformanceCaveat: true,
+    })
     if (gl) return { gl, gpu: setup(gl) }
     return { ctx: canvas.getContext("2d")! }
   }
