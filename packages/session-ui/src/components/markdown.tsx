@@ -576,6 +576,10 @@ export function Markdown(
   const lifetime = new AbortController()
   const activeCodeKeys = new Set<string>()
   const completedCode = new Map<string, Extract<RenderedBlock, { mode: "code" }>>()
+  const settledMarkdown = new Map<string, Exclude<RenderedBlock, { mode: "code" }>>()
+  let renderedBlocks: RenderedBlock[] = []
+  let previousLocalFileExists: MarkdownLocalFileExists | undefined
+  let previousSessionLinks = false
   let streamed = false
 
   const [projection] = createResource(
@@ -650,7 +654,7 @@ export function Markdown(
 
       if (!streamed && initial.ready && initial.text === src.text) return initial
 
-      const base = src.key ?? checksum(src.text)
+      const base = src.key ?? (!streamed ? checksum(src.text) : undefined)
 
       return Promise.all(
         src.projection.blocks.map(async (block, index) => {
@@ -677,12 +681,39 @@ export function Markdown(
             return rendered
           }
 
+          if (block.mode === "full") {
+            const settled = settledMarkdown.get(blockKey)
+
+            if (settled?.raw === block.raw) {
+              if (key) {
+                const cached = getCachedMarkdown(key)
+
+                if (cached) touchCachedMarkdown(key, cached)
+              }
+
+              return settled
+            }
+          }
+
           const ready = block.mode === "full" ? getReadyMarkdown(block, key) : undefined
+          const entry = ready ?? (await renderCachedMarkdown(block, key, lifetime.signal))
+
+          if (block.mode === "full") {
+            const settled = {
+              key: blockKey,
+              mode: block.mode,
+              ...entry,
+            }
+
+            settledMarkdown.set(blockKey, settled)
+
+            return settled
+          }
 
           return {
             key: blockKey,
             mode: block.mode,
-            ...(ready ?? (await renderCachedMarkdown(block, key, lifetime.signal))),
+            ...entry,
           }
         }),
       )
@@ -735,6 +766,7 @@ export function Markdown(
     delete container.dataset.markdownReady
 
     if (content.length === 0) {
+      renderedBlocks = []
       disposeCopyButtons(container)
       disposeRenderedMarkdown(container)
       container.innerHTML = ""
@@ -756,9 +788,19 @@ export function Markdown(
     })
     activeCodeKeys.clear()
     nextCodeKeys.forEach((key) => activeCodeKeys.add(key))
-    content.forEach((block, index) =>
-      updateBlock(container, index, block, labels, !!markdown?.openSession, markdown?.localFileExists),
-    )
+    const sessionLinks = !!markdown?.openSession
+    const localFileExists = markdown?.localFileExists
+
+    const sameContext =
+      previousSessionLinks === sessionLinks && previousLocalFileExists === localFileExists
+
+    content.forEach((block, index) => {
+      if (sameContext && renderedBlocks[index] === block && container.children[index] instanceof HTMLDivElement) return
+      updateBlock(container, index, block, labels, sessionLinks, localFileExists)
+    })
+    renderedBlocks = content
+    previousSessionLinks = sessionLinks
+    previousLocalFileExists = localFileExists
 
     while (container.children.length > content.length) {
       const child = container.lastElementChild
@@ -812,6 +854,8 @@ export function Markdown(
     if (streamed) disposeMarkdownProjection(owner)
     activeCodeKeys.forEach(disposeCode)
     completedCode.clear()
+    settledMarkdown.clear()
+    renderedBlocks = []
   })
 
   return (

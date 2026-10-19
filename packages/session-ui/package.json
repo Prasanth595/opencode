@@ -64,6 +64,7 @@
   "dependencies": {
     "@kobalte/core": "catalog:",
     "@opencode/client": "workspace:*",
+    "@opencode/patchmark": "workspace:*",
     "@opencode/ui": "workspace:*",
     "@opencode/util": "workspace:*",
     "@pierre/diffs": "catalog:",

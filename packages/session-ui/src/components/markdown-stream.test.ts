@@ -245,4 +245,75 @@ describe("markdown stream", () => {
       complete: true,
     })
   })
+
+  test("splits list-indented code fences into standalone code blocks while keeping preceding list items settled", () => {
+    const first = project(
+      undefined,
+      "1. First step\n   ```ts\n   const x = 1\n   ```\n2. Second step\n   ```ts\n   const y = 2",
+      true,
+    )
+
+    expect(first.blocks).toEqual([
+      { raw: "1. First step\n", src: "1. First step\n", mode: "full" },
+      { raw: "   ```ts\n   const x = 1\n   ```\n", src: "const x = 1", mode: "code", language: "ts", complete: true },
+      { raw: "2. Second step\n", src: "2. Second step\n", mode: "full" },
+      { raw: "   ```ts\n   const y = 2", src: "const y = 2", mode: "code", language: "ts" },
+    ])
+
+    const next = project(first, `${first.text}\n   const z = 3`, true)
+    expect(next.blocks[0]).toBe(first.blocks[0])
+    expect(next.blocks[1]).toBe(first.blocks[1])
+    expect(next.blocks[2]).toBe(first.blocks[2])
+    expect(next.patches).toEqual([
+      {
+        op: "replace",
+        index: 3,
+        block: {
+          raw: "   ```ts\n   const y = 2\n   const z = 3",
+          src: "const y = 2\nconst z = 3",
+          mode: "code",
+          language: "ts",
+        },
+      },
+    ])
+  })
+
+  test("back-patches only the block referencing a late reference definition without collapsing unrelated settled blocks", () => {
+    const first = project(
+      undefined,
+      "Read [docs][1].\n\nUnrelated settled paragraph.\n\nTrailing paragraph",
+      true,
+    )
+
+    expect(first.blocks[0]).toEqual({ raw: "Read [docs][1].\n\n", src: "Read [docs][1].\n\n", mode: "full" })
+    expect(first.blocks[1]).toEqual({
+      raw: "Unrelated settled paragraph.\n\n",
+      src: "Unrelated settled paragraph.\n\n",
+      mode: "full",
+    })
+
+    const next = project(first, `${first.text}\n\n[1]: https://example.com/docs`, true)
+    expect(next.blocks[1]).toBe(first.blocks[1])
+    expect(next.blocks[0]).toEqual({
+      raw: "Read [docs][1].\n\n",
+      src: "Read [docs][1].\n\n\n\n[1]: https://example.com/docs",
+      mode: "full",
+    })
+  })
+
+  test("replaces the initial empty fallback block cleanly when streaming begins from empty text", () => {
+    const doc = "# Heading\n\nFirst paragraph.\n\n```ts\nconst x = 1\n```\n\nTrailing paragraph."
+    let prev = project(undefined, "", true)
+    expect(prev.blocks).toEqual([{ raw: "", src: "", mode: "live" }])
+
+    for (let i = 10; i <= doc.length; i += 10) {
+      const slice = doc.slice(0, i)
+      prev = project(prev, slice, true)
+      expect(prev.blocks).toEqual(stream(slice, true))
+    }
+
+    const done = project(prev, doc, false)
+    expect(done.blocks.every((block) => block.mode !== "live")).toBe(true)
+    expect(done.blocks.map((block) => block.raw).join("")).toBe(doc)
+  })
 })

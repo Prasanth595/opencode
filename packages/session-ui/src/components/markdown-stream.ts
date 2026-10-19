@@ -1,6 +1,9 @@
-import { Marked, type Tokens } from "marked"
-import remend from "remend"
-import { markdownMath } from "@opencode/ui/context/marked-parser"
+import {
+  createMarkdownStream,
+  healStreamingInline,
+  type MarkdownBlock,
+  type PatchmarkStream,
+} from "@opencode/patchmark"
 import { completedProjection } from "./markdown-projection"
 
 export type Block = {
@@ -11,102 +14,82 @@ export type Block = {
   complete?: boolean
 }
 
+export type ProjectionPatch =
+  | { op: "append"; block: Block }
+  | { op: "replace"; index: number; block: Block }
+  | { op: "finalize"; index: number; block: Block }
+  | { op: "truncate"; keepCount: number }
+
 export type Projection = {
   text: string
   blocks: Block[]
+  patches?: ProjectionPatch[]
 }
 
-// Split with the renderer's math syntax so a display block is never cut into separately rendered pieces.
-const lexer = new Marked(markdownMath)
+const streams = new WeakMap<Projection, PatchmarkStream>()
 
-function refs(text: string) {
-  if (!text.includes("]:")) return false
-
-  return /^[ \t]{0,3}\[[^\]]+\]:[ \t]*(?:\S+|\r?\n[ \t]+\S+)/m.test(text)
+function createStream() {
+  return createMarkdownStream({
+    gfm: true,
+    math: true,
+    heal: true,
+    holdPendingMarkers: false,
+    flatListBlocks: false,
+    settleOnComplete: false,
+    renderHtml: false,
+  })
 }
 
-function language(value: string | undefined) {
-  return value?.trim().split(/\s+/, 1)[0] || undefined
-}
+function toBlock(block: MarkdownBlock): Block {
+  if (block.kind.type === "code") {
+    const item: Block = {
+      raw: block.raw,
+      src: block.kind.source,
+      mode: "code",
+    }
 
-function openCode(raw: string) {
-  const newline = raw.indexOf("\n")
+    if (block.kind.language) item.language = block.kind.language
 
-  return newline < 0 ? "" : raw.slice(newline + 1)
-}
+    if (block.kind.complete) item.complete = true
 
-function open(raw: string) {
-  const match = raw.match(/^[ \t]{0,3}(`{3,}|~{3,})/)
+    return item
+  }
 
-  if (!match) return false
-  const mark = match[1]
+  if (block.kind.type === "mermaid") {
+    const item: Block = {
+      raw: block.raw,
+      src: block.kind.source,
+      mode: "code",
+      language: "mermaid",
+    }
 
-  if (!mark) return false
-  const char = mark[0]
-  const size = mark.length
-  const last = raw.trimEnd().split("\n").at(-1)?.trim() ?? ""
+    if (block.kind.complete) item.complete = true
 
-  return !new RegExp(`^[\\t ]{0,3}${char}{${size},}[\\t ]*$`).test(last)
-}
+    return item
+  }
 
-function closesFence(raw: string, suffix: string) {
-  const mark = raw.match(/^[ \t]{0,3}(`{3,}|~{3,})/)?.[1]
+  const mode = block.status === "settled" ? "full" : "live"
+  const baseSrc = mode === "live" ? healStreamingInline(block.raw) : block.raw
+  const src = block.defs ? `${baseSrc}\n\n${block.defs}` : baseSrc
 
-  if (!mark) return suffix.includes("```") || suffix.includes("~~~")
-
-  return `${raw.slice(-(mark.length - 1))}${suffix}`.includes(mark)
-}
-
-function heal(text: string) {
-  return remend(text, { linkMode: "text-only" })
+  return {
+    raw: block.raw,
+    src,
+    mode,
+  }
 }
 
 export function stream(text: string, live: boolean): Block[] {
   if (!live) return completedProjection(text).blocks
 
-  if (refs(text)) return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
-  const tokens = lexer.lexer(text)
-  const tail = tokens.findLastIndex((token) => token.type !== "space")
+  const instance = createStream()
+  const frame = instance.update(text, { streaming: true })
 
-  if (tail < 0) return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
-  const last = tokens[tail]
-
-  if (!last) return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
-
-  const result: Block[] = []
-
-  for (let index = 0; index < tail; index++) {
-    const token = tokens[index]
-
-    if (!token || token.type === "space") continue
-    let raw = token.raw
-
-    while (tokens[index + 1]?.type === "space" && index + 1 < tail) raw += tokens[++index]!.raw
-
-    if (token.type === "code") {
-      // SAFETY: only marked's built-in fence tokenizer emits `code`; the math extensions use their own token types.
-      const code = token as Tokens.Code
-      result.push({ raw, src: code.text, mode: "code", language: language(code.lang), complete: true })
-      continue
-    }
-
-    result.push({ raw, src: raw, mode: "full" })
+  if (frame.blocks.length === 0) {
+    return [{ raw: text, src: healStreamingInline(text), mode: "live" }] satisfies Block[]
   }
 
-  const raw = tokens
-    .slice(tail)
-    .map((token) => token.raw)
-    .join("")
-
-  if (last.type !== "code") return [...result, { raw, src: heal(raw), mode: "live" }]
-
-  // SAFETY: only marked's built-in fence tokenizer emits `code`; the math extensions use their own token types.
-  const code = last as Tokens.Code
-
-  if (!open(code.raw))
-    return [...result, { raw, src: code.text, mode: "code", language: language(code.lang), complete: true }]
-
-  return [...result, { raw, src: openCode(code.raw), mode: "code", language: language(code.lang) }]
+  return frame.blocks.map(toBlock)
 }
 
 export function project(previous: Projection | undefined, text: string, live: boolean): Projection {
@@ -120,34 +103,102 @@ export function project(previous: Projection | undefined, text: string, live: bo
 
     if (!current) return completedProjection(text)
 
+    const patches: ProjectionPatch[] = []
+
+    const blocks = current.blocks.map((block, index) => {
+      if (block.mode === "live") {
+        const settled: Block = { raw: block.raw, src: block.raw, mode: "full" }
+        patches.push({ op: "finalize", index, block: settled })
+
+        return settled
+      }
+
+      if (block.mode === "code" && !block.complete) {
+        const completed: Block = { ...block, complete: true }
+        patches.push({ op: "finalize", index, block: completed })
+
+        return completed
+      }
+
+      return block
+    })
+
     return {
       text,
-      blocks: current.blocks.map((block) => {
-        if (block.mode === "live") return { raw: block.raw, src: block.raw, mode: "full" }
-
-        if (block.mode === "code" && !block.complete) return { ...block, complete: true }
-
-        return block
-      }),
+      blocks,
+      patches: [...(current.patches ?? []), ...patches],
     }
   }
 
-  if (!previous || !text.startsWith(previous.text)) return { text, blocks: stream(text, live) }
-  const tail = previous.blocks.at(-1)
-  const suffix = text.slice(previous.text.length)
+  if (!previous) {
+    const instance = createStream()
+    const frame = instance.update(text, { streaming: true })
 
-  if (!suffix || tail?.mode !== "code" || tail.complete || closesFence(tail.raw, suffix))
-    return { text, blocks: stream(text, live) }
+    const blocks =
+      frame.blocks.length === 0
+        ? ([{ raw: text, src: healStreamingInline(text), mode: "live" }] satisfies Block[])
+        : frame.blocks.map(toBlock)
 
-  return {
-    text,
-    blocks: [
-      ...previous.blocks.slice(0, -1),
-      {
-        ...tail,
-        raw: tail.raw + suffix,
-        src: tail.src + suffix,
-      },
-    ],
+    const patches: ProjectionPatch[] = blocks.map((block) => ({ op: "append", block }))
+    const next: Projection = { text, blocks, patches }
+    streams.set(next, instance)
+
+    return next
   }
+
+  if (previous.text === text) return previous
+
+  let instance = streams.get(previous)
+
+  if (!instance || instance.getText() !== previous.text) {
+    instance = createStream()
+
+    if (previous.text.length > 0 && text.startsWith(previous.text)) {
+      instance.update(previous.text, { streaming: true })
+    }
+  }
+
+  const wasFallback = instance.getBlocks().length === 0 && previous.blocks.length > 0
+  const frame = instance.update(text, { streaming: true })
+
+  if (frame.blocks.length === 0) {
+    const fallbackBlock: Block = { raw: text, src: healStreamingInline(text), mode: "live" }
+
+    const next: Projection = {
+      text,
+      blocks: [fallbackBlock],
+      patches: [{ op: "truncate", keepCount: 0 }, { op: "append", block: fallbackBlock }],
+    }
+
+    streams.set(next, instance)
+
+    return next
+  }
+
+  const blocks = wasFallback ? [] : [...previous.blocks]
+  const patches: ProjectionPatch[] = wasFallback ? [{ op: "truncate", keepCount: 0 }] : []
+
+  for (const patch of frame.patches) {
+    if (patch.op === "append") {
+      const block = toBlock(patch.block)
+      blocks.push(block)
+      patches.push({ op: "append", block })
+    } else if (patch.op === "replace") {
+      const block = toBlock(patch.block)
+      blocks[patch.index] = block
+      patches.push({ op: "replace", index: patch.index, block })
+    } else if (patch.op === "finalize") {
+      const block = toBlock(patch.block)
+      blocks[patch.index] = block
+      patches.push({ op: "finalize", index: patch.index, block })
+    } else if (patch.op === "truncate") {
+      blocks.length = patch.keepCount
+      patches.push({ op: "truncate", keepCount: patch.keepCount })
+    }
+  }
+
+  const next: Projection = { text, blocks, patches }
+  streams.set(next, instance)
+
+  return next
 }
