@@ -168,11 +168,15 @@ export type ModelMaxTokensField = "max_completion_tokens" | "max_tokens"
 
 export type ModelCacheFormat = "anthropic" | "alibaba"
 
-export type ModelCapabilities = { tools: boolean; input: Array<string>; output: Array<string> }
+export type ModelCapabilities = { tools: boolean; input: Array<string>; output: Array<string>; temperature?: boolean }
 
 export type MoneyUSDPerMillionTokens = number
 
 export type GenerateTextResponse = { data: { text: string } }
+
+export type VoiceWebRTCTransport = { type: "webrtc"; sdp: string }
+
+export type VoiceWebSocketTransport = { type: "websocket"; url: string; token: string; expiresAt: number }
 
 export type IntegrationID = string
 
@@ -298,7 +302,9 @@ export type McpProtocol = "legacy" | "auto" | "2026-07-28"
 
 export type ConfigWorktree = { directory: string }
 
-export type ConfigModelCapabilities = { tools?: boolean; input?: Array<string>; output?: Array<string> }
+export type ConfigModelReasoning =
+  | { supported: false }
+  | { supported: true; toggle?: boolean; effort?: Array<string>; budget?: { min?: number; max?: number } }
 
 export type ConfigShellOption = { path: string; name: string; acceptable: boolean }
 
@@ -656,6 +662,8 @@ export type ModelCost = {
   cache: { read: MoneyUSDPerMillionTokens; write: MoneyUSDPerMillionTokens }
 }
 
+export type VoiceTransport = VoiceWebRTCTransport | VoiceWebSocketTransport
+
 export type IntegrationCommandMethod = {
   id: IntegrationMethodID
   type: "command"
@@ -846,6 +854,14 @@ export type VcsInfo = { provider?: string; branch: VcsBranch }
 
 export type WebSearchProvider = { id: WebSearchID; name: string }
 
+export type ConfigModelCapabilities = {
+  tools?: boolean
+  input?: Array<string>
+  output?: Array<string>
+  temperature?: boolean
+  reasoning?: ConfigModelReasoning
+}
+
 export type SessionMessageLocationSwitched = {
   id: SessionMessageID
   metadata?: { [x: string]: JsonValue }
@@ -1008,6 +1024,26 @@ export type SessionViewed = {
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
   data: { sessionID: SessionID; idle: number }
+}
+
+export type SessionArchived = {
+  id: EventID
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.archived"
+  durable: { aggregateID: string; seq: EventSeq; version: 1 }
+  location?: LocationRef
+  data: { sessionID: SessionID }
+}
+
+export type SessionUnarchived = {
+  id: EventID
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.unarchived"
+  durable: { aggregateID: string; seq: EventSeq; version: 1 }
+  location?: LocationRef
+  data: { sessionID: SessionID }
 }
 
 export type SessionDeleted = {
@@ -1760,7 +1796,6 @@ export type TuiCommandExecute = {
     command:
       | "session.list"
       | "session.new"
-      | "session.share"
       | "session.interrupt"
       | "session.background"
       | "session.compact"
@@ -1931,6 +1966,8 @@ export type ProviderInfo = {
   headers?: { [x: string]: string }
   body?: { [x: string]: any }
 }
+
+export type VoiceSessionResponse = { data: { transport: VoiceTransport } }
 
 export type ConnectionInfo = ConnectionCredentialInfo | ConnectionEnvInfo
 
@@ -2154,6 +2191,11 @@ export type ConfigEntry =
         enterprise?: { url?: string }
         username?: string
         permissions?: PermissionRuleset
+        policies?: Array<{
+          action: "provider.use" | "tool.use" | "integration.use"
+          resource: string
+          effect: "allow" | "deny"
+        }>
         agents?: {
           [x: string]: {
             model?: string | { providerID: string; model: string; variant?: string }
@@ -2270,6 +2312,7 @@ export type ConfigEntry =
                 modelID?: string
                 family?: string
                 name?: string
+                releaseDate?: string
                 compatibility?: ModelCompatibility
                 package?: string
                 settings?: ConfigModelSettings
@@ -2492,6 +2535,8 @@ export type SessionEventDurable =
   | SessionMetadataUpdated
   | SessionPermissions
   | SessionViewed
+  | SessionArchived
+  | SessionUnarchived
   | SessionDeleted
   | SessionForked
   | SessionInboxDelivered
@@ -2555,6 +2600,8 @@ export type V2Event =
   | SessionMetadataUpdated
   | SessionPermissions
   | SessionViewed
+  | SessionArchived
+  | SessionUnarchived
   | SessionUsageUpdated
   | SessionDeleted
   | SessionForked
@@ -2824,6 +2871,14 @@ export type ProjectNotFoundError = {
 export const isProjectNotFoundError = (value: unknown): value is ProjectNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ProjectNotFoundError"
 
+export type PermissionSavedNotFoundError = {
+  readonly _tag: "PermissionSavedNotFoundError"
+  readonly id: string
+  readonly message: string
+}
+export const isPermissionSavedNotFoundError = (value: unknown): value is PermissionSavedNotFoundError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "PermissionSavedNotFoundError"
+
 export type PermissionNotFoundError = {
   readonly _tag: "PermissionNotFoundError"
   readonly requestID: string
@@ -2937,6 +2992,7 @@ export type SessionListInput = {
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly parentID?: string | null | undefined
+    readonly archived?: boolean | undefined
     readonly directory?: string | undefined
     readonly project?: string | undefined
     readonly subpath?: string | undefined
@@ -2947,6 +3003,7 @@ export type SessionListInput = {
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly parentID?: string | null | undefined
+    readonly archived?: boolean | undefined
     readonly directory?: string | undefined
     readonly project?: string | undefined
     readonly subpath?: string | undefined
@@ -2957,6 +3014,7 @@ export type SessionListInput = {
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly parentID?: string | null | undefined
+    readonly archived?: boolean | undefined
     readonly directory?: string | undefined
     readonly project?: string | undefined
     readonly subpath?: string | undefined
@@ -2967,16 +3025,29 @@ export type SessionListInput = {
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly parentID?: string | null | undefined
+    readonly archived?: boolean | undefined
     readonly directory?: string | undefined
     readonly project?: string | undefined
     readonly subpath?: string | undefined
     readonly cursor?: string | undefined
   }["parentID"]
+  readonly archived?: {
+    readonly limit?: number | undefined
+    readonly order?: "asc" | "desc" | undefined
+    readonly search?: string | undefined
+    readonly parentID?: string | null | undefined
+    readonly archived?: boolean | undefined
+    readonly directory?: string | undefined
+    readonly project?: string | undefined
+    readonly subpath?: string | undefined
+    readonly cursor?: string | undefined
+  }["archived"]
   readonly directory?: {
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly parentID?: string | null | undefined
+    readonly archived?: boolean | undefined
     readonly directory?: string | undefined
     readonly project?: string | undefined
     readonly subpath?: string | undefined
@@ -2987,6 +3058,7 @@ export type SessionListInput = {
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly parentID?: string | null | undefined
+    readonly archived?: boolean | undefined
     readonly directory?: string | undefined
     readonly project?: string | undefined
     readonly subpath?: string | undefined
@@ -2997,6 +3069,7 @@ export type SessionListInput = {
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly parentID?: string | null | undefined
+    readonly archived?: boolean | undefined
     readonly directory?: string | undefined
     readonly project?: string | undefined
     readonly subpath?: string | undefined
@@ -3007,6 +3080,7 @@ export type SessionListInput = {
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly parentID?: string | null | undefined
+    readonly archived?: boolean | undefined
     readonly directory?: string | undefined
     readonly project?: string | undefined
     readonly subpath?: string | undefined
@@ -4255,6 +4329,7 @@ export type SessionUpdateInput = {
     readonly permissions?:
       | ReadonlyArray<{ readonly action: string; readonly resource: string; readonly effect: "allow" | "deny" | "ask" }>
       | undefined
+    readonly archived?: boolean | undefined
   }["title"]
   readonly metadata?: {
     readonly title?: string | undefined
@@ -4262,6 +4337,7 @@ export type SessionUpdateInput = {
     readonly permissions?:
       | ReadonlyArray<{ readonly action: string; readonly resource: string; readonly effect: "allow" | "deny" | "ask" }>
       | undefined
+    readonly archived?: boolean | undefined
   }["metadata"]
   readonly permissions?: {
     readonly title?: string | undefined
@@ -4269,7 +4345,16 @@ export type SessionUpdateInput = {
     readonly permissions?:
       | ReadonlyArray<{ readonly action: string; readonly resource: string; readonly effect: "allow" | "deny" | "ask" }>
       | undefined
+    readonly archived?: boolean | undefined
   }["permissions"]
+  readonly archived?: {
+    readonly title?: string | undefined
+    readonly metadata?: { readonly [x: string]: JsonValue } | undefined
+    readonly permissions?:
+      | ReadonlyArray<{ readonly action: string; readonly resource: string; readonly effect: "allow" | "deny" | "ask" }>
+      | undefined
+    readonly archived?: boolean | undefined
+  }["archived"]
 }
 
 export type SessionUpdateOutput = void
@@ -5683,6 +5768,7 @@ export type MessageListInput = {
       | "shell"
       | "assistant"
       | "compaction"
+      | "idle"
       | undefined
   }["limit"]
   readonly order?: {
@@ -5700,6 +5786,7 @@ export type MessageListInput = {
       | "shell"
       | "assistant"
       | "compaction"
+      | "idle"
       | undefined
   }["order"]
   readonly cursor?: {
@@ -5717,6 +5804,7 @@ export type MessageListInput = {
       | "shell"
       | "assistant"
       | "compaction"
+      | "idle"
       | undefined
   }["cursor"]
   readonly type?: {
@@ -5734,6 +5822,7 @@ export type MessageListInput = {
       | "shell"
       | "assistant"
       | "compaction"
+      | "idle"
       | undefined
   }["type"]
 }
@@ -5764,6 +5853,32 @@ export type GenerateTextInput = {
 }
 
 export type GenerateTextOutput = GenerateTextResponse["data"]
+
+export type VoiceSessionInput = {
+  readonly model: {
+    readonly model: string
+    readonly session?: { readonly [x: string]: unknown } | undefined
+    readonly transport:
+      | { readonly type: "webrtc"; readonly sdp: string; readonly dcid?: number | undefined }
+      | { readonly type: "websocket" }
+  }["model"]
+  readonly session?: {
+    readonly model: string
+    readonly session?: { readonly [x: string]: unknown } | undefined
+    readonly transport:
+      | { readonly type: "webrtc"; readonly sdp: string; readonly dcid?: number | undefined }
+      | { readonly type: "websocket" }
+  }["session"]
+  readonly transport: {
+    readonly model: string
+    readonly session?: { readonly [x: string]: unknown } | undefined
+    readonly transport:
+      | { readonly type: "webrtc"; readonly sdp: string; readonly dcid?: number | undefined }
+      | { readonly type: "websocket" }
+  }["transport"]
+}
+
+export type VoiceSessionOutput = VoiceSessionResponse["data"]
 
 export type ProviderListInput = {
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
@@ -6197,6 +6312,14 @@ export type PermissionRequestListOutput = { location: LocationPublicRef; data: A
 export type PermissionSavedListInput = { readonly projectID?: { readonly projectID?: string | undefined }["projectID"] }
 
 export type PermissionSavedListOutput = { data: Array<PermissionSavedInfo> }["data"]
+
+export type PermissionSavedUpdateInput = {
+  readonly id: { readonly id: string }["id"]
+  readonly action?: { readonly action?: string | undefined; readonly resource?: string | undefined }["action"]
+  readonly resource?: { readonly action?: string | undefined; readonly resource?: string | undefined }["resource"]
+}
+
+export type PermissionSavedUpdateOutput = { data: PermissionSavedInfo }["data"]
 
 export type PermissionSavedRemoveInput = { readonly id: { readonly id: string }["id"] }
 
