@@ -219,28 +219,38 @@ test("model dialog shows a summary for models without variants", async ({ page }
   await model.click()
   await dialog.locator('[data-option-key="opencode:mobile-c"]').hover()
   await expect(flyout.getByText("OpenCode · 262K context", { exact: true })).toBeVisible()
-  await expect(flyout.getByRole("menuitem", { name: "Favorite", exact: true })).toBeVisible()
   await expect(flyout.getByRole("menuitemradio")).toHaveCount(0)
 })
 
-test("model dialog leads with favorite and recent models until a search", async ({ page }) => {
+test("model dialog toggles a favorite from the keyboard and leads with favorite and recent models", async ({
+  page,
+}) => {
   const { model, dialog } = await openDesktopPicker(page, "ltr")
   const sections = dialog.locator('[data-slot="model-dialog-group-title"]')
-  const flyout = dialog.locator('[data-slot="model-dialog-flyout"]')
+  const search = dialog.getByRole("searchbox", { name: "Search models", exact: true })
   await model.click()
   await expect(sections).toHaveText(["OpenCode"])
-  await dialog.locator('[data-option-key="opencode:mobile-c"]').hover()
-  await flyout.getByRole("menuitem", { name: "Favorite", exact: true }).click()
-  await expect(flyout.getByRole("menuitem", { name: "Unfavorite", exact: true })).toBeVisible()
+  await search.press("ArrowDown")
+  await search.press("ArrowDown")
+  await search.press("ControlOrMeta+f")
+  await expect(sections).toHaveText(["Favorites", "OpenCode"])
+  await expect(dialog.locator('[data-option-key="favorite:opencode:mobile-c"]')).toBeVisible()
   await dialog.locator('[data-option-key="opencode:mobile-b"]').click()
   await expect(model).toHaveText("OpenCode / Mobile Model B")
 
   await model.click()
   await expect(sections).toHaveText(["Favorites", "Recent", "OpenCode"])
-  await expect(dialog.locator('[data-option-key="favorite:opencode:mobile-c"]')).toBeVisible()
   await expect(dialog.locator('[data-option-key="recent:opencode:mobile-b"]')).toHaveAttribute("aria-pressed", "true")
-  await dialog.getByRole("searchbox", { name: "Search models", exact: true }).fill("Mobile")
+  await search.fill("Mobile")
   await expect(sections).toHaveText(["OpenCode"])
+  await search.press("Escape")
+  await expect(dialog).toBeHidden()
+  await model.click()
+  await search.press("ArrowUp")
+  await expect(dialog.locator('[data-option-key="favorite:opencode:mobile-c"]')).toHaveAttribute("data-active", "")
+  await search.press("ControlOrMeta+f")
+  await expect(sections).toHaveText(["Recent", "OpenCode"])
+  await expect(dialog.locator('[data-option-key="opencode:mobile-c"]')).toHaveAttribute("data-active", "")
 })
 
 test("model dialog opens Manage models from its search row with Enter", async ({ page }) => {
