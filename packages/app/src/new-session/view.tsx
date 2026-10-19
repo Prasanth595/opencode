@@ -26,7 +26,9 @@ import { useProviders } from "@/providers/catalog/providers"
 import { NEW_SESSION_CONTENT_WIDTH } from "@/new-session/layout"
 import { Persist, persisted } from "@/runtime/persistence/storage"
 import { Persistence } from "@/runtime/persistence/schema"
+import { useSettings } from "@/settings/model"
 import type { NewSessionWorkspaceController } from "./workspace/controller"
+import { NewSessionPinBoard } from "./pin-board"
 import { NewSessionWordmark } from "./wordmark"
 
 const providerTipDismissalDuration = 30 * 24 * 60 * 60 * 1000
@@ -53,6 +55,9 @@ export function NewSessionView(props: {
     { used: false },
   )
 
+  const settings = useSettings()
+  const [wordmark, setWordmark] = createSignal<HTMLDivElement>()
+
   const select = (value: string) => {
     props.workspace.selection.set(value)
 
@@ -63,7 +68,7 @@ export function NewSessionView(props: {
     <div class="@container relative flex flex-col min-h-0 h-full flex-1">
       <div
         data-component="new-session"
-        class="relative flex-1 min-h-0 overflow-hidden rounded-[10px] bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)]"
+        class="relative isolate flex-1 min-h-0 overflow-hidden rounded-[10px] bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)]"
       >
         <ComposerDropzone
           active={props.composer.state.drag === "active"}
@@ -71,7 +76,7 @@ export function NewSessionView(props: {
         />
         <div class="absolute inset-x-0 top-[25.375%] flex justify-center px-6">
           <div class={NEW_SESSION_CONTENT_WIDTH}>
-            <NewSessionWordmark />
+            <NewSessionWordmark ref={setWordmark} />
             <div class="mt-8 flex flex-col gap-3">
               <Composer model={props.composer} />
               <Show when={props.project.empty()}>
@@ -116,6 +121,9 @@ export function NewSessionView(props: {
             </div>
           </div>
         </div>
+        <Show when={wordmark()}>
+          {(logo) => <NewSessionPinBoard logo={logo()} sound={settings.sounds.interfaceEnabled} />}
+        </Show>
         <NewSessionTips
           selection={props.composer.model.selection}
           onDone={props.composer.restoreFocus}

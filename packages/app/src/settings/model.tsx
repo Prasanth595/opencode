@@ -162,6 +162,7 @@ const soundsSchema = Persistence.struct({
   permissions: Schema.String,
   errorsEnabled: Schema.Boolean,
   errors: Schema.String,
+  interfaceEnabled: Schema.optional(Schema.Boolean),
 })
 
 export const settingsSchema = Persistence.struct({
@@ -297,6 +298,7 @@ export const defaultSettings: Settings = {
     permissions: "staplebops-02",
     errorsEnabled: true,
     errors: "nope-03",
+    interfaceEnabled: true,
   },
 }
 
@@ -512,6 +514,13 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         errors: withFallback(() => store.sounds?.errors, defaultSettings.sounds.errors),
         setErrors(value: string) {
           setStore("sounds", "errors", value)
+        },
+        interfaceEnabled: withFallback(
+          () => store.sounds?.interfaceEnabled,
+          defaultSettings.sounds.interfaceEnabled ?? true,
+        ),
+        setInterfaceEnabled(value: boolean) {
+          setStore("sounds", "interfaceEnabled", value)
         },
       },
     }

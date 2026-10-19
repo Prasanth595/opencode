@@ -154,6 +154,14 @@ export const clientSettings: Entry<SettingsRootTab>[] = [
     description: "settings.general.sounds.errors.description",
     keywords: "sound audio errors",
   },
+  {
+    tab: "notifications",
+    label: "settings.general.sounds.interface.title",
+    target: "settings-sounds-interface",
+    section: "settings.general.section.sounds",
+    description: "settings.general.sounds.interface.description",
+    keywords: "sound audio interface effects wordmark logo",
+  },
 ]
 
 export const serverSettings: Entry<SettingsServerTab>[] = [

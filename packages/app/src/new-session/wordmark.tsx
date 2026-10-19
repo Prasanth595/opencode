@@ -1,17 +1,12 @@
-import { Logo } from "@opencode/ui/logo"
-import "./wordmark.css"
-
-export function NewSessionWordmark() {
+/** Reserves the wordmark's space. `NewSessionPinBoard` draws the logo into it. */
+export function NewSessionWordmark(props: { ref: (element: HTMLDivElement) => void }) {
   return (
     <div
       data-component="new-session-wordmark"
       aria-hidden="true"
-      class="pointer-events-none mx-auto w-full max-w-[720px] text-v2-background-bg-inverse"
+      class="pointer-events-none mx-auto w-full max-w-[720px]"
     >
-      <div data-slot="wordmark-reveal" class="relative mx-auto w-4/5">
-        <Logo class="block aspect-[720/129] w-full opacity-[0.16]" />
-        <Logo class="wordmark-shimmer absolute inset-0 aspect-[720/129] w-full" />
-      </div>
+      <div ref={props.ref} data-slot="wordmark-box" class="mx-auto aspect-[234/42] w-4/5" />
     </div>
   )
 }

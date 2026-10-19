@@ -1,0 +1,794 @@
+import { onCleanup, onMount } from "solid-js"
+import { PinSound } from "./pin-sound"
+
+// The wordmark as a 78×14 pin grid: 1 = counter shadow, 2 = "open", 3 = "code".
+const GRID = [
+  "..................................................................33..........",
+  "..................................................................33..........",
+  "22222222..22222222..22222222..222222....33333333..33333333..33333333..33333333",
+  "22222222..22222222..22222222..222222....33333333..33333333..33333333..33333333",
+  "22....22..22....22..22....22..22....22..33........33....33..33....33..33....33",
+  "22....22..22....22..22....22..22....22..33........33....33..33....33..33....33",
+  "22111122..22111122..22222222..22111122..33111111..33111133..33111133..33333333",
+  "22111122..22111122..22222222..22111122..33111111..33111133..33111133..33333333",
+  "22111122..22111122..22111111..22111122..33111111..33111133..33111133..33111111",
+  "22111122..22111122..22111111..22111122..33111111..33111133..33111133..33111111",
+  "22222222..22222222..22222222..22111122..33333333..33333333..33333333..33333333",
+  "22222222..22222222..22222222..22111122..33333333..33333333..33333333..33333333",
+  "..........22..................................................................",
+  "..........22..................................................................",
+]
+const COLS = 78
+const ROWS = 14
+
+const HOME = 0
+const AIR = 1
+const REST = 2
+const RETURN = 3
+
+const REST_TILT = [0.42, 0.7] as const
+const LIGHT = [0.55 / Math.hypot(0.55, 0.83), -0.83 / Math.hypot(0.55, 0.83)] as const
+const SHADES = 16
+const LOOSE = 4
+const REVEAL = 0.75
+const INTERACTIVE =
+  'button, a, input, textarea, select, label, [contenteditable], [role], [data-component="composer"], [data-component="new-session-tip"]'
+
+type Pin = {
+  c: number
+  r: number
+  lv: number
+  hx: number
+  hy: number
+  x: number
+  y: number
+  vx: number
+  vy: number
+  z: number
+  zv: number
+  e: number
+  rot: number
+  spin: number
+  state: number
+  pop: number
+  popAt: number
+  bucket: number
+  onComposer: boolean
+  level: number
+  x0: number
+  y0: number
+  rot0: number
+  t0: number
+  duration: number
+  lift: number
+  fd: number
+}
+
+/**
+ * The new session wordmark as a 3D pin board. Pins tilt toward the cursor and sink under it.
+ * A click or drag knocks pins out; they pop toward the viewer, pile up on the composer,
+ * then slot back in. The animation loop only runs while something is moving.
+ */
+export function NewSessionPinBoard(props: { logo: HTMLElement; sound: () => boolean }) {
+  let back!: HTMLCanvasElement
+  let front!: HTMLCanvasElement
+
+  onMount(() => onCleanup(mountPinBoard(back, front, props.logo, props.sound)))
+
+  return (
+    <>
+      <canvas
+        ref={back}
+        aria-hidden="true"
+        data-slot="new-session-pins"
+        class="pointer-events-none absolute left-0 top-0 -z-10"
+      />
+      <canvas
+        ref={front}
+        aria-hidden="true"
+        data-slot="new-session-pins-popped"
+        class="pointer-events-none absolute left-0 top-0"
+      />
+    </>
+  )
+}
+
+function mountPinBoard(back: HTMLCanvasElement, front: HTMLCanvasElement, logo: HTMLElement, sound: () => boolean) {
+  const stage = back.parentElement!
+  const bctx = back.getContext("2d")!
+  const fctx = front.getContext("2d")!
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches
+  const pins: Pin[] = GRID.flatMap((row, r) =>
+    [...row].flatMap((ch, c) => (ch === "." ? [] : [createPin(c, r, Number(ch))])),
+  )
+  const band: Pin[] = []
+  const orders = new Map<number, Pin[]>()
+  const corners = new Float32Array(8)
+  const view = {
+    left: 0,
+    top: 0,
+    w: 0,
+    h: 0,
+    x0: 0,
+    y0: 0,
+    activity: 0,
+    dpr: 1,
+    pitch: 7,
+    depth: 12,
+    size: 6,
+    composer: undefined as { left: number; right: number; top: number } | undefined,
+    region: { x: 0, y: 0, w: 0, h: 0, full: false },
+    frontOn: true,
+  }
+  const pointer = { x: 0, y: 0, lx: 0, ly: 0, vx: 0, vy: 0, inside: false, down: false, dragX: 0, dragY: 0 }
+  const tilt = { x: REST_TILT[0], y: REST_TILT[1] }
+  const piles = { top: new Int16Array(0), floor: new Int16Array(0) }
+  const clock = { born: performance.now() / 1000 - (still ? REVEAL * 2 : 0), last: 0, knocked: -99 }
+  let colors = readColors(stage)
+  let raf = 0
+
+  const wake = () => {
+    if (raf) return
+    clock.last = performance.now() / 1000 - 1 / 60
+    raf = requestAnimationFrame(frame)
+  }
+
+  const frame = (ms: number) => {
+    raf = 0
+    const now = ms / 1000
+    const dt = Math.min(1 / 30, Math.max(1 / 240, now - clock.last))
+    clock.last = now
+    if (!still) step(now, dt)
+    draw(now)
+    if (!still && !settled(now)) raf = requestAnimationFrame(frame)
+  }
+
+  const layout = () => {
+    const s = stage.getBoundingClientRect()
+    const l = logo.getBoundingClientRect()
+    const composer = stage.querySelector('[data-component="composer"]')?.getBoundingClientRect()
+    view.left = s.left
+    view.top = s.top
+    view.w = s.width
+    view.h = s.height
+    view.dpr = Math.min(2, devicePixelRatio || 1)
+    view.pitch = Math.max(3, Math.round(l.width / COLS))
+    view.depth = view.pitch * 1.7
+    view.size = view.pitch * 0.8
+    view.composer = composer && {
+      left: composer.left - s.left,
+      right: composer.right - s.left,
+      top: composer.top - s.top,
+    }
+    view.x0 = Math.round(l.left - s.left + (l.width - view.pitch * COLS) / 2)
+    view.y0 = Math.round(l.top - s.top + (l.height - view.pitch * ROWS) / 2)
+    for (const p of pins) {
+      p.hx = view.x0 + (p.c + 0.5) * view.pitch
+      p.hy = view.y0 + (p.r + 0.5) * view.pitch
+      p.x = p.hx
+      p.y = p.hy
+      p.state = HOME
+      p.pop = 0
+      p.rot = 0
+    }
+    const buckets = Math.ceil(view.w / view.pitch) + 1
+    piles.top = new Int16Array(buckets)
+    piles.floor = new Int16Array(buckets)
+    setRegion(false)
+    setFront(false)
+    wake()
+  }
+
+  // The back canvas only covers the logo while it is intact, and the whole panel while pins are loose.
+  const setRegion = (full: boolean) => {
+    const r = view.region
+    const margin = Math.ceil(view.pitch * 3 + view.depth * 1.5)
+    const x = full ? 0 : view.x0 - margin
+    const y = full ? 0 : view.y0 - margin
+    const next = {
+      x,
+      y,
+      w: full ? Math.ceil(view.w) : Math.ceil(view.pitch * COLS + margin * 2),
+      h: full ? Math.ceil(view.h) : Math.ceil(view.pitch * ROWS + margin * 2),
+    }
+    if (r.full === full && r.x === next.x && r.y === next.y && r.w === next.w && r.h === next.h && back.width) return
+    Object.assign(r, next, { full })
+    back.width = Math.round(r.w * view.dpr)
+    back.height = Math.round(r.h * view.dpr)
+    back.style.transform = `translate(${r.x}px, ${r.y}px)`
+    back.style.width = `${r.w}px`
+    back.style.height = `${r.h}px`
+  }
+
+  // The popped-pin layer covers the panel only while pins are popped, so it holds no memory at rest.
+  const setFront = (on: boolean) => {
+    if (view.frontOn === on) return
+    view.frontOn = on
+    front.width = on ? Math.round(view.w * view.dpr) : 0
+    front.height = on ? Math.round(view.h * view.dpr) : 0
+    front.style.width = on ? `${view.w}px` : "0px"
+    front.style.height = on ? `${view.h}px` : "0px"
+  }
+
+  const popOf = (p: Pin, now: number) => {
+    if (!p.pop) return 0
+    const t = now - p.popAt
+    return p.pop * (1 - Math.exp(-t * 22)) * Math.exp(-t * 2.6)
+  }
+
+  const knock = (x: number, y: number, radius: number, power: number, carryX: number, carryY: number, now: number) => {
+    const hits = pins.filter((p) => Math.hypot(p.x - x, p.y - y) <= radius)
+    hits.filter((p) => p.state === REST).forEach(unstack)
+    for (const p of hits) {
+      const dx = p.x - x
+      const dy = p.y - y
+      const dist = Math.hypot(dx, dy) || 1
+      const f = 1 - dist / radius
+      const home = p.state === HOME
+      p.state = AIR
+      p.e = 1
+      p.vx = (home ? 0 : p.vx * 0.3) + (dx / dist) * power * f + carryX + (Math.random() - 0.5) * 60
+      p.vy = (home ? 0 : Math.min(0, p.vy) * 0.3) + (dy / dist) * power * f + carryY - (home ? 220 : 420) - 380 * f
+      p.spin += (Math.random() - 0.5) * 18
+      p.pop = 0.35 + 0.65 * f
+      p.popAt = now
+    }
+    if (!hits.length) return
+    clock.knocked = now
+    setRegion(true)
+    if (sound()) PinSound.knock(x, view.w)
+  }
+
+  // Hitting a piled pin topples everything stacked above it.
+  const unstack = (p: Pin) => {
+    const heights = p.onComposer ? piles.top : piles.floor
+    for (const o of pins) {
+      if (o.state !== REST || o.onComposer !== p.onComposer || o.bucket !== p.bucket || o.level < p.level) continue
+      o.state = AIR
+      o.vx = (Math.random() - 0.5) * 120
+      o.vy = -80 - Math.random() * 120
+      o.spin += (Math.random() - 0.5) * 6
+    }
+    heights[p.bucket] = Math.min(heights[p.bucket], p.level)
+  }
+
+  // Piled pins sit above the composer's edge by their extrusion depth, so their sides do not tuck behind it.
+  const composerSurface = () => (view.composer ? view.composer.top - view.depth * REST_TILT[1] : Infinity)
+
+  const onComposer = (bucket: number) => {
+    const x = (bucket + 0.5) * view.pitch
+    return !!view.composer && x > view.composer.left + 2 && x < view.composer.right - 2
+  }
+
+  const settle = (p: Pin, start: number, top: boolean) => {
+    const heights = top ? piles.top : piles.floor
+    const bucket = Array.from({ length: 14 }).reduce<number>((b) => {
+      const options = [b - 1, b + 1].filter(
+        (n) => n >= 0 && n < heights.length && (top && !onComposer(n) ? heights[b] > 0 : heights[n] < heights[b]),
+      )
+      if (!options.length) return b
+      return options[Math.floor(Math.random() * options.length)]
+    }, start)
+    if (top && !onComposer(bucket)) {
+      p.x = (bucket + 0.5) * view.pitch
+      p.vx = (bucket < start ? -1 : 1) * 90
+      p.vy = 0
+      return
+    }
+    p.state = REST
+    p.bucket = bucket
+    p.onComposer = top
+    p.level = heights[bucket]
+    p.x = (bucket + 0.5) * view.pitch
+    p.y = (top ? composerSurface() : view.h) - heights[bucket] * view.pitch - view.pitch / 2
+    heights[bucket]++
+  }
+
+  const reassemble = (now: number) => {
+    for (const p of pins) {
+      if (p.state !== AIR && p.state !== REST) continue
+      p.state = RETURN
+      p.x0 = p.x
+      p.y0 = p.y
+      p.rot0 = p.rot
+      p.t0 = now + (p.c / COLS) * 0.6 + Math.random() * 0.1
+      p.duration = 0.5 + Math.random() * 0.25
+      p.lift = 30 + Math.random() * 70
+    }
+    piles.top.fill(0)
+    piles.floor.fill(0)
+    clock.knocked = now
+  }
+
+  const step = (now: number, dt: number) => {
+    pointer.vx += ((pointer.x - pointer.lx) / dt - pointer.vx) * 0.5
+    pointer.vy += ((pointer.y - pointer.ly) / dt - pointer.vy) * 0.5
+    pointer.lx = pointer.x
+    pointer.ly = pointer.y
+
+    const cx = view.x0 + (COLS * view.pitch) / 2
+    const cy = view.y0 + (ROWS * view.pitch) / 2
+    const tx = pointer.inside ? lerp(REST_TILT[0], clamp(((cx - pointer.x) / (view.w * 0.5)) * 1.4), 0.6) : REST_TILT[0]
+    const ty = pointer.inside ? lerp(REST_TILT[1], clamp(((cy - pointer.y) / (view.h * 0.5)) * 1.4), 0.6) : REST_TILT[1]
+    const ease = 1 - Math.exp(-dt * 4)
+    tilt.x += (tx - tilt.x) * ease
+    tilt.y += (ty - tilt.y) * ease
+
+    // A held button keeps knocking along the drag path, spaced so it reads as a trail.
+    if (pointer.down && Math.hypot(pointer.x - pointer.dragX, pointer.y - pointer.dragY) > view.pitch * 1.2) {
+      pointer.dragX = pointer.x
+      pointer.dragY = pointer.y
+      knock(pointer.x, pointer.y, 16, 260, pointer.vx * 0.25, pointer.vy * 0.25, now)
+    }
+
+    const cell = view.pitch
+    const counts = { air: 0, loose: 0 }
+    view.activity = Math.abs(tx - tilt.x) + Math.abs(ty - tilt.y) + (Math.abs(pointer.vx) + Math.abs(pointer.vy)) / 1000
+    for (const p of pins) {
+      p.e *= Math.exp(-dt * 1.8)
+      if (p.pop && now - p.popAt > 1.5) p.pop = 0
+      if (p.state === HOME) {
+        const dist = pointer.inside ? Math.hypot(p.hx - pointer.x, p.hy - pointer.y) : Infinity
+        const f = dist < 55 ? 1 - dist / 55 : 0
+        const target = f * f * 0.9
+        p.zv += ((target - p.z) * 260 - p.zv * 14) * dt
+        p.z = Math.max(-0.8, Math.min(1, p.z + p.zv * dt))
+        view.activity = Math.max(view.activity, Math.abs(p.zv) * 0.1 + Math.abs(target - p.z), p.e * 0.05)
+        continue
+      }
+      if (p.state === REST) {
+        counts.loose++
+        p.rot = wrapQuarter(p.rot) * Math.exp(-dt * 14)
+        continue
+      }
+      if (p.state === RETURN) {
+        const k = (now - p.t0) / p.duration
+        if (k < 0) continue
+        if (k >= 1) {
+          Object.assign(p, {
+            state: HOME,
+            x: p.hx,
+            y: p.hy,
+            vx: 0,
+            vy: 0,
+            rot: 0,
+            spin: 0,
+            pop: 0,
+            e: 0.9,
+            z: -0.8,
+            zv: 0,
+          })
+          if (sound()) PinSound.slot(p.c, COLS, p.hx, view.w)
+          continue
+        }
+        const e = 1 - Math.pow(1 - k, 3)
+        p.x = lerp(p.x0, p.hx, e)
+        p.y = lerp(p.y0, p.hy, e) - Math.sin(k * Math.PI) * p.lift
+        p.rot = lerp(wrapQuarter(p.rot0), 0, e)
+        continue
+      }
+      counts.air++
+      counts.loose++
+      p.vy += 2400 * dt
+      p.x += p.vx * dt
+      p.y += p.vy * dt
+      p.rot += p.spin * dt
+      if (p.x < cell) Object.assign(p, { x: cell, vx: Math.abs(p.vx) * 0.5 })
+      if (p.x > view.w - cell) Object.assign(p, { x: view.w - cell, vx: -Math.abs(p.vx) * 0.5 })
+      if (p.vy <= 0 || popOf(p, now) >= 0.1) continue
+      const bucket = Math.max(0, Math.min(piles.top.length - 1, Math.floor(p.x / cell)))
+      const topSurface = composerSurface() - piles.top[bucket] * cell
+      const top = onComposer(bucket) && p.y - p.vy * dt + cell / 2 <= topSurface + 1
+      const surface = top ? topSurface : view.h - piles.floor[bucket] * cell
+      if (p.y + cell / 2 < surface) continue
+      if (p.vy <= 260) {
+        settle(p, bucket, top)
+        continue
+      }
+      p.y = surface - cell / 2
+      if (sound()) PinSound.bounce(p.x, view.w, p.vy)
+      p.vy = -p.vy * 0.34
+      p.vx *= 0.55
+      p.spin = -p.spin * 0.5 + (Math.random() - 0.5) * 4
+    }
+
+    const idle = now - clock.knocked
+    if (!pointer.down && counts.loose && ((counts.air === 0 && idle > 2) || idle > 6)) reassemble(now)
+    if (view.region.full && pins.every((p) => p.state === HOME)) setRegion(false)
+  }
+
+  const settled = (now: number) => {
+    if (now - clock.born < REVEAL || pointer.down || view.activity > 1e-3) return false
+    return pins.every((p) => p.state === HOME)
+  }
+
+  const draw = (now: number) => {
+    const r = view.region
+    const dpr = view.dpr
+    bctx.setTransform(dpr, 0, 0, dpr, -r.x * dpr, -r.y * dpr)
+    bctx.clearRect(r.x, r.y, r.w, r.h)
+    drawBoard(now)
+
+    const loose = pins.filter((p) => p.state !== HOME)
+    const popped = loose.filter((p) => popOf(p, now) > 0.06).sort((a, b) => popOf(a, now) - popOf(b, now))
+    const flat = loose.filter((p) => popOf(p, now) <= 0.06)
+
+    bctx.fillStyle = "#000"
+    for (const p of loose) {
+      const pop = popOf(p, now)
+      const offset = view.depth * (0.35 + pop * 5)
+      const size = view.size * (1 + pop * 1.6) * (1 + pop * 0.4)
+      bctx.globalAlpha = colors.shadow * (1 - pop * 0.65)
+      bctx.fillRect(
+        p.x + tilt.x * view.depth - LIGHT[0] * offset - size / 2,
+        p.y + tilt.y * view.depth - LIGHT[1] * offset - size / 2,
+        size,
+        size,
+      )
+    }
+    bctx.globalAlpha = 1
+    // Cubes further along the extrusion direction sit in front, so stacked pins overlap correctly.
+    flat.sort((a, b) => a.x * tilt.x + a.y * tilt.y - (b.x * tilt.x + b.y * tilt.y))
+    for (const p of flat) {
+      drawCube(bctx, p, 1, true)
+      drawCube(bctx, p, 1, false)
+    }
+
+    setFront(popped.length > 0)
+    if (!popped.length) return
+    fctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    fctx.clearRect(0, 0, view.w, view.h)
+    for (const p of popped) {
+      const scale = 1 + popOf(p, now) * 1.6
+      drawCube(fctx, p, scale, true)
+      drawCube(fctx, p, scale, false)
+    }
+  }
+
+  // Pins are prisms from their front face back to the board. Drawing them in order of their
+  // grid position along the extrusion direction is a correct painter's order for any heights,
+  // and pins on the same diagonal never overlap, so each diagonal is filled as one batch.
+  const drawBoard = (now: number) => {
+    const sx = tilt.x >= 0 ? 1 : -1
+    const sy = tilt.y >= 0 ? 1 : -1
+    const ox = tilt.x * view.depth
+    const oy = tilt.y * view.depth
+    const half = view.size / 2
+    const size = view.size
+    const age = now - clock.born
+
+    bctx.fillStyle = "#000"
+    bctx.globalAlpha = colors.shadow
+    bctx.beginPath()
+    for (const p of pins) {
+      if (p.state !== HOME || age < (p.c / COLS) * 0.45) continue
+      bctx.rect(p.hx + ox - LIGHT[0] * 2.5 - half - 1, p.hy + oy - LIGHT[1] * 2.5 - half - 1, size + 2, size + 2)
+    }
+    bctx.fill()
+    bctx.globalAlpha = 1
+
+    // An empty socket: a dark rim with its floor visible through the opening, shifted by the tilt.
+    bctx.fillStyle = colors.socketRim
+    bctx.beginPath()
+    for (const p of pins) if (p.state !== HOME) bctx.rect(p.hx + ox - half, p.hy + oy - half, size, size)
+    bctx.fill()
+    bctx.fillStyle = colors.socketFloor
+    bctx.beginPath()
+    for (const p of pins) {
+      if (p.state === HOME) continue
+      const x0 = p.hx + ox - half + Math.max(0, ox * 0.45)
+      const y0 = p.hy + oy - half + Math.max(0, oy * 0.45)
+      const w = size - Math.abs(ox * 0.45)
+      const h = size - Math.abs(oy * 0.45)
+      if (w > 0 && h > 0) bctx.rect(x0, y0, w, h)
+    }
+    bctx.fill()
+
+    const key = (sx > 0 ? 1 : 0) + (sy > 0 ? 2 : 0)
+    const order =
+      orders.get(key) ??
+      orders
+        .set(
+          key,
+          [...pins].sort((a, b) => a.c * sx + a.r * sy - (b.c * sx + b.r * sy)),
+        )
+        .get(key)!
+    const sideX = sx > 0 ? Math.round(Math.max(0, LIGHT[0]) * SHADES) : 0
+    const sideY = sy < 0 ? Math.round(Math.max(0, -LIGHT[1]) * SHADES) : 0
+
+    const flush = (count: number) => {
+      for (let lv = 1; lv <= 3; lv++) {
+        bctx.fillStyle = colors.side[lv][sideX]
+        bctx.beginPath()
+        for (let i = 0; i < count; i++) {
+          const p = band[i]
+          if (p.lv !== lv) continue
+          const fx = p.hx + ox * p.fd + sx * half
+          const fy = p.hy + oy * p.fd
+          bctx.moveTo(fx, fy - half)
+          bctx.lineTo(p.hx + ox + sx * half, p.hy + oy - half)
+          bctx.lineTo(p.hx + ox + sx * half, p.hy + oy + half)
+          bctx.lineTo(fx, fy + half)
+          bctx.closePath()
+        }
+        bctx.fill()
+        bctx.fillStyle = colors.side[lv][sideY]
+        bctx.beginPath()
+        for (let i = 0; i < count; i++) {
+          const p = band[i]
+          if (p.lv !== lv) continue
+          const fx = p.hx + ox * p.fd
+          const fy = p.hy + oy * p.fd + sy * half
+          bctx.moveTo(fx - half, fy)
+          bctx.lineTo(fx + half, fy)
+          bctx.lineTo(p.hx + ox + half, p.hy + oy + sy * half)
+          bctx.lineTo(p.hx + ox - half, p.hy + oy + sy * half)
+          bctx.closePath()
+        }
+        bctx.fill()
+      }
+      for (let i = 0; i < count; i++) {
+        const p = band[i]
+        bctx.fillStyle = colors.face[p.lv][shadeOf(Math.max(p.e, p.z))]
+        bctx.fillRect(p.hx + ox * p.fd - half, p.hy + oy * p.fd - half, size, size)
+      }
+      if (size < 4) return
+      bctx.fillStyle = colors.highlight
+      bctx.beginPath()
+      for (let i = 0; i < count; i++) {
+        const p = band[i]
+        if (p.lv === 1) continue
+        const x = p.hx + ox * p.fd - half
+        const y = p.hy + oy * p.fd - half
+        bctx.rect(x, y, size, 1)
+        bctx.rect(x + size - 1, y, 1, size)
+      }
+      bctx.fill()
+      bctx.fillStyle = colors.lowlight
+      bctx.beginPath()
+      for (let i = 0; i < count; i++) {
+        const p = band[i]
+        if (p.lv === 1) continue
+        const x = p.hx + ox * p.fd - half
+        const y = p.hy + oy * p.fd - half
+        bctx.rect(x, y + size - 1, size, 1)
+        bctx.rect(x, y, 1, size)
+      }
+      bctx.fill()
+    }
+
+    let current = NaN
+    band.length = 0
+    for (const p of order) {
+      if (p.state !== HOME) continue
+      const grow = Math.min(1, Math.max(0, (age - (p.c / COLS) * 0.45) / 0.3))
+      if (!grow) continue
+      const height = (p.lv === 1 ? 0.35 : 1) * (1 - Math.max(0, p.z)) + Math.max(0, -p.z) * 0.6
+      p.fd = 1 - height * (1 - Math.pow(1 - grow, 3))
+      const k = p.c * sx + p.r * sy
+      if (k !== current && band.length) {
+        flush(band.length)
+        band.length = 0
+      }
+      current = k
+      band.push(p)
+    }
+    if (band.length) flush(band.length)
+  }
+
+  // Loose pins are extruded squares. Each visible side is lit by its own normal, so tumbling pins flicker.
+  // Counter pins are recessed and nearly black on the board; out of it they use the loose shade so they read as cubes.
+  const drawCube = (ctx: CanvasRenderingContext2D, p: Pin, scale: number, sides: boolean) => {
+    const lv = p.lv === 1 ? LOOSE : p.lv
+    const radius = (view.size * scale) / Math.SQRT2
+    for (let j = 0; j < 4; j++) {
+      const a = p.rot + Math.PI / 4 + (j * Math.PI) / 2
+      corners[j * 2] = p.x + Math.cos(a) * radius
+      corners[j * 2 + 1] = p.y + Math.sin(a) * radius
+    }
+    const ox = tilt.x * view.depth * scale
+    const oy = tilt.y * view.depth * scale
+    if (sides) {
+      for (let j = 0; j < 4; j++) {
+        const ax = corners[j * 2]
+        const ay = corners[j * 2 + 1]
+        const bx = corners[((j + 1) % 4) * 2]
+        const by = corners[((j + 1) % 4) * 2 + 1]
+        const nx = (ax + bx) / 2 - p.x
+        const ny = (ay + by) / 2 - p.y
+        if (nx * tilt.x + ny * tilt.y <= 0) continue
+        const n = Math.hypot(nx, ny) || 1
+        ctx.fillStyle = colors.side[lv][Math.round(Math.max(0, (nx * LIGHT[0] + ny * LIGHT[1]) / n) * SHADES)]
+        ctx.beginPath()
+        ctx.moveTo(ax, ay)
+        ctx.lineTo(bx, by)
+        ctx.lineTo(bx + ox, by + oy)
+        ctx.lineTo(ax + ox, ay + oy)
+        ctx.closePath()
+        ctx.fill()
+      }
+      return
+    }
+    ctx.fillStyle = colors.face[lv][shadeOf(p.e)]
+    ctx.beginPath()
+    ctx.moveTo(corners[0], corners[1])
+    for (let j = 1; j < 4; j++) ctx.lineTo(corners[j * 2], corners[j * 2 + 1])
+    ctx.closePath()
+    ctx.fill()
+  }
+
+  const toStage = (event: PointerEvent) => {
+    pointer.x = event.clientX - view.left
+    pointer.y = event.clientY - view.top
+  }
+  const onEnter = (event: PointerEvent) => {
+    const s = stage.getBoundingClientRect()
+    view.left = s.left
+    view.top = s.top
+    toStage(event)
+    pointer.lx = pointer.x
+    pointer.ly = pointer.y
+    pointer.inside = true
+    wake()
+  }
+  const onMove = (event: PointerEvent) => {
+    toStage(event)
+    pointer.inside = true
+    wake()
+  }
+  const onLeave = () => {
+    if (pointer.down) return
+    pointer.inside = false
+    wake()
+  }
+  // Capturing the pointer keeps a long drag alive; without it the browser can start a text
+  // selection or native drag mid-gesture and cancel the pointer stream.
+  const onDown = (event: PointerEvent) => {
+    if (event.button !== 0 || (event.target instanceof Element && event.target.closest(INTERACTIVE))) return
+    event.preventDefault()
+    stage.setPointerCapture(event.pointerId)
+    toStage(event)
+    pointer.down = true
+    pointer.dragX = pointer.x
+    pointer.dragY = pointer.y
+    knock(pointer.x, pointer.y, 24, 560, 0, 0, performance.now() / 1000)
+    wake()
+  }
+  const onUp = (event: Event) => {
+    pointer.down = false
+    if (event instanceof PointerEvent && stage.hasPointerCapture(event.pointerId))
+      stage.releasePointerCapture(event.pointerId)
+  }
+  const onSelect = (event: Event) => {
+    if (pointer.down) event.preventDefault()
+  }
+  const onTheme = () => {
+    colors = readColors(stage)
+    wake()
+  }
+
+  const resize = new ResizeObserver(layout)
+  resize.observe(stage)
+  resize.observe(logo)
+  const theme = new MutationObserver(onTheme)
+  theme.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-color-scheme", "data-theme", "class"],
+  })
+  const scheme = matchMedia("(prefers-color-scheme: dark)")
+  scheme.addEventListener("change", onTheme)
+  if (!still) {
+    stage.addEventListener("pointerenter", onEnter)
+    stage.addEventListener("pointermove", onMove)
+    stage.addEventListener("pointerleave", onLeave)
+    stage.addEventListener("pointerdown", onDown)
+    stage.addEventListener("pointerup", onUp)
+    stage.addEventListener("pointercancel", onUp)
+    stage.addEventListener("lostpointercapture", onUp)
+    stage.addEventListener("selectstart", onSelect)
+    stage.addEventListener("dragstart", onSelect)
+    window.addEventListener("blur", onUp)
+  }
+  layout()
+  // The reveal staggers columns over 0.45 s and each rises over 0.3 s; the sweep spans the same window.
+  if (!still && sound()) PinSound.sweep({ duration: REVEAL, columns: COLS })
+
+  return () => {
+    cancelAnimationFrame(raf)
+    resize.disconnect()
+    theme.disconnect()
+    scheme.removeEventListener("change", onTheme)
+    stage.removeEventListener("pointerenter", onEnter)
+    stage.removeEventListener("pointermove", onMove)
+    stage.removeEventListener("pointerleave", onLeave)
+    stage.removeEventListener("pointerdown", onDown)
+    stage.removeEventListener("pointerup", onUp)
+    stage.removeEventListener("pointercancel", onUp)
+    stage.removeEventListener("lostpointercapture", onUp)
+    stage.removeEventListener("selectstart", onSelect)
+    stage.removeEventListener("dragstart", onSelect)
+    window.removeEventListener("blur", onUp)
+  }
+}
+
+function createPin(c: number, r: number, lv: number): Pin {
+  return {
+    c,
+    r,
+    lv,
+    hx: 0,
+    hy: 0,
+    x: 0,
+    y: 0,
+    vx: 0,
+    vy: 0,
+    z: 0,
+    zv: 0,
+    e: 0,
+    rot: 0,
+    spin: 0,
+    state: HOME,
+    pop: 0,
+    popAt: 0,
+    bucket: 0,
+    onComposer: false,
+    level: 0,
+    x0: 0,
+    y0: 0,
+    rot0: 0,
+    t0: 0,
+    duration: 0,
+    lift: 0,
+    fd: 0,
+  }
+}
+
+// Theme colours are resolved through a 1×1 canvas so any CSS colour syntax works.
+function readColors(stage: HTMLElement) {
+  const probe = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!
+  const style = getComputedStyle(stage)
+  const rgb = (value: string, fallback: string) => {
+    probe.clearRect(0, 0, 1, 1)
+    probe.fillStyle = fallback
+    probe.fillStyle = value || fallback
+    probe.fillRect(0, 0, 1, 1)
+    const d = probe.getImageData(0, 0, 1, 1).data
+    return [d[0], d[1], d[2]] as const
+  }
+  const token = (name: string, fallback: string) => rgb(style.getPropertyValue(name).trim(), fallback)
+  const bg = rgb(style.backgroundColor, "#161616")
+  const faint = token("--v2-icon-icon-faint", "#5c5c5c")
+  const levels = [
+    bg,
+    mix(bg, faint, 0.5),
+    token("--v2-icon-icon-muted", "#808080"),
+    token("--v2-icon-icon-base", "#dbdbdb"),
+    faint,
+  ]
+  const brand = token("--v2-orange-500", "#ffa478")
+  const dark = bg[0] * 0.2126 + bg[1] * 0.7152 + bg[2] * 0.0722 < 128
+  const black = [0, 0, 0]
+  const shades = (fn: (t: number) => readonly number[]) =>
+    Array.from({ length: SHADES + 1 }, (_, i) => css(fn(i / SHADES)))
+  // Sides are the pin's own colour in shadow, so they stay darker than its face in either theme.
+  return {
+    side: levels.map((level) => shades((t) => mix(black, level, 0.3 + 0.5 * t))),
+    face: levels.map((level, lv) => shades((t) => mix(level, brand, t * (lv === 1 ? 0.4 : 0.85)))),
+    socketRim: css(mix(bg, black, dark ? 0.6 : 0.16)),
+    socketFloor: css(mix(bg, black, dark ? 0.35 : 0.08)),
+    shadow: dark ? 0.3 : 0.12,
+    highlight: "rgba(255, 255, 255, 0.2)",
+    lowlight: "rgba(0, 0, 0, 0.2)",
+  }
+}
+
+const mix = (a: readonly number[], b: readonly number[], t: number) => a.map((v, i) => v + (b[i] - v) * t)
+const css = (c: readonly number[]) => `rgb(${Math.round(c[0])}, ${Math.round(c[1])}, ${Math.round(c[2])})`
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t
+const clamp = (v: number) => Math.max(-1, Math.min(1, v))
+const shadeOf = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * SHADES)
+const wrapQuarter = (a: number) => {
+  const q = Math.PI / 2
+  const m = (((a + q / 2) % q) + q) % q
+  return m - q / 2
+}
