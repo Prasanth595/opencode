@@ -2006,13 +2006,7 @@ ToolRegistry.register({
             {(call, index) => <ExecuteCallRow call={call()} error={index === owner() ? error() : undefined} />}
           </Index>
           <Show when={owner() === -1 && error()}>{(text) => <ExecuteCallRow error={text()} />}</Show>
-          <Show when={output()}>
-            {(value) => (
-              <ConsoleOutput copy={value()} variant="shell">
-                <span data-slot="bash-result">{value()}</span>
-              </ConsoleOutput>
-            )}
-          </Show>
+          <Show when={output()}>{(value) => <ExecuteOutputRow output={value()} />}</Show>
         </div>
       </BasicTool>
     )
@@ -2132,6 +2126,49 @@ function ExecuteDetailsSection(props: {
       </header>
       <div data-slot="execute-details-source">{props.children}</div>
     </section>
+  )
+}
+
+function ExecuteOutputRow(props: { output: string }) {
+  const i18n = useI18n()
+  const [open, setOpen] = createSignal(false)
+
+  const toggle = () => {
+    if (window.getSelection()?.toString()) return
+    setOpen((value) => !value)
+  }
+
+  return (
+    <div data-slot="execute-tool-call-item">
+      <div
+        data-slot="execute-tool-call"
+        data-kind="output"
+        role="button"
+        tabIndex={0}
+        aria-expanded={open()}
+        onClick={toggle}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return
+          event.preventDefault()
+          toggle()
+        }}
+      >
+        <span data-slot="execute-tool-call-marker">
+          <span data-slot="execute-tool-call-arrow">›</span>
+        </span>
+        <span data-slot="execute-tool-call-name">{i18n.t("ui.tool.execute.output")}</span>
+        <span data-slot="execute-tool-call-args">
+          {i18n.plural("ui.tool.execute.lines", props.output.split("\n").length)}
+        </span>
+      </div>
+      <Show when={open()}>
+        <div data-slot="execute-tool-output">
+          <ConsoleOutput copy={props.output} variant="shell">
+            <span data-slot="bash-result">{props.output}</span>
+          </ConsoleOutput>
+        </div>
+      </Show>
+    </div>
   )
 }
 

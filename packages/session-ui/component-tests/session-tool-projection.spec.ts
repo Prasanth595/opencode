@@ -183,8 +183,15 @@ story("keeps long execute calls inside the tool and shows the script output", as
   const timeline = await mount("current-session-terminal-work--execute-code")
   const tool = timeline.locator('[data-timeline-part-id="tool_execute_long_call"]')
   const calls = tool.locator('[data-component="execute-tool-calls"]')
-  await expect(calls.locator('[data-slot="execute-tool-call"]')).toHaveText([/mesh\.exec/])
-  await expect(calls.locator('[data-slot="bash-result"]')).toContainText("Cleanup finished on blade")
+  const rows = calls.locator('[data-slot="execute-tool-call"]')
+  await expect(rows).toHaveText([/mesh\.exec/, /Output\s*3 lines/])
+
+  // The script output stays collapsed until its row is expanded.
+  const result = calls.locator('[data-slot="bash-result"]')
+  await expect(result).toHaveCount(0)
+  await rows.nth(1).click()
+  await expect(rows.nth(1)).toHaveAttribute("aria-expanded", "true")
+  await expect(result).toContainText("Cleanup finished on blade")
 
   const overflow = await tool.evaluate((element) => {
     const calls = element.querySelector('[data-component="execute-tool-calls"]')

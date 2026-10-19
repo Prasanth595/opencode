@@ -671,6 +671,11 @@
     color: var(--v2-state-fg-danger);
   }
 
+  [data-slot="execute-tool-output"] {
+    margin-top: 4px;
+    padding-inline-start: 20px;
+  }
+
   [data-slot="execute-tool-error"] {
     margin-top: 4px;
     max-height: 240px;
