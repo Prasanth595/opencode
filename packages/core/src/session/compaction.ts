@@ -51,8 +51,8 @@ export type Editor = {
 }
 
 export type Trigger =
-  /** `overflow`: the provider just rejected this context as too long. */
-  | { readonly reason: "auto" | "overflow"; readonly context: SessionContext.Loaded }
+  /** `overflow`: token window rejection; `payload`: request body size rejection. */
+  | { readonly reason: "auto" | "overflow" | "payload"; readonly context: SessionContext.Loaded }
   /** `inputID` is the `/compact` inbox item, whose message shows the outcome. */
   | { readonly reason: "manual"; readonly context: SessionContext.Loaded; readonly inputID: SessionMessage.ID }
 
@@ -404,7 +404,8 @@ export const layer = Layer.effect(
       const policy = yield* SessionRunnerRetry.policy(context.session.id)
       let rejections = 0
       let rejected: number | undefined
-      let asText = false
+      // A primary request already rejected for its bytes must not resend the same inline media to summarize it.
+      let asText = trigger.reason === "payload"
 
       while (true) {
         const fits = !asText && estimateRequest(prepared.request) <= target
@@ -951,6 +952,21 @@ const estimateRequest = (request: Pick<LLMRequest, "system" | "tools" | "message
   request.system.reduce((sum, part) => sum + Token.estimate(part.text), 0) +
   request.tools.reduce((sum, tool) => sum + estimateTool(tool), 0) +
   request.messages.reduce((sum, message) => sum + estimateMessage(message), 0)
+
+// Gateways and proxies reject oversized HTTP bodies (often with a generic 400 rather than a
+// classified size error) long before token windows fill, and media counts flat toward tokens
+// while dominating bytes. Requests at or above this size that fail with an unclassified client
+// rejection are treated as payload rejections and recover through text-only compaction.
+export const OVERSIZED_REQUEST_BYTES = 4 * 1024 * 1024 // 4 MiB
+
+/** Serialized request size in bytes; 0 when the request cannot be serialized. */
+export const estimateRequestBytes = (request: Pick<LLMRequest, "system" | "tools" | "messages">) => {
+  try {
+    return Buffer.byteLength(JSON.stringify(request), "utf8")
+  } catch {
+    return 0
+  }
+}
 
 /** Only what providers receive; `metadata` and `native` stay local. */
 const estimateTool = (tool: ToolEntry): number => {
