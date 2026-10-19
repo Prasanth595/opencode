@@ -418,7 +418,7 @@ for (const row of [
     accent: false,
   },
 ]) {
-  test(`workspace accent colors the user message only for ${row.name}`, async ({ page }) => {
+  test(`keeps the user message grey for ${row.name}`, async ({ page }) => {
     const inventory: WorktreeDirectory[] = [{ directory: accentRoot }, { directory: accentWorkspace, strategy: "git" }]
 
     const listed = page.waitForResponse(
@@ -464,8 +464,8 @@ for (const row of [
     await expectBackground(send, "icon-button-contrast")
     const message = page.locator('[data-slot="user-message-text"]')
     await expect(message).toHaveText("Check this fixture workspace.")
-    await expectToken(message, "background-color", row.accent ? "--v2-background-bg-accent" : "--v2-blue-100")
-    await expectToken(message, "color", row.accent ? "--v2-text-text-contrast" : "--v2-blue-700")
+    await expectToken(message, "background-color", "--v2-background-bg-layer-02")
+    await expectToken(message, "color", "--v2-text-text-base")
 
     if (!row.accent) return
 
