@@ -1294,6 +1294,7 @@ export type SessionFormReplyInput = {
   readonly sessionID: string
   readonly formID: Form.ID
   readonly answer: Form.Answer
+  readonly attachments?: Form.Attachments | undefined
 }
 export type SessionFormReplyOutput = void
 export type SessionFormReplyOperation<E = never> = (

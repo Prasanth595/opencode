@@ -656,7 +656,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         "session.form.reply",
         Effect.fn(function* (ctx) {
           const owned = yield* requireOwnedForm(ctx.params.sessionID, ctx.params.formID)
-          yield* owned.form.reply({ id: ctx.params.formID, answer: ctx.payload.answer }).pipe(
+          yield* owned.form.reply({ id: ctx.params.formID, ...ctx.payload }).pipe(
             Effect.catchTags({
               "Form.AlreadySettledError": (error) =>
                 new FormAlreadySettledError({ id: error.id, message: error.message }),

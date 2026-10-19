@@ -755,7 +755,7 @@ const EndpointSessionFormReply = (raw: RawClient["server.session"]) => (input: S
   preserveEffect<SessionFormReplyOutput>()(
     raw["session.form.reply"]({
       params: { sessionID: input["sessionID"], formID: input["formID"] },
-      payload: { answer: input["answer"] },
+      payload: { answer: input["answer"], attachments: input["attachments"] },
     }).pipe(Effect.mapError(mapClientError)),
   )
 

@@ -169,6 +169,14 @@ than one choice. A free-form answer is always available.
 Before changing the API, ask me to choose between a breaking change and a compatibility layer.
 ```
 
+In the full terminal UI, you can also drop image files or use the Paste command
+to attach a clipboard image to the current question. Images stay separate from
+text and selections; an answer can contain only images.
+
+- Each `[Image N]` entry belongs to the current question.
+- Click an entry to remove it, or press `Ctrl+D` to remove the last image.
+- Web and Mini question forms remain text/selection-only.
+
 Permission: `question` with `*` as its resource. A client must support the
 interactive form, and dismissing it cancels the question.
 

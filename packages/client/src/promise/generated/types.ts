@@ -418,6 +418,8 @@ export type SessionStatsTools =
   | { mode: "summary"; totals: SessionStatsToolTotals }
   | { mode: "detail"; totals: SessionStatsToolTotals; usage: Array<SessionStatsToolUsage> }
 
+export type FormAttachment = { data: PromptBase64; mime: string; name?: string }
+
 export type PromptFileAttachment = {
   data: PromptBase64
   mime: string
@@ -614,6 +616,7 @@ export type FormStringField = {
   default?: string
   options?: Array<FormOption>
   custom?: boolean
+  attachments?: boolean
 }
 
 export type FormMultiselectField = {
@@ -628,6 +631,7 @@ export type FormMultiselectField = {
   minItems?: number
   maxItems?: number
   custom?: boolean
+  attachments?: boolean
   default?: Array<string>
 }
 
@@ -794,6 +798,7 @@ export type FormStringField1 = {
   default?: string
   options?: Array<FormOption>
   custom?: boolean
+  attachments?: boolean
 }
 
 export type FormNumberField1 = {
@@ -845,6 +850,7 @@ export type FormMultiselectField1 = {
   minItems?: number
   maxItems?: number
   custom?: boolean
+  attachments?: boolean
   default?: Array<string>
 }
 
@@ -923,6 +929,8 @@ export type ModelVariant = {
 }
 
 export type PermissionRuleset = Array<PermissionRule>
+
+export type FormAttachments = { [x: string]: Array<FormAttachment> }
 
 export type SessionMessageUser = {
   id: SessionMessageID
@@ -1942,11 +1950,6 @@ export type FormField =
   | FormMultiselectField
   | FormExternalField
 
-export type FormState =
-  | { status: "pending" }
-  | { status: "answered"; answer: FormAnswer }
-  | { status: "cancelled"; message?: string }
-
 export type CredentialKey = {
   type: "key"
   key: string
@@ -2012,15 +2015,6 @@ export type FormField1 =
   | FormBooleanField1
   | FormMultiselectField1
   | FormExternalField
-
-export type FormReplied = {
-  id: EventID
-  created: number
-  metadata?: { [x: string]: any }
-  type: "form.replied"
-  location?: LocationRef
-  data: { id: FormID; sessionID: string; answer: FormAnswer2 }
-}
 
 export type SessionInboxMove = {
   id: SessionMessageID
@@ -2356,6 +2350,20 @@ export type ConfigEntry =
       }
     }
   | { type: "directory"; path: AbsolutePath }
+
+export type FormState =
+  | { status: "pending" }
+  | { status: "answered"; answer: FormAnswer; attachments?: FormAttachments }
+  | { status: "cancelled"; message?: string }
+
+export type FormReplied = {
+  id: EventID
+  created: number
+  metadata?: { [x: string]: any }
+  type: "form.replied"
+  location?: LocationRef
+  data: { id: FormID; sessionID: string; answer: FormAnswer2; attachments?: FormAttachments }
+}
 
 export type SessionInboxUser = {
   id: SessionMessageID
@@ -4894,6 +4902,7 @@ export type SessionFormCreateInput = {
               readonly description?: string
             }>
             readonly custom?: boolean
+            readonly attachments?: boolean
           }
         | {
             readonly key: string
@@ -4961,6 +4970,7 @@ export type SessionFormCreateInput = {
             readonly minItems?: number
             readonly maxItems?: number
             readonly custom?: boolean
+            readonly attachments?: boolean
             readonly default?: ReadonlyArray<string>
           }
         | {
@@ -4996,6 +5006,7 @@ export type SessionFormCreateInput = {
               readonly description?: string
             }>
             readonly custom?: boolean
+            readonly attachments?: boolean
           }
         | {
             readonly key: string
@@ -5063,6 +5074,7 @@ export type SessionFormCreateInput = {
             readonly minItems?: number
             readonly maxItems?: number
             readonly custom?: boolean
+            readonly attachments?: boolean
             readonly default?: ReadonlyArray<string>
           }
         | {
@@ -5105,6 +5117,7 @@ export type SessionFormCreateInput = {
               readonly description?: string
             }>
             readonly custom?: boolean
+            readonly attachments?: boolean
           }
         | {
             readonly key: string
@@ -5172,6 +5185,7 @@ export type SessionFormCreateInput = {
             readonly minItems?: number
             readonly maxItems?: number
             readonly custom?: boolean
+            readonly attachments?: boolean
             readonly default?: ReadonlyArray<string>
           }
         | {
@@ -5207,6 +5221,7 @@ export type SessionFormCreateInput = {
               readonly description?: string
             }>
             readonly custom?: boolean
+            readonly attachments?: boolean
           }
         | {
             readonly key: string
@@ -5274,6 +5289,7 @@ export type SessionFormCreateInput = {
             readonly minItems?: number
             readonly maxItems?: number
             readonly custom?: boolean
+            readonly attachments?: boolean
             readonly default?: ReadonlyArray<string>
           }
         | {
@@ -5316,6 +5332,7 @@ export type SessionFormCreateInput = {
               readonly description?: string
             }>
             readonly custom?: boolean
+            readonly attachments?: boolean
           }
         | {
             readonly key: string
@@ -5383,6 +5400,7 @@ export type SessionFormCreateInput = {
             readonly minItems?: number
             readonly maxItems?: number
             readonly custom?: boolean
+            readonly attachments?: boolean
             readonly default?: ReadonlyArray<string>
           }
         | {
@@ -5418,6 +5436,7 @@ export type SessionFormCreateInput = {
               readonly description?: string
             }>
             readonly custom?: boolean
+            readonly attachments?: boolean
           }
         | {
             readonly key: string
@@ -5485,6 +5504,7 @@ export type SessionFormCreateInput = {
             readonly minItems?: number
             readonly maxItems?: number
             readonly custom?: boolean
+            readonly attachments?: boolean
             readonly default?: ReadonlyArray<string>
           }
         | {
@@ -5527,6 +5547,7 @@ export type SessionFormCreateInput = {
               readonly description?: string
             }>
             readonly custom?: boolean
+            readonly attachments?: boolean
           }
         | {
             readonly key: string
@@ -5594,6 +5615,7 @@ export type SessionFormCreateInput = {
             readonly minItems?: number
             readonly maxItems?: number
             readonly custom?: boolean
+            readonly attachments?: boolean
             readonly default?: ReadonlyArray<string>
           }
         | {
@@ -5629,6 +5651,7 @@ export type SessionFormCreateInput = {
               readonly description?: string
             }>
             readonly custom?: boolean
+            readonly attachments?: boolean
           }
         | {
             readonly key: string
@@ -5696,6 +5719,7 @@ export type SessionFormCreateInput = {
             readonly minItems?: number
             readonly maxItems?: number
             readonly custom?: boolean
+            readonly attachments?: boolean
             readonly default?: ReadonlyArray<string>
           }
         | {
@@ -5723,8 +5747,21 @@ export type SessionFormReplyInput = {
   readonly sessionID: { readonly sessionID: string; readonly formID: string }["sessionID"]
   readonly formID: { readonly sessionID: string; readonly formID: string }["formID"]
   readonly answer: {
-    readonly answer: { readonly [x: string]: string | number | boolean | ReadonlyArray<string> }
+    readonly answer: {
+      readonly [x: string]: string | number | "Infinity" | "-Infinity" | "NaN" | boolean | ReadonlyArray<string>
+    }
+    readonly attachments?: {
+      readonly [x: string]: ReadonlyArray<{ readonly data: string; readonly mime: string; readonly name?: string }>
+    }
   }["answer"]
+  readonly attachments?: {
+    readonly answer: {
+      readonly [x: string]: string | number | "Infinity" | "-Infinity" | "NaN" | boolean | ReadonlyArray<string>
+    }
+    readonly attachments?: {
+      readonly [x: string]: ReadonlyArray<{ readonly data: string; readonly mime: string; readonly name?: string }>
+    }
+  }["attachments"]
 }
 
 export type SessionFormReplyOutput = void

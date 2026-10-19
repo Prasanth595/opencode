@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Deferred, Effect, Exit, Fiber } from "effect"
+import { Deferred, Effect, Exit, Fiber, Schema } from "effect"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Bus } from "@opencode/core/bus"
@@ -19,6 +19,77 @@ const input = {
 } satisfies Form.CreateInput
 
 describe("Form", () => {
+  it.effect("retains field-scoped attachments in form state and reply events", () =>
+    Effect.gen(function* () {
+      const service = yield* Form.Service
+      const bus = yield* Bus.Service
+      const event = yield* Deferred.make<unknown>()
+      const unsubscribe = yield* bus.listen((entry) =>
+        entry.type === Form.Event.Replied.type ? Deferred.succeed(event, entry.data).pipe(Effect.asVoid) : Effect.void,
+      )
+      yield* Effect.addFinalizer(() => unsubscribe)
+      const created = yield* service.create({
+        sessionID: "ses_test",
+        title: "Question",
+        fields: [{ key: "q0", type: "string", attachments: true }],
+      })
+      const attachments = { q0: [{ data: "AQID", mime: "image/png" }] }
+      yield* service.reply({ id: created.id, answer: {}, attachments })
+      expect(yield* service.state(created.id)).toEqual({ status: "answered", answer: {}, attachments })
+      expect(yield* Deferred.await(event)).toEqual({ id: created.id, sessionID: "ses_test", answer: {}, attachments })
+      expect(Schema.encodeSync(Form.Reply)({ answer: {}, attachments: undefined })).toEqual({ answer: {} })
+      expect(() =>
+        Schema.decodeUnknownSync(Form.Reply)({
+          answer: {},
+          attachments: { q0: [{ data: "not base64!", mime: "image/png" }] },
+        }),
+      ).toThrow()
+      expect(() =>
+        Schema.decodeUnknownSync(Form.Reply)({
+          answer: {},
+          attachments: { q0: [{ data: "AQID", mime: "text/plain" }] },
+        }),
+      ).toThrow()
+    }),
+  )
+
+  it.effect("rejects attachments to unknown, disabled, or inactive fields", () =>
+    Effect.gen(function* () {
+      const service = yield* Form.Service
+      const created = yield* service.create({
+        sessionID: "ses_test",
+        title: "Question",
+        fields: [
+          { key: "show", type: "boolean" },
+          { key: "disabled", type: "string" },
+          {
+            key: "q0",
+            type: "multiselect",
+            options: [],
+            attachments: true,
+            when: [{ key: "show", op: "eq", value: true }],
+          },
+        ],
+      })
+      for (const [key, message] of [
+        ["unknown", "Unknown form field: unknown"],
+        ["disabled", "Form field does not allow attachments: disabled"],
+        ["q0", "Form field is not active: q0"],
+      ]) {
+        expect(
+          yield* service
+            .reply({
+              id: created.id,
+              answer: { show: false },
+              attachments: { [key]: [{ mime: "image/png", data: "AQID" }] },
+            })
+            .pipe(Effect.flip),
+        ).toEqual(new Form.InvalidAnswerError({ id: created.id, message }))
+      }
+      expect(yield* service.state(created.id)).toEqual({ status: "pending" })
+    }),
+  )
+
   it.effect("validates absolute URI formats without restricting schemes", () =>
     Effect.sync(() => {
       const fields = [{ key: "uri", type: "string", format: "uri" }] satisfies ReadonlyArray<Form.Field>

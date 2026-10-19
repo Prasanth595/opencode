@@ -4,6 +4,7 @@ import { Schema } from "effect"
 import { ephemeral, inventory } from "./event.js"
 import { ascending } from "./identifier.js"
 import { NonNegativeInt, optional, statics } from "./schema.js"
+import { Base64 } from "./prompt.js"
 
 const IDSchema = Schema.String.check(Schema.isStartingWith("frm_")).pipe(
   Schema.brand("Form.ID"),
@@ -61,6 +62,7 @@ export const StringField = Schema.Struct({
   default: Schema.String.pipe(optional),
   options: Schema.Array(Option).pipe(optional),
   custom: Schema.Boolean.pipe(optional),
+  attachments: Schema.Boolean.pipe(optional).annotate({ description: "Allow image attachments alongside the answer" }),
 }).annotate({ identifier: "Form.StringField" })
 export interface StringField extends Schema.Schema.Type<typeof StringField> {}
 
@@ -96,6 +98,7 @@ export const MultiselectField = Schema.Struct({
   minItems: NonNegativeInt.pipe(optional),
   maxItems: NonNegativeInt.pipe(optional),
   custom: Schema.Boolean.pipe(optional),
+  attachments: Schema.Boolean.pipe(optional).annotate({ description: "Allow image attachments alongside the answer" }),
   default: Schema.Array(Schema.String).pipe(optional),
 }).annotate({ identifier: "Form.MultiselectField" })
 export interface MultiselectField extends Schema.Schema.Type<typeof MultiselectField> {}
@@ -149,9 +152,22 @@ export type Value = typeof Value.Type
 export const Answer = Schema.Record(Schema.String, Value).annotate({ identifier: "Form.Answer" })
 export type Answer = typeof Answer.Type
 
+export const Attachment = Schema.Struct({
+  data: Base64,
+  mime: Schema.String.check(Schema.isPattern(/^image\/[\w.+-]+$/)),
+  name: Schema.String.pipe(optional),
+}).annotate({ identifier: "Form.Attachment" })
+export interface Attachment extends Schema.Schema.Type<typeof Attachment> {}
+
+export const Attachments = Schema.Record(Schema.String, Schema.Array(Attachment)).annotate({
+  identifier: "Form.Attachments",
+  description: "Images associated with form field keys, separate from scalar answers",
+})
+export type Attachments = typeof Attachments.Type
+
 export const State = Schema.Union([
   Schema.Struct({ status: Schema.Literal("pending") }),
-  Schema.Struct({ status: Schema.Literal("answered"), answer: Answer }),
+  Schema.Struct({ status: Schema.Literal("answered"), answer: Answer, attachments: Attachments.pipe(optional) }),
   // A message tells the asker why nobody answered, e.g. a non-interactive client.
   Schema.Struct({ status: Schema.Literal("cancelled"), message: Schema.String.pipe(optional) }),
 ])
@@ -167,11 +183,15 @@ export interface Detail extends Schema.Schema.Type<typeof Detail> {}
 
 export const Reply = Schema.Struct({
   answer: Answer,
+  attachments: Attachments.pipe(optional),
 }).annotate({ identifier: "Form.Reply" })
 export interface Reply extends Schema.Schema.Type<typeof Reply> {}
 
 const Created = ephemeral({ type: "form.created", schema: { form: Info } })
-const Replied = ephemeral({ type: "form.replied", schema: { id: ID, sessionID: Schema.String, answer: Answer } })
+const Replied = ephemeral({
+  type: "form.replied",
+  schema: { id: ID, sessionID: Schema.String, ...Reply.fields },
+})
 const Cancelled = ephemeral({ type: "form.cancelled", schema: { id: ID, sessionID: Schema.String } })
 
 export const Event = { Created, Replied, Cancelled, Definitions: inventory(Created, Replied, Cancelled) }

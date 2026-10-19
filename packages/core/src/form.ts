@@ -69,9 +69,8 @@ export class InvalidFormError extends Schema.TaggedError<InvalidFormError>()("Fo
 
 export type CreateInput = Omit<Form.Info, "id"> & { readonly id?: ID }
 
-export interface ReplyInput {
+export interface ReplyInput extends Reply {
   readonly id: ID
-  readonly answer: Answer
 }
 
 export interface CancelOptions {
@@ -184,11 +183,27 @@ export const layer = Layer.effect(
           if (entry.state.status !== "pending") return yield* new AlreadySettledError({ id: input.id })
           const invalid = validateAnswer(entry.form.fields, input.answer)
           if (invalid) return yield* new InvalidAnswerError({ id: input.id, message: invalid })
-          const next: TerminalState = { status: "answered", answer: input.answer }
+          for (const key of Object.keys(input.attachments ?? {})) {
+            const field = entry.form.fields.find((field) => field.key === key)
+            if (!field) return yield* new InvalidAnswerError({ id: input.id, message: `Unknown form field: ${key}` })
+            if ((field.type !== "string" && field.type !== "multiselect") || !field.attachments)
+              return yield* new InvalidAnswerError({
+                id: input.id,
+                message: `Form field does not allow attachments: ${key}`,
+              })
+            if (!isActive(field, input.answer))
+              return yield* new InvalidAnswerError({ id: input.id, message: `Form field is not active: ${key}` })
+          }
+          const next: TerminalState = {
+            status: "answered",
+            answer: input.answer,
+            ...(input.attachments === undefined ? {} : { attachments: input.attachments }),
+          }
           yield* bus.publish(Form.Event.Replied, {
             id: input.id,
             sessionID: entry.form.sessionID,
             answer: input.answer,
+            ...(input.attachments === undefined ? {} : { attachments: input.attachments }),
           })
           yield* Cache.set(forms, input.id, { ...entry, state: next })
           yield* Deferred.succeed(entry.deferred, next)

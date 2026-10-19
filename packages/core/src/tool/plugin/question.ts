@@ -6,6 +6,7 @@ import { Effect, Schema } from "effect"
 import { Form } from "../../form.js"
 import { Permission } from "../../permission.js"
 import { Question } from "@opencode/schema/question"
+import { Tool } from "@opencode/schema/tool"
 
 export const name = "question"
 
@@ -35,11 +36,15 @@ export class CancelledError extends Schema.TaggedError<CancelledError>()("Questi
   }
 }
 
-export const toModelContent = (questions: ReadonlyArray<Question.Prompt>, answers: ReadonlyArray<Question.Answer>) => {
+export const toModelContent = (
+  questions: ReadonlyArray<Question.Prompt>,
+  answers: ReadonlyArray<Question.Answer>,
+  attachments?: Form.Reply["attachments"],
+) => {
   const formatted = questions
     .map(
       (question, index) =>
-        `"${question.question}"="${answers[index]?.length ? answers[index].join(", ") : "Unanswered"}"`,
+        `"${question.question}"="${answers[index]?.length ? answers[index].join(", ") : attachments?.[`q${index}`]?.length ? "Images attached" : "Unanswered"}"`,
     )
     .join(", ")
   return `User has answered your questions: ${formatted}. You can now continue with the user's answers in mind.`
@@ -105,7 +110,26 @@ export const Plugin = {
                   }
                   return Effect.succeed({
                     output,
-                    content: toModelContent(input.questions, output.answers),
+                    content: state.attachments
+                      ? [
+                          { type: "text", text: toModelContent(input.questions, output.answers, state.attachments) },
+                          ...input.questions.flatMap((question, index): Tool.Content[] => {
+                            const images = state.attachments?.[`q${index}`]
+                            if (!images?.length) return []
+                            return [
+                              { type: "text", text: `Images supplied for question "${question.question}":` },
+                              ...images.map(
+                                (image): Tool.FileContent => ({
+                                  type: "file",
+                                  uri: `data:${image.mime};base64,${image.data}`,
+                                  mime: image.mime,
+                                  ...(image.name === undefined ? {} : { name: image.name }),
+                                }),
+                              ),
+                            ]
+                          }),
+                        ]
+                      : toModelContent(input.questions, output.answers),
                     metadata: { answers: output.answers },
                   })
                 }),
@@ -128,5 +152,6 @@ function toField(question: Question.Prompt, index: number): Form.Field {
       description: option.description,
     })),
     custom: true,
+    attachments: true,
   }
 }
