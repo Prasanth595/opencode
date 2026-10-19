@@ -27,18 +27,17 @@ export const Plugin = define({
     const runSync = Effect.runSyncWith(yield* Effect.context())
     yield* ctx.provider.transform((providers) => {
       const current = policies()
-      const removed: Record<string, string[]> = {}
+      const denied: string[] = []
       for (const record of providers.list()) {
         const policy = current.findLast(
           (policy) => policy.action === "provider.use" && Wildcard.match(record.provider.id, policy.resource),
         )
         if (policy?.effect !== "deny") continue
         providers.remove(record.provider.id)
-        removed[policy.message] = [...(removed[policy.message] ?? []), record.provider.id]
+        // Skip unconfigured catalog entries; deny-all policies would otherwise log the whole catalog.
+        if (record.provider.activation === "enabled") denied.push(record.provider.id)
       }
-      // Removal is otherwise silent: the model later surfaces only as "Model unavailable".
-      for (const [reason, ids] of Object.entries(removed))
-        runSync(Effect.logDebug("providers removed by policy", { reason, providers: ids }))
+      if (denied.length) runSync(Effect.logDebug("providers denied by policy", { providers: denied }))
     })
     yield* ctx.mcp.transform((servers) => {
       const current = policies()
