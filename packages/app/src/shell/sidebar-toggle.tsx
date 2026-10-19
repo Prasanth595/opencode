@@ -9,8 +9,13 @@ import { useLanguage } from "@/runtime/i18n/language"
 import { usePlatform } from "@/runtime/platform/platform"
 import { useSettings } from "@/settings/model"
 
-// Native controls: 14px left inset, two 20px button pitches, and a 14px button.
-export const macTrafficLightsBaseWidth = 68
+// The desktop window sets `trafficLightPosition: { x: 14, y: 14 }`. macOS 26 and later draw 14px buttons on a 23px
+// pitch, so the zoom button ends 74px from the window edge and the buttons center 21px from the top. macOS 15 and earlier
+// end at 68px and center at 22px.
+export const macTrafficLightsBaseWidth = 74
+
+// Matches the horizontal titlebar, whose first control starts 16px past the traffic lights.
+const macTrafficLightsGap = 16
 
 // The toggle's 28px plus a 4px gap before the header contents.
 const slotWidth = 32
@@ -65,9 +70,11 @@ function useCollapsedSlot() {
   return {
     visible: () => desktop() && !windows() && settings.appearance.tabLayout() !== "horizontal",
     open: settings.appearance.sidebarOpen,
-    // Keep the toggle clear of the traffic lights, which end 68px from the window edge.
+    // Lays the toggle out as if the traffic lights were the header's first control.
     width: () =>
-      mac() ? macTrafficLightsBaseWidth / (platform.webviewZoom?.() ?? 1) - contentStart + slotWidth : slotWidth,
+      mac()
+        ? macTrafficLightsBaseWidth / (platform.webviewZoom?.() ?? 1) + macTrafficLightsGap - contentStart + slotWidth
+        : slotWidth,
   }
 }
 

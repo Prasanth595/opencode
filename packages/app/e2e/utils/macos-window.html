@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+  </head>
+  <body class="antialiased overscroll-none overflow-hidden">
+    <div id="root" class="flex flex-col h-dvh"></div>
+    <script type="module">
+      import { mount } from "./macos-window.fixture.tsx"
+      const query = new URLSearchParams(location.search)
+      mount({
+        server: query.get("server"),
+        route: query.get("route") ?? "/",
+        fullscreen: query.get("fullscreen") === "true",
+      })
+    </script>
+  </body>
+</html>

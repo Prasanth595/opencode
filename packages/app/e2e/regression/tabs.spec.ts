@@ -435,6 +435,34 @@ for (const [screen, href] of [
   })
 }
 
+// macOS 26 traffic lights end 74px from the window edge. The collapsed toggle starts 16px past them, as the horizontal
+// titlebar's first control does, and a fullscreen window has no traffic lights to clear.
+for (const [window, fullscreen, start] of [
+  ["windowed", false, 90],
+  ["fullscreen", true, 18],
+] as const) {
+  test(`collapsed sidebar toggle clears the macOS traffic lights (${window})`, async ({ page }) => {
+    await mockWorkspace(page, {
+      name: "Tabs",
+      sessions: [a],
+      seed: { settings: { appearance: { tabLayout: "vertical", sidebarOpen: false } }, tabs: [a.id] },
+    })
+    await page.goto(
+      `/e2e/utils/macos-window.html?${new URLSearchParams({ server: SERVER, route: sessionHref(a.id), fullscreen: String(fullscreen) })}`,
+    )
+    await expectSessionTitle(page, a.title)
+
+    const toggle = await page.locator("main").getByRole("button", { name: "Toggle sidebar", exact: true }).boundingBox()
+    const project = await page.locator('[data-session-title] [data-slot="session-project-trigger"]').boundingBox()
+
+    if (!toggle || !project) throw new Error("collapsed sidebar header has no bounding boxes")
+    expect(toggle.x).toBe(start)
+    // The header's contents follow the toggle on its center line.
+    expect(project.x).toBe(start + 32)
+    expect(project.y + project.height / 2).toBe(toggle.y + toggle.height / 2)
+  })
+}
+
 test("vertical tab gaps hover and select the nearest row", async ({ page }) => {
   await mockWorkspace(page, {
     name: "Tabs",
