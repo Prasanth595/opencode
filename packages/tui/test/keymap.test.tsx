@@ -139,3 +139,38 @@ test("global commands stay reachable when the mode changes", async () => {
     app.renderer.destroy()
   }
 })
+
+test("keypad CSI-u sequences reach commands bound to their kp names", async () => {
+  const calls: string[] = []
+
+  function Harness() {
+    Keymap.createLayer(() => ({
+      commands: [
+        { id: "session.last", run: () => void calls.push("session.last") },
+        { id: "session.parent", run: () => void calls.push("session.parent") },
+        { id: "diff.first", run: () => void calls.push("diff.first") },
+        { id: "diff.last", run: () => void calls.push("diff.last") },
+      ],
+    }))
+    return <box />
+  }
+
+  const app = await testRender(() => (
+    <ConfigProvider config={createTuiResolvedConfig()}>
+      <Keymap.Provider>
+        <Harness />
+      </Keymap.Provider>
+    </ConfigProvider>
+  ))
+  try {
+    // Windows Terminal reports NumPad End/Home as kitty CSI-u sequences
+    // (57424 = KP_End, 57423 = KP_Home) even outside full kitty mode.
+    await app.mockInput.pressKeys(["\u001b[57424u", "\u001b[57423u"])
+    await app.renderOnce()
+    // Transcript jumps no longer claim Home and End, including their keypad
+    // mirrors, so the prompt keeps the caret keys.
+    expect(calls).toEqual(["diff.last", "diff.first"])
+  } finally {
+    app.renderer.destroy()
+  }
+})
