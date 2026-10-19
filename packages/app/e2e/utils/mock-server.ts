@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test"
 import type { OpenCodeEvent, SessionMessageInfo } from "@opencode/client/promise"
+import type { PromptInput } from "@opencode/schema/prompt-input"
 import { Permission } from "@opencode/schema/permission"
 import { Model } from "@opencode/schema/model"
 import { Worktree } from "@opencode/schema/worktree"
@@ -138,7 +139,11 @@ export interface MockServerConfig {
   inbox?: unknown[] | (() => unknown[])
   onPrompt?: (input: { sessionID: string; body: Schema.JsonObject }) => void
   onCompact?: (input: { sessionID: string; body: Schema.JsonObject }) => void
-  generate?: (input: { sessionID: string; prompt: string }) => { text: string } | Promise<{ text: string }>
+  generate?: (input: {
+    sessionID: string
+    prompt: string
+    files?: PromptInput.Prompt["files"]
+  }) => { text: string } | Promise<{ text: string }>
   onInboxChange?: (input: { sessionID: string; inboxID: string; action: "cancel" | "steer" | "queue" }) => void
   // Serves `/api/pty*` and mock PTY WebSockets. Created IDs are the first unused `${prefix}<n>` (prefix must start with "pty").
   // `directory` is the owning workspace (Location); `cwd` is the reported working directory (default: `directory`).
@@ -1286,7 +1291,11 @@ function mockHandlers(
           }),
         sessionGenerate: (ctx) =>
           Effect.promise(async () => ({
-            data: (await config.generate?.({ sessionID: ctx.params.sessionID, prompt: ctx.payload.prompt })) ?? {
+            data: (await config.generate?.({
+              sessionID: ctx.params.sessionID,
+              prompt: ctx.payload.prompt,
+              files: ctx.payload.files,
+            })) ?? {
               text: "Side-question answer",
             },
           })),
@@ -1609,6 +1618,7 @@ const decodeModel = Schema.decodeUnknownOption(
   Schema.Struct({
     id: Schema.String,
     name: Schema.String,
+    capabilities: lenient(Model.Capabilities),
     api: lenient(Schema.Struct({ id: Schema.String })),
     limit: lenient(Schema.Struct({ context: lenient(Schema.Number), output: lenient(Schema.Number) })),
     cost: lenient(Schema.Struct({ input: lenient(Schema.Number), output: lenient(Schema.Number) })),
