@@ -326,6 +326,16 @@ function markCodeLinks(root: HTMLDivElement) {
   }
 }
 
+// Tables scroll inside a rounded frame, matching generated UI tables.
+function wrapTables(root: HTMLDivElement) {
+  root.querySelectorAll("table").forEach((table) => {
+    const wrapper = document.createElement("div")
+    wrapper.dataset.component = "markdown-table"
+    table.replaceWith(wrapper)
+    wrapper.appendChild(table)
+  })
+}
+
 const publicFaviconHost = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/
 
 const privateFaviconSuffix = /\.(?:alt|example|internal|invalid|local|localhost|onion|test|ts\.net)$/
@@ -916,6 +926,7 @@ function updateBlock(
   source.innerHTML = block.html
   markInlineCode(source, next, block.mode === "live", localFileExists)
   markCodeLinks(source)
+  wrapTables(source)
 
   if (sessionLinks) markSessionLinks(source)
   markExternalLinkFavicons(source)
