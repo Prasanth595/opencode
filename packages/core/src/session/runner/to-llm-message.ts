@@ -101,7 +101,7 @@ const userAttachmentContent = (files: readonly FileAttachment[]) => {
   })
 }
 
-const decodeToolInput = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
+const decodeToolInput = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)))
 
 const providerMetadata = (
   provider: string,
@@ -110,7 +110,7 @@ const providerMetadata = (
 
 const toolInput = (tool: SessionMessage.AssistantTool) =>
   tool.state.status === "streaming"
-    ? Option.getOrElse(decodeToolInput(tool.state.input), () => tool.state.input)
+    ? Option.getOrElse(decodeToolInput(tool.state.input), () => ({}))
     : tool.state.input
 
 const toolCall = (tool: SessionMessage.AssistantTool, providerMetadata: ProviderMetadata | undefined): ContentPart =>

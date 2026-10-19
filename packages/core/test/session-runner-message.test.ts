@@ -877,6 +877,70 @@ Earlier work
     ])
   })
 
+  test("lowers unparseable streaming tool arguments to an object", () => {
+    const messages = toLLMMessages(
+      [
+        SessionMessage.Assistant.make({
+          id: id("assistant-streaming-arguments"),
+          type: "assistant",
+          agent: build,
+          model: { id: Model.ID.make("model"), providerID: Provider.ID.make("provider") },
+          content: [
+            SessionMessage.AssistantTool.make({
+              type: "tool",
+              id: "invalid",
+              name: "shell",
+              state: SessionMessage.ToolStateStreaming.make({ status: "streaming", input: "not-json" }),
+              time: { created },
+            }),
+            SessionMessage.AssistantTool.make({
+              type: "tool",
+              id: "array",
+              name: "shell",
+              state: SessionMessage.ToolStateStreaming.make({ status: "streaming", input: '["pwd"]' }),
+              time: { created },
+            }),
+            SessionMessage.AssistantTool.make({
+              type: "tool",
+              id: "partial",
+              name: "shell",
+              state: SessionMessage.ToolStateStreaming.make({ status: "streaming", input: '{"command":"pwd"' }),
+              time: { created },
+            }),
+            SessionMessage.AssistantTool.make({
+              type: "tool",
+              id: "valid",
+              name: "shell",
+              state: SessionMessage.ToolStateStreaming.make({ status: "streaming", input: '{"command":"pwd"}' }),
+              time: { created },
+            }),
+            SessionMessage.AssistantTool.make({
+              type: "tool",
+              id: "running",
+              name: "shell",
+              state: SessionMessage.ToolStateRunning.make({
+                status: "running",
+                input: { command: "pwd" },
+                metadata: {},
+              }),
+              time: { created },
+            }),
+          ],
+          time: { created, completed: created },
+        }),
+      ],
+      model,
+    )
+
+    expect(messages[0]?.content.filter((part) => part.type === "tool-call")).toEqual([
+      { type: "tool-call", id: "invalid", name: "shell", input: {} },
+      { type: "tool-call", id: "array", name: "shell", input: {} },
+      { type: "tool-call", id: "partial", name: "shell", input: {} },
+      { type: "tool-call", id: "valid", name: "shell", input: { command: "pwd" } },
+      { type: "tool-call", id: "running", name: "shell", input: { command: "pwd" } },
+    ])
+  })
+
   test("restores OpenAI encrypted reasoning metadata", () => {
     const messages = toLLMMessages(
       [
