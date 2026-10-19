@@ -755,6 +755,8 @@ describe("Vcs", () => {
             if (Exit.isFailure(working)) expect(Cause.squash(working.cause)).toBeInstanceOf(Vcs.DiffError)
             const committed = yield* vcs.diff("committed").pipe(Effect.exit)
             expect(Exit.isFailure(committed)).toBeTrue()
+            const base = yield* vcs.base().pipe(Effect.exit)
+            expect(Exit.isFailure(base)).toBeTrue()
           }).pipe(provide(worktree, { git: true, worktree })),
         ),
       ),
