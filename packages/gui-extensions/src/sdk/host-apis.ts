@@ -622,9 +622,9 @@ export interface Sessions {
 /**
  * Where a panel key stands in a session.
  * - `closed`: not in the strip.
- * - `open`: in the strip, not selected.
- * - `active`: selected, with the side region closed.
- * - `visible`: selected and on screen.
+ * - `open`: in the strip, not the tab its pane shows.
+ * - `active`: the tab its pane shows, with the pane hidden (the side region closed, or the bottom pane hidden).
+ * - `visible`: the tab its pane shows, on screen.
  */
 export type PanelState = "closed" | "open" | "active" | "visible"
 
@@ -650,7 +650,7 @@ export interface OpenOptions {
 /**
  * The session layout: side panel tabs, scroll offsets, and the settings and project dialogs. Panel keys are
  * `${extension}:${tab id}`. Nothing throws before the app interface mounts: `ready()` is false, reads return what an
- * empty layout holds (each says its default), and writes (`open`, `close`, `toggle`, `side.toggle`, `scroll.set`,
+ * empty layout holds (each says its default), and writes (`open`, `close`, `toggle`, `hide`, `side.toggle`, `scroll.set`,
  * `settings`, `project`) wait and apply in call order once it mounts.
  */
 export interface Layout {
@@ -683,6 +683,15 @@ export interface Layout {
    * @param session - The session whose strip changes.
    */
   toggle(key: string, session: SessionRef): void
+  /**
+   * Hides the pane that shows a visible tab without closing the tab: the side region for a tab in the side panes, the
+   * bottom pane for a tab the user moved there. Does nothing unless `state` is "visible". Opening the tab again shows
+   * its pane.
+   *
+   * @param key - `${extension}:${tab id}`.
+   * @param session - The session whose pane hides.
+   */
+  hide(key: string, session: SessionRef): void
   /**
    * Where a key stands. "closed" while the session's location is unknown and before the app interface mounts.
    * Reactive.

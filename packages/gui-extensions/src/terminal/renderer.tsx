@@ -86,10 +86,10 @@ const setup: Setup<typeof Terminal> = (ctx) => {
 
         if (!pty) return create(target.session, target.terminal)
 
-        // A visible tab hides with the side region; a narrow screen has no strip, so there the command only shows it.
+        // A visible tab hides with its pane; a narrow screen has no strip, so there the command only shows it.
         if (!layout.narrow() && layout.state(key(terminalTab(pty)), target.session) === "visible") {
           target.terminal.cancelFocus()
-          layout.side.toggle(target.session)
+          layout.hide(key(terminalTab(pty)), target.session)
 
           return
         }

@@ -553,6 +553,8 @@ export function mountBrowserPane(input: PaneHost) {
 }
 
 type StripTabs = {
+  /** The stored strip; the fixture keeps every tab in the side pane. */
+  tabs(): { all: string[]; active?: string }
   all(): string[]
   active(): string | undefined
   setAll(all: string[]): void
@@ -731,6 +733,7 @@ export function mountBrowserRegion(input: RegionHost) {
       },
       close: (key, session) => close(session.key, key),
       toggle() {},
+      hide() {},
       state(key, session) {
         if (strip(session.key).active === key) return "visible"
 
@@ -869,6 +872,7 @@ export function mountBrowserRegion(input: RegionHost) {
         view,
         screen,
         tabs: () => ({
+          tabs: () => strip(view().key),
           all: () => strip(view().key).all,
           active: () => strip(view().key).active,
           setAll: (all) => setAll(view().key, all),

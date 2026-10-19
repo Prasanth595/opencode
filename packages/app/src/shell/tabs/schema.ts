@@ -54,6 +54,9 @@ export const Regions = Schema.Record(
     Persistence.struct({
       side: Schema.optional(Schema.Boolean),
       sessionWidth: Schema.optional(Schema.Finite),
+      bottom: Schema.optional(Schema.Boolean),
+      bottomHeight: Schema.optional(Schema.Finite),
+      splitRatio: Schema.optional(Schema.Finite),
     }).pipe(Schema.encodeKeys({ side: "review" })),
   ),
 )

@@ -16,6 +16,7 @@ import {
   type SessionScreen,
 } from "@opencode/gui-extensions/sdk"
 import { same } from "@/runtime/persistence/equality"
+import { sessionTabPane, type SessionPane, type SessionTabs } from "@/shell/state/session-tabs"
 import { Persist, persisted } from "@/runtime/persistence/storage"
 import { Persistence } from "@/runtime/persistence/schema"
 import { useExtensionHost } from "./host"
@@ -24,6 +25,7 @@ import { useExtensionAttachment } from "./attachment"
 import { legacyKeys, panelKey } from "./panel-keys"
 
 type Tabs = Accessor<{
+  tabs(): SessionTabs
   all(): string[]
   active(): string | undefined
   setAll(all: string[]): void
@@ -37,6 +39,20 @@ export type RegionEntry = {
   readonly extension: string
   readonly tab: PanelTab
   readonly provider: Panel
+}
+
+/** One pane of the region: its tabs, in strip order, and the tab it shows. */
+export type RegionPane = {
+  readonly id: SessionPane
+  /** Every tab listed in the pane, stored or not. */
+  readonly entries: Accessor<RegionEntry[]>
+  /** Drawn strip order by key. Renders iterate keys so a provider's fresh tab objects never remount a trigger. */
+  readonly keys: Accessor<string[]>
+  readonly active: Accessor<string | undefined>
+  readonly selected: Accessor<RegionEntry | undefined>
+  /** An extension's tab ids stored in this pane. */
+  readonly openFor: (extension: string) => string[]
+  readonly lead: () => boolean
 }
 
 const SidebarState = Persistence.struct({
@@ -164,6 +180,19 @@ export function createRegion(input: {
     ]
   })
 
+  // A pinned tab shows in the side pane. A listed tab the strip does not store, e.g. a terminal another session opened,
+  // belongs with its extension's last stored tab, so a grouped render stays in one pane.
+  const paneOf = (entry: RegionEntry): SessionPane => {
+    const tabs = input.tabs().tabs()
+
+    if (entry.tab.pinned) return "side"
+
+    if (tabs.all.includes(entry.key)) return sessionTabPane(tabs, entry.key)
+    const sibling = tabs.all.findLast((key) => key.startsWith(`${entry.extension}:`))
+
+    return sibling ? sessionTabPane(tabs, sibling) : "side"
+  }
+
   // Narrow screens never select a transient tab: a stored one falls back like a missing tab.
   const desktop = createMediaQuery("(min-width: 768px)")
 
@@ -172,7 +201,9 @@ export function createRegion(input: {
 
     if (value && strip().some((entry) => entry.key === value && (desktop() || !entry.tab.transient))) return value
 
-    const eligible = strip().filter((entry) => entry.tab.fallback && (desktop() || !entry.tab.transient))
+    const eligible = strip().filter(
+      (entry) => paneOf(entry) === "side" && entry.tab.fallback && (desktop() || !entry.tab.transient),
+    )
 
     return [
       ...eligible.filter((entry) => !entry.tab.pinned && !entry.tab.first),
@@ -198,13 +229,65 @@ export function createRegion(input: {
     }),
   )
 
-  // Hidden tabs keep their place in the strip for selection, focus, and close, but draw no trigger.
-  const drawn = createMemo(() => strip().filter((entry) => !entry.tab.hidden))
+  const createPane = (pane: SessionPane): RegionPane => {
+    const paneStrip = createMemo(() => strip().filter((entry) => paneOf(entry) === pane))
+    const drawn = createMemo(() => paneStrip().filter((entry) => !entry.tab.hidden))
+
+    const paneActive = createMemo(() => {
+      const key = active()
+      const members = paneStrip()
+
+      if (key && members.some((entry) => entry.key === key)) return key
+      const shown = input.tabs().tabs().selected?.[pane]
+
+      if (shown && members.some((entry) => entry.key === shown && (desktop() || !entry.tab.transient))) return shown
+
+      if (pane !== "side") return members[0]?.key
+      const eligible = members.filter((entry) => entry.tab.fallback && (desktop() || !entry.tab.transient))
+
+      return [
+        ...eligible.filter((entry) => !entry.tab.pinned && !entry.tab.first),
+        ...eligible.filter((entry) => !entry.tab.pinned && entry.tab.first),
+        ...eligible.filter((entry) => entry.tab.pinned),
+      ][0]?.key
+    })
+
+    return {
+      id: pane,
+      entries: createMemo(() => entries().filter((entry) => paneOf(entry) === pane)),
+      keys: createMemo(() => drawn().map((entry) => entry.key), [], { equals: same }),
+      active: paneActive,
+      selected: createMemo(() => {
+        const key = paneActive()
+
+        return key ? byKey().get(key) : undefined
+      }),
+      openFor: (extension: string) =>
+        stored().flatMap((key) =>
+          key.startsWith(`${extension}:`) && sessionTabPane(input.tabs().tabs(), key) === pane
+            ? [key.slice(extension.length + 1)]
+            : [],
+        ),
+      lead: () => !!drawn().find((entry) => !entry.tab.pinned)?.tab.first,
+    }
+  }
+
+  const panes: Record<SessionPane, RegionPane> = {
+    side: createPane("side"),
+    split: createPane("split"),
+    bottom: createPane("bottom"),
+  }
+
+  const activePane = createMemo(() => {
+    const entry = byKey().get(active() ?? "")
+
+    return entry ? paneOf(entry) : "side"
+  })
 
   return {
     entries,
-    /** Drawn strip order by key. Renders iterate keys so a provider's fresh tab objects never remount a trigger. */
-    keys: createMemo(() => drawn().map((entry) => entry.key), [], { equals: same }),
+    /** The drawn strip of the pane that holds the selected tab, by key. */
+    keys: () => panes[activePane()].keys(),
     entry: (key: string) => byKey().get(key),
     active,
     selected: createMemo(() => {
@@ -212,11 +295,16 @@ export function createRegion(input: {
 
       return key ? byKey().get(key) : undefined
     }),
+    pane: (pane: SessionPane) => panes[pane],
+    paneOf: (key: string): SessionPane => {
+      const entry = byKey().get(key)
+
+      return entry ? paneOf(entry) : sessionTabPane(input.tabs().tabs(), key)
+    },
     wide: createMemo(() => providers().some((item) => item.value.wide)),
     /** An extension's tab ids in the stored strip. */
     openFor: (extension: string) =>
       stored().flatMap((key) => (key.startsWith(`${extension}:`) ? [key.slice(extension.length + 1)] : [])),
-    lead: () => !!drawn().find((entry) => !entry.tab.pinned)?.tab.first,
     select(key: string) {
       input.tabs().setActive(key)
     },
@@ -238,17 +326,17 @@ export type Region = ReturnType<typeof createRegion>
 
 /** Grouped content stays mounted while any member is listed; other tabs mount only while selected. */
 export function RegionContent(props: {
-  region: Region
+  pane: RegionPane
   view: MountedSession
   screen: SessionScreen
   frame: Omit<PanelFrame, "visible" | "open"> & { shown: Accessor<boolean> }
 }) {
   const groups = createMemo(() =>
-    Array.from(new Set(props.region.entries().flatMap((entry) => (entry.tab.group ? [groupKey(entry)] : [])))),
+    Array.from(new Set(props.pane.entries().flatMap((entry) => (entry.tab.group ? [groupKey(entry)] : [])))),
   )
 
   const single = createMemo(() => {
-    const entry = props.region.selected()
+    const entry = props.pane.selected()
 
     return entry && !entry.tab.group ? entry.key : undefined
   })
@@ -258,15 +346,15 @@ export function RegionContent(props: {
       <For each={groups()}>
         {(group) => {
           const active = () => {
-            const entry = props.region.selected()
+            const entry = props.pane.selected()
 
             return !!entry && groupKey(entry) === group
           }
 
           // The last selected member keeps rendering while the group is hidden.
           const member = createMemo<RegionEntry | undefined>((previous) => {
-            const members = props.region.entries().filter((entry) => groupKey(entry) === group)
-            const selected = props.region.selected()
+            const members = props.pane.entries().filter((entry) => groupKey(entry) === group)
+            const selected = props.pane.selected()
 
             if (selected && groupKey(selected) === group) return selected
 
@@ -289,7 +377,7 @@ export function RegionContent(props: {
                     value={{
                       ...props.frame,
                       visible: () => props.frame.shown() && active(),
-                      open: () => props.region.openFor(extension),
+                      open: () => props.pane.openFor(extension),
                     }}
                   >
                     <Contribution extension={extension}>
@@ -312,7 +400,7 @@ export function RegionContent(props: {
       </For>
       <Show when={single()} keyed>
         {(key) => {
-          const entry = createMemo(() => props.region.entries().find((item) => item.key === key))
+          const entry = createMemo(() => props.pane.entries().find((item) => item.key === key))
 
           return (
             <Show when={entry()?.extension} keyed>
@@ -326,7 +414,7 @@ export function RegionContent(props: {
                   class="flex flex-col h-full overflow-hidden contain-strict"
                 >
                   <PanelContext.Provider
-                    value={{ ...props.frame, visible: props.frame.shown, open: () => props.region.openFor(extension) }}
+                    value={{ ...props.frame, visible: props.frame.shown, open: () => props.pane.openFor(extension) }}
                   >
                     <Contribution extension={extension}>
                       {() =>

@@ -13,7 +13,7 @@ import { Tooltip } from "@opencode/ui/tooltip"
 import { Keybind } from "@opencode/ui/keybind"
 import { createKeyed, useExtension, usePanel, type MountedSession } from "../sdk"
 import type { TerminalModel, TerminalWorkspace } from "./model"
-import type { LocalPTY } from "./state"
+import { terminalTab, type LocalPTY } from "./state"
 import { SortableTerminalTab } from "./tab"
 import { Terminal } from "./terminal"
 import { terminalTabLabel } from "./title"
@@ -134,6 +134,18 @@ export default function TerminalPanel(props: { model: TerminalModel; session: Mo
     return props.model.handoff.get(workspaceKey()) ?? []
   })
 
+  // Terminals whose tabs the user moved to another pane render there, so this pane lets their screens go.
+  const elsewhere = createMemo(
+    () => {
+      if (mobile()) return new Set<string>()
+      const open = frame.open()
+
+      return new Set(extension.layout.stored(props.session).filter((id) => !open.includes(id)))
+    },
+    new Set<string>(),
+    { equals: (previous, next) => previous.size === next.size && [...next].every((id) => previous.has(id)) },
+  )
+
   // Keeps each shown terminal mounted for the workspaces shown last, so switching back keeps its screen and session. A
   // terminal mounts, and connects, once it is shown, not while the panel only holds its tab hidden.
   createKeyed(
@@ -142,6 +154,7 @@ export default function TerminalPanel(props: { model: TerminalModel; session: Mo
       ready: terminal().ready(),
       active: opened() ? active() : undefined,
       ptys: terminal().all(),
+      elsewhere: elsewhere(),
     }),
     (current) => {
       if (!current.ready) return
@@ -149,7 +162,9 @@ export default function TerminalPanel(props: { model: TerminalModel; session: Mo
       const ids = new Set(current.ptys.map((pty) => pty.id))
 
       const surfaces = store.surfaces.filter(
-        (surface) => surface.workspace !== current.workspace || ids.has(surface.pty.id),
+        (surface) =>
+          surface.workspace !== current.workspace ||
+          (ids.has(surface.pty.id) && !current.elsewhere.has(terminalTab(surface.pty))),
       )
 
       const pty = current.ptys.find((item) => item.id === current.active)
@@ -178,7 +193,8 @@ export default function TerminalPanel(props: { model: TerminalModel; session: Mo
         previous.workspace === next.workspace &&
         previous.ready === next.ready &&
         previous.active === next.active &&
-        previous.ptys === next.ptys,
+        previous.ptys === next.ptys &&
+        previous.elsewhere === next.elsewhere,
     },
   )
 

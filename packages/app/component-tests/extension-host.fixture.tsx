@@ -65,6 +65,7 @@ const layout: Layout = {
   open() {},
   close() {},
   toggle() {},
+  hide() {},
   state: () => "closed",
   stored: () => [],
   side: { opened: () => false, toggle() {} },
@@ -332,6 +333,7 @@ function standIn(overrides: Partial<Interface>): Interface {
       open() {},
       close() {},
       toggle() {},
+      hide() {},
       state: () => "closed",
       stored: () => [],
       side: { opened: () => true, toggle() {} },
@@ -416,6 +418,7 @@ export function mountSessionRegion(input: { definitions: readonly Definition[]; 
       view,
       screen,
       tabs: () => ({
+        tabs: () => ({ all: all(), active: input.active }),
         all,
         active: () => input.active,
         setAll() {},
@@ -437,7 +440,7 @@ export function mountSessionRegion(input: { definitions: readonly Definition[]; 
           }}
         />
         <RegionContent
-          region={region}
+          pane={region.pane("side")}
           view={view()}
           screen={screen}
           frame={{

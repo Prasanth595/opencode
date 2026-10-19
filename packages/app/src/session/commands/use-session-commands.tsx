@@ -453,6 +453,19 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       keybind: "mod+shift+r",
       onSelect: () => actions.session.layout.view().side.toggle(),
     }),
+    ...(actions.region.pane("bottom").keys().length > 0
+      ? [
+          viewCommand({
+            id: "bottom.toggle",
+            title: language.t("command.bottom.toggle"),
+            keybind: "mod+j",
+            onSelect: () => {
+              const bottom = actions.session.layout.view().bottom
+              bottom.setOpened(!bottom.opened())
+            },
+          }),
+        ]
+      : []),
     ...(shown()
       ? [
           viewCommand({

@@ -1,4 +1,5 @@
 import {
+  batch,
   ErrorBoundary,
   For,
   Show,
@@ -29,7 +30,12 @@ import { createMountedSession } from "@/runtime/extension/mounted-session"
 import { useUsageExceededDialogs } from "./usage-exceeded-dialogs"
 import { SessionErrorFallback } from "./route-error"
 import { createSessionScreenLayout } from "./screen-layout"
-import { SideRegion } from "@/runtime/extension/side-region"
+import { PaneTabs, SideRegion } from "@/runtime/extension/side-region"
+import { createPaneDrag } from "@/runtime/extension/pane-drag"
+import { useLanguage } from "@/runtime/i18n/language"
+import { IconButton } from "@opencode/ui/icon-button"
+import { Icon } from "@opencode/ui/icon"
+import { Tooltip } from "@opencode/ui/tooltip"
 import { createSessionTimelineInteraction } from "./timeline/interaction"
 import { createTimelineSearchController } from "./timeline/search-controller"
 import { TimelineSearchBar } from "./timeline/search-bar"
@@ -65,6 +71,7 @@ function SessionScreenContent(props: {
 }) {
   const session = props.session
   const host = useExtensionHost()
+  const language = useLanguage()
   const attachment = useExtensionAttachment()
   const settings = useSettings()
   const isDesktop = session.isDesktop
@@ -80,6 +87,19 @@ function SessionScreenContent(props: {
 
   onCleanup(attachment.region(region))
   const mobile = createMobileViews()
+
+  const bottomTabs = createMemo(() => region.pane("bottom").keys().length > 0)
+  const bottomOpen = createMemo(() => bottomTabs() && session.layout.view().bottom.opened())
+
+  const drag = createPaneDrag({
+    shown: (pane) => (pane === "bottom" ? bottomOpen() : region.pane(pane).keys().length > 0),
+    drop: (key, target) =>
+      batch(() => {
+        session.layout.tabs().move(key, target.pane, target.before)
+
+        if (target.pane === "bottom") session.layout.view().bottom.setOpened(true)
+      }),
+  })
 
   const screen = createSessionScreenLayout(session, {
     wide: region.wide,
@@ -331,7 +351,7 @@ function SessionScreenContent(props: {
   return (
     <>
       <div class="flex-1 min-h-0 flex flex-col gap-2 px-[var(--shell-inline-inset,8px)] pb-[var(--shell-bottom-inset,8px)] pt-[var(--shell-top-inset,8px)]">
-        <div ref={screen.panel.ref} class="relative flex-1 min-h-0 flex flex-col md:flex-row gap-2">
+        <div ref={screen.panel.ref} data-pane-row class="relative flex-1 min-h-0 flex flex-col md:flex-row gap-2">
           {/* Keep the control outside panel animations. */}
           <Show when={isDesktop() && messagesReady() && session.identity.params.id}>
             <div
@@ -427,6 +447,7 @@ function SessionScreenContent(props: {
                         fileTree={screen.files.open()}
                         present={store.sideTabsPresent}
                         size={screen.size}
+                        drag={drag}
                       />
                     </div>
                   </Show>
@@ -435,7 +456,63 @@ function SessionScreenContent(props: {
             </div>
           </Show>
         </div>
+
+        {/* Hidden rather than unmounted while the user hides it, so its terminals keep their screens. */}
+        <Show when={isDesktop() && !!session.identity.params.id && bottomTabs()}>
+          <div
+            data-slot="session-bottom-pane"
+            class="relative shrink-0 min-h-0"
+            classList={{ hidden: !bottomOpen() }}
+            style={{ height: `${session.layout.view().bottom.height()}px` }}
+          >
+            <div onPointerDown={() => screen.size.start()}>
+              <ResizeHandle
+                direction="vertical"
+                edge="start"
+                size={session.layout.view().bottom.height()}
+                min={BOTTOM_PANE_HEIGHT_MIN}
+                max={typeof window === "undefined" ? 600 : Math.round(window.innerHeight * 0.7)}
+                onResize={(height) => {
+                  screen.size.touch()
+                  session.layout.view().bottom.resize(height)
+                }}
+              />
+            </div>
+            <section
+              id="bottom-panel"
+              aria-label={language.t("session.panel.bottom")}
+              inert={!bottomOpen() || undefined}
+              class="size-full min-w-0 flex flex-col overflow-hidden bg-v2-background-bg-base rounded-[10px] shadow-[var(--v2-elevation-raised)]"
+            >
+              <PaneTabs
+                pane={region.pane("bottom")}
+                region={region}
+                view={props.view()}
+                screen={props.screen}
+                sidebar={sidebar}
+                shown={bottomOpen}
+                present={bottomOpen}
+                animate={() => !screen.size.active()}
+                drag={drag}
+                end={
+                  <Tooltip value={language.t("session.panel.bottom.hide")} placement="bottom">
+                    <IconButton
+                      icon={<Icon name="chevron-down" />}
+                      variant="ghost-muted"
+                      size="large"
+                      aria-label={language.t("session.panel.bottom.hide")}
+                      onClick={() => session.layout.view().bottom.setOpened(false)}
+                    />
+                  </Tooltip>
+                }
+              />
+            </section>
+          </div>
+        </Show>
       </div>
+      <drag.Layer />
     </>
   )
 }
+
+const BOTTOM_PANE_HEIGHT_MIN = 120

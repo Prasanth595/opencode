@@ -39,6 +39,7 @@ import { useDirectoryPicker } from "@/workspaces/selection/picker"
 import { SessionRouteKey, SessionStateKey, type ServerScope } from "@/runtime/server/scope"
 import { findSessionTab, tabKey, useTabs } from "@/shell/tabs/tabs"
 import { useCurrentRoute, useLayout } from "@/shell/state/layout"
+import { sessionPaneTab, sessionTabPane, type SessionPane } from "@/shell/state/session-tabs"
 import { terminalFontFamily, useSettings } from "@/settings/model"
 import { useSettingsSurface } from "@/settings/surface"
 import { formatKeybindParts, useCommand } from "@/shell/commands/command"
@@ -301,6 +302,7 @@ export function createHostApis() {
       open: (key, session, options) => write((value) => value.layout.open(key, session, options)),
       close: (key, session) => write((value) => value.layout.close(key, session)),
       toggle: (key, session) => write((value) => value.layout.toggle(key, session)),
+      hide: (key, session) => write((value) => value.layout.hide(key, session)),
       state: (key, session) => current()?.layout.state(key, session) ?? "closed",
       stored: (session) => current()?.layout.stored(extension, session) ?? [],
       side: {
@@ -550,6 +552,18 @@ export function createExtensionAttachment(apis: HostApis) {
 
   const sideOpened = (session: SessionRef) => !!tabs.region(shellTab(session), "side")
 
+  // The side and split panes show with the side region; the bottom pane until the user hides it.
+  const paneOpened = (session: SessionRef, pane: SessionPane) =>
+    pane === "bottom" ? tabs.region(shellTab(session), "bottom", true) : sideOpened(session)
+
+  // Shows the pane a stored tab landed in.
+  const reveal = (session: SessionRef, value: string, key: string) =>
+    tabs.setRegion(
+      shellTab(session),
+      sessionTabPane(layout.panel.state(value), key) === "bottom" ? "bottom" : "side",
+      true,
+    )
+
   // A token per session whose side region is open, new each time the region opens.
   const sideVisits = createMemo<ReadonlyMap<string, object>>(
     (previous) =>
@@ -641,12 +655,12 @@ export function createExtensionAttachment(apis: HostApis) {
     // An append adds the tab quietly: no selection, no region change, no preview replacement.
     if (placement === "append") return layout.panel.append(value, key)
 
-    // A select keeps the narrow-screen view, as a background open does, and opens the side region too.
+    // A select keeps the narrow-screen view, as a background open does, and shows the tab's pane too.
     if (placement === "select")
       return batch(() => {
-        tabs.setRegion(shellTab(session), "side", true)
         layout.panel.append(value, key)
         layout.panel.focus(value, key)
+        reveal(session, value, key)
       })
     // Lists the opened tab too, so its own fields apply before it is stored. The next preview replaces a transient tab.
     const known = listed(session, value, key)
@@ -660,14 +674,13 @@ export function createExtensionAttachment(apis: HostApis) {
         if (mountedSession(session) && !known.some((entry) => entry.key === key && !entry.tab.transient)) return
       }
 
-      // A background open keeps the narrow-screen view, but its tab still shows once the window is wide.
-      if (!narrow() || options?.background) tabs.setRegion(shellTab(session), "side", true)
-
       // Pinned tabs are listed without being stored; opening one only selects it.
-      if (known.some((entry) => entry.key === key && entry.tab.pinned)) return layout.panel.focus(value, key)
+      if (known.some((entry) => entry.key === key && entry.tab.pinned)) layout.panel.focus(value, key)
+      else if (placement === "preview") layout.panel.preview(value, key, transient)
+      else layout.panel.open(value, key, transient, first)
 
-      if (placement === "preview") return layout.panel.preview(value, key, transient)
-      layout.panel.open(value, key, transient, first)
+      // A background open keeps the narrow-screen view, but its tab still shows once the window is wide.
+      if (!narrow() || options?.background) reveal(session, value, key)
     })
   }
 
@@ -701,11 +714,23 @@ export function createExtensionAttachment(apis: HostApis) {
 
     if (!value) return "closed"
     const panel = layout.panel.state(value)
-    const active = mountedSession(session) ? (region()?.active() ?? panel.active) : panel.active
+    const mounted = mountedSession(session) ? region() : undefined
+    const pane = mounted ? mounted.paneOf(key) : sessionTabPane(panel, key)
+    const shown = mounted ? mounted.pane(pane).active() : sessionPaneTab(panel, pane)
 
-    if (active !== key) return panel.all.includes(key) ? "open" : "closed"
+    if (shown !== key) return panel.all.includes(key) ? "open" : "closed"
 
-    return sideOpened(session) ? "visible" : "active"
+    return paneOpened(session, pane) ? "visible" : "active"
+  }
+
+  const hide = (key: string, session: SessionRef) => {
+    const value = stateKey(session)
+
+    if (!value) return located.hold(session, () => hide(key, session))
+
+    if (state(key, session) !== "visible") return
+    const pane = mountedSession(session) ? region()?.paneOf(key) : sessionTabPane(layout.panel.state(value), key)
+    tabs.setRegion(shellTab(session), pane === "bottom" ? "bottom" : "side", false)
   }
 
   // Open-project requests wait until their server is listed (e.g. an SSH server that just connected).
@@ -794,6 +819,7 @@ export function createExtensionAttachment(apis: HostApis) {
       open,
       close,
       toggle,
+      hide,
       state,
       stored(extension, session) {
         const value = stateKey(session)

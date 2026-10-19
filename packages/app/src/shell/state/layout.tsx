@@ -14,7 +14,16 @@ import { createScrollPersistence, type SessionScroll } from "./scroll"
 import { SessionStateKey } from "@/runtime/server/scope"
 import { createSessionKeyReader, ensureSessionKey, pruneSessionKeys } from "./helpers"
 import { requireServerKey } from "@/shell/routes/session"
-import { closeSessionTab, openSessionTab, previewSessionTab } from "./session-tabs"
+import {
+  closeSessionTab,
+  moveSessionTab,
+  openSessionTab,
+  placeSessionTabs,
+  previewSessionTab,
+  type SessionPane,
+  type SessionTabs,
+  type SessionTabState,
+} from "./session-tabs"
 
 const DEFAULT_SIDEBAR_WIDTH = 344
 
@@ -24,6 +33,8 @@ const DEFAULT_SESSION_WIDTH = 600
 
 const DEFAULT_DOCK_HEIGHT = 280
 
+const PANE_TARGET_TTL_MS = 10_000
+
 export type LocalProject = Partial<Project> & { worktree: string; expanded: boolean }
 
 export type HomeProjectSelection = typeof layoutSchema.Type.home.selection
@@ -31,8 +42,14 @@ export type HomeProjectSelection = typeof layoutSchema.Type.home.selection
 export type TabRegions = {
   sideOpened: Accessor<boolean>
   setSideOpened(opened: boolean): void
+  bottomOpened: Accessor<boolean>
+  setBottomOpened(opened: boolean): void
   sessionWidth: Accessor<number | undefined>
   setSessionWidth(width: number): void
+  bottomHeight: Accessor<number | undefined>
+  setBottomHeight(height: number): void
+  splitRatio: Accessor<number | undefined>
+  setSplitRatio(ratio: number): void
 }
 
 export type LayoutRoute =
@@ -79,6 +96,14 @@ export const useCurrentRoute = () => {
 const sessionTabsSchema = Persistence.struct({
   all: Persistence.array(Schema.String),
   active: Persistence.optional(Schema.String),
+  panes: Persistence.optional(Persistence.record(Schema.Literals(["split", "bottom"]))),
+  selected: Persistence.optional(
+    Persistence.struct({
+      side: Persistence.optional(Schema.String),
+      split: Persistence.optional(Schema.String),
+      bottom: Persistence.optional(Schema.String),
+    }),
+  ),
 })
 
 const sessionViewSchema = Persistence.struct({
@@ -167,7 +192,7 @@ export const layoutPersistence = Persistence.migrate(
         sessionTabs: Object.fromEntries(
           Object.entries(value.sessionTabs)
             .filter(([key]) => SessionStateKey.is(key))
-            .map(([key, tabs]) => [key, { all: [...new Set(tabs.all)], active: tabs.active }]),
+            .map(([key, tabs]) => [key, { ...tabs, all: [...new Set(tabs.all)] }]),
         ),
         sessionView: Object.fromEntries(Object.entries(value.sessionView).filter(([key]) => SessionStateKey.is(key))),
       })),
@@ -206,9 +231,44 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       initialLayout(servers.list[0] ? ServerConnection.key(servers.list[0]) : undefined),
     )
 
-    const [ephemeral, setEphemeral] = createStore<{ sessionTabPreview: Record<string, string | undefined> }>({
+    const [ephemeral, setEphemeral] = createStore<{
+      sessionTabPreview: Record<string, string | undefined>
+      // The pane a pane's "+" menu asked the next new tab to open in.
+      sessionTabTarget: Record<string, { pane: SessionPane; at: number } | undefined>
+    }>({
       sessionTabPreview: {},
+      sessionTabTarget: {},
     })
+
+    /** Writes a session's strip and selection, carrying pane placement over from the stored strip. */
+    const writeTabs = (session: string, next: SessionTabs, preview?: { value: string | undefined }) =>
+      untrack(() => {
+        const previous = store.sessionTabs[session] ?? { all: [] }
+        const target = ephemeral.sessionTabTarget[session]
+        const pending = target && Date.now() - target.at < PANE_TARGET_TTL_MS ? target.pane : undefined
+        const placed = placeSessionTabs(previous, next, pending)
+
+        batch(() => {
+          setStore("sessionTabs", session, {
+            all: placed.all,
+            active: placed.active,
+            panes: placed.panes,
+            selected: placed.selected,
+          })
+
+          if (preview) setEphemeral("sessionTabPreview", session, preview.value)
+
+          if (target && placed.all.some((tab) => !previous.all.includes(tab)))
+            setEphemeral("sessionTabTarget", session, undefined)
+        })
+      })
+
+    const tabState = (session: string): SessionTabState => ({
+      tabs: store.sessionTabs[session] ?? { all: [] },
+      preview: ephemeral.sessionTabPreview[session],
+    })
+
+    const applyTabs = (session: string, next: SessionTabState) => writeTabs(session, next.tabs, { value: next.preview })
 
     // Opening Home with its shortcut focuses session search, so typing filters immediately.
     let homeSearchFocus = false
@@ -502,6 +562,18 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
               regions.setSideOpened(!regions.sideOpened())
             },
           },
+          /** The pane under the session and the side region, shown while it holds tabs and the user has not hidden it. */
+          bottom: {
+            opened: regions.bottomOpened,
+            setOpened: regions.setBottomOpened,
+            height: createMemo(() => regions.bottomHeight() ?? DEFAULT_DOCK_HEIGHT),
+            resize: regions.setBottomHeight,
+          },
+          /** The share of the side region's height the side pane takes while a pane is split below it. */
+          split: {
+            ratio: createMemo(() => regions.splitRatio() ?? 0.5),
+            resize: regions.setSplitRatio,
+          },
           session: {
             width: createMemo(() => regions.sessionWidth() ?? DEFAULT_SESSION_WIDTH),
             resize: regions.setSessionWidth,
@@ -514,68 +586,43 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           return store.sessionTabs[session] ?? { all: [] }
         },
         open(session: string, tab: string, launchers?: ReadonlySet<string>, first?: boolean) {
-          const next = openSessionTab(
-            { tabs: store.sessionTabs[session] ?? { all: [] }, preview: ephemeral.sessionTabPreview[session] },
-            tab,
-            launchers,
-            first,
-          )
-
-          batch(() => {
-            setStore("sessionTabs", session, next.tabs)
-            setEphemeral("sessionTabPreview", session, next.preview)
-          })
+          applyTabs(session, openSessionTab(tabState(session), tab, launchers, first))
         },
         preview(session: string, tab: string, launchers?: ReadonlySet<string>) {
-          const next = previewSessionTab(
-            { tabs: store.sessionTabs[session] ?? { all: [] }, preview: ephemeral.sessionTabPreview[session] },
-            tab,
-            launchers,
-          )
-
-          batch(() => {
-            setStore("sessionTabs", session, next.tabs)
-            setEphemeral("sessionTabPreview", session, next.preview)
-          })
+          applyTabs(session, previewSessionTab(tabState(session), tab, launchers))
         },
         /** Adds a tab at the end of the strip without selecting it or touching the preview. */
         append(session: string, tab: string) {
-          const current = store.sessionTabs[session]
-
-          if (!current) return setStore("sessionTabs", session, { all: [tab] })
+          const current = store.sessionTabs[session] ?? { all: [] }
 
           if (current.all.includes(tab)) return
-          setStore("sessionTabs", session, "all", current.all.length, tab)
+          writeTabs(session, { ...current, all: [...current.all, tab] })
         },
         focus(session: string, tab: string) {
-          if (!store.sessionTabs[session]) {
-            setStore("sessionTabs", session, { all: [], active: tab })
-
-            return
-          }
-
-          setStore("sessionTabs", session, "active", tab)
+          writeTabs(session, { ...(store.sessionTabs[session] ?? { all: [] }), active: tab })
         },
         close(session: string, tab: string) {
           const current = store.sessionTabs[session]
 
           if (!current) return
-          const next = closeSessionTab({ tabs: current, preview: ephemeral.sessionTabPreview[session] }, tab)
-          batch(() => {
-            setStore("sessionTabs", session, next.tabs)
-            setEphemeral("sessionTabPreview", session, next.preview)
-          })
+          applyTabs(session, closeSessionTab(tabState(session), tab))
         },
         /**
-         * Replaces `to`'s strip, selection, preview tab and scroll offsets with copies of `from`'s, keeping `from`; a key
-         * with nothing stored copies as empty. `to` counts as just used, then pruning runs as for any new key.
+         * Replaces `to`'s strip, panes, selection, preview tab and scroll offsets with copies of `from`'s, keeping
+         * `from`; a key with nothing stored copies as empty. `to` counts as just used, then pruning runs as for any new
+         * key.
          */
         copy(from: string, to: string) {
           const current = store.sessionTabs[from]
           usage.used.set(to, Date.now())
           batch(() => {
             scroll.flush(from)
-            setStore("sessionTabs", to, { all: [...(current?.all ?? [])], active: current?.active })
+            setStore("sessionTabs", to, {
+              all: [...(current?.all ?? [])],
+              active: current?.active,
+              panes: current?.panes ? { ...current.panes } : undefined,
+              selected: current?.selected ? { ...current.selected } : undefined,
+            })
             setEphemeral("sessionTabPreview", to, ephemeral.sessionTabPreview[from])
             scroll.drop([to])
             setStore("sessionView", to, {
@@ -600,13 +647,6 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         const key = createSessionKeyReader(sessionKey, ensureKey)
         const tabs = createMemo(() => store.sessionTabs[key()] ?? { all: [] })
 
-        const apply = (session: string, next: ReturnType<typeof openSessionTab>) => {
-          batch(() => {
-            setStore("sessionTabs", session, next.tabs)
-            setEphemeral("sessionTabPreview", session, next.preview)
-          })
-        }
-
         return {
           tabs,
           active: createMemo(() => tabs().active),
@@ -614,26 +654,16 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           preview: createMemo(() => ephemeral.sessionTabPreview[key()]),
           setActive(tab: string | undefined) {
             const session = key()
-
-            if (!store.sessionTabs[session]) {
-              setStore("sessionTabs", session, { all: [], active: tab })
-            } else {
-              setStore("sessionTabs", session, "active", tab)
-            }
+            writeTabs(session, { ...(store.sessionTabs[session] ?? { all: [] }), active: tab })
           },
           setAll(all: string[]) {
             const session = key()
-            batch(() => {
-              if (!store.sessionTabs[session]) {
-                setStore("sessionTabs", session, { all, active: undefined })
-              } else {
-                setStore("sessionTabs", session, "all", all)
-              }
-
-              const preview = ephemeral.sessionTabPreview[session]
-
-              if (preview && !all.includes(preview)) setEphemeral("sessionTabPreview", session, undefined)
-            })
+            const preview = untrack(() => ephemeral.sessionTabPreview[session])
+            writeTabs(
+              session,
+              { ...(store.sessionTabs[session] ?? { all: [] }), all },
+              preview && !all.includes(preview) ? { value: undefined } : undefined,
+            )
           },
           /** Rewrites every stored key, the selected tab and the preview together; keys that collapse into one dedupe. */
           remap(rewrite: (tab: string) => string) {
@@ -651,54 +681,47 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             const changed = all.length !== current.all.length || all.some((tab, index) => tab !== current.all[index])
 
             if (!changed && active === current.active && nextPreview === preview) return
+
+            const panes = current.panes
+              ? Object.fromEntries(Object.entries(current.panes).map(([tab, pane]) => [rewrite(tab), pane]))
+              : undefined
+
+            const selected = current.selected
+              ? Object.fromEntries(
+                  Object.entries(current.selected).flatMap(([pane, tab]) => (tab ? [[pane, rewrite(tab)]] : [])),
+                )
+              : undefined
+
             batch(() => {
-              setStore("sessionTabs", session, { ...current, all, active })
+              setStore("sessionTabs", session, { all, active, panes, selected })
               setEphemeral("sessionTabPreview", session, nextPreview)
             })
           },
           async open(tab: string) {
             const session = key()
-            apply(
-              session,
-              openSessionTab(
-                { tabs: store.sessionTabs[session] ?? { all: [] }, preview: ephemeral.sessionTabPreview[session] },
-                tab,
-              ),
-            )
+            applyTabs(session, openSessionTab(tabState(session), tab))
           },
           previewTab(tab: string) {
             const session = key()
-            apply(
-              session,
-              previewSessionTab(
-                { tabs: store.sessionTabs[session] ?? { all: [] }, preview: ephemeral.sessionTabPreview[session] },
-                tab,
-              ),
-            )
+            applyTabs(session, previewSessionTab(tabState(session), tab))
           },
           close(tab: string) {
             const session = key()
-            const current = store.sessionTabs[session]
 
-            if (!current) return
-            apply(session, closeSessionTab({ tabs: current, preview: ephemeral.sessionTabPreview[session] }, tab))
+            if (!store.sessionTabs[session]) return
+            applyTabs(session, closeSessionTab(tabState(session), tab))
           },
-          move(tab: string, to: number) {
+          /** Moves a stored tab into `pane` before the tab `before`, or to the pane's end, and selects it. */
+          move(tab: string, pane: SessionPane, before?: string) {
             const session = key()
             const current = store.sessionTabs[session]
 
-            if (!current) return
-            const index = current.all.findIndex((f) => f === tab)
-
-            if (index === -1) return
-            setStore(
-              "sessionTabs",
-              session,
-              "all",
-              produce((opened) => {
-                opened.splice(to, 0, opened.splice(index, 1)[0])
-              }),
-            )
+            if (!current?.all.includes(tab)) return
+            writeTabs(session, moveSessionTab(current, tab, pane, before))
+          },
+          /** Opens the next new tab, e.g. one a pane's "+" menu creates, in `pane`. */
+          target(pane: SessionPane) {
+            setEphemeral("sessionTabTarget", key(), { pane, at: Date.now() })
           },
         }
       },
