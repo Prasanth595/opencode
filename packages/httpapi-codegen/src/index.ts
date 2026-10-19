@@ -1,7 +1,7 @@
 import { isAbsolute, join } from "node:path"
 import { Context, Effect, FileSystem, PlatformError, Schema, SchemaAST, SchemaRepresentation } from "effect"
-import { HttpMethod, type HttpRouter } from "effect/unstable/http"
-import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
+import { HttpMethod, type HttpRouter } from "effect/http"
+import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
 import { format } from "prettier"
 
 export type InputField = {
@@ -46,7 +46,10 @@ export type EffectOutputType = {
   readonly import: string
 }
 
-type ResolvedEffectTypeReference = Omit<EffectTypeReference, "schema"> & { readonly ast: SchemaAST.AST }
+type ResolvedEffectTypeReference = Omit<EffectTypeReference, "schema"> & {
+  readonly ast: SchemaAST.AST
+  readonly type: string | undefined
+}
 
 export class GenerationError extends Schema.TaggedError<GenerationError>()("GenerationError", {
   reason: Schema.String,
@@ -129,9 +132,12 @@ export function compile<Id extends string, Groups extends HttpApiGroup.Constrain
       }
       const payloads = sourcePayloads.map((schema) => normalizeTransport(schema, "payload", endpoint, name)!)
       const success = normalizeTransport(successSchemas[0], "success", endpoint, name)!
-      const errorSchemas = Array.from(errors).flatMap(([status, schemas]) =>
-        schemas.map((schema) => ({ status, ...normalizeTransport(schema, "error", endpoint, name)! })),
-      )
+      // Sort by status so output does not churn when middleware changes the declaration order.
+      const errorSchemas = Array.from(errors)
+        .toSorted(([a], [b]) => a - b)
+        .flatMap(([status, schemas]) =>
+          schemas.map((schema) => ({ status, ...normalizeTransport(schema, "error", endpoint, name)! })),
+        )
       const inputs = [
         ...inputFields(params?.schema, "params", name),
         ...inputFields(query?.schema, "query", name),
@@ -216,12 +222,17 @@ export function compile<Id extends string, Groups extends HttpApiGroup.Constrain
   const modules = new Set(["client", "client-error", "index"])
   const groups = Array.from(
     Map.groupBy(endpoints, (endpoint) => endpoint.group),
-    ([identifier, endpoints], index) => {
+    ([identifier, endpoints]) => {
       if (new Set(endpoints.map((endpoint) => endpoint.sourceGroup)).size > 1) {
         throw new GenerationError({ reason: `Client group name collision: ${identifier}` })
       }
-      const base = /^[A-Za-z0-9_-]+$/.test(identifier) ? identifier : `group-${index}`
-      const module = uniqueModule(base, index, modules)
+      // Module names derive from the group identifier so unrelated groups never rename.
+      const sanitized = identifier.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "")
+      const reserved = /^(aux|client|client-error|con|index|nul|prn|com[1-9]|lpt[1-9])$/i.test(sanitized)
+      const module = sanitized === "" || reserved ? `group-${sanitized}` : sanitized
+      if (modules.has(module.toLowerCase())) {
+        throw new GenerationError({ reason: `Client module name collision: ${module}` })
+      }
       modules.add(module.toLowerCase())
       return { identifier, sourceIdentifier: endpoints[0].sourceGroup, module, endpoints }
     },
@@ -341,7 +352,7 @@ export function emitPromise(
       { path: "types.ts", content: renderPromiseTypes(groups, options?.outputTypes, options?.mutableOutputs ?? false) },
       {
         path: "client-error.ts",
-        content: `export type ClientErrorReason = "Transport" | "UnexpectedStatus" | "UnsupportedContentType" | "MalformedResponse" | "SseEventTooLarge"\n\nexport class ClientError extends Error {\n  override readonly name = "ClientError"\n  constructor(readonly reason: ClientErrorReason, options?: ErrorOptions) {\n    super(reason, options)\n  }\n}\n`,
+        content: `export type ClientErrorReason = "Transport" | "UnexpectedStatus" | "UnsupportedContentType" | "MalformedResponse" | "SseEventTooLarge"\n\nexport class ClientError extends Error {\n  override readonly name = "ClientError"\n  constructor(readonly reason: ClientErrorReason, options?: ErrorOptions & { readonly detail?: string | null }) {\n    const detail = options?.detail ?? (options?.cause instanceof Error ? options.cause.message : undefined)\n    super(detail ? \`\${reason}: \${detail}\` : reason, options)\n  }\n}\n`,
       },
       {
         path: "client.ts",
@@ -363,9 +374,28 @@ function renderEffectShape(
 ) {
   const references = effectTypeReferences(typeReferences)
   const imports = new Set<string>()
-  const endpointTypes = groups.map((group, groupIndex) => {
-    const endpoints = group.endpoints.map((endpoint, endpointIndex) => {
-      const prefix = `Endpoint${groupIndex}_${endpointIndex}`
+  const externalNames = new Set([
+    "AppApi",
+    "Effect",
+    "Stream",
+    ...typeReferences.flatMap((reference) => reference.name.match(/^[A-Za-z_$][A-Za-z0-9_$]*/) ?? []),
+    ...Object.values(outputTypes ?? {}).flatMap((output) => output.name.match(/^[A-Za-z_$][A-Za-z0-9_$]*/) ?? []),
+  ])
+  const generatedNames = groups.flatMap((group) => [
+    groupShapeName(group),
+    ...group.endpoints.flatMap((endpoint) => [
+      ...(endpoint.operation.inputMode === "none" ? [] : [`${endpointTypeName(group, endpoint)}Input`]),
+      `${endpointTypeName(group, endpoint)}Output`,
+      groupShapeTypeName(group, endpoint),
+    ]),
+  ])
+  const collision = generatedNames.find((name) => externalNames.has(name))
+  if (collision !== undefined) {
+    throw new GenerationError({ reason: `Generated Effect type collides with imported type: ${collision}` })
+  }
+  const endpointTypes = groups.map((group) => {
+    const endpoints = group.endpoints.map((endpoint) => {
+      const prefix = endpointTypeName(group, endpoint)
       const input = endpoint.input
         .map((field) => {
           const schema = effectInputSchema(endpoint, field)
@@ -410,7 +440,7 @@ function renderEffectShape(
         ]
       : [`readonly ${JSON.stringify(group.identifier)}: ${groupShapeName(group)}<E>`],
   )
-  return `// Generated by @opencode-ai/httpapi-codegen. Do not edit.
+  return `// Generated by @opencode/httpapi-codegen. Do not edit.
 import type { Effect, Stream } from "effect"
 ${[...imports].join("\n")}
 
@@ -425,23 +455,19 @@ ${clientFields.join("\n")}
 function effectTypeReferences(input: ReadonlyArray<EffectTypeReference>) {
   const names = new Map<string, ResolvedEffectTypeReference>()
   const asts = new Map<SchemaAST.AST, ResolvedEffectTypeReference>()
-  const brands = new Map<string, ResolvedEffectTypeReference>()
   for (const reference of input) {
-    const value = { name: reference.name, import: reference.import, ast: reference.schema.ast }
+    if (SchemaAST.resolveIdentifier(reference.schema.ast) === undefined) continue
+    const projected = Schema.toType(reference.schema)
     const document = SchemaRepresentation.toCodeDocument(
-      SchemaRepresentation.toRepresentations([codegenAst(Schema.toType(reference.schema).ast)]),
+      SchemaRepresentation.toRepresentations([codegenAst(projected.ast)]),
     )
     const name = document.codes[0]?.Type
     const type =
-      name === undefined
-        ? undefined
-        : (document.references.nonRecursives.find((item) => item.$ref === name)?.code.Type ?? name)
-    if (type?.includes("Brand.Brand<") && !brands.has(type)) brands.set(type, value)
-    if (SchemaAST.resolveIdentifier(reference.schema.ast) !== undefined || type?.includes("Brand.Brand<")) {
-      asts.set(reference.schema.ast, value)
-      asts.set(Schema.toType(reference.schema).ast, value)
-    }
-    if (name === undefined || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)) continue
+      name === undefined ? undefined : document.references.nonRecursives.find((item) => item.$ref === name)?.code.Type
+    const value = { name: reference.name, import: reference.import, ast: reference.schema.ast, type }
+    asts.set(reference.schema.ast, value)
+    asts.set(projected.ast, value)
+    if (name === undefined || type === undefined || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)) continue
     const previous = names.get(name)
     if (previous !== undefined) {
       if (previous.ast !== reference.schema.ast) {
@@ -451,7 +477,7 @@ function effectTypeReferences(input: ReadonlyArray<EffectTypeReference>) {
     }
     names.set(name, value)
   }
-  return { names, asts, brands }
+  return { names, asts }
 }
 
 function effectType(schema: Schema.Top, references: ReturnType<typeof effectTypeReferences>, imports: Set<string>) {
@@ -472,7 +498,10 @@ function effectType(schema: Schema.Top, references: ReturnType<typeof effectType
         "g",
       )
       if (!pattern.test(type)) continue
-      const reference = references.names.get(name)
+      // Optional/encoded occurrences can acquire a numeric suffix. Reuse the named
+      // type only when its definition matches; a suffix can also denote a different shape.
+      const candidate = references.names.get(name.replace(/_\d+$/, ""))
+      const reference = references.names.get(name) ?? (candidate?.type === value ? candidate : undefined)
       if (reference !== undefined) {
         imports.add(reference.import)
         type = type.replace(pattern, reference.name)
@@ -483,13 +512,7 @@ function effectType(schema: Schema.Top, references: ReturnType<typeof effectType
     }
     return type
   }
-  let type = expand(document.codes[0].Type)
-  for (const [brand, reference] of references.brands) {
-    if (!type.includes(brand)) continue
-    imports.add(reference.import)
-    type = type.replaceAll(brand, reference.name)
-  }
-  if (type.includes("Brand.Brand<")) imports.add('import type { Brand } from "effect"')
+  const type = expand(document.codes[0].Type)
   if (type.includes("DateTime.")) imports.add('import type { DateTime } from "effect"')
   if (type.includes("Schema.")) imports.add('import type { Schema } from "effect"')
   return type
@@ -530,18 +553,34 @@ function groupShapeName(group: Group) {
   return `${identifierPart(group.identifier)}Api`
 }
 
+// Generated symbol names derive from group and endpoint identity, never from traversal
+// position, so adding an endpoint or group cannot rename unrelated generated code.
+// Uniqueness is validated by compile (groupTypeNames/endpointTypeNames).
+function groupTypeName(group: Group) {
+  return identifierPart(group.identifier)
+}
+
+function endpointTypeName(group: Group, endpoint: Endpoint) {
+  return `${groupTypeName(group)}${endpoint.clientPath.map(identifierPart).join("")}`
+}
+
+function endpointAdapterName(group: Group, endpoint: Endpoint) {
+  return `Endpoint${endpointTypeName(group, endpoint)}`
+}
+
 function groupShapeTypeName(group: Group, endpoint: Endpoint) {
-  return `${identifierPart(group.identifier)}${endpoint.clientPath.map(identifierPart).join("")}Operation`
+  return `${endpointTypeName(group, endpoint)}Operation`
 }
 
 function assertPromiseEndpoint(endpoint: Endpoint) {
   const name = `${endpoint.group}.${endpoint.endpoint.identifier}`
   const payload = endpoint.payloads[0]
-  const payloadEncoding = payload === undefined ? undefined : resolveHttpApiEncoding(payload.ast)
-  if (
-    payload !== undefined &&
-    (payloadEncoding?._tag ?? (HttpMethod.hasBody(endpoint.endpoint.method) ? "Json" : "FormUrlEncoded")) !== "Json"
-  ) {
+  const payloadEncoding =
+    payload === undefined
+      ? undefined
+      : (resolveHttpApiEncoding(payload.ast)?._tag ??
+        (HttpMethod.hasBody(endpoint.endpoint.method) ? "Json" : "FormUrlEncoded"))
+  if (payloadEncoding !== undefined && payloadEncoding !== "Json" && payloadEncoding !== "Uint8Array") {
     throw new GenerationError({ reason: `Unsupported Promise payload encoding: ${name}` })
   }
   const success = endpoint.successes[0]
@@ -585,7 +624,7 @@ function promiseOperations(groups: ReadonlyArray<Group>) {
 
 function renderEffectFiles(groups: ReadonlyArray<Group>): Output["files"] {
   return [
-    ...groups.map((group, index) => ({ path: `${group.module}.ts`, content: renderGroup(group, index) })),
+    ...groups.map((group) => ({ path: `${group.module}.ts`, content: renderGroup(group) })),
     {
       path: "client-error.ts",
       content:
@@ -610,10 +649,11 @@ function renderImportedEffectFiles(
         readonly shapeModule?: string
       },
 ): Output["files"] {
-  const adapters = groups.map((group, groupIndex) => {
+  const adapters = groups.map((group) => {
     const rawGroup = group.endpoints[0]?.topLevel ? "RawClient" : `RawClient[${JSON.stringify(group.sourceIdentifier)}]`
-    const methods = group.endpoints.map((item, endpointIndex) => {
-      const prefix = `Endpoint${groupIndex}_${endpointIndex}`
+    const methods = group.endpoints.map((item) => {
+      const prefix = endpointTypeName(group, item)
+      const adapter = endpointAdapterName(group, item)
       const schemaBySource = {
         params: item.params,
         query: item.query,
@@ -660,20 +700,22 @@ function renderImportedEffectFiles(
           : isOpaquePayload(item)
             ? `type ${prefix}Request = Parameters<${rawGroup}[${JSON.stringify(item.endpoint.identifier)}]>[0]\n`
             : ""
-      return `${declarations}const ${prefix} = (raw: ${rawGroup}) => (${argument}) => ${output}`
+      return `${declarations}const ${adapter} = (raw: ${rawGroup}) => (${argument}) => ${output}`
     })
     const fields = renderClientTree(
       group.endpoints,
-      (_item, endpointIndex) => `Endpoint${groupIndex}_${endpointIndex}(raw)`,
+      (item) => `${endpointAdapterName(group, item)}(raw)`,
       (name, value) => `${JSON.stringify(name)}: ${value}`,
       ", ",
     )
-    return `${methods.join("\n\n")}\n\nconst adaptGroup${groupIndex} = (raw: ${rawGroup}) => ({ ${fields} })`
+    return `${methods.join("\n\n")}\n\nconst adaptGroup${groupTypeName(group)} = (raw: ${rawGroup}) => ({ ${fields} })`
   })
-  const fields = groups.flatMap((group, index) =>
+  const fields = groups.flatMap((group) =>
     group.endpoints[0]?.topLevel
-      ? [`...adaptGroup${index}(raw)`]
-      : [`${JSON.stringify(group.identifier)}: adaptGroup${index}(raw[${JSON.stringify(group.sourceIdentifier)}])`],
+      ? [`...adaptGroup${groupTypeName(group)}(raw)`]
+      : [
+          `${JSON.stringify(group.identifier)}: adaptGroup${groupTypeName(group)}(raw[${JSON.stringify(group.sourceIdentifier)}])`,
+        ],
   )
   const usesStream = groups.some((group) => group.endpoints.some((item) => item.operation.success === "stream"))
   const imported = "api" in options
@@ -683,15 +725,24 @@ function renderImportedEffectFiles(
       ? renderImportedGroup(options.group)
       : renderImportedProjection(groups, options.endpoints)
   const api = imported ? options.api : "Api"
+  const adapterNames = new Set(
+    groups.flatMap((group) => group.endpoints.map((endpoint) => endpointAdapterName(group, endpoint))),
+  )
+  const adapterCollision = (projection?.imports ?? [api]).find((name) => adapterNames.has(name))
+  if (adapterCollision !== undefined) {
+    throw new GenerationError({
+      reason: `Generated Effect adapter collides with imported endpoint: ${adapterCollision}`,
+    })
+  }
   const imports =
     projection === undefined
       ? `import { ${api} } from ${JSON.stringify(options.module)}`
-      : `import { HttpApi, HttpApiClient${"endpoints" in options ? ", HttpApiGroup" : ""} } from "effect/unstable/httpapi"\nimport { ${projection.imports.join(", ")} } from ${JSON.stringify(options.module)}`
-  const httpApiImport = projection === undefined ? 'import { HttpApiClient } from "effect/unstable/httpapi"\n' : ""
-  const shapeTypes = groups.flatMap((group, groupIndex) =>
-    group.endpoints.flatMap((endpoint, endpointIndex) => [
-      ...(endpoint.operation.inputMode === "none" ? [] : [`Endpoint${groupIndex}_${endpointIndex}Input`]),
-      `Endpoint${groupIndex}_${endpointIndex}Output`,
+      : `import { HttpApi, HttpApiClient${"endpoints" in options ? ", HttpApiGroup" : ""} } from "effect/http-api"\nimport { ${projection.imports.join(", ")} } from ${JSON.stringify(options.module)}`
+  const httpApiImport = projection === undefined ? 'import { HttpApiClient } from "effect/http-api"\n' : ""
+  const shapeTypes = groups.flatMap((group) =>
+    group.endpoints.flatMap((endpoint) => [
+      ...(endpoint.operation.inputMode === "none" ? [] : [`${endpointTypeName(group, endpoint)}Input`]),
+      `${endpointTypeName(group, endpoint)}Output`,
     ]),
   )
   const shapeImport =
@@ -701,8 +752,8 @@ function renderImportedEffectFiles(
   const preserve =
     options.shapeModule === undefined
       ? ""
-      : `const preserveEffect = <A>() => <E, R>(effect: Effect.Effect<A, E, R>) => effect\n${usesStream ? "const preserveStream = <A>() => <E, R>(stream: Stream.Stream<A, E, R>) => stream\n" : ""}\n`
-  const client = `// Generated by @opencode-ai/httpapi-codegen. Do not edit.\nimport { Effect${usesStream ? ", Stream" : ""}, Schema } from "effect"\nimport { Sse } from "effect/unstable/encoding"\nimport { HttpClientError } from "effect/unstable/http"\n${httpApiImport}${imports}\n${shapeImport}import { ClientError } from "./client-error.js"\n\n${projection?.source ?? ""}type RawClient = HttpApiClient.ForApi<typeof ${api}>\n\nconst mapClientError = <E>(error: E) => HttpClientError.isHttpClientError(error) || Schema.isSchemaError(error) || Sse.Retry.is(error) ? new ClientError({ cause: error }) : error\n\n${preserve}${adapters.join("\n\n")}\n\nconst adaptClient = (raw: RawClient) => ({ ${fields.join(", ")} })\n\nexport const make = (options?: { readonly baseUrl?: URL | string }) => HttpApiClient.make(${api}, options).pipe(Effect.map(adaptClient))\n`
+      : `const preserveEffect = <A>() => <Actual extends A, E, R>(effect: Effect.Effect<Actual, E, R> & ([A] extends [Actual] ? unknown : { readonly __generatedOutputWiderThanContract: [expected: Actual, generated: A] })): Effect.Effect<A, E, R> => effect\n${usesStream ? "const preserveStream = <A>() => <Actual extends A, E, R>(stream: Stream.Stream<Actual, E, R> & ([A] extends [Actual] ? unknown : { readonly __generatedOutputWiderThanContract: [expected: Actual, generated: A] })): Stream.Stream<A, E, R> => stream\n" : ""}\n`
+  const client = `// Generated by @opencode/httpapi-codegen. Do not edit.\nimport { Effect${usesStream ? ", Stream" : ""}, Schema } from "effect"\nimport { Sse } from "effect/encoding"\nimport { HttpClientError } from "effect/http"\n${httpApiImport}${imports}\n${shapeImport}import { ClientError } from "./client-error.js"\n\n${projection?.source ?? ""}type RawClient = HttpApiClient.ForApi<typeof ${api}>\n\nconst mapClientError = <E>(error: E) => HttpClientError.isHttpClientError(error) || Schema.isSchemaError(error) || Sse.Retry.is(error) ? new ClientError({ cause: error }) : error\n\n${preserve}${adapters.join("\n\n")}\n\nconst adaptClient = (raw: RawClient) => ({ ${fields.join(", ")} })\n\nexport const make = (options?: { readonly baseUrl?: URL | string }) => HttpApiClient.make(${api}, options).pipe(Effect.map(adaptClient))\n`
   return [
     {
       path: "client-error.ts",
@@ -885,7 +936,7 @@ function renderPromiseClient(groups: ReadonlyArray<Group>) {
         endpoint.payloads.length === 0 ? undefined : `body: ${part("payload")}`,
       ].filter((value): value is string => value !== undefined)
       const declaredStatuses = [...new Set(endpoint.errors.map((error) => error.status))]
-      const descriptor = `{ method: ${JSON.stringify(endpoint.endpoint.method)}, path: ${path}${parts.length === 0 ? "" : `, ${parts.join(", ")}`}, successStatus: ${resolveHttpApiStatus(endpoint.successes[0].ast) ?? 200}, declaredStatuses: [${declaredStatuses.join(", ")}], empty: ${endpoint.operation.success === "void"}${isBinarySchema(endpoint.successes[0]) ? ", binary: true" : ""} }`
+      const descriptor = `{ method: ${JSON.stringify(endpoint.endpoint.method)}, path: ${path}${parts.length === 0 ? "" : `, ${parts.join(", ")}`}, successStatus: ${resolveHttpApiStatus(endpoint.successes[0].ast) ?? 200}, declaredStatuses: [${declaredStatuses.join(", ")}], empty: ${endpoint.operation.success === "void"}${isBinarySchema(endpoint.successes[0]) ? ", binary: true" : ""}${isBinaryPayload(endpoint) ? ", binaryBody: true" : ""} }`
       if (endpoint.operation.success === "stream") {
         const success = endpoint.successes[0]
         if (!isStreamSchema(success) || success._tag !== "StreamSse" || success.sseMode !== "data") {
@@ -907,7 +958,7 @@ function renderPromiseClient(groups: ReadonlyArray<Group>) {
     if (group.endpoints[0]?.topLevel) return fields
     return `${JSON.stringify(group.identifier)}: { ${fields} }`
   })
-  return `import type { ${imports.join(", ")} } from "./types.js"\nimport { ClientError } from "./client-error.js"\n\nexport interface ClientOptions {\n  readonly baseUrl: string\n  readonly fetch?: typeof globalThis.fetch\n  readonly headers?: RequestInit["headers"]\n}\n\nexport interface RequestOptions {\n  readonly signal?: AbortSignal\n  readonly headers?: RequestInit["headers"]\n}\n\ninterface RequestDescriptor {\n  readonly method: string\n  readonly path: string\n  readonly query?: Record<string, unknown>\n  readonly headers?: Record<string, unknown>\n  readonly body?: unknown\n  readonly successStatus: number\n  readonly declaredStatuses: ReadonlyArray<number>\n  readonly empty: boolean\n}\n\nconst maxSseEventBytes = 16 * 1024 * 1024\n\nexport function make(options: ClientOptions) {\n  const fetch = options.fetch ?? globalThis.fetch\n\n  const prepare = (descriptor: RequestDescriptor, requestOptions?: RequestOptions) => {\n    const url = new URL(descriptor.path, options.baseUrl)\n    for (const [key, value] of Object.entries(descriptor.query ?? {})) appendQuery(url.searchParams, key, value)\n    const headers = new Headers(options.headers)\n    for (const [key, value] of Object.entries(descriptor.headers ?? {})) {\n      if (value !== undefined && value !== null) headers.set(key, String(value))\n    }\n    for (const [key, value] of new Headers(requestOptions?.headers)) headers.set(key, value)\n    if (descriptor.body !== undefined && !headers.has("content-type")) headers.set("content-type", "application/json")\n    return {\n      url,\n      init: {\n        method: descriptor.method,\n        signal: requestOptions?.signal,\n        headers,\n        body: descriptor.body === undefined ? undefined : JSON.stringify(descriptor.body),\n      } satisfies RequestInit,\n    }\n  }\n\n  const execute = async (descriptor: RequestDescriptor, requestOptions?: RequestOptions) => {\n    try {\n      const prepared = prepare(descriptor, requestOptions)\n      return await fetch(prepared.url, prepared.init)\n    } catch (cause) {\n      throw new ClientError("Transport", { cause })\n    }\n  }\n\n  const responseError = async (response: Response, descriptor: RequestDescriptor): Promise<never> => {\n    if (descriptor.declaredStatuses.includes(response.status)) throw await json(response)\n    try {\n      await response.body?.cancel()\n    } catch {}\n    throw new ClientError("UnexpectedStatus", { cause: { status: response.status } })\n  }\n\n  const request = async <A>(descriptor: RequestDescriptor, requestOptions?: RequestOptions): Promise<A> => {\n    const response = await execute(descriptor, requestOptions)\n    if (response.status !== descriptor.successStatus) return responseError(response, descriptor)\n    if (descriptor.empty) {\n      try {\n        await response.body?.cancel()\n      } catch {}\n      return undefined as A\n    }\n    return await json(response) as A\n  }\n\n  const sse = <A>(descriptor: RequestDescriptor, requestOptions?: RequestOptions): AsyncIterable<A> => ({\n    async *[Symbol.asyncIterator]() {\n      const response = await execute(descriptor, requestOptions)\n      if (response.status !== descriptor.successStatus) await responseError(response, descriptor)\n      if (!isContentType(response, "text/event-stream")) {\n        try {\n          await response.body?.cancel()\n        } catch {}\n        throw new ClientError("UnsupportedContentType")\n      }\n      if (response.body === null) throw new ClientError("MalformedResponse")\n      const reader = response.body.getReader()\n      const decoder = new TextDecoder()\n      let buffer = ""\n      try {\n        while (true) {\n          let next: ReadableStreamReadResult<Uint8Array>\n          try {\n            next = await reader.read()\n          } catch (cause) {\n            throw new ClientError("Transport", { cause })\n          }\n          buffer += decoder.decode(next.value, { stream: !next.done })\n          if (buffer.length > maxSseEventBytes) throw new ClientError("SseEventTooLarge")\n          const trailingCarriageReturn = !next.done && buffer.endsWith("\\r")\n          if (trailingCarriageReturn) buffer = buffer.slice(0, -1)\n          buffer = buffer.replaceAll("\\r\\n", "\\n").replaceAll("\\r", "\\n")\n          if (trailingCarriageReturn) buffer += "\\r"\n          if (next.done && buffer !== "") buffer += "\\n\\n"\n          let boundary = buffer.indexOf("\\n\\n")\n          while (boundary >= 0) {\n            const block = buffer.slice(0, boundary)\n            buffer = buffer.slice(boundary + 2)\n            const data = block.split("\\n").flatMap((line) => line.startsWith("data:") ? [line.slice(5).trimStart()] : []).join("\\n")\n            if (data !== "") {\n              try {\n                yield JSON.parse(data) as A\n              } catch (cause) {\n                throw new ClientError("MalformedResponse", { cause })\n              }\n            }\n            boundary = buffer.indexOf("\\n\\n")\n          }\n          if (next.done) return\n        }\n      } finally {\n        try {\n          await reader.cancel()\n        } catch {}\n        reader.releaseLock()\n      }\n    },\n  })\n\n  return { ${fields.join(", ")} }\n}\n\nfunction appendQuery(params: URLSearchParams, key: string, value: unknown): void {\n  if (value === undefined) return\n  if (value === null) {\n    params.append(key, "null")\n    return\n  }\n  if (Array.isArray(value)) {\n    for (const item of value) appendQuery(params, key, item)\n    return\n  }\n  if (typeof value === "object") {\n    for (const [child, item] of Object.entries(value)) appendQuery(params, \`\${key}[\${child}]\`, item)\n    return\n  }\n  params.append(key, String(value))\n}\n\nasync function json(response: Response): Promise<unknown> {\n  if (!isContentType(response, "application/json") && !response.headers.get("content-type")?.includes("+json")) {\n    try {\n      await response.body?.cancel()\n    } catch {}\n    throw new ClientError("UnsupportedContentType")\n  }\n  let text: string\n  try {\n    text = await response.text()\n  } catch (cause) {\n    throw new ClientError("Transport", { cause })\n  }\n  if (text === "") throw new ClientError("MalformedResponse")\n  try {\n    return JSON.parse(text)\n  } catch (cause) {\n    throw new ClientError("MalformedResponse", { cause })\n  }\n}\n\nfunction isContentType(response: Response, expected: string) {\n  return response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() === expected\n}\n`
+  return `import type { ${imports.join(", ")} } from "./types.js"\nimport { ClientError } from "./client-error.js"\n\nexport interface ClientOptions {\n  readonly baseUrl: string\n  readonly fetch?: typeof globalThis.fetch\n  readonly headers?: RequestInit["headers"]\n}\n\nexport interface RequestOptions {\n  readonly signal?: AbortSignal\n  readonly headers?: RequestInit["headers"]\n  /** Reports every chunk a streaming response receives, including keepalive comments that yield no event. */\n  readonly onActivity?: () => void\n}\n\ninterface RequestDescriptor {\n  readonly method: string\n  readonly path: string\n  readonly query?: Record<string, unknown>\n  readonly headers?: Record<string, unknown>\n  readonly body?: unknown\n  readonly successStatus: number\n  readonly declaredStatuses: ReadonlyArray<number>\n  readonly empty: boolean\n}\n\nconst maxSseEventBytes = 16 * 1024 * 1024\n\nexport function make(options: ClientOptions) {\n  const fetch = options.fetch ?? globalThis.fetch\n\n  const prepare = (descriptor: RequestDescriptor, requestOptions?: RequestOptions) => {\n    // A leading slash would replace any path prefix on baseUrl, so join relative to it.\n    const baseUrl = new URL(options.baseUrl)\n    if (!baseUrl.pathname.endsWith("/")) baseUrl.pathname += "/"\n    const url = new URL(descriptor.path.slice(1), baseUrl)\n    for (const [key, value] of Object.entries(descriptor.query ?? {})) appendQuery(url.searchParams, key, value)\n    const headers = new Headers(options.headers)\n    for (const [key, value] of Object.entries(descriptor.headers ?? {})) {\n      if (value !== undefined && value !== null) headers.set(key, String(value))\n    }\n    for (const [key, value] of new Headers(requestOptions?.headers)) headers.set(key, value)\n    if (descriptor.body !== undefined && !headers.has("content-type")) headers.set("content-type", "application/json")\n    return {\n      url,\n      init: {\n        method: descriptor.method,\n        signal: requestOptions?.signal,\n        headers,\n        body: descriptor.body === undefined ? undefined : JSON.stringify(descriptor.body),\n      } satisfies RequestInit,\n    }\n  }\n\n  const execute = async (descriptor: RequestDescriptor, requestOptions?: RequestOptions) => {\n    try {\n      const prepared = prepare(descriptor, requestOptions)\n      return await fetch(prepared.url, prepared.init)\n    } catch (cause) {\n      throw new ClientError("Transport", { cause })\n    }\n  }\n\n  const responseError = async (response: Response, descriptor: RequestDescriptor): Promise<never> => {\n    if (descriptor.declaredStatuses.includes(response.status)) throw declared(await json(response) as DeclaredErrorBody)\n    try {\n      await response.body?.cancel()\n    } catch {}\n    throw new ClientError("UnexpectedStatus", { cause: { status: response.status }, detail: String(response.status) })\n  }\n\n  const request = async <A>(descriptor: RequestDescriptor, requestOptions?: RequestOptions): Promise<A> => {\n    const response = await execute(descriptor, requestOptions)\n    if (response.status !== descriptor.successStatus) return responseError(response, descriptor)\n    if (descriptor.empty) {\n      try {\n        await response.body?.cancel()\n      } catch {}\n      return undefined as A\n    }\n    return await json(response) as A\n  }\n\n  const sse = <A>(descriptor: RequestDescriptor, requestOptions?: RequestOptions): AsyncIterable<A> => ({\n    async *[Symbol.asyncIterator]() {\n      const response = await execute(descriptor, requestOptions)\n      if (response.status !== descriptor.successStatus) await responseError(response, descriptor)\n      if (!isContentType(response, "text/event-stream")) {\n        try {\n          await response.body?.cancel()\n        } catch {}\n        throw new ClientError("UnsupportedContentType", { detail: response.headers.get("content-type") })\n      }\n      if (response.body === null) throw new ClientError("MalformedResponse")\n      const reader = response.body.getReader()\n      const decoder = new TextDecoder()\n      let buffer = ""\n      try {\n        while (true) {\n          let next: ReadableStreamReadResult<Uint8Array>\n          try {\n            next = await reader.read()\n          } catch (cause) {\n            throw new ClientError("Transport", { cause })\n          }\n          if (!next.done) requestOptions?.onActivity?.()\n          buffer += decoder.decode(next.value, { stream: !next.done })\n          if (buffer.length > maxSseEventBytes) throw new ClientError("SseEventTooLarge")\n          const trailingCarriageReturn = !next.done && buffer.endsWith("\\r")\n          if (trailingCarriageReturn) buffer = buffer.slice(0, -1)\n          buffer = buffer.replaceAll("\\r\\n", "\\n").replaceAll("\\r", "\\n")\n          if (trailingCarriageReturn) buffer += "\\r"\n          if (next.done && buffer !== "") buffer += "\\n\\n"\n          let boundary = buffer.indexOf("\\n\\n")\n          while (boundary >= 0) {\n            const block = buffer.slice(0, boundary)\n            buffer = buffer.slice(boundary + 2)\n            const data = block.split("\\n").flatMap((line) => line.startsWith("data:") ? [line.slice(5).trimStart()] : []).join("\\n")\n            if (data !== "") {\n              try {\n                yield JSON.parse(data) as A\n              } catch (cause) {\n                throw new ClientError("MalformedResponse", { cause })\n              }\n            }\n            boundary = buffer.indexOf("\\n\\n")\n          }\n          if (next.done) return\n        }\n      } finally {\n        try {\n          await reader.cancel()\n        } catch {}\n        reader.releaseLock()\n      }\n    },\n  })\n\n  return { ${fields.join(", ")} }\n}\n\nfunction appendQuery(params: URLSearchParams, key: string, value: unknown): void {\n  if (value === undefined) return\n  if (value === null) {\n    params.append(key, "null")\n    return\n  }\n  if (Array.isArray(value)) {\n    for (const item of value) appendQuery(params, key, item)\n    return\n  }\n  if (typeof value === "object") {\n    for (const [child, item] of Object.entries(value)) appendQuery(params, \`\${key}[\${child}]\`, item)\n    return\n  }\n  params.append(key, String(value))\n}\n\nasync function json(response: Response): Promise<unknown> {\n  if (!isContentType(response, "application/json") && !response.headers.get("content-type")?.includes("+json")) {\n    try {\n      await response.body?.cancel()\n    } catch {}\n    throw new ClientError("UnsupportedContentType", { detail: response.headers.get("content-type") })\n  }\n  let text: string\n  try {\n    text = await response.text()\n  } catch (cause) {\n    throw new ClientError("Transport", { cause })\n  }\n  if (text === "") throw new ClientError("MalformedResponse")\n  try {\n    return JSON.parse(text)\n  } catch (cause) {\n    throw new ClientError("MalformedResponse", { cause })\n  }\n}\n\ntype DeclaredErrorBody = { readonly _tag?: string; readonly message?: string; readonly data?: { readonly message?: string } }\n\n/** Throw declared error bodies as Errors. The body's fields stay on the error, so narrowing on \`_tag\` or \`name\` still works. */\nfunction declared(body: DeclaredErrorBody) {\n  const error = Object.assign(new Error(body.message ?? body.data?.message), body)\n  if (body._tag) error.name = body._tag\n  return error\n}\n\nfunction isContentType(response: Response, expected: string) {\n  return response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() === expected\n}\n`
 }
 
 function promiseTypePrefix(group: string, path: ReadonlyArray<string>) {
@@ -975,11 +1026,12 @@ function renderClientTree(
 }
 
 function identifierPart(value: string) {
-  return value
+  const identifier = value
     .split(/[^A-Za-z0-9]+/)
     .filter(Boolean)
     .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
     .join("")
+  return /^[A-Za-z_$]/.test(identifier) ? identifier : `_${identifier}`
 }
 
 function structuralTypes(schemas: ReadonlyArray<Schema.Top>, mutable: boolean, reservedNames: ReadonlySet<string>) {
@@ -988,13 +1040,7 @@ function structuralTypes(schemas: ReadonlyArray<Schema.Top>, mutable: boolean, r
     promiseTypeAsts(schemas) as [SchemaAST.AST, ...Array<SchemaAST.AST>],
   )
   const document = SchemaRepresentation.toCodeDocument(representations)
-  if (
-    document.artifacts.some(
-      (artifact) =>
-        artifact._tag !== "Import" || artifact.importDeclaration !== 'import type * as Brand from "effect/Brand"',
-    ) ||
-    Object.keys(document.references.recursives).length > 0
-  ) {
+  if (document.artifacts.length > 0 || Object.keys(document.references.recursives).length > 0) {
     throw new GenerationError({ reason: "Referenced Promise types are not implemented" })
   }
   const anonymous = new Set(
@@ -1037,7 +1083,6 @@ function structuralTypes(schemas: ReadonlyArray<Schema.Top>, mutable: boolean, r
       type = type.replace(new RegExp(pattern, "g"), name)
     }
     const output = type
-      .replaceAll(/ & Brand\.Brand<"[^"]+">/g, "")
       .replaceAll("Schema.Json", "JsonValue")
       .replaceAll(/(?<!["'])\bunknown\b(?!["'])/g, "any")
     return mutable ? mutableType(preserveStringSuggestions(output)) : preserveStringSuggestions(output)
@@ -1076,13 +1121,7 @@ function uniqueTypeName(seed: string, used: ReadonlySet<string>, suffix = 1): st
 
 function structuralType(schema: Schema.Top) {
   const document = SchemaRepresentation.toCodeDocument(SchemaRepresentation.toRepresentations([promiseTypeAst(schema)]))
-  if (
-    document.artifacts.some(
-      (artifact) =>
-        artifact._tag !== "Import" || artifact.importDeclaration !== 'import type * as Brand from "effect/Brand"',
-    ) ||
-    Object.keys(document.references.recursives).length > 0
-  ) {
+  if (document.artifacts.length > 0 || Object.keys(document.references.recursives).length > 0) {
     throw new GenerationError({ reason: "Referenced Promise types are not implemented" })
   }
   const references = new Map(
@@ -1101,7 +1140,6 @@ function structuralType(schema: Schema.Top) {
   }
   return preserveStringSuggestions(
     expand(document.codes[0].Type)
-      .replaceAll(/ & Brand\.Brand<"[^"]+">/g, "")
       .replaceAll("Schema.Json", "JsonValue"),
   )
 }
@@ -1180,13 +1218,33 @@ function normalizePromiseClientContent(content: string, groups: ReadonlyArray<Gr
         "if (descriptor.binary) return new Uint8Array(await response.arrayBuffer()) as A\n    if (descriptor.empty) {",
       )
     : sseReady
+  const binaryBodyReady = endpoints.some(isBinaryPayload)
+    ? replaceOne(
+        replaceOne(
+          replaceOne(
+            binaryReady,
+            "readonly body?: unknown\n",
+            "readonly body?: unknown\n  readonly binaryBody?: true\n",
+          ),
+          'if (descriptor.body !== undefined && !headers.has("content-type")) headers.set("content-type", "application/json")',
+          'if (descriptor.body !== undefined && !headers.has("content-type"))\n      headers.set("content-type", descriptor.binaryBody ? "application/octet-stream" : "application/json")',
+        ),
+        "body: descriptor.body === undefined ? undefined : JSON.stringify(descriptor.body),",
+        'body:\n          descriptor.body === undefined\n            ? undefined\n            : descriptor.binaryBody\n              ? (descriptor.body as RequestInit["body"])\n              : JSON.stringify(descriptor.body),',
+      )
+    : binaryReady
   return usesWildcard
     ? replaceOne(
-        binaryReady,
+        binaryBodyReady,
         "function appendQuery(params: URLSearchParams, key: string, value: unknown): void {",
         'function encodePath(value: string): string {\n  return value.split("/").map(encodeURIComponent).join("/")\n}\n\nfunction appendQuery(params: URLSearchParams, key: string, value: unknown): void {',
       )
-    : binaryReady
+    : binaryBodyReady
+}
+
+function isBinaryPayload(endpoint: Endpoint) {
+  const payload = endpoint.payloads[0]
+  return payload !== undefined && resolveHttpApiEncoding(payload.ast)?._tag === "Uint8Array"
 }
 
 function replaceOne(input: string, search: string, replacement: string) {
@@ -1237,14 +1295,6 @@ function promisePath(path: string, input: ReadonlyArray<InputField>, wildcard?: 
     })
     .join("")
   return `\`${template}${wildcard === undefined ? "" : `\${encodePath(input.${wildcard.name})}`}\``
-}
-
-function uniqueModule(base: string, index: number, modules: ReadonlySet<string>) {
-  if (!modules.has(base.toLowerCase())) return base
-  const seed = `${base}-${index}`
-  let suffix = 0
-  while (modules.has(`${seed}${suffix === 0 ? "" : `-${suffix}`}`.toLowerCase())) suffix++
-  return `${seed}${suffix === 0 ? "" : `-${suffix}`}`
 }
 
 function normalizeTransport(
@@ -1426,7 +1476,7 @@ export function write(
       output.files,
       (file) =>
         fs.exists(join(directory, file.path)).pipe(
-          Effect.flatMap((exists) => (exists ? fs.stat(join(directory, file.path)) : Effect.succeed(undefined))),
+          Effect.flatMap((exists) => (exists ? fs.stat(join(directory, file.path)) : Effect.undefined)),
           Effect.flatMap((info) =>
             info?.type === "SymbolicLink"
               ? new GenerationError({ reason: `Unsafe output path: ${file.path}` })
@@ -1527,7 +1577,15 @@ function assertPortable(schema: Schema.Top, path: string, portable: Map<SchemaAS
     if (!annotationsPortable(ast.annotations)) return false
     if (!checksPortable(ast.checks) || ("encodingChecks" in ast && !checksPortable(ast.encodingChecks))) return false
     if (SchemaAST.isDeclaration(ast)) {
-      return typeof ast.annotations?.toCode === "function" && ast.typeParameters.every(visit)
+      const representation = ast.annotations?.representation
+      const supported =
+        typeof ast.annotations?.toCode === "function" ||
+        (typeof representation === "object" &&
+          representation !== null &&
+          "id" in representation &&
+          representation.id === "effect/schema/Json") ||
+        (ast.annotations?.["~constructor"] !== undefined && ast.typeParameters[0] !== undefined)
+      return supported && ast.typeParameters.every(visit)
     }
     if (ast.encoding !== undefined && ast.annotations?.toCode === undefined) return false
     if (SchemaAST.isSuspend(ast)) return visit(ast.thunk())
@@ -1565,9 +1623,8 @@ function checksPortable(checks: SchemaAST.Checks | undefined): boolean {
       ? !check.aborted &&
         check.annotations?.representation !== undefined &&
         serializable(check.annotations.representation) &&
-        typeof check.annotations.arbitrary === "object" &&
-        check.annotations.arbitrary !== null &&
-        "constraint" in check.annotations.arbitrary
+        typeof check.annotations.arbitraryConstraint === "object" &&
+        check.annotations.arbitraryConstraint !== null
       : checksPortable(check.checks),
   )
 }
@@ -1606,6 +1663,7 @@ function annotationsPortable(annotations: Schema.Annotations.Annotations | undef
         "toCodec",
         "toCodecJson",
         "toCodecStringTree",
+        "toCodecArbitrary",
         "toArbitrary",
         "toFormatter",
         "toEquivalence",
@@ -1673,6 +1731,7 @@ function streamDataSchema(schema: Extract<HttpApiSchema.StreamSchema, { readonly
 }
 
 function streamEncodedDataSchema(schema: Extract<HttpApiSchema.StreamSchema, { readonly _tag: "StreamSse" }>) {
+  // oxlint-disable-next-line no-restricted-globals -- Effect exposes this runtime helper without a public type.
   const replaceEncoding: unknown = Reflect.get(SchemaAST, "replaceEncoding")
   if (typeof replaceEncoding !== "function") throw new GenerationError({ reason: "Invalid SSE data schema" })
   const ast: unknown = replaceEncoding(streamDataAst(schema.events.ast), undefined)
@@ -1697,10 +1756,10 @@ function streamEffectPortable(schema: Schema.Top) {
   return sameEncoding(schema.events.ast, rebuilt.events.ast)
 }
 
-function renderGroup(group: Group, groupIndex: number) {
+function renderGroup(group: Group) {
   const slots: Array<Slot> = []
   const adapters: Array<string> = []
-  const endpointSources = group.endpoints.map((operation, endpointIndex) => {
+  const endpointSources = group.endpoints.map((operation) => {
     const {
       endpoint,
       errors,
@@ -1710,7 +1769,7 @@ function renderGroup(group: Group, groupIndex: number) {
       query: endpointQuery,
       successes,
     } = operation
-    const prefix = `Endpoint${endpointIndex}`
+    const prefix = `Endpoint${operation.clientPath.map(identifierPart).join("")}`
     const params = addSlot(endpointParams, `${prefix}Params`)
     const query = addSlot(endpointQuery, `${prefix}Query`)
     const headers = addSlot(endpointHeaders, `${prefix}Headers`)
@@ -1805,15 +1864,16 @@ function renderGroup(group: Group, groupIndex: number) {
   const usesHttpApiSchema = endpointSources.some((source) => source.includes("HttpApiSchema."))
   const methods = renderClientTree(
     group.endpoints,
-    (_item, index) => `Endpoint${index}(raw)`,
+    (item) => `Endpoint${item.clientPath.map(identifierPart).join("")}(raw)`,
     (name, value) => `${JSON.stringify(name)}: ${value}`,
     ", ",
   )
+  const name = groupTypeName(group)
   const rawGroup = group.endpoints[0]?.topLevel
-    ? `HttpApiClient.Client<typeof Group${groupIndex}>`
-    : `HttpApiClient.Client.Group<typeof Group${groupIndex}, never, never>`
+    ? `HttpApiClient.Client<typeof Group${name}>`
+    : `HttpApiClient.Client.Group<typeof Group${name}, never, never>`
   const usesStream = group.endpoints.some((item) => item.operation.success === "stream")
-  return `// Generated by @opencode-ai/httpapi-codegen. Do not edit.\nimport { Effect, Schema${usesStream ? ", Stream" : ""} } from "effect"\nimport { Sse } from "effect/unstable/encoding"\nimport { HttpClientError } from "effect/unstable/http"\nimport { HttpApiClient, HttpApiEndpoint, HttpApiGroup${usesHttpApiSchema ? ", HttpApiSchema" : ""} } from "effect/unstable/httpapi"\nimport { ClientError } from "./client-error.js"\n\n${declarations}\n\nexport const Group${groupIndex} = ${groupSource}\n\ntype RawGroup = ${rawGroup}\n\n${adapters.join("\n\n")}\n\nexport const adaptGroup${groupIndex} = (raw: RawGroup) => ({ ${methods} })\n`
+  return `// Generated by @opencode/httpapi-codegen. Do not edit.\nimport { Effect, Schema${usesStream ? ", Stream" : ""} } from "effect"\nimport { Sse } from "effect/encoding"\nimport { HttpClientError } from "effect/http"\nimport { HttpApiClient, HttpApiEndpoint, HttpApiGroup${usesHttpApiSchema ? ", HttpApiSchema" : ""} } from "effect/http-api"\nimport { ClientError } from "./client-error.js"\n\n${declarations}\n\nexport const Group${name} = ${groupSource}\n\ntype RawGroup = ${rawGroup}\n\n${adapters.join("\n\n")}\n\nexport const adaptGroup${name} = (raw: RawGroup) => ({ ${methods} })\n`
 }
 
 function renderEffectRequestPart(
@@ -1844,7 +1904,6 @@ function renderSchemas(slots: ReadonlyArray<Slot>) {
       tagged.fields.map(([name, schema]) => ({ name: `Class${classIndex}${name}`, schema })),
     ),
   ]
-  const [first, ...rest] = expanded
   const document = SchemaRepresentation.toCodeDocument(
     SchemaRepresentation.toRepresentations(
       codegenAsts(expanded.map((slot) => slot.schema.ast)) as [SchemaAST.AST, ...Array<SchemaAST.AST>],
@@ -1883,15 +1942,20 @@ function renderSchemas(slots: ReadonlyArray<Slot>) {
 
 function renderClient(groups: ReadonlyArray<Group>) {
   const imports = groups
-    .map((group, index) => `import { adaptGroup${index}, Group${index} } from ${JSON.stringify(`./${group.module}`)}`)
+    .map(
+      (group) =>
+        `import { adaptGroup${groupTypeName(group)}, Group${groupTypeName(group)} } from ${JSON.stringify(`./${group.module}`)}`,
+    )
     .join("\n")
-  const api = `HttpApi.make("generated")${groups.map((_, index) => `.add(Group${index})`).join("")}`
-  const fields = groups.flatMap((group, index) => {
+  const api = `HttpApi.make("generated")${groups.map((group) => `.add(Group${groupTypeName(group)})`).join("")}`
+  const fields = groups.flatMap((group) => {
     if (!group.endpoints[0]?.topLevel) {
-      return [`${JSON.stringify(group.identifier)}: adaptGroup${index}(raw[${JSON.stringify(group.identifier)}])`]
+      return [
+        `${JSON.stringify(group.identifier)}: adaptGroup${groupTypeName(group)}(raw[${JSON.stringify(group.identifier)}])`,
+      ]
     }
     const raw = `{ ${group.endpoints.map((item) => `${JSON.stringify(item.endpoint.identifier)}: raw[${JSON.stringify(item.endpoint.identifier)}]`).join(", ")} }`
-    return [`...adaptGroup${index}(${raw})`]
+    return [`...adaptGroup${groupTypeName(group)}(${raw})`]
   })
-  return `// Generated by @opencode-ai/httpapi-codegen. Do not edit.\nimport { Effect } from "effect"\nimport { HttpApi, HttpApiClient } from "effect/unstable/httpapi"\n${imports}\n\nconst Api = ${api}\nconst adaptClient = (raw: HttpApiClient.ForApi<typeof Api>) => ({ ${fields.join(", ")} })\n\nexport const make = (options?: { readonly baseUrl?: URL | string }) =>\n  HttpApiClient.make(Api, options).pipe(Effect.map(adaptClient))\n`
+  return `// Generated by @opencode/httpapi-codegen. Do not edit.\nimport { Effect } from "effect"\nimport { HttpApi, HttpApiClient } from "effect/http-api"\n${imports}\n\nconst Api = ${api}\nconst adaptClient = (raw: HttpApiClient.ForApi<typeof Api>) => ({ ${fields.join(", ")} })\n\nexport const make = (options?: { readonly baseUrl?: URL | string }) =>\n  HttpApiClient.make(Api, options).pipe(Effect.map(adaptClient))\n`
 }

@@ -1,5 +1,11 @@
-import type { FileDiffInfo, SessionInfo, SessionStatus } from "@opencode-ai/client/promise"
-import { createSimpleContext } from "@opencode-ai/ui/context"
+import type {
+  FileDiffInfo,
+  SessionInfo,
+  SessionStatus,
+  ShellOutputInput,
+  ShellOutputOutput,
+} from "@opencode/client/promise"
+import { createSimpleContext } from "@opencode/ui/context"
 import { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
 
 export type SessionSummary = Pick<SessionInfo, "id" | "parentID" | "title" | "time">
@@ -26,8 +32,19 @@ type Data = {
     [sessionID: string]: FileDiffInfo[]
   }
   session_diff_preload?: {
-    [sessionID: string]: PreloadMultiFileDiffResult<unknown>[]
+    [sessionID: string]: PreloadMultiFileDiffResult<unknown, undefined>[]
   }
+}
+
+/** Names a finished turn by its Session and the user message that opened it. */
+export type TurnDiffInput = { sessionID: string; from: string }
+
+/** The host's cache of the files each finished turn changed. */
+export type TurnDiffSource = {
+  /** The turn's diffs, or undefined until they load. */
+  get: (input: TurnDiffInput) => readonly FileDiffInfo[] | undefined
+  /** Starts loading the turn's diffs unless they are cached or already loading. */
+  load: (input: TurnDiffInput) => void
 }
 
 export type NavigateToSessionFn = (sessionID: string) => void
@@ -40,6 +57,9 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
     data: Data
     directory: string
     sessionID?: string
+    shellRunning?: (id: string) => boolean
+    shellOutput?: (input: ShellOutputInput) => Promise<ShellOutputOutput>
+    turnDiff?: TurnDiffSource
     onNavigateToSession?: NavigateToSessionFn
     onSessionHref?: SessionHrefFn
   }) => {
@@ -55,6 +75,9 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
       },
       navigateToSession: props.onNavigateToSession,
       sessionHref: props.onSessionHref,
+      shellRunning: props.shellRunning,
+      shellOutput: props.shellOutput,
+      turnDiff: props.turnDiff,
     }
   },
 })

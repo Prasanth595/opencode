@@ -1,13 +1,27 @@
 import { createEffect, createRoot } from "solid-js"
-import { createStore, produce } from "solid-js/store"
+import { produce } from "solid-js/store"
+import { Schema } from "effect"
 import { Persist, persisted } from "@/runtime/persistence/storage"
+import { Persistence } from "@/runtime/persistence/schema"
 import { createScopedCache } from "@/runtime/server/scoped-cache"
-import type { FileViewState, SelectedLineRange } from "./types"
+import { SelectedLineRange } from "./types"
 import type { ServerScope } from "@/runtime/server/scope"
 
 const WORKSPACE_KEY = "__workspace__"
+
 const MAX_FILE_VIEW_SESSIONS = 20
+
 const MAX_VIEW_FILES = 500
+
+const FileViewSchema = Persistence.struct({
+  scrollTop: Persistence.optional(Schema.Finite),
+  scrollLeft: Persistence.optional(Schema.Finite),
+  selectedLines: Persistence.optional(Schema.NullOr(SelectedLineRange)),
+})
+
+export const FileViewsSchema = Schema.Struct({
+  file: Persistence.record(Persistence.fallback(FileViewSchema, () => ({}))),
+})
 
 function normalizeSelectedLines(range: SelectedLineRange): SelectedLineRange {
   if (range.start <= range.end) return { ...range }
@@ -26,31 +40,30 @@ function normalizeSelectedLines(range: SelectedLineRange): SelectedLineRange {
 
 function equalSelectedLines(a: SelectedLineRange | null | undefined, b: SelectedLineRange | null | undefined) {
   if (!a && !b) return true
+
   if (!a || !b) return false
   const left = normalizeSelectedLines(a)
   const right = normalizeSelectedLines(b)
+
   return (
     left.start === right.start && left.end === right.end && left.side === right.side && left.endSide === right.endSide
   )
 }
 
 function createViewSession(scope: ServerScope, dir: string, id: string | undefined) {
-  const [view, setView, _, ready] = persisted(
-    Persist.serverScoped(scope, dir, id, "file-view"),
-    createStore<{
-      file: Record<string, FileViewState>
-    }>({
-      file: {},
-    }),
-  )
+  const [view, setView, _, ready] = persisted(Persist.serverScoped(scope, dir, id, "file-view"), FileViewsSchema, {
+    file: {},
+  })
 
   const meta = { pruned: false }
 
   const pruneView = (keep?: string) => {
     const keys = Object.keys(view.file)
+
     if (keys.length <= MAX_VIEW_FILES) return
 
     const drop = keys.filter((key) => key !== keep).slice(0, keys.length - MAX_VIEW_FILES)
+
     if (drop.length === 0) return
 
     setView(
@@ -64,6 +77,7 @@ function createViewSession(scope: ServerScope, dir: string, id: string | undefin
 
   createEffect(() => {
     if (!ready()) return
+
     if (meta.pruned) return
     meta.pruned = true
     pruneView()
@@ -77,6 +91,7 @@ function createViewSession(scope: ServerScope, dir: string, id: string | undefin
     setView(
       produce((draft) => {
         const file = draft.file[path] ?? (draft.file[path] = {})
+
         if (file.scrollTop === top) return
         file.scrollTop = top
       }),
@@ -88,6 +103,7 @@ function createViewSession(scope: ServerScope, dir: string, id: string | undefin
     setView(
       produce((draft) => {
         const file = draft.file[path] ?? (draft.file[path] = {})
+
         if (file.scrollLeft === left) return
         file.scrollLeft = left
       }),
@@ -100,6 +116,7 @@ function createViewSession(scope: ServerScope, dir: string, id: string | undefin
     setView(
       produce((draft) => {
         const file = draft.file[path] ?? (draft.file[path] = {})
+
         if (equalSelectedLines(file.selectedLines, next)) return
         file.selectedLines = next
       }),
@@ -124,6 +141,7 @@ export function createFileViewCache(scope: ServerScope) {
       const split = key.lastIndexOf("\n")
       const dir = split >= 0 ? key.slice(0, split) : key
       const id = split >= 0 ? key.slice(split + 1) : WORKSPACE_KEY
+
       return createRoot((dispose) => ({
         value: createViewSession(scope, dir, id === WORKSPACE_KEY ? undefined : id),
         dispose,
@@ -138,6 +156,7 @@ export function createFileViewCache(scope: ServerScope) {
   return {
     load: (dir: string, id: string | undefined) => {
       const key = `${dir}\n${id ?? WORKSPACE_KEY}`
+
       return cache.get(key).value
     },
     clear: () => cache.clear(),

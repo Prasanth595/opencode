@@ -1,6 +1,4 @@
-import "@opencode-ai/ui/styles/tailwind"
-import "@opencode-ai/session-ui/styles"
-import "@opencode-ai/ui/styles/tokens"
+import "../../app/src/index.css"
 
 import { createEffect, onCleanup, onMount } from "solid-js"
 import addonA11y from "@storybook/addon-a11y"
@@ -9,11 +7,12 @@ import { MetaProvider } from "@solidjs/meta"
 import { addons } from "storybook/preview-api"
 import { GLOBALS_UPDATED } from "storybook/internal/core-events"
 import { createJSXDecorator, definePreview } from "storybook-solidjs-vite"
-import { DialogProvider } from "@opencode-ai/ui/context/dialog"
-import { MarkedProvider } from "@opencode-ai/ui/context/marked"
-import { ThemeProvider, useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
-import { Font } from "@opencode-ai/ui/font"
+import { DialogProvider } from "@opencode/ui/context/dialog"
+import { MarkedProvider } from "@opencode/ui/context/marked"
+import { ThemeProvider, useTheme, type ColorScheme } from "@opencode/ui/theme"
+import { Font } from "@opencode/ui/font"
 import { LanguageProvider, UiI18nBridge, useLanguage } from "@/runtime/i18n/language"
+import { ExtensionStory } from "./extension"
 
 function resolveScheme(value: unknown): ColorScheme {
   if (value === "light" || value === "dark" || value === "system") return value
@@ -71,7 +70,7 @@ const frame = createJSXDecorator((Story, context) => {
     <MetaProvider>
       <Font />
       <ThemeProvider>
-        <LanguageProvider locale="en">
+        <LanguageProvider locale={typeof context.globals?.locale === "string" ? context.globals.locale : "en"}>
           <UiI18nBridge>
             <Scheme value={scheme} />
             <Direction value={context.globals?.direction} />
@@ -80,13 +79,17 @@ const frame = createJSXDecorator((Story, context) => {
               <MarkedProvider>
                 <div
                   style={{
-                    "min-height": "100vh",
+                    // Outside fullscreen Storybook adds 1rem of padding around the story. A full-viewport frame inside it
+                    // makes every story page scroll by 32px, so an incidental scroll can move the story under a test.
+                    "min-height": fullscreen ? "100vh" : "calc(100vh - 2rem)",
                     padding: fullscreen ? "0" : "24px",
                     "background-color": "var(--background-base)",
                     color: "var(--text-base)",
                   }}
                 >
-                  <Story />
+                  <ExtensionStory file={context.parameters?.fileName}>
+                    <Story />
+                  </ExtensionStory>
                 </div>
               </MarkedProvider>
             </DialogProvider>
@@ -110,6 +113,11 @@ export default definePreview({
       name: "Direction",
       description: "Interface direction",
       defaultValue: "ltr",
+    },
+    locale: {
+      name: "Locale",
+      description: "Interface language",
+      defaultValue: "en",
     },
   },
   parameters: {

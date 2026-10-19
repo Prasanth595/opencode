@@ -1,15 +1,18 @@
 export * as ConfigFormatterPlugin from "./formatter.js"
 
-import { define } from "@opencode-ai/plugin/effect/plugin"
-import { FSUtil } from "@opencode-ai/util/fs-util"
-import { Global } from "@opencode-ai/util/global"
-import { Npm } from "@opencode-ai/util/npm"
-import { AppProcess } from "@opencode-ai/util/process"
-import { Effect, Stream } from "effect"
+import { define } from "@opencode/plugin/effect/plugin"
+import type { Entry } from "@opencode/schema/config"
+import type { ConfigFormatter } from "@opencode/schema/config/formatter"
+import { FSUtil } from "@opencode/util/fs-util"
+import { Global } from "@opencode/util/global"
+import { Npm } from "@opencode/util/npm"
+import { AppProcess } from "@opencode/util/process"
+import { Effect } from "effect"
 import { Config } from "../../config.js"
 import { Formatter } from "../../formatter.js"
 import { make, type Info } from "../../formatter/builtins.js"
 import { Location } from "../../location.js"
+import { ConfigEntryObserver } from "./entry-observer.js"
 
 export const Plugin = define({
   id: "opencode.config.formatter",
@@ -21,23 +24,10 @@ export const Plugin = define({
     const location = yield* Location.Service
     const npm = yield* Npm.Service
     const processes = yield* AppProcess.Service
-    const loaded = { entries: yield* config.entries() }
-    const reload = config.entries().pipe(
-      Effect.tap((entries) => Effect.sync(() => (loaded.entries = entries))),
-      Effect.andThen(formatter.reload()),
-    )
+    const loaded = yield* ConfigEntryObserver.observe(config, ctx.event, formatter.reload())
 
-    yield* ctx.event.subscribe().pipe(
-      Stream.filter((event) => event.type === "config.updated"),
-      Stream.runForEach(() => reload),
-      Effect.forkScoped({ startImmediately: true }),
-    )
-    // Refetch after subscribing so a config update between the first read and
-    // the live subscription cannot leave the transform on a stale snapshot.
-    loaded.entries = yield* config.entries()
-
-    yield* formatter.transform((draft) => {
-      const configured = Config.latest(loaded.entries, "formatter")
+    yield* formatter.transform((editor) => {
+      const configured = resolve(loaded.entries)
       if (!configured) return
       const builtIns = make({
         directory: location.directory,
@@ -47,12 +37,12 @@ export const Plugin = define({
         processes,
         bin: global.bin,
       })
-      builtIns.forEach(draft.set)
+      builtIns.forEach(editor.set)
       if (configured === true) return
 
       for (const [name, entry] of Object.entries(configured)) {
         if (entry.disabled) {
-          draft.remove(name)
+          editor.remove(name)
           continue
         }
         const builtIn = builtIns.find((formatter) => formatter.name === name)
@@ -63,8 +53,24 @@ export const Plugin = define({
           enabled:
             builtIn && !entry.command ? builtIn.enabled : Effect.succeed(entry.command ? [...entry.command] : false),
         }
-        draft.set(current)
+        editor.set(current)
       }
     })
   }),
 })
+
+// Documents apply from lowest to highest priority. A boolean resets everything before it; an object
+// merges each named formatter's supplied fields over the same name from earlier objects.
+function resolve(entries: readonly Entry[]) {
+  return entries.reduce<boolean | Record<string, ConfigFormatter.Entry> | undefined>((result, entry) => {
+    if (entry.type !== "document" || entry.info.formatter === undefined) return result
+    if (typeof entry.info.formatter === "boolean") return entry.info.formatter
+    return Object.entries(entry.info.formatter).reduce(
+      (merged, [name, item]) => ({
+        ...merged,
+        [name]: { ...merged[name], ...item, environment: { ...merged[name]?.environment, ...item.environment } },
+      }),
+      typeof result === "object" ? result : {},
+    )
+  }, undefined)
+}

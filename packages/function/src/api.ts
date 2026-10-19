@@ -1,15 +1,14 @@
 import { Hono } from "hono"
 import { DurableObject } from "cloudflare:workers"
-import { randomUUID } from "node:crypto"
 import { jwtVerify, createRemoteJWKSet } from "jose"
 import { createAppAuth } from "@octokit/auth-app"
 import { Octokit } from "@octokit/rest"
 import { Resource } from "sst"
+import { parseRepositoryClaim } from "./github"
 
 type Env = {
   SYNC_SERVER: DurableObjectNamespace<SyncServer>
   Bucket: R2Bucket
-  WEB_DOMAIN: string
 }
 
 export class SyncServer extends DurableObject<Env> {
@@ -42,53 +41,11 @@ export class SyncServer extends DurableObject<Env> {
     ws.close(code, "Durable Object is closing WebSocket")
   }
 
-  async publish(key: string, content: any) {
-    const sessionID = await this.getSessionID()
-    if (
-      !key.startsWith(`session/info/${sessionID}`) &&
-      !key.startsWith(`session/message/${sessionID}/`) &&
-      !key.startsWith(`session/part/${sessionID}/`)
-    )
-      return new Response("Error: Invalid key", { status: 400 })
-
-    // store message
-    await this.env.Bucket.put(`share/${key}.json`, JSON.stringify(content), {
-      httpMetadata: {
-        contentType: "application/json",
-      },
-    })
-    await this.ctx.storage.put(key, content)
-    const clients = this.ctx.getWebSockets()
-    console.log("SyncServer publish", key, "to", clients.length, "subscribers")
-    for (const client of clients) {
-      client.send(JSON.stringify({ key, content }))
-    }
-  }
-
-  public async share(sessionID: string) {
-    let secret = await this.getSecret()
-    if (secret) return secret
-    secret = randomUUID()
-
-    await this.ctx.storage.put("secret", secret)
-    await this.ctx.storage.put("sessionID", sessionID)
-
-    return secret
-  }
-
   public async getData() {
     const data = (await this.ctx.storage.list()) as Map<string, any>
     return Array.from(data.entries())
       .filter(([key, _]) => key.startsWith("session/"))
       .map(([key, content]) => ({ key, content }))
-  }
-
-  public async assertSecret(secret: string) {
-    if (secret !== (await this.getSecret())) throw new Error("Invalid secret")
-  }
-
-  private async getSecret() {
-    return this.ctx.storage.get<string>("secret")
   }
 
   private async getSessionID() {
@@ -115,28 +72,6 @@ export class SyncServer extends DurableObject<Env> {
 
 export default new Hono<{ Bindings: Env }>()
   .get("/", (c) => c.text("Hello, world!"))
-  .post("/share_create", async (c) => {
-    const body = await c.req.json<{ sessionID: string }>()
-    const sessionID = body.sessionID
-    const short = SyncServer.shortName(sessionID)
-    const id = c.env.SYNC_SERVER.idFromName(short)
-    const stub = c.env.SYNC_SERVER.get(id)
-    const secret = await stub.share(sessionID)
-    return c.json({
-      secret,
-      url: `https://${c.env.WEB_DOMAIN}/s/${short}`,
-    })
-  })
-  .post("/share_delete", async (c) => {
-    const body = await c.req.json<{ sessionID: string; secret: string }>()
-    const sessionID = body.sessionID
-    const secret = body.secret
-    const id = c.env.SYNC_SERVER.idFromName(SyncServer.shortName(sessionID))
-    const stub = c.env.SYNC_SERVER.get(id)
-    await stub.assertSecret(secret)
-    await stub.clear()
-    return c.json({})
-  })
   .post("/share_delete_admin", async (c) => {
     const body = await c.req.json<{ sessionShortName: string; adminSecret: string }>()
     const sessionShortName = body.sessionShortName
@@ -145,20 +80,6 @@ export default new Hono<{ Bindings: Env }>()
     const id = c.env.SYNC_SERVER.idFromName(sessionShortName)
     const stub = c.env.SYNC_SERVER.get(id)
     await stub.clear()
-    return c.json({})
-  })
-  .post("/share_sync", async (c) => {
-    const body = await c.req.json<{
-      sessionID: string
-      secret: string
-      key: string
-      content: any
-    }>()
-    const name = SyncServer.shortName(body.sessionID)
-    const id = c.env.SYNC_SERVER.idFromName(name)
-    const stub = c.env.SYNC_SERVER.get(id)
-    await stub.assertSecret(body.secret)
-    await stub.publish(body.key, body.content)
     return c.json({})
   })
   .get("/share_poll", async (c) => {
@@ -269,42 +190,41 @@ export default new Hono<{ Bindings: Env }>()
 
     // verify token
     const JWKS = createRemoteJWKSet(new URL(JWKS_URL))
-    let owner, repo
+    let repository: ReturnType<typeof parseRepositoryClaim>
     try {
       const { payload } = await jwtVerify(token, JWKS, {
         issuer: GITHUB_ISSUER,
         audience: EXPECTED_AUDIENCE,
       })
-      const sub = payload.sub // e.g. 'repo:my-org/my-repo:ref:refs/heads/main'
-      const parts = sub.split(":")[1].split("/")
-      owner = parts[0]
-      repo = parts[1]
+      repository = parseRepositoryClaim(payload)
     } catch (err) {
       console.error("Token verification failed:", err)
       return c.json({ error: "Invalid or expired token" }, { status: 403 })
     }
 
-    // Create app JWT token
-    const auth = createAppAuth({
-      appId: Resource.GITHUB_APP_ID.value,
-      privateKey: Resource.GITHUB_APP_PRIVATE_KEY.value,
-    })
-    const appAuth = await auth({ type: "app" })
-
-    // Lookup installation
-    const octokit = new Octokit({ auth: appAuth.token })
-    const { data: installation } = await octokit.apps.getRepoInstallation({
-      owner,
-      repo,
-    })
-
-    // Get installation token
-    const installationAuth = await auth({
-      type: "installation",
-      installationId: installation.id,
-    })
-
-    return c.json({ token: installationAuth.token })
+    try {
+      const auth = createAppAuth({
+        appId: Resource.GITHUB_APP_ID.value,
+        privateKey: Resource.GITHUB_APP_PRIVATE_KEY.value,
+      })
+      const appAuth = await auth({ type: "app" })
+      const octokit = new Octokit({ auth: appAuth.token })
+      const { data: installation } = await octokit.apps.getRepoInstallation({
+        owner: repository.owner,
+        repo: repository.repo,
+      })
+      const installationAuth = await auth({
+        type: "installation",
+        installationId: installation.id,
+      })
+      return c.json({ token: installationAuth.token })
+    } catch (error) {
+      console.error("GitHub App token exchange failed:", error)
+      return c.json(
+        { error: `Failed to exchange GitHub App token for ${repository.owner}/${repository.repo}` },
+        { status: 502 },
+      )
+    }
   })
   /**
    * Used by the GitHub action to get GitHub installation access token given user PAT token (used when testing `opencode github run` locally)

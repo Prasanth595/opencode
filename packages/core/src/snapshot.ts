@@ -1,16 +1,16 @@
 export * as Snapshot from "./snapshot.js"
 
-import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
+import { makeLocationNode } from "@opencode/util/effect/app-node"
 import path from "path"
-import { Context, Effect, Fiber, Layer, Schema, Scope } from "effect"
-import { File } from "./file.js"
-import { FSUtil } from "@opencode-ai/util/fs-util"
+import { Clock, Context, Effect, Fiber, Layer, Schema, Scope } from "effect"
+import { FileDiff } from "@opencode/schema/file-diff"
+import { FSUtil } from "@opencode/util/fs-util"
 import { Git } from "./git.js"
-import { Global } from "@opencode-ai/util/global"
+import { Global } from "@opencode/util/global"
 import { Location } from "./location.js"
 import { AbsolutePath, RelativePath } from "./schema.js"
-import { ID } from "@opencode-ai/schema/snapshot"
-import { Hash } from "@opencode-ai/util/hash"
+import { ID } from "@opencode/schema/snapshot"
+import { Hash } from "@opencode/util/hash"
 import { State } from "./state.js"
 
 export { ID }
@@ -36,11 +36,11 @@ export interface RestoreInput {
   readonly files: ReadonlyMap<RelativePath, ID>
 }
 
-export type Draft = {
+export type Editor = {
   configure: (enabled: boolean) => void
 }
 
-export interface Interface extends State.Transformable<Draft> {
+export interface Interface extends State.Transformable<Editor> {
   /**
    * Capture the current Location-scoped filesystem state as a content-addressed
    * tree. Returns `undefined` when snapshots are disabled, unsupported, or the
@@ -58,7 +58,7 @@ export interface Interface extends State.Transformable<Draft> {
    * Generate structured per-file diffs between two captured trees. `context`
    * controls unchanged lines around each unified diff hunk.
    */
-  readonly diff: (input: DiffInput) => Effect.Effect<readonly File.Diff[], Error>
+  readonly diff: (input: DiffInput) => Effect.Effect<readonly FileDiff.Info[], Error>
 
   /**
    * Restore selected project-relative paths from their associated trees. A path
@@ -77,12 +77,12 @@ const layer = Layer.effect(
     const global = yield* Global.Service
     const location = yield* Location.Service
     const lifetime = yield* Scope.Scope
-    const state = State.create<{ enabled: boolean }, Draft>({
+    const state = State.create<{ enabled: boolean }, Editor>({
       name: "snapshot",
       initial: () => ({ enabled: true }),
-      draft: (draft) => ({
+      editor: (editor) => ({
         configure: (enabled) => {
-          draft.enabled = enabled
+          editor.enabled = enabled
         },
       }),
     })
@@ -106,65 +106,91 @@ const layer = Layer.effect(
     const repository = repositoryFiber.pipe(Effect.uninterruptible, Effect.flatMap(Fiber.join))
 
     const scope = Effect.fnUntraced(function* (worktree: AbsolutePath) {
-      const relative = path.relative(worktree, location.directory)
-      if (relative.startsWith("..") || path.isAbsolute(relative))
+      if (!FSUtil.contains(worktree, location.directory))
         return yield* new Error({ operation: "capture", message: "Location is outside the project" })
-      return RelativePath.make(relative.replaceAll("\\", "/") || ".")
+      return RelativePath.make(path.relative(worktree, location.directory).replaceAll("\\", "/") || ".")
     })
 
     const enabled = () => location.vcs?.type === "git" && state.get().enabled
+
+    // `objects.pack` takes a cross-process lock, so a run that outlasts the interval never overlaps the next.
+    let lastPackCheck = Number.NEGATIVE_INFINITY
+    const packWhenDue = Effect.fnUntraced(function* (repository: Git.Repository) {
+      const now = yield* Clock.currentTimeMillis
+      if (now - lastPackCheck < 10 * 60 * 1000) return
+      lastPackCheck = now
+      yield* git.objects.pack(repository).pipe(
+        Effect.catch((cause) => Effect.logWarning("failed to pack snapshot objects", { cause })),
+        Effect.forkIn(lifetime),
+      )
+    })
 
     const capture = Effect.fn("Snapshot.capture")(function* () {
       if (!enabled()) return undefined
       return yield* Effect.gen(function* () {
         const repo = yield* repository
-        return ID.make(
-          yield* git.tree.capture({
-            repository: repo.snapshotRepository,
-            scopes: [yield* scope(repo.worktree)],
-            ignores: repo.source,
-            maximumUntrackedFileBytes: 2 * 1024 * 1024,
-          }),
-        )
+        const tree = yield* git.tree.capture({
+          repository: repo.snapshotRepository,
+          scopes: [yield* scope(repo.worktree)],
+          ignores: repo.source,
+          maximumUntrackedFileBytes: 2 * 1024 * 1024,
+        })
+        yield* packWhenDue(repo.snapshotRepository)
+        return ID.make(tree)
       }).pipe(
         Effect.catch((cause) => Effect.logWarning("failed to capture snapshot", { cause }).pipe(Effect.as(undefined))),
       )
     })
 
-    const compare = Effect.fnUntraced(function* (operation: "files" | "diff", input: CompareInput) {
+    const comparison = Effect.fnUntraced(function* (operation: "files" | "diff", input: CompareInput) {
       const repo = yield* repository.pipe(Effect.mapError((cause) => failure(operation, cause)))
       return {
         source: repo.source,
-        input: {
-          repository: repo.snapshotRepository,
-          from: Git.TreeID.make(input.from),
-          to: Git.TreeID.make(input.to),
-        },
+        repository: repo.snapshotRepository,
+        from: Git.TreeID.make(input.from),
+        to: Git.TreeID.make(input.to),
       }
     })
 
+    // Snapshots track every scoped file; the source repository's ignore rules decide what callers see.
+    const ignored = Effect.fnUntraced(function* (
+      operation: "files" | "diff",
+      source: Git.Repository,
+      paths: readonly RelativePath[],
+    ) {
+      return yield* git.index
+        .ignored({ repository: source, paths })
+        .pipe(Effect.mapError((cause) => failure(operation, cause)))
+    })
+
     const files = Effect.fn("Snapshot.files")(function* (input: CompareInput) {
-      const comparison = yield* compare("files", input)
-      const files = yield* git.tree.files(comparison.input).pipe(Effect.mapError((cause) => failure("files", cause)))
-      const ignored = yield* git.index
-        .ignored({ repository: comparison.source, paths: files })
+      const compared = yield* comparison("files", input)
+      const changed = yield* git.tree
+        .files({ repository: compared.repository, from: compared.from, to: compared.to })
         .pipe(Effect.mapError((cause) => failure("files", cause)))
-      return files.filter((file) => !ignored.has(file))
+      const skipped = yield* ignored("files", compared.source, changed)
+      return changed.filter((file) => !skipped.has(file))
     })
 
     const diff = Effect.fn("Snapshot.diff")(function* (input: DiffInput) {
-      const comparison = yield* compare("diff", input)
-      const files = yield* git.tree.files(comparison.input).pipe(Effect.mapError((cause) => failure("diff", cause)))
-      const ignored = yield* git.index
-        .ignored({ repository: comparison.source, paths: files })
-        .pipe(Effect.mapError((cause) => failure("diff", cause)))
-      return yield* git.tree
+      if (input.paths?.length === 0) return []
+      const compared = yield* comparison("diff", input)
+      // Only an explicit selection becomes a pathspec; ignored paths are dropped from the result instead.
+      const diffs = yield* git.tree
         .diff({
-          ...comparison.input,
+          repository: compared.repository,
+          from: compared.from,
+          to: compared.to,
           context: input.context,
-          paths: (input.paths ?? files).filter((file) => !ignored.has(file)),
+          paths: input.paths,
         })
         .pipe(Effect.mapError((cause) => failure("diff", cause)))
+      const skipped = yield* ignored(
+        "diff",
+        compared.source,
+        diffs.map((file) => RelativePath.make(file.file)),
+      )
+      return diffs.filter((file) => !skipped.has(RelativePath.make(file.file)))
     })
 
     const plan = Effect.fnUntraced(function* (worktree: AbsolutePath, input: RestoreInput) {
@@ -201,7 +227,7 @@ export const noopLayer = Layer.succeed(
   Service.of({
     transform: () => Effect.succeed({ dispose: Effect.void }),
     reload: () => Effect.void,
-    capture: () => Effect.succeed(undefined),
+    capture: () => Effect.undefined,
     files: () => Effect.succeed([]),
     diff: () => Effect.succeed([]),
     restore: () => Effect.void,

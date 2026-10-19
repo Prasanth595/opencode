@@ -9,9 +9,11 @@ import { useConnected } from "./use-connected"
 import { useData } from "../context/data"
 import { modelPreferenceKey } from "../model-preference"
 import { useLocation } from "../context/location"
+import { useNewDesigns } from "../config"
 
 export function DialogModel(props: { providerID?: string }) {
   const local = useLocal()
+  const newDesigns = useNewDesigns()
   const data = useData()
   const dialog = useDialog()
   const location = useLocation()
@@ -99,11 +101,15 @@ export function DialogModel(props: { providerID?: string }) {
             return false
           return true
         }),
+      connected(),
     )
 
     if (needle) {
       return prioritizeFavorites(
-        fuzzysort.go(needle, modelOptions, { keys: ["title", "category"] }).map((item) => item.obj),
+        sortModelOptions(
+          fuzzysort.go(needle, modelOptions, { keys: ["title", "category"] }).map((item) => item.obj),
+          false,
+        ),
         favoritePriority,
       )
     }
@@ -136,11 +142,19 @@ export function DialogModel(props: { providerID?: string }) {
 
   return (
     <DialogSelect<ReturnType<typeof options>[number]["value"]>
+      searchInTitle
+      titlePlaceholder="Search models"
       options={options()}
       actions={[
         {
           command: "model.dialog.provider",
-          title: connected() ? "Connect an integration" : "View all integrations",
+          title: newDesigns()
+            ? connected()
+              ? "connect integration"
+              : "view all integrations"
+            : connected()
+              ? "Connect an integration"
+              : "View all integrations",
           selection: "none",
           onTrigger() {
             dialog.replace(() => (
@@ -152,7 +166,7 @@ export function DialogModel(props: { providerID?: string }) {
         },
         {
           command: "model.dialog.favorite",
-          title: "Favorite",
+          title: newDesigns() ? "favorite" : "Favorite",
           hidden: !connected(),
           onTrigger: (option) => {
             local.model.toggleFavorite(option.value as { providerID: string; modelID: string })
@@ -179,14 +193,26 @@ export function prioritizeFavorites<T extends { value: { providerID: string; mod
 }
 
 export function sortModelOptions<
-  T extends { providerID?: string; providerName?: string; releaseDate: string | number; title: string },
->(options: T[]) {
+  T extends {
+    providerID?: string
+    providerName?: string
+    releaseDate: string | number
+    title: string
+    footer?: string
+  },
+>(options: T[], grouped = true) {
   return options.toSorted((a, b) => {
-    const provider = Number(a.providerID !== "opencode") - Number(b.providerID !== "opencode")
+    const provider = grouped
+      ? Number(b.providerID === "opencode-go") - Number(a.providerID === "opencode-go") ||
+        Number(b.providerID === "opencode") - Number(a.providerID === "opencode")
+      : 0
     if (provider !== 0) return provider
 
-    const name = (a.providerName ?? "").localeCompare(b.providerName ?? "")
+    const name = grouped ? (a.providerName ?? "").localeCompare(b.providerName ?? "") : 0
     if (name !== 0) return name
+
+    const free = Number(b.footer === "Free") - Number(a.footer === "Free")
+    if (free !== 0) return free
 
     const release = Number(b.releaseDate) - Number(a.releaseDate)
     if (release !== 0) return release

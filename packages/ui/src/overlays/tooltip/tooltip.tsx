@@ -1,26 +1,29 @@
 import { Content, Portal, Root, Trigger } from "@kobalte/core/tooltip"
-import { createEffect, Match, onCleanup, splitProps, Switch, type JSX } from "solid-js"
+import { createEffect, Match, onCleanup, splitProps, Switch, untrack, type JSX } from "solid-js"
 import type { ComponentProps } from "solid-js"
 import { createStore } from "solid-js/store"
 import "./tooltip.css"
 
 export interface TooltipProps extends ComponentProps<typeof Root> {
   value: JSX.Element
-  appearance?: "standard" | "compact"
+  appearance?: "standard" | "compact" | "large"
   class?: string
   contentClass?: string
   contentStyle?: JSX.CSSProperties
   inactive?: boolean
   forceOpen?: boolean
+  triggerTabIndex?: number
 }
 
 export function Tooltip(props: TooltipProps) {
   let ref: HTMLDivElement | undefined
+
   const [state, setState] = createStore({
     open: false,
     block: false,
     expand: false,
   })
+
   const [local, others] = splitProps(props, [
     "children",
     "appearance",
@@ -29,6 +32,7 @@ export function Tooltip(props: TooltipProps) {
     "contentStyle",
     "inactive",
     "forceOpen",
+    "triggerTabIndex",
     "ignoreSafeArea",
     "value",
   ])
@@ -38,13 +42,17 @@ export function Tooltip(props: TooltipProps) {
 
   const inside = () => {
     const active = document.activeElement
+
     if (!ref || !active) return false
+
     return ref.contains(active)
   }
 
   const drop = (expand = state.expand) => {
-    if (expand) return
+    if (expand || !state.block) return
+
     if (ref?.matches(":hover")) return
+
     if (inside()) return
     setState("block", false)
   }
@@ -52,11 +60,14 @@ export function Tooltip(props: TooltipProps) {
   const sync = () => {
     const expand = !!ref?.querySelector('[aria-expanded="true"], [data-expanded]')
     setState("expand", expand)
+
     if (expand) {
       setState("block", true)
       close()
+
       return
     }
+
     drop(expand)
   }
 
@@ -72,7 +83,7 @@ export function Tooltip(props: TooltipProps) {
 
   createEffect(() => {
     if (!ref) return
-    sync()
+    untrack(sync)
     const obs = new MutationObserver(sync)
     obs.observe(ref, {
       subtree: true,
@@ -99,17 +110,22 @@ export function Tooltip(props: TooltipProps) {
           open={controlled() ? local.forceOpen : state.open}
           onOpenChange={(open) => {
             if (controlled()) return
+
             if (state.block && open) return
+
             if (justClickedTrigger) {
               justClickedTrigger = false
+
               return
             }
+
             setState("open", open)
           }}
         >
           <Trigger
             ref={ref}
             as="div"
+            tabIndex={local.triggerTabIndex}
             data-component="tooltip-v2-trigger"
             class={local.class}
             onPointerDownCapture={arm}
@@ -126,6 +142,7 @@ export function Tooltip(props: TooltipProps) {
             <Content
               ref={(el) => {
                 const theme = ref?.closest("[data-theme]")?.getAttribute("data-theme")
+
                 if (theme) el.setAttribute("data-theme", theme)
               }}
               data-component="tooltip-v2"
@@ -138,6 +155,7 @@ export function Tooltip(props: TooltipProps) {
                 if (ref === e.target || (e.target instanceof Node && ref?.contains(e.target))) {
                   justClickedTrigger = true
                 }
+
                 e.preventDefault()
               }}
             >

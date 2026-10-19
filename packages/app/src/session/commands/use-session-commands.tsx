@@ -1,19 +1,23 @@
 import { useCommand, type CommandOption } from "@/shell/commands/command"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { previewSelectedLines } from "@opencode-ai/session-ui/pierre/selection-bridge"
-import { useFile, selectionFromLines, type FileSelection, type SelectedLineRange } from "@/workspaces/files/model"
+import { adjacentTabKey } from "@/shell/titlebar/tab-order"
+import { useDialog } from "@opencode/ui/context/dialog"
+import { previewSelectedLines } from "@opencode/session-ui/pierre/selection-bridge"
+import { useFile, selectionFromLines, type FileSelection } from "@/workspaces/files/model"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useLayout } from "@/shell/state/layout"
-import { usePermission } from "@/session/requests/permission"
 import { useComposerState } from "@/composer/persistence"
-import { useWorkspaceLocation } from "@/workspaces/location"
 import { useServerSDK } from "@/runtime/server/client"
-import { useSettings } from "@/settings/model"
-import { useTerminal } from "@/session/terminal/context"
+import { useData } from "@/runtime/server/current"
+import { formatServerError } from "@/runtime/server/errors"
+import { projectSettingsKey, useSettings } from "@/settings/model"
 import { showToast } from "@/shell/notifications/toast"
-import { downloadSessionExport, fetchSessionExport, sessionExportFilename } from "@/session/commands/export"
+import { fetchSessionExport, saveSessionExport, sessionExportFilename } from "@/session/commands/export"
+import { usePlatform } from "@/runtime/platform/platform"
 import type { SessionModel } from "@/session/model"
 import type { SessionRevert } from "@/session/revert"
+import { Command } from "@opencode/gui-extensions/sdk"
+import { useExtensionHost } from "@/runtime/extension/host"
+import type { Region } from "@/runtime/extension/panels"
 
 type SessionCommandSource = {
   identity: SessionModel["identity"]
@@ -21,11 +25,11 @@ type SessionCommandSource = {
   history: Pick<SessionModel["history"], "visibleUserMessages">
   layout: SessionModel["layout"]
   ownership: SessionModel["ownership"]
-  tabs: Pick<SessionModel["tabs"], "activeFileTab" | "closableTab">
 }
 
 export type SessionCommandContext = {
   session: SessionCommandSource
+  region: Region
   background: {
     blocking: () => boolean
     move: () => Promise<void>
@@ -33,6 +37,8 @@ export type SessionCommandContext = {
   navigateMessageByOffset: (offset: number) => void
   revert: Pick<SessionRevert, "undo" | "redo">
   focusInput: () => void
+  // The composer's model, which a compaction runs with.
+  model: () => { id: string; providerID: string; variant?: string } | undefined
 }
 
 const withCategory = (category: string) => {
@@ -47,28 +53,55 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const dialog = useDialog()
   const file = useFile()
   const language = useLanguage()
-  const permission = usePermission()
   const prompt = useComposerState()
-  const sdk = useWorkspaceLocation()
   const serverSDK = useServerSDK()
+  const data = useData()
   const settings = useSettings()
-  const terminal = useTerminal()
+  const platform = usePlatform()
   const layout = useLayout()
+  const host = useExtensionHost()
+
   const openDialog = async <T,>(load: () => Promise<T>, show: (value: T) => void) => {
     const owner = actions.session.ownership.capture()
     const value = await load()
     owner.run(() => show(value))
   }
+
   const shown = settings.visibility.fileTree
 
-  const showAllFiles = () => {
-    if (layout.fileTree.tab() !== "changes") return
-    layout.fileTree.setTab("all")
+  // The file the selected side tab shows; other tabs have no line selection.
+  const activeFile = () => actions.region.selected()?.tab.file
+
+  // Pinned tabs stay open, and hidden side-panel tabs do not claim Close Tab while the region is collapsed.
+  const closableTab = () => {
+    if (!actions.session.layout.view().side.opened()) return
+
+    const entry = actions.region.selected()
+
+    return entry && !entry.tab.pinned ? entry.key : undefined
+  }
+
+  const cycleSideTabs = () => actions.session.layout.view().side.opened() && actions.region.keys().length > 1
+
+  // Focus inside an extension command's scope belongs to that extension, which binds its own shortcuts there.
+  const extensionScoped = (target: EventTarget | null) =>
+    target instanceof Element &&
+    host.items(Command).some((item) => !!item.value.scope && !!target.closest(item.value.scope))
+
+  const sideFocused = (target: EventTarget | null) => {
+    const element =
+      target instanceof Element && target !== document.body && target !== document.documentElement
+        ? target
+        : document.activeElement
+
+    return element instanceof Element && !!element.closest("#review-panel") && !extensionScoped(element)
   }
 
   const selectionPreview = (path: string, selection: FileSelection) => {
     const content = file.get(path)?.content?.content
+
     if (!content) return undefined
+
     return previewSelectedLines(content, { start: selection.startLine, end: selection.endLine })
   }
 
@@ -78,10 +111,10 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   }
 
   const canAddSelectionContext = () => {
-    const tab = actions.session.tabs.activeFileTab()
-    if (!tab) return false
-    const path = file.pathFromTab(tab)
+    const path = activeFile()
+
     if (!path) return false
+
     return file.selectedLines(path) != null
   }
 
@@ -89,28 +122,27 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const focusInput = actions.focusInput
 
   const sessionCommand = withCategory(language.t("command.category.session"))
+  const projectCommand = withCategory(language.t("command.category.project"))
   const fileCommand = withCategory(language.t("command.category.file"))
   const contextCommand = withCategory(language.t("command.category.context"))
   const viewCommand = withCategory(language.t("command.category.view"))
-  const terminalCommand = withCategory(language.t("command.category.terminal"))
   const mcpCommand = withCategory(language.t("command.category.mcp"))
   const permissionsCommand = withCategory(language.t("command.category.permissions"))
 
-  const isAutoAcceptActive = () => {
-    const sessionID = actions.session.identity.params.id
-    if (sessionID) return permission.isAutoAccepting(sessionID, sdk().directory)
-    return permission.isAutoAcceptingDirectory(sdk().directory)
-  }
   const exportSession = async () => {
     const sessionID = actions.session.identity.params.id
+
     if (!sessionID) return
+
     try {
       const data = await fetchSessionExport({
         sessionID,
         api: serverSDK.api,
       })
+
       const filename = sessionExportFilename(data.info)
-      downloadSessionExport(filename, data)
+
+      if (!(await saveSessionExport(filename, data, platform))) return
       showToast({
         variant: "success",
         icon: "circle-check",
@@ -126,50 +158,102 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     }
   }
 
+  const copySessionID = async () => {
+    const sessionID = actions.session.identity.params.id
+
+    if (!sessionID) return
+
+    try {
+      await (platform.writeClipboardText?.(sessionID) ?? navigator.clipboard.writeText(sessionID))
+      showToast({
+        variant: "success",
+        icon: "circle-check",
+        title: language.t("common.copied"),
+        description: sessionID,
+      })
+    } catch (err) {
+      showToast({
+        variant: "error",
+        title: language.t("toast.session.copyID.failed.title"),
+        description: err instanceof Error ? err.message : language.t("toast.session.copyID.failed.description"),
+      })
+    }
+  }
+
+  const copyProjectID = async () => {
+    const projectID = actions.session.data.info()?.projectID
+
+    if (!projectID) return
+
+    try {
+      await (platform.writeClipboardText?.(projectID) ?? navigator.clipboard.writeText(projectID))
+      showToast({
+        variant: "success",
+        icon: "circle-check",
+        title: language.t("common.copied"),
+        description: projectID,
+      })
+    } catch (err) {
+      showToast({
+        variant: "error",
+        title: language.t("toast.project.copyID.failed.title"),
+        description: err instanceof Error ? err.message : language.t("toast.project.copyID.failed.description"),
+      })
+    }
+  }
+
   const openFile = () => {
     void openDialog(
       () => import("@/shell/commands/dialog"),
-      (x) => dialog.show(() => <x.DialogCommandPalette onOpenFile={showAllFiles} />),
+      (x) => dialog.show(() => <x.DialogCommandPalette />),
     )
   }
 
   const closeTab = () => {
-    const tab = actions.session.tabs.closableTab()
-    if (!tab) return
-    actions.session.layout.tabs().close(tab)
+    const tab = closableTab()
+
+    if (tab) actions.region.close(tab)
+  }
+
+  const selectAdjacentSideTab = (offset: -1 | 1) => {
+    const key = adjacentTabKey(actions.region.keys(), actions.region.active(), offset)
+
+    if (!key) return
+
+    actions.region.select(key)
+
+    const panel = document.getElementById("review-panel")
+
+    if (!panel) return
+
+    const active = document.activeElement
+
+    if (
+      active instanceof HTMLElement &&
+      panel.contains(active) &&
+      !active.closest('[role="tab"][aria-selected="false"], [inert], .hidden')
+    )
+      return
+    ;(panel.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ?? panel).focus({ preventScroll: true })
   }
 
   const addSelection = () => {
-    const tab = actions.session.tabs.activeFileTab()
-    if (!tab) return
+    const path = activeFile()
 
-    const path = file.pathFromTab(tab)
     if (!path) return
 
-    const range = file.selectedLines(path) as SelectedLineRange | null | undefined
+    const range = file.selectedLines(path)
+
     if (!range) {
       showToast({
         title: language.t("toast.context.noLineSelection.title"),
         description: language.t("toast.context.noLineSelection.description"),
       })
+
       return
     }
 
     addSelectionToContext(path, selectionFromLines(range))
-  }
-
-  const openTerminal = () => {
-    if (terminal.all().length > 0) terminal.new({ focus: true })
-    if (terminal.all().length === 0) terminal.requestFocus()
-    actions.session.layout.view().terminal.open()
-  }
-
-  const closeTerminal = () => {
-    const id = terminal.active()
-    if (!id) return
-    const last = terminal.all().length === 1
-    void terminal.close(id)
-    if (last) actions.session.layout.view().terminal.close()
   }
 
   const chooseMcp = () => {
@@ -179,21 +263,38 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     )
   }
 
-  const toggleAutoAccept = () => {
-    const sessionID = actions.session.identity.params.id
-    if (sessionID) permission.toggleAutoAccept(sessionID, sdk().directory)
-    else permission.toggleAutoAcceptDirectory(sdk().directory)
+  const sessionProject = () => projectSettingsKey(serverSDK.scope, actions.session.data.info()?.projectID)
 
-    const active = sessionID
-      ? permission.isAutoAccepting(sessionID, sdk().directory)
-      : permission.isAutoAcceptingDirectory(sdk().directory)
+  const autoAccepting = () => settings.permissions.autoApproves(sessionProject())
+
+  // From a session the toggle sets this project's choice, falling back to the default when they match.
+  const toggleAutoAccept = () => {
+    const project = sessionProject()
+    const active = !autoAccepting()
+
+    if (!project) settings.permissions.setAutoApproveDefault(active)
+    else
+      settings.permissions.setAutoApproveOverride(
+        project,
+        active === settings.permissions.autoApproveDefault() ? undefined : active,
+      )
+
+    if (!active) {
+      showToast({
+        title: language.t("toast.permissions.autoaccept.off.title"),
+        description: language.t("toast.permissions.autoaccept.off.description"),
+      })
+
+      return
+    }
+
     showToast({
-      title: active
-        ? language.t("toast.permissions.autoaccept.on.title")
-        : language.t("toast.permissions.autoaccept.off.title"),
-      description: active
-        ? language.t("toast.permissions.autoaccept.on.description")
-        : language.t("toast.permissions.autoaccept.off.description"),
+      title: project
+        ? language.t("toast.permissions.autoaccept.project.title")
+        : language.t("toast.permissions.autoaccept.on.title"),
+      description: project
+        ? language.t("toast.permissions.autoaccept.project.description")
+        : language.t("toast.permissions.autoaccept.on.description"),
     })
   }
 
@@ -202,13 +303,17 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
 
   const compact = async () => {
     const sessionID = actions.session.identity.params.id
+
     if (!sessionID) return
 
-    await serverSDK.api.session.compact({ sessionID })
+    await data.session.compact({ sessionID, model: actions.model() }).catch((cause: unknown) => {
+      showToast({ title: formatServerError(cause, language.t, language.t("common.requestFailed")) })
+    })
   }
 
   const fork = () => {
     const sessionID = actions.session.identity.params.id
+
     if (!sessionID) return
     void openDialog(
       () => import("@/session/commands/fork-dialog"),
@@ -271,10 +376,18 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       disabled: !actions.session.identity.params.id,
       onSelect: exportSession,
     }),
+    sessionCommand({
+      id: "session.copyID",
+      title: language.t("command.session.copyID"),
+      disabled: !actions.session.identity.params.id,
+      onSelect: copySessionID,
+    }),
   ]
 
   const fileCmds = () => {
-    const tab = actions.session.tabs.closableTab()
+    const tab = closableTab()
+    const cycle = cycleSideTabs()
+
     return [
       fileCommand({
         id: "file.open",
@@ -286,13 +399,41 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       }),
       tab &&
         fileCommand({
-          id: "tab.close",
+          id: "file.close",
           title: language.t("command.tab.close"),
-          keybind: "mod+w",
+          keybind: settings.keybinds.get("tab.close") ?? "mod+w",
+          when: (event) => !extensionScoped(event.target),
           onSelect: closeTab,
+        }),
+      cycle &&
+        fileCommand({
+          id: "file.tab.prev",
+          title: "",
+          keybind: settings.keybinds.get("tab.prev") ?? "mod+option+ArrowLeft,ctrl+shift+tab",
+          hidden: true,
+          when: (event) => sideFocused(event.target),
+          onSelect: () => selectAdjacentSideTab(-1),
+        }),
+      cycle &&
+        fileCommand({
+          id: "file.tab.next",
+          title: "",
+          keybind: settings.keybinds.get("tab.next") ?? "mod+option+ArrowRight,ctrl+tab",
+          hidden: true,
+          when: (event) => sideFocused(event.target),
+          onSelect: () => selectAdjacentSideTab(1),
         }),
     ].filter((v) => !!v)
   }
+
+  const projectCmds = () => [
+    projectCommand({
+      id: "project.copyID",
+      title: language.t("command.project.copyID"),
+      disabled: !actions.session.data.info()?.projectID,
+      onSelect: copyProjectID,
+    }),
+  ]
 
   const contextCmds = () => [
     contextCommand({
@@ -307,25 +448,10 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
 
   const viewCmds = () => [
     viewCommand({
-      id: "terminal.toggle",
-      title: language.t("command.terminal.toggle"),
-      keybind: "ctrl+`",
-      slash: "terminal",
-      onSelect: () => {
-        if (actions.session.layout.view().terminal.opened()) {
-          terminal.cancelFocus()
-          actions.session.layout.view().terminal.close()
-          return
-        }
-        terminal.requestFocus(terminal.active())
-        actions.session.layout.view().terminal.open()
-      },
-    }),
-    viewCommand({
       id: "review.toggle",
       title: language.t("command.review.toggle"),
       keybind: "mod+shift+r",
-      onSelect: () => actions.session.layout.view().reviewPanel.toggle(),
+      onSelect: () => actions.session.layout.view().side.toggle(),
     }),
     ...(shown()
       ? [
@@ -342,24 +468,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       title: language.t("command.input.focus"),
       keybind: "ctrl+l",
       onSelect: focusInput,
-    }),
-  ]
-
-  const terminalCmds = () => [
-    terminalCommand({
-      id: "terminal.close",
-      title: language.t("terminal.close"),
-      keybind: "mod+w",
-      hidden: true,
-      when: (event) => event.target instanceof Element && !!event.target.closest('[data-component="terminal"]'),
-      onSelect: closeTerminal,
-    }),
-    terminalCommand({
-      id: "terminal.new",
-      title: language.t("command.terminal.new"),
-      description: language.t("command.terminal.new.description"),
-      keybind: "ctrl+alt+t",
-      onSelect: openTerminal,
     }),
   ]
 
@@ -396,9 +504,11 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const permissionsCmds = () => [
     permissionsCommand({
       id: "permissions.autoaccept",
-      title: isAutoAcceptActive()
+      title: autoAccepting()
         ? language.t("command.permissions.autoaccept.disable")
-        : language.t("command.permissions.autoaccept.enable"),
+        : sessionProject()
+          ? language.t("command.permissions.autoaccept.project")
+          : language.t("command.permissions.autoaccept.enable"),
       keybind: "mod+shift+a",
       disabled: false,
       onSelect: toggleAutoAccept,
@@ -407,10 +517,10 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
 
   command.register("session", () => [
     ...sessionCmds(),
+    ...projectCmds(),
     ...fileCmds(),
     ...contextCmds(),
     ...viewCmds(),
-    ...terminalCmds(),
     ...messageCmds(),
     ...mcpCmds(),
     ...permissionsCmds(),

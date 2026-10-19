@@ -9,11 +9,12 @@ import type {
   SessionMessageInfo,
   SessionMessageUser,
   SessionStatus,
-} from "@opencode-ai/client/promise"
+} from "@opencode/client/promise"
 import type { SessionDocument } from "../document"
 import type { SessionUserPresentation } from "../timeline/session-timeline"
 
 export const CURRENT_SESSION_ID = "session_current_story"
+
 export const STORY_TIME = 1_735_689_600_000
 
 export const STORY_MODEL = {
@@ -90,6 +91,10 @@ function runningTool(input: {
   output?: string
   metadata?: Record<string, JsonValue>
 }): SessionMessageAssistantTool {
+  const metadata = { ...input.metadata }
+
+  if (input.output !== undefined) metadata.output = input.output
+
   return {
     type: "tool",
     id: input.id,
@@ -97,10 +102,7 @@ function runningTool(input: {
     state: {
       status: "running",
       input: input.args,
-      metadata: {
-        ...input.metadata,
-        ...(input.output === undefined ? {} : { output: input.output }),
-      },
+      metadata,
     },
     time: { created: STORY_TIME + input.offset, ran: STORY_TIME + input.offset + 100 },
   }
@@ -507,6 +509,49 @@ export const terminalPassedDocument = document([
   }),
 ] satisfies SessionMessageInfo[])
 
+export const expandedShellDocument = document([
+  user("msg_user_shell_expanded", "Inspect the active service and its available feature surface.", 52_100),
+  assistant({
+    id: "msg_assistant_shell_expanded",
+    offset: 52_200,
+    completed: 52_900,
+    content: [
+      completedTool({
+        id: "tool_shell_expanded",
+        name: "shell",
+        offset: 52_300,
+        args: {
+          command:
+            "opencode2 api get /openapi.json > /private/var/folders/j/gd69b2|16y91666jzf3p9g22asdasc0000gn/T/opencode/temp/tes",
+        },
+        output:
+          '{"location":{"directory":"/Users/usrnk1","project":{"id":"global","directory":"/","canonical":"/"}},"data":[{"id":"opencode","name":"OpenCode","description":"Use this skill for any question about OpenCode itself, including how OpenCode works, using or configuring it, migrating from V1 to V2, troubleshooting it, developing plugins or integrations, using the OpenCode SDK, clients, server, or API, and contributing to the OpenCode codebase."}]}',
+        metadata: { exit: 0 },
+      }),
+    ],
+  }),
+] satisfies SessionMessageInfo[])
+
+export const executeCodeDocument = document([
+  user("msg_user_execute", "Verify the Code Mode runtime responds.", 52_100),
+  assistant({
+    id: "msg_assistant_execute",
+    offset: 52_200,
+    completed: 52_900,
+    content: [
+      completedTool({
+        id: "tool_execute_code",
+        name: "execute",
+        offset: 52_300,
+        args: {
+          code: 'const greeting = "Code Mode execute completed"\nreturn { greeting, timestamp: new Date().toISOString() }',
+        },
+        output: '{\n  "greeting": "Code Mode execute completed",\n  "timestamp": "2026-08-17T09:01:43.590Z"\n}',
+      }),
+    ],
+  }),
+] satisfies SessionMessageInfo[])
+
 export const terminalFailedDocument = document([
   user("msg_user_terminal_failed", "Run the focused Session UI tests.", 53_000),
   assistant({
@@ -658,6 +703,7 @@ export const inspectAndExplainDocument = document([
         args: { pattern: "src/timeline/**/*.{ts,tsx}", path: "packages/session-ui" },
         output:
           "packages/session-ui/src/timeline/projection.ts\npackages/session-ui/src/timeline/session-timeline.tsx\npackages/session-ui/src/timeline/timeline-row.ts",
+        metadata: { count: 3 },
       }),
       completedTool({
         id: "tool_research_grep",
@@ -666,6 +712,7 @@ export const inspectAndExplainDocument = document([
         args: { pattern: "TimelineRow.key", path: "packages/session-ui/src/timeline", include: "*.ts*" },
         output:
           "packages/session-ui/src/timeline/projection.ts:39\npackages/session-ui/src/timeline/session-timeline.tsx:332",
+        metadata: { matches: 2 },
       }),
       completedTool({
         id: "tool_research_read",
@@ -702,15 +749,32 @@ export const webResearchDocument = document([
         id: "tool_web_search",
         name: "websearch",
         offset: 73_100,
-        args: { query: "WAI ARIA live region status message guidance" },
-        output: "WAI-ARIA Authoring Practices and MDN live region guidance",
-        metadata: { provider: "exa" },
+        args: { query: "figma mcp setup" },
+        output: [
+          "https://www.figma.com/community/file/1606560040358762787/figma-mcp-console-setup-guide",
+          "https://designagentlab.com",
+          "https://www.figma.com/community/whiteboarding?resource_type=widgets",
+          "https://figma-console-mcp.southleft.com/mcp",
+          "https://designagentlab.com/figma-console-mcp",
+          "https://designagentlab.com/figma-tutorials",
+          "https://github.com/southleft/figma-console-mcp/issues",
+          "https://designagentlab.com/ui-kits",
+          "https://designagentlab.com/prototyping-tools",
+          "https://www.inthepocket.design/guidelines/figma-mcp/setup-figma-mcp",
+          "https://www.figma.com/community/plugins",
+          "https://figma-console-mcp.southleft.com/docs",
+          "https://designagentlab.com/resources",
+          "https://github.com/southleft/figma-console-mcp/releases",
+          "https://www.inthepocket.design/blog/figma-mcp",
+          "https://designagentlab.com/community",
+        ].join("\n"),
+        metadata: { provider: "firecrawl" },
       }),
       completedTool({
         id: "tool_web_fetch",
         name: "webfetch",
         offset: 74_000,
-        args: { url: "https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html" },
+        args: { url: "https://www.figma.com" },
         output: "Status messages should be programmatically determinable without receiving focus.",
       }),
     ],
@@ -728,33 +792,25 @@ export const webResearchDocument = document([
   }),
 ] satisfies SessionMessageInfo[])
 
-export const skillWorkflowDocument = document([
-  {
-    id: "msg_agent_switched_review",
-    type: "agent-switched",
-    agent: "review",
-    previous: "build",
-    time: { created: STORY_TIME + 78_000 },
-  },
-  {
-    id: "msg_skill_loaded_rtl",
-    type: "skill",
-    skill: "rtl-aware-development",
-    name: "RTL-aware development",
-    text: "Verify direction independently from language.",
-    time: { created: STORY_TIME + 78_500 },
-  },
-  user("msg_user_skill", "Review the mixed-direction file row before I merge it.", 79_000),
+export const loadedResourcesDocument = document([
+  user("msg_user_skill", "Read the project instructions, load the RTL-aware skill, and review the file row.", 79_000),
   assistant({
     id: "msg_assistant_skill",
     offset: 80_000,
     completed: 82_000,
-    agent: "review",
     content: [
+      completedTool({
+        id: "tool_loaded_file",
+        name: "read",
+        offset: 80_100,
+        args: { path: "C:/workspaces/opencode/packages/cli/AGENTS.md" },
+        output: "Project instructions loaded.",
+        metadata: { loaded: ["C:/workspaces/opencode/packages/cli/AGENTS.md"] },
+      }),
       completedTool({
         id: "tool_skill_rtl",
         name: "skill",
-        offset: 80_100,
+        offset: 80_200,
         args: { name: "rtl-aware-development" },
         output: "Loaded RTL-aware development guidance",
         metadata: { name: "rtl-aware-development" },
@@ -765,6 +821,50 @@ export const skillWorkflowDocument = document([
       },
     ],
   }),
+] satisfies SessionMessageInfo[])
+
+export const instructionsUpdatedSingleDocument = document([
+  user("msg_user_instructions_single", "Check if beta service reports the shared session as running.", 85_000),
+  assistant({
+    id: "msg_assistant_instructions_single",
+    offset: 86_000,
+    completed: 88_000,
+    content: [
+      {
+        type: "text",
+        text: "The beta service is healthy and already reports this shared session as running. I found unrelated desktop changes in the worktree and will leave them untouched; next I'm narrowing the beta-only capabilities to features that can be demonstrated safely in this session rather than invoking every administrative API.",
+      },
+    ],
+  }),
+  {
+    id: "msg_instructions_updated_single",
+    type: "system",
+    text: "Updated instructions for api/v2-demo",
+    description: "Instructions updated: api/v2-demo",
+    time: { created: STORY_TIME + 89_000 },
+  },
+] satisfies SessionMessageInfo[])
+
+export const instructionsUpdatedMultipleDocument = document([
+  user("msg_user_instructions_multi", "Check if beta service reports the shared session as running.", 85_000),
+  assistant({
+    id: "msg_assistant_instructions_multi",
+    offset: 86_000,
+    completed: 88_000,
+    content: [
+      {
+        type: "text",
+        text: "The beta service is healthy and already reports this shared session as running. I found unrelated desktop changes in the worktree and will leave them untouched; next I'm narrowing the beta-only capabilities to features that can be demonstrated safely in this session rather than invoking every administrative API.",
+      },
+    ],
+  }),
+  {
+    id: "msg_instructions_updated_multi",
+    type: "system",
+    text: "Updated instructions for api/v2-demo and api/session",
+    description: "Instructions updated: api/v2-demo, api/session",
+    time: { created: STORY_TIME + 89_000 },
+  },
 ] satisfies SessionMessageInfo[])
 
 export const permissionPendingDocument = document(
@@ -864,7 +964,7 @@ export const retryDocument = document(
   { type: "busy" },
 )
 
-export const compactionDocument = document([
+const compactionPrelude = [
   user("msg_user_compact", "Continue the implementation after compacting context.", 60_000),
   assistant({
     id: "msg_assistant_before_compact",
@@ -873,6 +973,26 @@ export const compactionDocument = document([
     content: [{ type: "text", text: "I inspected the timeline and identified the current message boundary." }],
     error: { type: "ExecutionInterrupted", message: "Context compaction started" },
   }),
+] satisfies SessionMessageInfo[]
+
+export const compactionRunningDocument = document(
+  [
+    ...compactionPrelude,
+    {
+      id: "msg_compaction_running",
+      type: "compaction",
+      status: "running",
+      reason: "auto",
+      summary: "## Goal\n\nRestore compaction output while preserving timeline notices.",
+      recent: "",
+      time: { created: STORY_TIME + 63_000 },
+    },
+  ] satisfies SessionMessageInfo[],
+  { type: "busy" },
+)
+
+export const compactionDocument = document([
+  ...compactionPrelude,
   {
     id: "msg_compaction_complete",
     type: "compaction",
@@ -880,6 +1000,8 @@ export const compactionDocument = document([
     reason: "auto",
     summary: "The Session timeline now consumes current nested assistant content.",
     recent: "Add deterministic stories and verify Storybook.",
+    cost: 0.0142,
+    tokens: { input: 3_180, output: 412, reasoning: 96, cache: { read: 8_704, write: 0 } },
     time: { created: STORY_TIME + 63_000 },
   },
   assistant({
@@ -888,6 +1010,30 @@ export const compactionDocument = document([
     completed: 66_000,
     content: [{ type: "text", text: "Context restored. I continued from the durable Session messages." }],
   }),
+] satisfies SessionMessageInfo[])
+
+export const compactionFailedDocument = document([
+  ...compactionPrelude,
+  {
+    id: "msg_compaction_failed",
+    type: "compaction",
+    status: "failed",
+    reason: "auto",
+    error: { type: "compaction.failed", message: "The provider rejected the compaction request." },
+    time: { created: STORY_TIME + 63_000 },
+  },
+] satisfies SessionMessageInfo[])
+
+export const compactionCancelledDocument = document([
+  ...compactionPrelude,
+  {
+    id: "msg_compaction_cancelled",
+    type: "compaction",
+    status: "failed",
+    reason: "manual",
+    error: { type: "aborted", message: "Compaction cancelled" },
+    time: { created: STORY_TIME + 63_000 },
+  },
 ] satisfies SessionMessageInfo[])
 
 export const subagentDocument = document(
@@ -972,6 +1118,44 @@ export const attachmentsAndCommentsPresentation = {
   },
 } satisfies Record<string, SessionUserPresentation>
 
+// The header and body as the OpenCode iOS app's `VoiceHandoff.format` writes them.
+const voiceHeader =
+  "Voice delegation. The user is on a voice call with a voice agent, which hands their requests to you. Instruction is the user's own spoken words since the previous delegation, transcribed from speech, so it may contain recognition errors and disfluencies: resolve meaning from the complete utterance, not a disfluent prefix. Voice, when present, is how the voice agent framed the request. Transcript delta is the surrounding voice conversation, both sides, for context, not additional commands. Lead your reply with one or two plain sentences suitable for reading aloud, then any detail; answer only what was asked, with no unrequested tips. If this arrives while you are already working (a follow-up, nudge, or status check), answer it promptly: a clear status update, the finished result if you have enough, or the precise blocker or input you need; then continue on the fastest safe path."
+
+const voiceInstruction =
+  "okay so the upload test keeps failing on CI but only sometimes, can you look at the last few runs, figure out whether it's the retry timing or the fixture cleanup, and if it's the fixture just fix it and open a PR"
+
+export const voiceDocument = document([
+  user(
+    "msg_user_voice",
+    `${voiceHeader}\n${JSON.stringify({ instruction: "check the upload test", transcript_delta: ["user: check the upload test"], voice: "Checking the upload test." }, null, 2)}`,
+    100_000,
+  ),
+  assistant({
+    id: "msg_assistant_voice",
+    offset: 101_000,
+    completed: 104_000,
+    content: [{ type: "text", text: "The upload test is flaky on CI: it fails about one run in five." }],
+  }),
+  user(
+    "msg_user_voice_continued",
+    `Voice delegation (continued). Same fields as before.\n${JSON.stringify({ instruction: voiceInstruction, transcript_delta: [`user: ${voiceInstruction}`] }, null, 2)}`,
+    110_000,
+  ),
+  assistant({
+    id: "msg_assistant_voice_continued",
+    offset: 111_000,
+    completed: 118_000,
+    content: [{ type: "text", text: "It was the fixture cleanup. I fixed it and opened a pull request." }],
+  }),
+  user("msg_user_typed", "Thanks, merge it once CI is green.", 120_000),
+] satisfies SessionMessageInfo[])
+
+export const voicePresentation = {
+  msg_user_voice: { displayText: "Checking the upload test.", voice: true },
+  msg_user_voice_continued: { displayText: voiceInstruction, voice: true },
+} satisfies Record<string, SessionUserPresentation>
+
 export const revertDocument = document([
   user("msg_user_revert_base", "Add a compact Session summary.", 90_000),
   assistant({
@@ -993,6 +1177,7 @@ const largeMessages = Array.from({ length: 16 }, (_, index) => {
   const offset = 110_000 + index * 5_000
   const userID = `msg_user_large_${String(index + 1).padStart(2, "0")}`
   const assistantID = `msg_assistant_large_${String(index + 1).padStart(2, "0")}`
+
   const context =
     index % 4 === 0
       ? [
@@ -1006,6 +1191,7 @@ const largeMessages = Array.from({ length: 16 }, (_, index) => {
           }),
         ]
       : []
+
   return [
     user(userID, `Complete deterministic Session UI checkpoint ${index + 1}.`, offset),
     assistant({

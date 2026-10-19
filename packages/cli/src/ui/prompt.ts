@@ -1,5 +1,6 @@
 import { cancel, isCancel, log, outro } from "@clack/prompts"
 import { Effect } from "effect"
+import { errorMessage } from "../util/error"
 
 const cancelled = Symbol("cancelled")
 
@@ -15,12 +16,14 @@ export function requireInteractive(message: string) {
 }
 
 export const openUrl = Effect.fn("cli.prompt.open-url")(function* (url: string) {
-  const { default: open } = yield* Effect.promise(() => import("open"))
-  yield* Effect.promise(() => open(url)).pipe(Effect.ignore)
+  const browser = yield* Effect.promise(() => import("@opencode/util/open"))
+  // Best effort: headless environments may lack a browser opener, and the caller already printed the URL.
+  yield* Effect.tryPromise(() => browser.openUrl(url)).pipe(Effect.ignore)
 })
 
 export function handlePromptErrors<A, E, R>(effect: Effect.Effect<A, E, R>) {
   return effect.pipe(
+    Effect.onInterrupt(() => Effect.sync(() => cancel("Cancelled"))),
     Effect.catchIf(
       (error) => error === cancelled,
       () =>
@@ -37,12 +40,4 @@ export function handlePromptErrors<A, E, R>(effect: Effect.Effect<A, E, R>) {
       }),
     ),
   )
-}
-
-export function errorMessage(error: unknown) {
-  if (error instanceof Error) return error.message
-  if (typeof error === "object" && error !== null && "message" in error && typeof error.message === "string") {
-    return error.message
-  }
-  return String(error)
 }

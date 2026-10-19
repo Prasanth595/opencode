@@ -1,21 +1,21 @@
 import { describe, expect } from "bun:test"
-import { Message, ToolFailure } from "@opencode-ai/ai"
-import { DateTime, Effect, Stream, Types } from "effect"
-import type { SessionContext } from "@opencode-ai/plugin/effect/session"
-import type { ToolHooks } from "@opencode-ai/plugin/effect/tool"
-import { Agent } from "@opencode-ai/core/agent"
-import { Environment } from "@opencode-ai/core/environment/index"
-import { Event } from "@opencode-ai/schema/event"
-import { Model } from "@opencode-ai/core/model"
-import { PlanPlugin } from "@opencode-ai/core/plugin/plan"
-import { Permission } from "@opencode-ai/core/permission"
-import { Provider } from "@opencode-ai/core/provider"
-import { Session } from "@opencode-ai/core/session"
-import { SessionEvent } from "@opencode-ai/core/session/event"
-import { SessionInbox } from "@opencode-ai/core/session/inbox"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { Tool } from "@opencode-ai/schema/tool"
-import { Global } from "@opencode-ai/util/global"
+import { Message, ToolFailure } from "@opencode/ai"
+import { DateTime, Effect, Option, Stream, Types } from "effect"
+import type { SessionContext } from "@opencode/plugin/effect/session"
+import type { ToolHooks } from "@opencode/plugin/effect/tool"
+import { Agent } from "@opencode/core/agent"
+import { Environment } from "@opencode/core/environment/index"
+import { Event } from "@opencode/schema/event"
+import { Model } from "@opencode/core/model"
+import { PlanPlugin } from "@opencode/core/plugin/plan"
+import { Permission } from "@opencode/core/permission"
+import { Provider } from "@opencode/core/provider"
+import { Session } from "@opencode/core/session"
+import { SessionEvent } from "@opencode/core/session/event"
+import { SessionInbox } from "@opencode/core/session/inbox"
+import { SessionMessage } from "@opencode/core/session/message"
+import { Tool } from "@opencode/schema/tool"
+import { Global } from "@opencode/util/global"
 import path from "path"
 import { it } from "../lib/effect"
 import { host } from "./host"
@@ -39,16 +39,10 @@ const run = Effect.fnUntraced(function* (events: ReadonlyArray<SessionEvent.Agen
   const persisted = new Array<string>()
   let contextHook: ((input: SessionContext) => Effect.Effect<void>) | undefined
   let toolHook: ((input: ToolHooks["execute.after"]) => Effect.Effect<void>) | undefined
+  const defaults = Agent.Info.default(plan)
   const planAgent = {
-    id: plan,
-    name: Agent.Name.make("Plan"),
-    request: { settings: {}, headers: {}, body: {} },
-    mode: "primary",
-    hidden: false,
-    permissions: [
-      { action: "*", resource: "*", effect: "allow" },
-      { action: "external_directory", resource: "*", effect: "ask" },
-    ],
+    ...defaults,
+    permissions: [...defaults.permissions],
   } satisfies Types.DeepMutable<Agent.Info>
   const driver = Environment.makeMemoryDriver()
   yield* PlanPlugin.Plugin.effect(
@@ -72,6 +66,8 @@ const run = Effect.fnUntraced(function* (events: ReadonlyArray<SessionEvent.Agen
       },
       tool: {
         transform: () => Effect.die("unused tool.transform"),
+        reload: () => Effect.die("unused tool.reload"),
+        list: () => Effect.die("unused tool.list"),
         hook: (name, callback) => {
           if (name === "execute.after") {
             // Hook names and callbacks are correlated, but TypeScript does not narrow this generic registration API.
@@ -95,7 +91,7 @@ const run = Effect.fnUntraced(function* (events: ReadonlyArray<SessionEvent.Agen
             SessionInbox.Synthetic.make({
               id: SessionMessage.ID.make("msg_plan_test"),
               sessionID,
-              timeCreated: DateTime.makeUnsafe(0),
+              time: { created: DateTime.makeUnsafe(0) },
               type: "synthetic",
               payload: { text: input.text },
               delivery: "steer",
@@ -123,6 +119,7 @@ const request = (agent: Agent.ID, messages: Array<Message>): SessionContext => (
   system: [],
   messages,
   tools: {},
+  options: {},
 })
 
 type ToolErrorEvent = Extract<ToolHooks["execute.after"], { readonly status: "error" }>
@@ -163,7 +160,7 @@ describe("plan plugin reminders", () => {
       const { persisted } = yield* run([agentSelected(plan, build), agentSelected(build, plan)])
       yield* settle(persisted, 2)
       expect(persisted[0]).toContain("You are in Plan mode")
-      expect(persisted[0]).toContain("optionally create or update plan documents")
+      expect(persisted[0]).toContain("Do not create or update plan files unless the user explicitly asks you to")
       expect(persisted[0]).toContain(planDirectory)
       expect(persisted[0]).toContain("Do not modify any other files")
       expect(persisted[1]).toContain("NO LONGER in Plan mode")
@@ -242,10 +239,10 @@ describe("plan plugin reminders", () => {
 })
 
 describe("plan plugin mutations", () => {
-  it.effect("creates the Plan directory", () =>
+  it.effect("does not create the Plan directory during activation", () =>
     Effect.gen(function* () {
       const { files } = yield* run()
-      expect((yield* files.stat(planDirectory)).type).toBe("directory")
+      expect(Option.isNone(yield* files.stat(planDirectory).pipe(Effect.option))).toBe(true)
     }),
   )
 
@@ -260,17 +257,13 @@ describe("plan plugin mutations", () => {
     }),
   )
 
-  it.effect("allows the Plan directory external boundary", () =>
+  it.effect("allows external directories without asking", () =>
     Effect.gen(function* () {
       const { planAgent } = yield* run()
       expect(
         Permission.evaluate("external_directory", path.join(planDirectory, "*"), planAgent.permissions).effect,
       ).toBe("allow")
-      expect(
-        Permission.evaluate("external_directory", path.join(planDirectory, "nested", "*"), planAgent.permissions)
-          .effect,
-      ).toBe("allow")
-      expect(Permission.evaluate("external_directory", "/outside/*", planAgent.permissions).effect).toBe("ask")
+      expect(Permission.evaluate("external_directory", "/outside/*", planAgent.permissions).effect).toBe("allow")
     }),
   )
 

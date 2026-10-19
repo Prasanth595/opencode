@@ -1,7 +1,7 @@
 export * as FileRetention from "./file-retention.js"
 
 import { Duration, Effect, Option } from "effect"
-import { FSUtil } from "@opencode-ai/util/fs-util"
+import { FSUtil } from "@opencode/util/fs-util"
 
 export const cleanup = Effect.fn("FileRetention.cleanup")(function* (
   fs: FSUtil.Interface,
@@ -13,10 +13,10 @@ export const cleanup = Effect.fn("FileRetention.cleanup")(function* (
     files,
     (file) =>
       Effect.gen(function* () {
-        const info = yield* fs.stat(file).pipe(Effect.catch(() => Effect.succeed(undefined)))
+        const info = yield* fs.stat(file).pipe(Effect.orElseSucceed(() => undefined))
         const mtime = info && Option.getOrUndefined(info.mtime)
         if (!mtime || mtime.getTime() >= cutoff) return
-        yield* fs.remove(file).pipe(Effect.catch(() => Effect.void))
+        yield* fs.remove(file).pipe(Effect.ignore)
       }),
     { concurrency: 8, discard: true },
   )

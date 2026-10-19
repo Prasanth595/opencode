@@ -3,7 +3,7 @@ export * as KV from "./kv.js"
 import { and, asc, eq, gt, gte, lt } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Database } from "./database/database.js"
-import { makeGlobalNode } from "@opencode-ai/util/effect/app-node"
+import { makeGlobalNode } from "@opencode/util/effect/app-node"
 import { KVTable } from "./kv/sql.js"
 
 export type Value = Schema.Json
@@ -36,7 +36,7 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/KV
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const { db } = yield* Database.Service
+    const db = (yield* Database.Service).db
     return Service.of({
       get: Effect.fn("KV.get")(function* (key) {
         return (yield* db

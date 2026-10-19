@@ -1,57 +1,58 @@
-import { getDirectory, getFilename } from "@opencode-ai/util/path"
-import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { ScrollView } from "@opencode-ai/ui/scroll-view"
-import { Dialog, DialogBody } from "@opencode-ai/ui/dialog"
-import { Icon } from "@opencode-ai/ui/icon"
-import { Keybind } from "@opencode-ai/ui/keybind"
-import { TextInput } from "@opencode-ai/ui/text-input"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { createEffect, createMemo, createResource, createSignal, For, Match, Show, Switch } from "solid-js"
+import { getDirectory, getFilename } from "@opencode/util/path"
+import { FileIcon } from "@opencode/ui/file-icon"
+import { ScrollView } from "@opencode/ui/scroll-view"
+import { Dialog, DialogBody } from "@opencode/ui/dialog"
+import { Icon } from "@opencode/ui/icon"
+import { Keybind } from "@opencode/ui/keybind"
+import { TextInput } from "@opencode/ui/text-input"
+import { createEffect, createMemo, For, Match, onCleanup, Show, Switch } from "solid-js"
+import { createStore } from "solid-js/store"
 import { formatKeybindParts } from "@/shell/commands/command"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useTabs } from "@/shell/tabs/tabs"
 import { SessionTabAvatar } from "@/shell/layout/session-tab-avatar"
 import { getRelativeTime } from "@/shell/time"
-import {
-  createCommandPaletteCommandEntry,
-  createCommandPaletteFileEntry,
-  createCommandPaletteModel,
-  createServerSessionEntries,
-  uniqueCommandPaletteEntries,
-  type CommandPaletteEntry,
-} from "./palette"
+import { createCommandPaletteFileEntry, createCommandPaletteModel, type CommandPaletteEntry } from "./palette"
+import { createCommandPaletteSearch } from "./search"
 import "./dialog.css"
 
 function groups(entries: CommandPaletteEntry[]) {
   const map = new Map<string, CommandPaletteEntry[]>()
+
   for (const entry of entries) map.set(entry.category, [...(map.get(entry.category) ?? []), entry])
+
   return Array.from(map.entries()).map(([category, entries]) => ({ category, entries }))
 }
 
 export function matchesCommandPaletteEntry(entry: CommandPaletteEntry, query: string) {
   const value = query.toLowerCase()
+
   return [entry.title, entry.description, entry.category].some((text) => text?.toLowerCase().includes(value))
 }
 
 export function DialogCommandPalette(props: { onOpenFile?: (path: string) => void }) {
   const palette = createCommandPaletteModel(props)
-  const loadItems = async (text: string) => {
-    const q = text.trim()
+
+  const items = (q: string) => {
     if (!q) return [...palette.preferredCommandEntries(), ...palette.recentFileEntries()]
 
-    const [files, nextSessions] = await Promise.all([palette.file.searchFiles(q), Promise.resolve(palette.sessions(q))])
-    const category = palette.language.t("palette.group.files")
-    return [
-      ...palette.commandEntries().filter((entry) => matchesCommandPaletteEntry(entry, q)),
-      ...nextSessions,
-      ...files.map((path) => createCommandPaletteFileEntry(path, category)),
-    ]
+    return palette.commandEntries().filter((entry) => matchesCommandPaletteEntry(entry, q))
   }
 
   return (
     <CommandPaletteView
       placeholder={palette.language.t("palette.search.placeholder")}
-      loadItems={loadItems}
+      items={items}
+      sources={[
+        palette.sessions,
+        async (query, signal) => {
+          if (!query) return []
+          const files = await palette.file.searchFiles(query, { signal })
+          const category = palette.language.t("palette.group.files")
+
+          return files.map((path) => createCommandPaletteFileEntry(path, category))
+        },
+      ]}
       highlight={palette.highlight}
       select={palette.select}
       close={palette.close}
@@ -61,30 +62,28 @@ export function DialogCommandPalette(props: { onOpenFile?: (path: string) => voi
 
 export function CommandPaletteView(props: {
   placeholder: string
-  loadItems: (text: string) => CommandPaletteEntry[] | Promise<CommandPaletteEntry[]>
+  items: (query: string) => CommandPaletteEntry[]
+  sources: ((query: string, signal: AbortSignal) => Promise<CommandPaletteEntry[]>)[]
   highlight: (item: CommandPaletteEntry | undefined) => void
   select: (item: CommandPaletteEntry | undefined) => void
   close: () => void
 }) {
   const language = useLanguage()
   const tabs = useTabs()
-  const [query, setQuery] = createSignal("")
-  const [active, setActive] = createSignal(0)
+  const [store, setStore] = createStore<{ query: string; active?: string }>({ query: "" })
 
-  const [entries] = createResource(query, props.loadItems, { initialValue: [] as CommandPaletteEntry[] })
-  // Render stale results while a new query loads to avoid flashing "Loading" per keystroke.
-  const visibleEntries = createMemo(() => uniqueCommandPaletteEntries(entries.latest ?? []))
+  const search = createCommandPaletteSearch({ query: () => store.query, items: props.items, sources: props.sources })
+  const visibleEntries = search.items
   const groupedEntries = createMemo(() => groups(visibleEntries()))
-  const activeEntry = createMemo(() => visibleEntries()[active()])
+
+  // Follow the first result until the user explicitly chooses a row.
+  const activeEntry = createMemo(
+    () => visibleEntries().find((entry) => entry.id === store.active) ?? visibleEntries()[0],
+  )
+
   const openSessions = createMemo(
     () => new Set(tabs.store.flatMap((tab) => (tab.type === "session" ? [`${tab.server}\0${tab.sessionId}`] : []))),
   )
-
-  createEffect(() => {
-    query()
-    visibleEntries()
-    setActive(0)
-  })
 
   createEffect(() => {
     props.highlight(activeEntry())
@@ -92,31 +91,49 @@ export function CommandPaletteView(props: {
 
   let resultsRef: HTMLDivElement | undefined
 
-  const move = (delta: -1 | 1) => {
-    const count = visibleEntries().length
-    if (count === 0) return
-    setActive((index) => (index + delta + count) % count)
-    requestAnimationFrame(() => {
+  createEffect(() => {
+    // Incoming results can move an explicitly selected row below the viewport.
+    visibleEntries()
+
+    if (!activeEntry()) return
+
+    const frame = requestAnimationFrame(() => {
       resultsRef?.querySelector("[data-active]")?.scrollIntoView({ block: "nearest" })
     })
+
+    onCleanup(() => cancelAnimationFrame(frame))
+  })
+
+  const move = (delta: -1 | 1) => {
+    const count = visibleEntries().length
+
+    if (count === 0) return
+    const index = visibleEntries().findIndex((entry) => entry.id === activeEntry()?.id)
+    setStore("active", visibleEntries()[(index + delta + count) % count].id)
   }
 
   const handleKeyDown = (event: KeyboardEvent) => {
     if (event.key === "ArrowDown") {
       event.preventDefault()
       move(1)
+
       return
     }
+
     if (event.key === "ArrowUp") {
       event.preventDefault()
       move(-1)
+
       return
     }
+
     if (event.key === "Enter") {
       event.preventDefault()
       props.select(activeEntry())
+
       return
     }
+
     if (event.key === "Escape") {
       event.preventDefault()
       props.close()
@@ -128,14 +145,14 @@ export function CommandPaletteView(props: {
       <DialogBody class="command-palette-body">
         <div class="command-palette-search">
           <TextInput
-            value={query()}
+            value={store.query}
             autofocus
             autocomplete="off"
             spellcheck={false}
             appearance="large"
             placeholder={props.placeholder}
             leadingIcon={<Icon name="magnifying-glass" />}
-            onInput={(event) => setQuery(event.currentTarget.value)}
+            onInput={(event) => setStore({ query: event.currentTarget.value, active: undefined })}
             onKeyDown={handleKeyDown}
           />
         </div>
@@ -145,7 +162,7 @@ export function CommandPaletteView(props: {
               when={visibleEntries().length > 0}
               fallback={
                 <div class="command-palette-state">
-                  {entries.loading ? language.t("common.loading") : language.t("palette.empty")}
+                  {search.loading() ? language.t("common.loading") : language.t("palette.empty")}
                 </div>
               }
             >
@@ -166,7 +183,7 @@ export function CommandPaletteView(props: {
                               ? openSessions().has(`${item.server}\0${item.sessionID}`)
                               : false
                           }
-                          onActive={() => setActive(visibleEntries().findIndex((entry) => entry.id === item.id))}
+                          onActive={() => setStore("active", item.id)}
                           onSelect={() => props.select(item)}
                         />
                       )}

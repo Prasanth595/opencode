@@ -1,12 +1,12 @@
 import { describe, expect } from "bun:test"
 import path from "path"
 import { Effect } from "effect"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { ToolOutput } from "@opencode-ai/core/tool-output"
-import { FSUtil } from "@opencode-ai/util/fs-util"
-import { Global } from "@opencode-ai/util/global"
-import { Identifier } from "@opencode-ai/core/id/id"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { ToolOutput } from "@opencode/core/tool-output"
+import type { Tool } from "@opencode/core/tool"
+import { FSUtil } from "@opencode/util/fs-util"
+import { Global } from "@opencode/util/global"
 import { tmpdir } from "./fixture/tmpdir"
 import { it } from "./lib/effect"
 
@@ -18,12 +18,13 @@ const withStore = <A, E, R>(
     Effect.promise(() => tmpdir()),
     (tmp) => {
       const layer = AppNodeBuilder.build(LayerNode.group([ToolOutput.node, FSUtil.node]), [
-        [Global.node, Global.layerWith({ data: tmp.path })],
+        Global.node.replace(Global.layerWith({ data: tmp.path })),
       ])
       return Effect.gen(function* () {
         const output = yield* ToolOutput.Service
-        if (limits) yield* output.transform((draft) => draft.configure(limits))
-        return yield* body(output, yield* FSUtil.Service, tmp.path)
+        const fs = yield* FSUtil.Service
+        if (limits) yield* output.transform((editor) => editor.configure(limits))
+        return yield* body(output, fs, tmp.path)
       }).pipe(Effect.provide(layer))
     },
     (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
@@ -35,7 +36,7 @@ describe("ToolOutput", () => {
       (service, fs) =>
         Effect.gen(function* () {
           const output = { items: [1, 2, 3] }
-          const result = yield* service.truncate({ output, content: "one\ntwo\nthree" })
+          const result = yield* service.truncate({ output, content: [{ type: "text", text: "one\ntwo\nthree" }] })
           expect(result.output).toBe(output)
           expect(result.metadata).toMatchObject({ truncated: true })
           const outputPath = result.metadata?.outputPath
@@ -44,23 +45,23 @@ describe("ToolOutput", () => {
           expect(yield* fs.readFileString(outputPath)).toBe("one\ntwo\nthree")
           expect(result.content).toEqual([
             { type: "text", text: "one\ntwo" },
-            { type: "text", text: `... 1 line truncated; full content saved to ${outputPath} ...` },
+            { type: "text", text: `[showing lines 1-2 of 3; full output saved to ${outputPath}]` },
           ])
         }),
       { maxLines: 2, maxBytes: 1_000 },
     ),
   )
 
-  it.live("reports bytes omitted by the byte limit", () =>
+  it.live("reports lines shown under the byte limit", () =>
     withStore(
       (output) =>
         Effect.gen(function* () {
-          const result = yield* output.truncate({ content: "one\ntwo" })
+          const result = yield* output.truncate({ content: [{ type: "text", text: "one\ntwo" }] })
           expect(result.content).toEqual([
             { type: "text", text: "one" },
             {
               type: "text",
-              text: expect.stringMatching(/^\.\.\. 4 bytes truncated; full content saved to .+ \.\.\.$/),
+              text: expect.stringMatching(/^\[showing lines 1-1 of 2; full output saved to .+\]$/),
             },
           ])
         }),
@@ -80,7 +81,7 @@ describe("ToolOutput", () => {
             { type: "text", text: "before" },
             file,
             { type: "text", text: "after" },
-            { type: "text", text: expect.stringMatching(/^\.\.\. 1 line truncated; full content saved to /) },
+            { type: "text", text: expect.stringMatching(/^\[showing lines 1-2 of 3; full output saved to /) },
           ])
         }),
       { maxLines: 2, maxBytes: 1_000 },
@@ -90,8 +91,9 @@ describe("ToolOutput", () => {
   it.live("skips results that report a truncation state", () =>
     withStore((output) =>
       Effect.gen(function* () {
-        const truncated = { content: "one\ntwo", metadata: { truncated: true, source: "tool" } }
-        const retained = { content: "one\ntwo", metadata: { truncated: false, source: "tool" } }
+        const content: Tool.NormalizedResult["content"] = [{ type: "text", text: "one\ntwo" }]
+        const truncated = { content, metadata: { truncated: true, source: "tool" } }
+        const retained = { content, metadata: { truncated: false, source: "tool" } }
         expect(yield* output.truncate(truncated)).toBe(truncated)
         expect(yield* output.truncate(retained)).toBe(retained)
       }),
@@ -111,8 +113,8 @@ describe("ToolOutput", () => {
     withStore(
       (output) =>
         Effect.gen(function* () {
-          expect(yield* output.truncate({ content: "one\ntwo\n" })).toEqual({
-            content: "one\ntwo\n",
+          expect(yield* output.truncate({ content: [{ type: "text", text: "one\ntwo\n" }] })).toEqual({
+            content: [{ type: "text", text: "one\ntwo\n" }],
             metadata: { truncated: false },
           })
         }),
@@ -124,10 +126,10 @@ describe("ToolOutput", () => {
     withStore(
       (output) =>
         Effect.gen(function* () {
-          const result = yield* output.truncate({ content: "one\n" })
+          const result = yield* output.truncate({ content: [{ type: "text", text: "one\n" }] })
           expect(result.content).toEqual([
             { type: "text", text: "one" },
-            { type: "text", text: expect.stringMatching(/^\.\.\. 1 byte truncated; full content saved to /) },
+            { type: "text", text: expect.stringMatching(/^\[showing lines 1-1 of 1; full output saved to /) },
           ])
         }),
       { maxLines: 2, maxBytes: 3 },
@@ -138,8 +140,8 @@ describe("ToolOutput", () => {
     withStore((output, fs, root) =>
       Effect.gen(function* () {
         const directory = path.join(root, ToolOutput.DIRECTORY)
-        const old = path.join(directory, Identifier.create("tool", "ascending", 2 ** 36 - 1))
-        const recent = path.join(directory, Identifier.create("tool", "ascending", 2 ** 36 + 1))
+        const old = path.join(directory, ToolOutput.fileName(2 ** 36 - 1))
+        const recent = path.join(directory, ToolOutput.fileName(2 ** 36 + 1))
         yield* fs.ensureDir(directory)
         yield* fs.writeFileString(old, "old")
         yield* fs.writeFileString(recent, "recent")

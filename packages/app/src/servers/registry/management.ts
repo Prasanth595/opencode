@@ -4,7 +4,6 @@ import type { ServerHealth } from "@/runtime/server/health"
 export type ServerFormValues = {
   url: string
   name: string
-  username: string
   password: string
 }
 
@@ -21,16 +20,20 @@ export function createServerHealthPreview(
     const current = ++generation
     setStatus(undefined)
     const normalized = normalizeServerUrl(values.url)
+
     if (!normalized) return
     const host = normalized.replace(/^https?:\/\//, "").split("/")[0]
+
     if (!host) return
+
     if (!host.includes("localhost") && !host.startsWith("127.0.0.1") && !host.includes(".") && !host.includes(":"))
       return
 
     const http: ServerConnection.HttpBase = { url: normalized }
-    if (values.username) http.username = values.username
+
     if (values.password) http.password = values.password
     const result = await check(http)
+
     if (current !== generation) return
     setStatus(result.healthy)
   }
@@ -49,6 +52,7 @@ export function replaceServerConnection(
 ) {
   operations.removeTabs(originalKey)
   const added = operations.add(next)
+
   if (!added) return
   operations.remove(originalKey)
 }

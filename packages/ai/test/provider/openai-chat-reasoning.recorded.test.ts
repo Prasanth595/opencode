@@ -1,7 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { LLM, LLMEvent, LLMResponse, LanguageModel } from "../../src/index.js"
-import { OpenAIChat } from "../../src/protocols/openai-chat.js"
 import * as OpenAICompatible from "../../src/providers/openai-compatible.js"
 import * as OpenRouter from "../../src/providers/openrouter.js"
 import { LLMClient } from "../../src/route.js"
@@ -68,11 +67,13 @@ for (const item of cases) {
           expect(response.text.replaceAll(",", "").trim()).toBe("37887")
           expect(response.reasoning.length).toBeGreaterThan(0)
           expect(response.events.some(LLMEvent.is.reasoningDelta)).toBe(true)
-          const metadata = response.message.content.find((part) => part.type === "reasoning")?.providerMetadata
-          expect(metadata?.openai?.reasoningField).toBe(item.structured ? "reasoning" : "reasoning_content")
-          expect(Array.isArray(metadata?.openai?.reasoningDetails)).toBe(item.structured)
+          const metadata = response.message.content.find((part) => part.type === "reasoning")?.providerMetadata?.[
+            item.model.route.providerMetadataKey ?? String(item.model.provider)
+          ]
+          expect(metadata?.reasoningField).toBe(item.structured ? "reasoning" : "reasoning_content")
+          expect(Array.isArray(metadata?.reasoningDetails)).toBe(item.structured)
           if (!item.structured) return
-          const details = metadata?.openai?.reasoningDetails
+          const details = metadata?.reasoningDetails
           if (!Array.isArray(details)) return
           expect(
             details.some(
@@ -87,7 +88,14 @@ for (const item of cases) {
 
           const replay = yield* compileRequest(LLM.request({ model: item.model, messages: [response.message] }))
           expect(replay.body.messages).toMatchObject([
-            { role: "assistant", content: response.text, reasoning: response.reasoning },
+            {
+              role: "assistant",
+              content:
+                item.model.route.id === "openrouter"
+                  ? [{ type: "text", text: response.text, cache_control: { type: "ephemeral" } }]
+                  : response.text,
+              reasoning: response.reasoning,
+            },
           ])
           const replayDetails =
             replay.body.messages[0]?.role === "assistant" ? replay.body.messages[0].reasoning_details : undefined
@@ -126,7 +134,11 @@ for (const item of cases) {
           ).toMatch(/^Paris is sunny\.?$/)
           const details = events
             .filter(LLMEvent.is.reasoningEnd)
-            .map((event) => event.providerMetadata?.openai?.reasoningDetails)
+            .map(
+              (event) =>
+                event.providerMetadata?.[item.model.route.providerMetadataKey ?? String(item.model.provider)]
+                  ?.reasoningDetails,
+            )
             .find(Array.isArray)
           expect(Array.isArray(details)).toBe(item.structured)
           if (!item.structured || !Array.isArray(details)) return

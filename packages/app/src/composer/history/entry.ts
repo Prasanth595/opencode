@@ -1,37 +1,13 @@
 import type { Prompt } from "@/composer/state"
 import type { SelectedLineRange } from "@/workspaces/files/model"
+import { clonePrompt, isAttachment } from "../prompt-parts"
+import type { PromptHistoryComment, PromptHistoryEntry } from "../schema"
+
+export type { PromptHistoryComment, PromptHistoryEntry } from "../schema"
 
 export const MAX_HISTORY = 100
 
-export type PromptHistoryComment = {
-  id: string
-  path: string
-  selection: SelectedLineRange
-  comment: string
-  time: number
-  origin?: "review" | "file"
-  preview?: string
-}
-
-export type PromptHistoryEntry = {
-  prompt: Prompt
-  comments: PromptHistoryComment[]
-}
-
 export type PromptHistoryStoredEntry = PromptHistoryEntry
-
-export function clonePromptParts(prompt: Prompt): Prompt {
-  return prompt.map((part) => {
-    if (part.type === "text") return { ...part }
-    if (part.type === "image") return { ...part }
-    if (part.type === "agent") return { ...part }
-    if (part.type === "skill") return { ...part }
-    return {
-      ...part,
-      selection: part.selection ? { ...part.selection } : undefined,
-    }
-  })
-}
 
 function cloneSelection(selection: SelectedLineRange): SelectedLineRange {
   return {
@@ -49,17 +25,6 @@ export function clonePromptHistoryComments(comments: PromptHistoryComment[]) {
   }))
 }
 
-export function normalizePromptHistoryEntry(entry: PromptHistoryStoredEntry): PromptHistoryEntry {
-  return {
-    prompt: clonePromptParts(entry.prompt),
-    comments: clonePromptHistoryComments(entry.comments),
-  }
-}
-
-export function promptLength(prompt: Prompt) {
-  return prompt.reduce((len, part) => len + ("content" in part ? part.content.length : 0), 0)
-}
-
 export function prependHistoryEntry(
   entries: PromptHistoryStoredEntry[],
   prompt: Prompt,
@@ -70,17 +35,35 @@ export function prependHistoryEntry(
     .map((part) => ("content" in part ? part.content : ""))
     .join("")
     .trim()
-  const hasImages = prompt.some((part) => part.type === "image")
+
+  const hasAttachments = prompt.some(isAttachment)
   const hasComments = comments.some((comment) => !!comment.comment.trim())
-  if (!text && !hasImages && !hasComments) return entries
+
+  if (!text && !hasAttachments && !hasComments) return entries
 
   const entry = {
-    prompt: clonePromptParts(prompt),
+    prompt: clonePrompt(prompt),
     comments: clonePromptHistoryComments(comments),
   } satisfies PromptHistoryEntry
+
   const last = entries[0]
+
   if (last && isPromptEqual(last, entry)) return entries
+
   return [entry, ...entries].slice(0, max)
+}
+
+// A send that failed puts its prompt back in the composer, so the entry recorded for it would
+// only duplicate the draft and keep its attachments referenced for as long as history holds it.
+export function removeHistoryEntry(
+  entries: PromptHistoryStoredEntry[],
+  prompt: Prompt,
+  comments: PromptHistoryComment[] = [],
+) {
+  const entry = { prompt, comments } satisfies PromptHistoryEntry
+  const next = entries.filter((item) => !isPromptEqual(item, entry))
+
+  return next.length === entries.length ? entries : next
 }
 
 function isCommentEqual(commentA: PromptHistoryComment, commentB: PromptHistoryComment) {
@@ -96,19 +79,22 @@ function isCommentEqual(commentA: PromptHistoryComment, commentB: PromptHistoryC
   )
 }
 
-function isPromptEqual(promptA: PromptHistoryStoredEntry, promptB: PromptHistoryStoredEntry) {
-  const entryA = normalizePromptHistoryEntry(promptA)
-  const entryB = normalizePromptHistoryEntry(promptB)
+function isPromptEqual(entryA: PromptHistoryStoredEntry, entryB: PromptHistoryStoredEntry) {
   if (entryA.prompt.length !== entryB.prompt.length) return false
+
   for (let i = 0; i < entryA.prompt.length; i++) {
     const partA = entryA.prompt[i]
     const partB = entryB.prompt[i]
+
     if (partA.type !== partB.type) return false
+
     if (partA.type === "text" && partA.content !== (partB.type === "text" ? partB.content : "")) return false
+
     if (partA.type === "file") {
       if (partA.path !== (partB.type === "file" ? partB.path : "")) return false
       const a = partA.selection
       const b = partB.type === "file" ? partB.selection : undefined
+
       const sameSelection =
         (!a && !b) ||
         (!!a &&
@@ -117,19 +103,27 @@ function isPromptEqual(promptA: PromptHistoryStoredEntry, promptB: PromptHistory
           a.startChar === b.startChar &&
           a.endLine === b.endLine &&
           a.endChar === b.endChar)
+
       if (!sameSelection) return false
     }
+
     if (partA.type === "agent" && partA.name !== (partB.type === "agent" ? partB.name : "")) return false
+
     if (partA.type === "skill") {
       if (partB.type !== "skill" || partA.id !== partB.id || partA.name !== partB.name) return false
     }
-    if (partA.type === "image" && partA.id !== (partB.type === "image" ? partB.id : "")) return false
+
+    if (isAttachment(partA) && partA.id !== (isAttachment(partB) ? partB.id : "")) return false
   }
+
   if (entryA.comments.length !== entryB.comments.length) return false
+
   for (let i = 0; i < entryA.comments.length; i++) {
     const commentA = entryA.comments[i]
     const commentB = entryB.comments[i]
+
     if (!commentA || !commentB || !isCommentEqual(commentA, commentB)) return false
   }
+
   return true
 }

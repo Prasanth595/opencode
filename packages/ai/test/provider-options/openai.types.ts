@@ -8,6 +8,9 @@ LLM.request({ model: selected, prompt: "Hello", providerOptions: { reasoningEffo
 LLM.request({ model: selected, prompt: "Hello", providerOptions: { reasoningEffort: "experimental" } })
 LLM.request({ model: selected, prompt: "Hello", providerOptions: { textVerbosity: "low" } })
 LLM.request({ model: selected, prompt: "Hello", providerOptions: { textVerbosity: "verbose" } })
+LLM.request({ model: selected, prompt: "Hello", providerOptions: { serviceTier: "scale" } })
+LLM.request({ model: selected, prompt: "Hello", providerOptions: { serviceTier: "ultrafast" } })
+LLM.request({ model: selected, prompt: "Hello", providerOptions: { serviceTier: "future-tier" } })
 LLM.request({ model: chat, prompt: "Hello", providerOptions: { reasoningEffort: "max" } })
 LLM.request({ model: chat, prompt: "Hello", providerOptions: { reasoningEffort: "experimental" } })
 

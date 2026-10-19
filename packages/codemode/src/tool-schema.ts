@@ -9,11 +9,27 @@ export const identifierSegment = /^[A-Za-z_$][A-Za-z0-9_$]*$/
 
 const renderKey = (name: string): string => (identifierSegment.test(name) ? name : JSON.stringify(name))
 
+const definitionName = (ref: string): string | undefined => {
+  const tokens = JsonPointer.parseUriFragment(ref)
+  return tokens?.length === 2 && (tokens[0] === "$defs" || tokens[0] === "definitions") ? tokens[1] : undefined
+}
+
+// Effect encodes an unchecked `number` as `number | "Infinity" | "-Infinity" | "NaN"`, and older generators emit one
+// singleton enum per value. Rendering them as plain `number` only narrows what the model is told to send.
 const effectNumberSentinel = (schema: JsonSchema) =>
   schema.type === "string" &&
   Array.isArray(schema.enum) &&
-  schema.enum.length === 1 &&
-  (schema.enum[0] === "NaN" || schema.enum[0] === "Infinity" || schema.enum[0] === "-Infinity")
+  schema.enum.length > 0 &&
+  schema.enum.every((value) => value === "NaN" || value === "Infinity" || value === "-Infinity")
+
+// Effect emits `{ not: { type: "null" } }` only for a struct with no properties or index signatures. With nothing but
+// annotations beside it, it is TypeScript's `{}`. Mirrors `emptyInputJsonSchema` in `@opencode/ai`, which this
+// standalone package cannot import.
+const annotationKeywords = new Set(["title", "description", "default", "examples", "readOnly", "writeOnly"])
+const isEffectEmptyStruct = (schema: JsonSchema) =>
+  schema.not?.type === "null" &&
+  Object.keys(schema.not).length === 1 &&
+  Object.keys(schema).every((key) => key === "not" || annotationKeywords.has(key))
 
 const intersection = (members: ReadonlyArray<string>): string => {
   const concrete = members.filter((member) => member !== "unknown")
@@ -38,8 +54,7 @@ const hasUnresolvedRef = (
   if (visited.has(schema)) return false
   const nextVisited = new Set([...visited, schema])
   if (schema.$ref !== undefined) {
-    const segment = schema.$ref.match(/^#\/(?:\$defs|definitions)\/([^/]+)$/)?.[1]
-    const name = segment === undefined ? undefined : JsonPointer.unescapeToken(segment)
+    const name = definitionName(schema.$ref)
     if (name === undefined || definitions[name] === undefined || seen.has(name)) return true
     if (hasUnresolvedRef(definitions[name], definitions, new Set([...seen, name]), nextVisited)) return true
   }
@@ -63,21 +78,58 @@ const docTags = (schema: JsonSchema): Array<string> => {
     } catch {}
   }
   if (typeof schema.format === "string") tags.push(`@format ${schema.format}`)
+  if (schema.type === "integer") tags.push("@integer")
+  if (typeof schema.minimum === "number") tags.push(`@minimum ${schema.minimum}`)
+  if (typeof schema.maximum === "number") tags.push(`@maximum ${schema.maximum}`)
+  if (typeof schema.exclusiveMinimum === "number") tags.push(`@exclusiveMinimum ${schema.exclusiveMinimum}`)
+  if (typeof schema.exclusiveMaximum === "number") tags.push(`@exclusiveMaximum ${schema.exclusiveMaximum}`)
+  if (typeof schema.multipleOf === "number") tags.push(`@multipleOf ${schema.multipleOf}`)
+  if (typeof schema.minLength === "number") tags.push(`@minLength ${schema.minLength}`)
+  if (typeof schema.maxLength === "number") tags.push(`@maxLength ${schema.maxLength}`)
+  if (typeof schema.pattern === "string") tags.push(`@pattern ${schema.pattern}`)
   if (typeof schema.minItems === "number") tags.push(`@minItems ${schema.minItems}`)
   if (typeof schema.maxItems === "number") tags.push(`@maxItems ${schema.maxItems}`)
+  if (schema.uniqueItems === true) tags.push("@uniqueItems true")
   return tags
 }
 
-// Neutralize `*\/` so model-provided schema text cannot terminate generated documentation.
-const jsdoc = (description: string | undefined, tags: ReadonlyArray<string>, pad: string): string => {
-  const lines = [...(description === undefined ? [] : description.split("\n")), ...tags].map((line) =>
-    line.replaceAll("*/", "* /").replace(/\s+$/, ""),
-  )
+const docLines = (schema: JsonSchema, width: number): Array<string> => {
+  const summary = docTags(schema).join(" ")
+  const lines = (schema.description ?? "").split("\n").map((line) => line.replace(/\s+$/, ""))
   while (lines.length > 0 && lines[0]!.trim() === "") lines.shift()
   while (lines.length > 0 && lines[lines.length - 1]!.trim() === "") lines.pop()
-  if (lines.length === 0) return ""
-  if (lines.length === 1) return `${pad}/** ${lines[0]} */\n`
-  const body = lines.map((line) => `${pad} *${line === "" ? "" : ` ${line}`}`).join("\n")
+  const inline = lines.length === 1 ? `${lines[0]}${lines[0].endsWith(".") ? "" : "."} ${summary}` : summary
+  return summary && lines.length === 1 && !summary.includes("\n") && width + inline.length + 7 <= 120
+    ? [inline]
+    : [...lines, ...(summary ? summary.split("\n") : [])]
+}
+
+// Neutralize `*\/` so model-provided schema text cannot terminate generated documentation.
+const jsdoc = (schema: JsonSchema, pad: string): string => {
+  const content = docLines(schema, pad.length)
+  const types = typeof schema.type === "string" ? [schema.type] : (schema.type ?? [])
+
+  const append = (label: string, child: JsonSchema) => {
+    docLines(child, pad.length + label.length + 2).forEach((line, index) => {
+      if (index === 0) {
+        content.push(`${label}: ${line}`)
+        return
+      }
+      content.push(line ? `  ${line}` : "")
+    })
+  }
+
+  // Document only the immediate contents; recursive labels obscure which level a constraint belongs to.
+  if (types.includes("array") && schema.items) append("Each item", schema.items)
+  if ((types.includes("object") || schema.properties) && typeof schema.additionalProperties === "object") {
+    const label = Object.keys(schema.properties ?? {}).length > 0 ? "Each additional value" : "Each value"
+    append(label, schema.additionalProperties)
+  }
+
+  if (content.length === 0) return ""
+  const escaped = content.map((line) => line.replaceAll("*/", "* /"))
+  if (escaped.length === 1 && pad.length + escaped[0].length + 7 <= 120) return `${pad}/** ${escaped[0]} */\n`
+  const body = escaped.map((line) => `${pad} *${line === "" ? "" : ` ${line}`}`).join("\n")
   return `${pad}/**\n${body}\n${pad} */\n`
 }
 
@@ -93,8 +145,7 @@ const renderSchema = (
       ? ctx
       : { ...ctx, definitions: { ...ctx.definitions, ...(schema.definitions ?? {}), ...(schema.$defs ?? {}) } }
   if (schema.$ref) {
-    const segment = schema.$ref.match(/^#\/(?:\$defs|definitions)\/([^/]+)$/)?.[1]
-    const name = segment === undefined ? undefined : JsonPointer.unescapeToken(segment)
+    const name = definitionName(schema.$ref)
     if (!name || !nested.definitions[name] || seen.has(name)) return "unknown"
     return intersection([
       renderSchema(nested.definitions[name], nested, depth, new Set([...seen, name])),
@@ -110,6 +161,7 @@ const renderSchema = (
       alternatives.every((item) => item.type === "number" || effectNumberSentinel(item))
     )
       return "number"
+    // Older Effect releases emitted this pair for an empty struct, and raw schemas from their generators still can.
     if (
       alternatives.length === 2 &&
       alternatives[0]?.type === "object" &&
@@ -127,8 +179,8 @@ const renderSchema = (
     ])
   }
   if (schema.allOf) {
-    const members = schema.allOf.map((item) => renderSchema(item, nested, depth + 1, seen))
     if (schema.allOf.some((item) => hasUnresolvedRef(item, nested.definitions))) return "unknown"
+    const members = schema.allOf.map((item) => renderSchema(item, nested, depth + 1, seen))
     return intersection([renderSchema({ ...schema, allOf: undefined }, nested, depth + 1, seen), ...members])
   }
   if (Array.isArray(schema.type)) {
@@ -156,23 +208,23 @@ const renderSchema = (
 
     if (properties.length === 0 && indexType === undefined) return "{}"
     const pad = "  ".repeat(depth + 1)
-    const lines = properties.map(
-      (entry) => `${jsdoc(entry[1].description, docTags(entry[1]), pad)}${pad}${field(entry)},`,
-    )
+    const lines = properties.map((entry) => `${jsdoc(entry[1], pad)}${pad}${field(entry)},`)
     if (indexType !== undefined) lines.push(`${pad}[key: string]: ${indexType},`)
     return `{\n${lines.join("\n")}\n${"  ".repeat(depth)}}`
   }
+  if (isEffectEmptyStruct(schema)) return "{}"
   return "unknown"
 }
 
 export const toTypeScript = (schema: Schema.Top, decoded = false, pretty = false): string => {
   try {
-    const visible = decoded ? Schema.toType(schema) : schema
-    const document = Schema.toJsonSchemaDocument(visible) as {
+    const document = Schema.toJsonSchemaDocument(decoded ? Schema.toType(schema) : schema, {
+      onExcessProperty: "error",
+    }) as {
       readonly schema: JsonSchema
-      readonly definitions?: Readonly<Record<string, JsonSchema>>
+      readonly definitions: Readonly<Record<string, JsonSchema>>
     }
-    return renderSchema(document.schema, { definitions: document.definitions ?? {}, pretty })
+    return renderSchema(document.schema, { definitions: document.definitions, pretty })
   } catch {
     return "unknown"
   }
@@ -180,7 +232,7 @@ export const toTypeScript = (schema: Schema.Top, decoded = false, pretty = false
 
 export const jsonSchemaToTypeScript = (schema: JsonSchema, pretty = false): string => {
   try {
-    return renderSchema(schema, { definitions: { ...(schema.definitions ?? {}), ...(schema.$defs ?? {}) }, pretty })
+    return renderSchema(schema, { definitions: {}, pretty })
   } catch {
     return "unknown"
   }
@@ -195,20 +247,18 @@ export type InputProperty = {
 export const inputProperties = <R>(tool: Tool<R>): Array<InputProperty> => {
   try {
     const document = isEffectSchema(tool.input)
-      ? (Schema.toJsonSchemaDocument(tool.input) as {
+      ? (Schema.toJsonSchemaDocument(tool.input, { onExcessProperty: "error" }) as {
           readonly schema: JsonSchema
-          readonly definitions?: Readonly<Record<string, JsonSchema>>
+          readonly definitions: Readonly<Record<string, JsonSchema>>
         })
       : {
           schema: tool.input,
           definitions: { ...(tool.input.definitions ?? {}), ...(tool.input.$defs ?? {}) },
         }
-    const definitions = document.definitions ?? {}
     let schema = document.schema
     if (schema.$ref !== undefined) {
-      const segment = schema.$ref.match(/^#\/(?:\$defs|definitions)\/([^/]+)$/)?.[1]
-      const name = segment === undefined ? undefined : JsonPointer.unescapeToken(segment)
-      const resolved = name === undefined ? undefined : definitions[name]
+      const name = definitionName(schema.$ref)
+      const resolved = name === undefined ? undefined : document.definitions[name]
       if (resolved === undefined) return []
       schema = resolved
     }
@@ -225,6 +275,15 @@ export const inputProperties = <R>(tool: Tool<R>): Array<InputProperty> => {
 
 export const inputTypeScript = <R>(tool: Tool<R>, pretty = false): string =>
   isEffectSchema(tool.input) ? toTypeScript(tool.input, false, pretty) : jsonSchemaToTypeScript(tool.input, pretty)
+
+// Effect inputs are empty only when their encoded root is Effect's empty-struct marker, which records and checked
+// structs never are. Raw JSON Schema inputs keep the `{}` rendering check, which treats `{ type: "object" }` as empty.
+export const isEmptyInput = <R>(tool: Tool<R>): boolean =>
+  isEffectSchema(tool.input)
+    ? isEffectEmptyStruct(
+        Schema.toJsonSchemaDocument(tool.input, { referencePolicy: () => undefined }).schema as JsonSchema,
+      )
+    : inputTypeScript(tool) === "{}"
 
 export const outputTypeScript = <R>(tool: Tool<R>, pretty = false): string =>
   tool.output === undefined

@@ -34,6 +34,9 @@ test("scopes sessions to the active session location", async () => {
       return json({ directory, project: { id: project, directory, canonical: directory } })
     }
     if (url.pathname !== "/api/session") return undefined
+    // Family syncs list children by parentID; only project-scoped list requests matter here.
+    const parentID = url.searchParams.get("parentID")
+    if (parentID && parentID !== "null") return json({ data: [], cursor: {} })
     const project = url.searchParams.get("project") ?? ""
     requestedProjects.push(project)
     return json({
@@ -87,7 +90,7 @@ test("scopes sessions to the active session location", async () => {
                     <RouteProvider>
                       <ClientProvider api={createApi(calls.fetch)}>
                         <PermissionProvider>
-                          <DataProvider>
+                          <DataProvider directory={process.cwd()}>
                             <LocationProvider>
                               <SessionTabsProvider>
                                 <ThemeProvider mode="dark" source={emptyThemeSource}>

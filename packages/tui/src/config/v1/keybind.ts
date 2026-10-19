@@ -98,8 +98,8 @@ export const Definitions = {
   session_fork: keybind("none", "Fork session from message"),
   session_rename: keybind("ctrl+r", "Rename session"),
   session_delete: keybind("ctrl+d", "Delete session"),
-  session_share: keybind("none", "Share current session"),
-  session_unshare: keybind("none", "Unshare current session"),
+  session_share: keybind("none", "Deprecated: session sharing was removed"),
+  session_unshare: keybind("none", "Deprecated: session sharing was removed"),
   session_interrupt: keybind("escape", "Interrupt current session"),
   session_background: keybind("ctrl+b", "Background blocking session tools"),
   session_compact: keybind("<leader>c", "Compact the session"),
@@ -230,7 +230,7 @@ export const Definitions = {
   "prompt.autocomplete.select": keybind("return", "Select autocomplete item"),
   "prompt.autocomplete.complete": keybind("tab", "Complete autocomplete item"),
   "permission.prompt.fullscreen": keybind("ctrl+f", "Toggle permission prompt fullscreen"),
-  "plugins.toggle": keybind("space", "Toggle plugin"),
+  "plugins.toggle": keybind("return", "Toggle plugin"),
   "dialog.mcp.toggle": keybind("space", "Toggle MCP server"),
 
   terminal_suspend: keybind("ctrl+z", "Suspend terminal"),
@@ -248,9 +248,6 @@ export const KeybindOverrides = Schema.Struct(
     ]),
   ),
 ).annotate({ description: "TUI keybinding overrides" })
-export const Descriptions = Object.fromEntries(
-  Object.entries(Definitions).map(([name, item]) => [name, item.description]),
-) as Record<KeybindName, string>
 export const CommandMap = {
   app_exit: "app.exit",
   app_debug: "app.debug",
@@ -453,8 +450,6 @@ export function parse(keybinds: KeybindOverrides): Keybinds {
     ]),
   ) as Keybinds
 }
-
-export const Keybinds = { parse }
 
 export function unknownKeys(input: object) {
   return Object.keys(input).filter((key) => !KeybindNames.has(key))

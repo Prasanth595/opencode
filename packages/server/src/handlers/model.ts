@@ -1,10 +1,8 @@
-import { Catalog } from "@opencode-ai/core/catalog"
-import { PluginSupervisor } from "@opencode-ai/core/plugin/supervisor"
-import { ServiceUnavailableError } from "@opencode-ai/protocol/errors"
+import { Model } from "@opencode/core/model"
 import { Effect } from "effect"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { Api } from "../api"
-import { response } from "../location"
+import { awaitPlugins, response } from "../location"
 
 export const ModelHandler = HttpApiBuilder.group(Api, "server.model", (handlers) =>
   Effect.gen(function* () {
@@ -12,41 +10,17 @@ export const ModelHandler = HttpApiBuilder.group(Api, "server.model", (handlers)
       .handle(
         "model.list",
         Effect.fn(function* () {
-          const plugins = yield* PluginSupervisor.Service
-          yield* plugins.flush.pipe(
-            Effect.timeoutOrElse({
-              duration: "5 seconds",
-              orElse: () =>
-                Effect.fail(
-                  new ServiceUnavailableError({
-                    message: "Model catalog initialization timed out",
-                    service: "model.catalog",
-                  }),
-                ),
-            }),
-          )
-          const catalog = yield* Catalog.Service
-          return yield* response(catalog.model.available())
+          yield* awaitPlugins
+          const models = yield* Model.Service
+          return yield* response(models.available())
         }),
       )
       .handle(
         "model.default",
         Effect.fn(function* () {
-          const plugins = yield* PluginSupervisor.Service
-          yield* plugins.flush.pipe(
-            Effect.timeoutOrElse({
-              duration: "5 seconds",
-              orElse: () =>
-                Effect.fail(
-                  new ServiceUnavailableError({
-                    message: "Model catalog initialization timed out",
-                    service: "model.catalog",
-                  }),
-                ),
-            }),
-          )
-          const catalog = yield* Catalog.Service
-          return yield* response(catalog.model.default())
+          yield* awaitPlugins
+          const models = yield* Model.Service
+          return yield* response(models.default())
         }),
       )
   }),

@@ -1,33 +1,16 @@
-import { PluginSupervisor } from "@opencode-ai/core/plugin/supervisor"
-import { WebSearch } from "@opencode-ai/core/websearch"
-import { InvalidRequestError, ServiceUnavailableError } from "@opencode-ai/protocol/errors"
+import { WebSearch } from "@opencode/core/websearch"
+import { InvalidRequestError, ServiceUnavailableError } from "@opencode/protocol/errors"
 import { Effect } from "effect"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { Api } from "../api"
-import { response } from "../location"
+import { awaitPlugins, response } from "../location"
 
 export const WebSearchHandler = HttpApiBuilder.group(Api, "server.websearch", (handlers) =>
   Effect.gen(function* () {
-    const awaitPlugins = Effect.fn("server.websearch.awaitPlugins")(function* () {
-      const plugins = yield* PluginSupervisor.Service
-      yield* plugins.flush.pipe(
-        Effect.timeoutOrElse({
-          duration: "5 seconds",
-          orElse: () =>
-            Effect.fail(
-              new ServiceUnavailableError({
-                message: "Web search provider initialization timed out",
-                service: "websearch",
-              }),
-            ),
-        }),
-      )
-    })
     return handlers
       .handle(
         "websearch.providers",
         Effect.fn("server.websearch.providers")(function* () {
-          yield* awaitPlugins()
           const websearch = yield* WebSearch.Service
           return yield* response(websearch.providers())
         }),
@@ -35,7 +18,8 @@ export const WebSearchHandler = HttpApiBuilder.group(Api, "server.websearch", (h
       .handle(
         "websearch.query",
         Effect.fn("server.websearch.query")(function* (request) {
-          yield* awaitPlugins()
+          // A cold Location must finish activating plugins before their providers can be resolved.
+          yield* awaitPlugins
           const websearch = yield* WebSearch.Service
           return yield* response(
             websearch.query(request.payload).pipe(

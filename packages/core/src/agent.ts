@@ -1,15 +1,10 @@
 export * as Agent from "./agent.js"
 
-import path from "path"
-import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
+import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { Array, Context, Effect, Layer, Types } from "effect"
-import { Agent } from "@opencode-ai/schema/agent"
-import { Global } from "@opencode-ai/util/global"
+import { Agent } from "@opencode/schema/agent"
 import { Bus } from "./bus.js"
 import { State } from "./state.js"
-
-const SHELL_OUTPUT_GLOB = (data: string) => path.join(data, "shell", "*", "*")
-const TOOL_OUTPUT_GLOB = (data: string) => path.join(data, "tool-output", "*")
 
 export const ID = Agent.ID
 export type ID = typeof ID.Type
@@ -22,7 +17,7 @@ export const Color = Agent.Color
 export const Info = Agent.Info
 export type Info = Agent.Info
 
-export { Event } from "@opencode-ai/schema/agent"
+export { Event } from "@opencode/schema/agent"
 
 export interface Selection {
   readonly id: ID
@@ -34,7 +29,7 @@ type Data = {
   default?: ID
 }
 
-export type Draft = {
+export type Editor = {
   list: () => readonly Info[]
   get: (id: ID) => Info | undefined
   default: (id: ID | undefined) => void
@@ -42,7 +37,7 @@ export type Draft = {
   remove: (id: ID) => void
 }
 
-export interface Interface extends State.Transformable<Draft> {
+export interface Interface extends State.Transformable<Editor> {
   readonly get: (id: ID) => Effect.Effect<Info | undefined>
   readonly resolve: (id?: ID | string) => Effect.Effect<Info | undefined>
   readonly select: (id?: ID | string) => Effect.Effect<Selection>
@@ -55,39 +50,26 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const bus = yield* Bus.Service
-    const global = yield* Global.Service
-    const permissions: Info["permissions"] = [
-      { action: "external_directory", resource: SHELL_OUTPUT_GLOB(global.data), effect: "allow" },
-      { action: "external_directory", resource: TOOL_OUTPUT_GLOB(global.data), effect: "allow" },
-      { action: "external_directory", resource: path.join(global.tmp, "*"), effect: "allow" },
-      { action: "external_directory", resource: path.join(global.config, "*"), effect: "allow" },
-    ]
-    const state = State.create<Data, Draft>({
+    const state = State.create<Data, Editor>({
       name: "agent",
       initial: () => ({ agents: new Map() }),
-      draft: (draft) => ({
-        list: () => Array.fromIterable(draft.agents.values()) as Info[],
-        get: (id) => draft.agents.get(id),
+      editor: (editor) => ({
+        list: () => Array.fromIterable(editor.agents.values()) as Info[],
+        get: (id) => editor.agents.get(id),
         default: (id) => {
-          draft.default = id
+          editor.default = id
         },
         update: (id, fn) => {
-          const defaults = Info.default(id)
-          const current =
-            draft.agents.get(id) ??
-            ({
-              ...defaults,
-              permissions: [...defaults.permissions, ...permissions],
-            } as Types.DeepMutable<Info>)
-          if (!draft.agents.has(id)) draft.agents.set(id, current)
+          const current = editor.agents.get(id) ?? (Info.default(id) as Types.DeepMutable<Info>)
+          if (!editor.agents.has(id)) editor.agents.set(id, current)
           fn(current)
           current.id = id
         },
         remove: (id) => {
-          draft.agents.delete(id)
+          editor.agents.delete(id)
         },
       }),
-      finalize: () => bus.publish(Agent.Event.Updated, {}).pipe(Effect.asVoid),
+      notify: () => bus.publish(Agent.Event.Updated, {}).pipe(Effect.asVoid),
     })
     const selectable = (agent: Info | undefined) =>
       agent && agent.mode !== "subagent" && !agent.hidden ? agent : undefined
@@ -131,4 +113,4 @@ const layer = Layer.effect(
   }),
 )
 
-export const node = makeLocationNode({ service: Service, layer, deps: [Bus.node, Global.node] })
+export const node = makeLocationNode({ service: Service, layer, deps: [Bus.node] })

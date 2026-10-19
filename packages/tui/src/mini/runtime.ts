@@ -8,10 +8,11 @@
 //   3. starts the stream transport (SDK event subscription), lazily for fresh
 //      local sessions,
 //   4. runs the prompt queue until the footer closes.
-import { SessionMessage } from "@opencode-ai/schema/session-message"
-import type { LocationRef } from "@opencode-ai/client/promise"
+import { SessionMessage } from "@opencode/schema/session-message"
+import type { LocationRef } from "@opencode/client/promise"
 import type { Config } from "../config"
 import { newSessionLocation } from "../config/new-session-location"
+import { errorMessage } from "../util/error"
 import { loadRunAgents, loadRunCommands, loadRunReferences } from "./catalog.shared"
 import {
   resolveMiniSettings,
@@ -22,6 +23,7 @@ import {
 } from "./runtime.boot"
 import { createRuntimeLifecycle } from "./runtime.lifecycle"
 import { cycleVariant, formatModelLabel, resolveVariant } from "./variant.shared"
+import { verbosityPreset } from "./verbosity"
 import type {
   LocalReplayRow,
   MiniHost,
@@ -56,7 +58,6 @@ type RunRuntimeInput = {
   reconnect?: Reconnect
   files: RunInput["files"]
   initialInput?: string
-  thinking?: boolean
   replay?: boolean
   replayLimit?: number
   demo?: RunInput["demo"]
@@ -76,7 +77,6 @@ export type RunDeferredInput = {
   variant: RunInput["variant"]
   files: RunInput["files"]
   initialInput?: string
-  thinking?: boolean
   replay?: boolean
   replayLimit?: number
   demo?: RunInput["demo"]
@@ -152,13 +152,12 @@ function formRequestOptions(location: LocationRef | undefined) {
   return {
     headers: {
       "x-opencode-directory": encodeURIComponent(location.directory),
-      ...(location.workspaceID ? { "x-opencode-workspace": location.workspaceID } : {}),
     },
   }
 }
 
 function formAlreadySettled(error: unknown) {
-  return !!error && typeof error === "object" && Reflect.get(error, "_tag") === "FormAlreadySettledError"
+  return !!error && typeof error === "object" && "_tag" in error && error._tag === "FormAlreadySettledError"
 }
 
 const RESIZE_DELAY = 250
@@ -236,7 +235,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
         .find({
           query,
           type: "file",
-          location: { directory: state.location.directory, workspace: state.location.workspaceID },
+          location: { directory: state.location.directory },
         })
         .then((result) => result.data.map((file) => file.path))
         .catch(() => []),
@@ -255,6 +254,10 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       ? async (change) => {
           const info = await config.update((draft) => {
             if (!draft.mini || typeof draft.mini !== "object") draft.mini = {}
+            if (change.key === "verbosity") {
+              Object.assign(draft.mini, verbosityPreset(change.value))
+              return
+            }
             draft.mini[change.key] = change.value
           })
           configState.current = resolveMiniSettings(info)
@@ -272,7 +275,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     onFormReply: async (next) => {
       if (state.demo?.formReply(next)) return
       try {
-        await state.sdk.form.reply(next, formRequestOptions(next.sessionID === "global" ? next.location : undefined))
+        await state.sdk.session.form.reply(next, formRequestOptions(next.sessionID === "global" ? next.location : undefined))
       } catch (error) {
         if (!formAlreadySettled(error)) throw error
       }
@@ -281,7 +284,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     onFormCancel: async (next) => {
       if (state.demo?.formCancel(next)) return
       try {
-        await state.sdk.form.cancel(next, formRequestOptions(next.sessionID === "global" ? next.location : undefined))
+        await state.sdk.session.form.cancel(next, formRequestOptions(next.sessionID === "global" ? next.location : undefined))
       } catch (error) {
         if (!formAlreadySettled(error)) throw error
       }
@@ -366,6 +369,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       }
     },
     onInterrupt: () => {
+      if (state.demo?.interrupt()) return true
       if (!state.sessionID) {
         return false
       }
@@ -375,7 +379,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       void (
         state.stream
           ? state.stream.then((item) => item.handle.interruptActiveTurn())
-          : state.sdk.session.interrupt({ sessionID: state.sessionID, continue: true })
+          : state.sdk.session.interrupt({ sessionID: state.sessionID, resume: true })
       ).catch(() => {})
       return true
     },
@@ -390,11 +394,11 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     onQueuedPromptAction: async (action, inboxID) => {
       if (!state.sessionID) return
       log?.write(`send.pending.${action}`, { sessionID: state.sessionID, inboxID })
-      if (action === "steer") {
-        await state.sdk.session.inbox.steer({ sessionID: state.sessionID, inboxID })
+      if (action === "cancel") {
+        await state.sdk.session.inbox.cancel({ sessionID: state.sessionID, inboxID })
         return
       }
-      await state.sdk.session.inbox.cancel({ sessionID: state.sessionID, inboxID })
+      await state.sdk.session.inbox.update({ sessionID: state.sessionID, inboxID, delivery: action })
     },
     onSubagentInterrupt: (sessionID) => {
       log?.write("send.subagent.interrupt", { sessionID })
@@ -408,10 +412,13 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     },
   })
   await tuiConfigTask
-  const thinking = () => input.thinking ?? configState.current.thinking === "show"
+  const thinking = () => configState.current.thinking === "show"
   const footer = shell.footer
   const firstPaint = footer.idle().catch(() => {})
-  const offRuntimeClose = footer.onClose(() => runtimeController.abort())
+  const offRuntimeClose = footer.onClose(() => {
+    state.demo?.interrupt()
+    runtimeController.abort()
+  })
   let clientGeneration = 0
   let clientController = new AbortController()
   let modelAttempt: AbortController | undefined
@@ -480,11 +487,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
         footer.event({ type: "history", history: resumed.history })
         footer.event({ type: "first", first: resumed.first })
         if (footer.isClosed || runtimeController.signal.aborted) return
-        await shell.resetForReplay({
-          sessionTitle: state.sessionTitle,
-          sessionID: state.sessionID,
-          history: state.history,
-        })
+        await shell.resetForReplay()
       })
       .catch((error) => {
         if (footer.isClosed || runtimeController.signal.aborted) return
@@ -656,7 +659,6 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
         {
           location: {
             directory: state.location.directory,
-            workspace: state.location.workspaceID,
           },
         },
         { signal: attempt.signal },
@@ -797,6 +799,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
         location: state.location,
         sessionID: state.sessionID,
         thinking: thinking(),
+        tools: configState.current.tools === "show",
         replay: input.replay,
         replayLimit: input.replayLimit,
         footer,
@@ -848,12 +851,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
         .then((item) =>
           item.handle.replayOnResize({
             localRows: () => state.localRows,
-            reset: () =>
-              shell.resetForReplay({
-                sessionTitle: state.sessionTitle,
-                sessionID: state.sessionID,
-                history: state.history,
-              }),
+            reset: () => shell.resetForReplay(),
           }),
         )
         .catch(() => {})
@@ -864,7 +862,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     if (signal?.aborted || footer.isClosed) return
     const text =
       (await state.stream?.then((item) => item.mod).catch(() => undefined))?.formatUnknownError(error) ??
-      (error instanceof Error ? error.message : String(error))
+      errorMessage(error)
     const commit = {
       kind: "error",
       text,
@@ -894,10 +892,11 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       footer,
       initialInput: input.initialInput,
       trace: log,
-      onSend: (prompt, delivery) => {
+      onSend: (prompt, emittedUser) => {
         state.shown = true
         state.history.push({ ...prompt, delivery: undefined })
-        if (prompt.mode !== "shell" && delivery === "steer") {
+        // Pending inputs can still be cancelled; only replay rows already printed.
+        if (emittedUser) {
           rememberLocal({
             kind: "user",
             text: prompt.text,
@@ -986,7 +985,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
                 type: "stream.patch",
                 patch: {
                   phase: "idle",
-                  usage: "",
+                  usage: undefined,
                   first: true,
                 },
               })
@@ -1007,7 +1006,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
               })
               const commit = {
                 kind: "error",
-                text: error instanceof Error ? error.message : String(error),
+                text: errorMessage(error),
                 phase: "start",
                 source: "system",
                 messageID: SessionMessage.ID.create(),
@@ -1103,7 +1102,6 @@ export async function runInteractiveDeferredMode(input: RunDeferredInput, deps?:
       directory: input.directory,
       files: input.files,
       initialInput: input.initialInput,
-      thinking: input.thinking,
       replay: input.replay,
       replayLimit: input.replayLimit,
       demo: input.demo,

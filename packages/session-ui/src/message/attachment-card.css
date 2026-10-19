@@ -61,10 +61,21 @@
     font-weight: 440;
     color: var(--v2-text-text-muted);
 
-    [data-component="file-icon"] {
+    [data-component="file-icon"],
+    [data-slot="attachment-card-icon"] {
       width: 12px;
       height: 12px;
       flex: none;
     }
+
+    [data-slot="attachment-card-label"] {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
   }
+}
+
+[data-color-scheme="dark"] [data-component="attachment-card"][data-surface="base"] {
+  background: var(--v2-overlay-simple-overlay-hover);
 }

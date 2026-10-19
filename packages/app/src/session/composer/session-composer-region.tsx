@@ -2,28 +2,17 @@ import { Show, type JSX } from "solid-js"
 import { useLanguage } from "@/runtime/i18n/language"
 import { SessionPermissionDock } from "@/session/requests/session-permission-dock"
 import { SessionQuestionDock } from "@/session/requests/session-question-dock"
-import { SessionBackgroundDock } from "@/session/requests/session-background-dock"
+import { SessionWebSearchDock } from "@/session/requests/session-websearch-dock"
 import type { SessionComposerRegionController } from "./session-composer-region-controller"
 
 type SessionComposerRegionState = Pick<
   SessionComposerRegionController["state"],
-  "questionRequest" | "permissionRequest" | "permissionResponding" | "decide" | "blocked"
-> & {
-  background: Pick<SessionComposerRegionController["state"]["background"], "blocking" | "tasks" | "move">
-}
+  "questionRequest" | "websearch" | "permissionRequest" | "permissionResponding" | "decide" | "blocked"
+>
 
 export type SessionComposerRegionViewController = Pick<
   SessionComposerRegionController,
-  | "centered"
-  | "onResponseSubmit"
-  | "openParent"
-  | "setPromptRef"
-  | "setDockRef"
-  | "parentID"
-  | "child"
-  | "showComposer"
-  | "handoffPrompt"
-  | "promptReady"
+  "centered" | "onResponseSubmit" | "openParent" | "setPromptRef" | "setDockRef" | "parentID" | "child" | "showComposer"
 > & { state: SessionComposerRegionState }
 
 export function SessionComposerRegion(props: {
@@ -32,8 +21,6 @@ export function SessionComposerRegion(props: {
 }) {
   const language = useLanguage()
   const controller = props.controller
-  const background = () =>
-    controller.state.background.blocking().length > 0 || controller.state.background.tasks().length > 0
 
   return (
     <div
@@ -44,9 +31,12 @@ export function SessionComposerRegion(props: {
       <div
         classList={{
           "w-full px-3 pointer-events-auto": true,
-          "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]": controller.centered(),
+          "md:max-w-session md:mx-auto": controller.centered(),
         }}
       >
+        <Show when={controller.state.websearch.request()}>
+          <SessionWebSearchDock model={controller.state.websearch} onSubmit={controller.onResponseSubmit} />
+        </Show>
         <Show when={controller.state.questionRequest()} keyed>
           {(request) => (
             <div>
@@ -71,55 +61,29 @@ export function SessionComposerRegion(props: {
         </Show>
 
         <Show when={controller.showComposer()}>
-          <Show
-            when={controller.promptReady()}
-            fallback={
-              <>
-                <div class="w-full min-h-32 md:min-h-40 rounded-md border border-border-weak-base bg-background-base/50 px-4 py-3 text-text-weak whitespace-pre-wrap pointer-events-none">
-                  {controller.handoffPrompt() || language.t("prompt.loading")}
-                </div>
-              </>
-            }
+          <div
+            classList={{
+              "relative z-[70]": true,
+            }}
           >
-            <Show when={background()}>
-              <div>
-                <SessionBackgroundDock
-                  blocking={controller.state.background.blocking()}
-                  tasks={controller.state.background.tasks()}
-                  onBackground={() => void controller.state.background.move()}
-                />
+            <Show when={controller.child()} fallback={<Show when={!controller.state.blocked()}>{props.composer}</Show>}>
+              <div
+                ref={controller.setPromptRef}
+                class="w-full rounded-[12px] border border-border-weak-base bg-background-base p-3 text-16-regular text-text-weak"
+              >
+                <span>{language.t("session.child.promptDisabled")} </span>
+                <Show when={controller.parentID()}>
+                  <button
+                    type="button"
+                    class="text-text-base transition-colors hover:text-text-strong"
+                    onClick={controller.openParent}
+                  >
+                    {language.t("session.child.backToParent")}
+                  </button>
+                </Show>
               </div>
             </Show>
-            <div
-              classList={{
-                "relative z-[70]": true,
-              }}
-              style={{
-                "margin-top": `${background() ? -36 : 0}px`,
-              }}
-            >
-              <Show
-                when={controller.child()}
-                fallback={<Show when={!controller.state.blocked()}>{props.composer}</Show>}
-              >
-                <div
-                  ref={controller.setPromptRef}
-                  class="w-full rounded-[12px] border border-border-weak-base bg-background-base p-3 text-16-regular text-text-weak"
-                >
-                  <span>{language.t("session.child.promptDisabled")} </span>
-                  <Show when={controller.parentID()}>
-                    <button
-                      type="button"
-                      class="text-text-base transition-colors hover:text-text-strong"
-                      onClick={controller.openParent}
-                    >
-                      {language.t("session.child.backToParent")}
-                    </button>
-                  </Show>
-                </div>
-              </Show>
-            </div>
-          </Show>
+          </div>
         </Show>
       </div>
     </div>

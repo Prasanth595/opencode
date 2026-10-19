@@ -1,23 +1,17 @@
-import { describe, expect, test } from "bun:test"
+import { expect, test } from "bun:test"
 import { authFromToken, authTokenFromCredentials } from "./api"
 
-describe("authFromToken", () => {
-  test("decodes basic auth credentials from auth_token", () => {
-    expect(authFromToken(btoa("kit:secret"))).toEqual({ username: "kit", password: "secret" })
-  })
-
-  test("defaults blank username to opencode", () => {
-    expect(authFromToken(btoa(":secret"))).toEqual({ username: "opencode", password: "secret" })
-  })
-
-  test("ignores malformed tokens", () => {
-    expect(authFromToken("not base64")).toBeUndefined()
-    expect(authFromToken(btoa("missing-separator"))).toBeUndefined()
-  })
+test.each([
+  [btoa("opencode:secret"), { password: "secret" }],
+  [btoa("legacy:secret:with:colons"), { password: "secret:with:colons" }],
+  [btoa(":secret"), { password: "secret" }],
+  ["not base64", undefined],
+  [btoa("missing-separator"), undefined],
+])("authFromToken(%p) extracts only the password", (token, expected) => {
+  expect(authFromToken(token)).toEqual(expected)
 })
 
-describe("authTokenFromCredentials", () => {
-  test("encodes credentials with the default username", () => {
-    expect(authTokenFromCredentials({ password: "secret" })).toBe(btoa("opencode:secret"))
-  })
+test("authTokenFromCredentials ignores usernames in legacy saved credentials", () => {
+  const credentials = { username: "legacy", password: "secret" }
+  expect(authTokenFromCredentials(credentials)).toBe(btoa("opencode:secret"))
 })

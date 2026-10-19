@@ -1,12 +1,20 @@
-import type { AgentListOutput, ModelListOutput, ProviderListOutput } from "@opencode-ai/client/promise"
+import type { AgentListOutput, ModelListOutput, ProviderListOutput } from "@opencode/client/promise"
 import type { Agent, Project, Provider, ProviderListResponse } from "@/runtime/server/types"
-import type { Project as CurrentProject } from "@opencode-ai/client/promise"
+import type { Project as CurrentProject } from "@opencode/client/promise"
+import { unwrap } from "solid-js/store"
+
 export { pathKey as directoryKey, type PathKey as DirectoryKey } from "@/workspaces/path-key"
 
 export const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
+const providerCatalogs = new WeakMap<
+  ProviderListOutput["data"],
+  WeakMap<ModelListOutput["data"], ProviderListResponse>
+>()
+
 export function normalizeAgentList(input: AgentListOutput["data"] | Agent[]): Agent[] {
   if (input.every((agent) => !("request" in agent))) return input as Agent[]
+
   return (input as AgentListOutput["data"]).map((agent) => ({
     name: agent.id,
     description: agent.description,
@@ -30,17 +38,24 @@ export function normalizeAgentList(input: AgentListOutput["data"] | Agent[]): Ag
 }
 
 export function normalizeProviderList(
-  providers: ProviderListOutput["data"] | ProviderListResponse,
-  models?: ModelListOutput["data"],
+  input: ProviderListOutput["data"] | ProviderListResponse,
+  catalog?: ModelListOutput["data"],
 ): ProviderListResponse {
-  if (!Array.isArray(providers)) {
-    return providers
-  }
+  if (!Array.isArray(input)) return input
+  // Client sync replaces whole catalog lists. Track those reads at the caller,
+  // not every model field, and share conversions without retaining old lists.
+  const providers = unwrap(input)
+  const models = unwrap(catalog)
+  const cached = models && providerCatalogs.get(providers)?.get(models)
+
+  if (cached) return cached
   const all = new Map<string, Provider>()
 
   for (const provider of providers) {
     all.set(provider.id, {
       id: provider.id,
+      canonical: provider.canonical,
+      integrationID: provider.integrationID,
       name: provider.name,
       source: "custom",
       env: [],
@@ -51,6 +66,7 @@ export function normalizeProviderList(
 
   for (const model of models ?? []) {
     const provider = all.get(model.providerID)
+
     if (!provider || model.status === "deprecated") continue
     const cost = model.cost.find((item) => item.tier === undefined) ?? model.cost[0]
     provider.models[model.id] = {
@@ -101,24 +117,42 @@ export function normalizeProviderList(
     }
   }
 
-  return {
+  const result = {
     all,
     connected: providers.map((provider) => provider.id),
     default: Object.fromEntries(
       providers.flatMap((provider) => {
         const model = models?.find((item) => item.providerID === provider.id && item.status !== "deprecated")
+
         return model ? [[provider.id, model.id]] : []
       }),
     ),
   }
+
+  if (models) {
+    const cache = providerCatalogs.get(providers) ?? new WeakMap<ModelListOutput["data"], ProviderListResponse>()
+    cache.set(models, result)
+    providerCatalogs.set(providers, cache)
+  }
+
+  return result
 }
 
 export function normalizeProjectInfo(project: Project | CurrentProject): Project {
   const worktree = "canonical" in project ? project.canonical : project.worktree
+
   return {
     ...project,
     worktree,
     worktrees: "worktrees" in project ? project.worktrees : [{ directory: worktree }],
-    vcs: project.vcs === "git" ? "git" : undefined,
+  }
+}
+
+export function updateProjectInfo(project: Project, update: CurrentProject): Project {
+  return {
+    ...project,
+    ...update,
+    worktree: update.canonical,
+    worktrees: project.worktrees,
   }
 }

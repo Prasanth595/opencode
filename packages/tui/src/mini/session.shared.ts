@@ -1,4 +1,6 @@
-import type { SessionMessageInfo, SessionMessageUser } from "@opencode-ai/client/promise"
+import type { SessionMessageInfo, SessionMessageUser } from "@opencode/client/promise"
+import { projectedPromptInput } from "../prompt/codec"
+import { requestOptions } from "./catalog.shared"
 import { promptCopy, promptSame } from "./prompt.shared"
 import type { RunInput, RunPrompt } from "./types"
 
@@ -20,28 +22,37 @@ export type RunSession = {
   variant?: string
 }
 
-function messagePrompt(message: SessionMessageUser): RunPrompt {
+export function messagePrompt(message: Pick<SessionMessageUser, "text" | "files" | "agents" | "skills">): RunPrompt {
+  const input = projectedPromptInput(message)
   return {
-    text: message.text,
+    text: input.text,
     parts: [
-      ...(message.files ?? []).map((file) => ({
+      ...(input.files ?? []).map((file, index) => ({
         type: "file" as const,
-        url: file.source.type === "uri" ? file.source.uri : `data:${file.mime};base64,${file.data}`,
-        mime: file.mime,
+        url: file.uri,
+        mime: message.files?.[index]?.mime,
         filename: file.name,
+        ...(file.description === undefined ? {} : { description: file.description }),
         source: file.mention
           ? {
               type: "file",
-              path: file.name ?? (file.source.type === "uri" ? file.source.uri : "inline attachment"),
+              path: file.name ?? (file.uri.startsWith("data:") ? "inline attachment" : file.uri),
               text: { start: file.mention.start, end: file.mention.end, value: file.mention.text },
             }
           : undefined,
       })),
-      ...(message.agents ?? []).map((agent) => ({
+      ...(input.agents ?? []).map((agent) => ({
         type: "agent" as const,
         name: agent.name,
         source: agent.mention
           ? { start: agent.mention.start, end: agent.mention.end, value: agent.mention.text }
+          : undefined,
+      })),
+      ...(input.skills ?? []).map((skill) => ({
+        type: "skill" as const,
+        id: skill.id,
+        source: skill.mention
+          ? { start: skill.mention.start, end: skill.mention.end, value: skill.mention.text }
           : undefined,
       })),
     ],
@@ -85,14 +96,10 @@ export async function resolveCurrentSession(
   }
 }
 
-function requestOptions(signal?: AbortSignal): [] | [{ signal: AbortSignal }] {
-  return signal ? [{ signal }] : []
-}
-
 export function sessionHistory(session: RunSession, limit = LIMIT): RunPrompt[] {
   return session.turns
     .map((turn) => turn.prompt)
-    .filter((prompt) => prompt.text.trim())
+    .filter((prompt) => prompt.text.trim() || prompt.parts.some((part) => part.type === "file"))
     .filter((prompt, index, prompts) => index === 0 || !promptSame(prompts[index - 1], prompt))
     .map(promptCopy)
     .slice(-limit)

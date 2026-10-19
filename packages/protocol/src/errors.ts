@@ -1,5 +1,12 @@
 import { Schema } from "effect"
-import { Skill } from "@opencode-ai/schema/skill"
+import { Skill } from "@opencode/schema/skill"
+import { Location } from "@opencode/schema/location"
+
+export class LocationNotFoundError extends Schema.TaggedError<LocationNotFoundError>()(
+  "LocationNotFoundError",
+  { location: Location.PublicRef, message: Schema.String },
+  { httpApiStatus: 404 },
+) {}
 
 export class InvalidRequestError extends Schema.TaggedError<InvalidRequestError>()(
   "InvalidRequestError",
@@ -9,6 +16,26 @@ export class InvalidRequestError extends Schema.TaggedError<InvalidRequestError>
     field: Schema.optional(Schema.String),
   },
   { httpApiStatus: 400 },
+) {}
+
+export class RpcError extends Schema.TaggedError<RpcError>()(
+  "RpcError",
+  {
+    type: Schema.String,
+    message: Schema.String,
+    data: Schema.optional(Schema.Unknown),
+  },
+  { httpApiStatus: 400 },
+) {}
+
+export class RpcInternalError extends Schema.TaggedError<RpcInternalError>()(
+  "RpcInternalError",
+  {
+    type: Schema.Literals(["rpc.internal", "rpc.invalid_output"]),
+    message: Schema.String,
+    data: Schema.optional(Schema.Unknown),
+  },
+  { httpApiStatus: 500 },
 ) {}
 
 export class UnauthorizedError extends Schema.TaggedError<UnauthorizedError>()(
@@ -57,6 +84,53 @@ export class ProviderNotFoundError extends Schema.TaggedError<ProviderNotFoundEr
   "ProviderNotFoundError",
   {
     providerID: Schema.String,
+    message: Schema.String,
+  },
+  { httpApiStatus: 404 },
+) {}
+
+export class IntegrationNotFoundError extends Schema.TaggedError<IntegrationNotFoundError>()(
+  "IntegrationNotFoundError",
+  {
+    integrationID: Schema.String,
+    message: Schema.String,
+  },
+  { httpApiStatus: 404 },
+) {}
+
+export class IntegrationAttemptNotFoundError extends Schema.TaggedError<IntegrationAttemptNotFoundError>()(
+  "IntegrationAttemptNotFoundError",
+  {
+    integrationID: Schema.String,
+    attemptID: Schema.String,
+    message: Schema.String,
+  },
+  { httpApiStatus: 404 },
+) {}
+
+export class IntegrationMethodNotFoundError extends Schema.TaggedError<IntegrationMethodNotFoundError>()(
+  "IntegrationMethodNotFoundError",
+  {
+    integrationID: Schema.String,
+    methodID: Schema.String,
+    message: Schema.String,
+  },
+  { httpApiStatus: 404 },
+) {}
+
+export class ProjectNotFoundError extends Schema.TaggedError<ProjectNotFoundError>()(
+  "ProjectNotFoundError",
+  {
+    projectID: Schema.String,
+    message: Schema.String,
+  },
+  { httpApiStatus: 404 },
+) {}
+
+export class FileNotFoundError extends Schema.TaggedError<FileNotFoundError>()(
+  "FileNotFoundError",
+  {
+    path: Schema.String,
     message: Schema.String,
   },
   { httpApiStatus: 404 },
@@ -117,8 +191,8 @@ export class CommandNotFoundError extends Schema.TaggedError<CommandNotFoundErro
   { httpApiStatus: 404 },
 ) {}
 
-export class CommandEvaluationError extends Schema.TaggedError<CommandEvaluationError>()(
-  "CommandEvaluationError",
+export class CommandExecutionError extends Schema.TaggedError<CommandExecutionError>()(
+  "CommandExecutionError",
   {
     command: Schema.String,
     message: Schema.String,
@@ -136,6 +210,15 @@ export class PermissionNotFoundError extends Schema.TaggedError<PermissionNotFou
   "PermissionNotFoundError",
   {
     requestID: Schema.String,
+    message: Schema.String,
+  },
+  { httpApiStatus: 404 },
+) {}
+
+export class PermissionSavedNotFoundError extends Schema.TaggedError<PermissionSavedNotFoundError>()(
+  "PermissionSavedNotFoundError",
+  {
+    id: Schema.String,
     message: Schema.String,
   },
   { httpApiStatus: 404 },

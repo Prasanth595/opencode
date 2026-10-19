@@ -1,5 +1,5 @@
 import { Effect, Option, Schema, Stream } from "effect"
-import { HttpClient, HttpClientRequest, HttpClientResponse, type HttpMethod } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest, HttpClientResponse, type HttpMethod } from "effect/http"
 import { ToolError, toolError } from "../tool-error.js"
 import { isRecord, own } from "./spec.js"
 import type { AppliedAuth, Credential, Plan, SecurityScheme } from "./types.js"
@@ -24,8 +24,8 @@ export const invoke = (plan: Plan, input: unknown): Effect.Effect<unknown, unkno
     const response = yield* client
       .execute(request)
       .pipe(
-        Effect.catch((cause) =>
-          Effect.fail(toolError(`${plan.operation.method} ${plan.operation.path} failed: transport error`, cause)),
+        Effect.mapError((cause) =>
+          toolError(`${plan.operation.method} ${plan.operation.path} failed: transport error`, cause),
         ),
       )
     const text = yield* readResponseBody(response, plan)

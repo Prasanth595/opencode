@@ -9,8 +9,9 @@ export type OpenAITextVerbosity = OpenResponsesOptions.TextVerbosity
 // in lockstep with `openai-node/src/resources/responses/responses.ts`.
 export const OpenAIResponseIncludables = OpenResponsesOptions.ResponseIncludables
 export type OpenAIResponseIncludable = OpenResponsesOptions.ResponseIncludable
-export const OpenAIServiceTiers = OpenResponsesOptions.ServiceTiers
-export type OpenAIServiceTier = OpenResponsesOptions.ServiceTier
+// Mirrors OpenAI's `ServiceTier` union from the official SDK.
+export const OpenAIServiceTiers = [...OpenResponsesOptions.ServiceTiers, "scale", "fast", "ultrafast"] as const
+export type OpenAIServiceTier = (typeof OpenAIServiceTiers)[number] | (string & {})
 
 export const OpenAIReasoningEffort = OpenResponsesOptions.ReasoningEffort
 export const OpenAITextVerbosity = OpenResponsesOptions.TextVerbosity

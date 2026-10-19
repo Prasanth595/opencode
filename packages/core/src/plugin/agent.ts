@@ -1,37 +1,20 @@
 export * as AgentPlugin from "./agent.js"
 
-import { define } from "@opencode-ai/plugin/effect/plugin"
+import { define } from "@opencode/plugin/effect/plugin"
 import { Effect } from "effect"
 import { Agent } from "../agent.js"
-import { Permission } from "../permission.js"
 
 const PROMPT_EXPLORE = `You are a file search specialist. You excel at thoroughly navigating and exploring codebases.
 
-Your strengths:
-- Rapidly finding files using glob patterns
-- Searching code and text with powerful regex patterns
-- Reading and analyzing file contents
-
 Guidelines:
-- Use Glob for broad file pattern matching
-- Use Grep for searching file contents with regex
-- Use Read when you know the specific file path you need to read
+- Your role is EXCLUSIVELY to search and analyze
+- Parallelize independent tool calls for searches and reads whenever possible
 - Adapt your search approach based on the thoroughness level specified by the caller
 - Return file paths as absolute paths in your final response
-- For clear communication, avoid using emojis
-- Do not create any files, or run bash commands that modify the user's system state in any way
+- You MUST NOT create, modify, delete, move, or copy files, including temporary files and reports
+- Shell commands MUST be read-only. NEVER run commands that write files or change system state
 
 Complete the user's search request efficiently and report your findings clearly.`
-
-const PROMPT_COMPACTION = `You are an anchored context summarization assistant for coding sessions.
-
-Summarize only the conversation history you are given. The newest turns may be kept verbatim outside your summary, so focus on the older context that still matters for continuing the work.
-
-If the prompt includes a <previous-summary> block, treat it as the current anchored summary. Update it with the new history by preserving still-true details, removing stale details, and merging in new facts.
-
-Always follow the exact output structure requested by the user prompt. Keep every section, preserve exact file paths and identifiers when known, and prefer terse bullets over paragraphs.
-
-Do not answer the conversation itself. Do not mention that you are summarizing, compacting, or merging context. Respond in the same language as the conversation.`
 
 const PROMPT_TITLE = `You are a title generator. You output ONLY a thread title. Nothing else.
 
@@ -93,15 +76,15 @@ Rules:
 export const Plugin = define({
   id: "opencode.agent",
   effect: Effect.fn(function* (ctx) {
-    yield* ctx.agent.transform((draft) => {
-      draft.update(Agent.defaultID, (item) => {
+    yield* ctx.agent.transform((editor) => {
+      editor.update(Agent.defaultID, (item) => {
         item.name = Agent.Name.make("Build")
         item.description = "The default agent. Executes tools based on configured permissions."
         item.mode = "primary"
         item.permissions.push({ action: "question", resource: "*", effect: "allow" })
       })
 
-      draft.update(Agent.ID.make("general"), (item) => {
+      editor.update(Agent.ID.make("general"), (item) => {
         item.name = Agent.Name.make("General")
         item.description =
           "General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel."
@@ -112,43 +95,35 @@ export const Plugin = define({
         )
       })
 
-      draft.update(Agent.ID.make("explore"), (item) => {
-        const externalDirectories = item.permissions.filter(
-          (rule) => rule.action === "external_directory" && rule.effect === "allow",
-        )
+      editor.update(Agent.ID.make("explore"), (item) => {
         item.name = Agent.Name.make("Explore")
         item.description =
           'Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. "src/components/**/*.tsx"), search code for keywords (eg. "API endpoints"), or answer questions about the codebase (eg. "how do API endpoints work?"). When calling this agent, specify the desired thoroughness level: "quick" for basic searches, "medium" for moderate exploration, or "very thorough" for comprehensive analysis across multiple locations and naming conventions.'
         item.system = PROMPT_EXPLORE
         item.mode = "subagent"
         item.permissions.push(
-          ...Permission.merge(
-            [
-              { action: "*", resource: "*", effect: "deny" },
-              { action: "grep", resource: "*", effect: "allow" },
-              { action: "glob", resource: "*", effect: "allow" },
-              { action: "webfetch", resource: "*", effect: "allow" },
-              { action: "websearch", resource: "*", effect: "allow" },
-              { action: "read", resource: "*", effect: "allow" },
-              { action: "read", resource: "*.env", effect: "ask" },
-              { action: "read", resource: "*.env.*", effect: "ask" },
-              { action: "read", resource: "*.env.example", effect: "allow" },
-              { action: "subagent", resource: "*", effect: "deny" },
-            ],
-            [{ action: "external_directory", resource: "*", effect: "ask" }, ...externalDirectories],
-          ),
+          { action: "*", resource: "*", effect: "deny" },
+          { action: "shell", resource: "*", effect: "allow" },
+          { action: "grep", resource: "*", effect: "allow" },
+          { action: "glob", resource: "*", effect: "allow" },
+          { action: "webfetch", resource: "*", effect: "allow" },
+          { action: "websearch", resource: "*", effect: "allow" },
+          { action: "read", resource: "*", effect: "allow" },
+          { action: "read", resource: "*.env", effect: "ask" },
+          { action: "read", resource: "*.env.*", effect: "ask" },
+          { action: "read", resource: "*.env.example", effect: "allow" },
+          { action: "subagent", resource: "*", effect: "deny" },
+          { action: "external_directory", resource: "*", effect: "allow" },
         )
       })
 
-      draft.update(Agent.ID.make("compaction"), (item) => {
+      editor.update(Agent.ID.make("compaction"), (item) => {
         item.name = Agent.Name.make("Compaction")
         item.mode = "primary"
         item.hidden = true
-        item.system = PROMPT_COMPACTION
-        item.permissions.push({ action: "*", resource: "*", effect: "deny" })
       })
 
-      draft.update(Agent.ID.make("title"), (item) => {
+      editor.update(Agent.ID.make("title"), (item) => {
         item.name = Agent.Name.make("Title")
         item.mode = "primary"
         item.hidden = true
@@ -156,7 +131,7 @@ export const Plugin = define({
         item.permissions.push({ action: "*", resource: "*", effect: "deny" })
       })
 
-      draft.update(Agent.ID.make("summary"), (item) => {
+      editor.update(Agent.ID.make("summary"), (item) => {
         item.name = Agent.Name.make("Summary")
         item.mode = "primary"
         item.hidden = true

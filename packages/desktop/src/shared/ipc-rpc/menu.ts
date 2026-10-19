@@ -1,8 +1,8 @@
 import { Schema } from "effect"
-import { Rpc, RpcGroup } from "effect/unstable/rpc"
+import { Rpc, RpcGroup } from "effect/rpc"
 
 const DesktopMenuAction = Schema.Literals([
-  "app.checkForUpdates",
+  "app.installCli",
   "app.relaunch",
   "edit.undo",
   "edit.redo",
@@ -26,4 +26,5 @@ const DesktopMenuAction = Schema.Literals([
 export const MenuRunAction = Rpc.make("MenuRunAction", {
   payload: { action: DesktopMenuAction },
 })
+
 export const MenuRpcs = RpcGroup.make(MenuRunAction)

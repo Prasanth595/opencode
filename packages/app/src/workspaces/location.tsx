@@ -1,55 +1,78 @@
-import { createSimpleContext } from "@opencode-ai/ui/context"
-import type { LocationGetOutput, LocationRef } from "@opencode-ai/client/promise"
-import { type Accessor, createEffect, createMemo, createSignal } from "solid-js"
+import { createSimpleContext } from "@opencode/ui/context"
+import { isLocationNotFoundError, type LocationGetOutput, type LocationRef } from "@opencode/client/promise"
+import { retry } from "@opencode/util/retry"
+import { type Accessor, createEffect, createMemo, onCleanup } from "solid-js"
+import { createStore } from "solid-js/store"
 import { type LocationContext, useServerSDK } from "@/runtime/server/client"
-import { useData } from "@/runtime/server/current"
+import { useData, useServer } from "@/runtime/server/current"
+
 export type { LocationContext } from "@/runtime/server/client"
 
 export type WorkspaceLocation = LocationContext & {
   readonly ref: LocationRef
   readonly current: LocationGetOutput | undefined
-  readonly error: { readonly location: LocationRef; readonly cause: unknown } | undefined
+  /** Set only when the server reports that this exact Location's folder does not exist. */
+  readonly missing: LocationRef | undefined
 }
 
 const context = createSimpleContext({
   name: "Location",
-  init: (props: { directory: string | Accessor<string>; workspaceID?: string | Accessor<string | undefined> }) => {
+  init: (props: { directory: string; workspaceID?: string }) => {
     const serverSDK = useServerSDK()
+    const server = useServer()
     const data = useData()
-    const ref = createMemo(() => ({
-      directory: typeof props.directory === "function" ? props.directory() : props.directory,
-      workspaceID: typeof props.workspaceID === "function" ? props.workspaceID() : props.workspaceID,
-    }))
+
+    const ref = createMemo(
+      () => ({
+        directory: props.directory,
+        workspaceID: props.workspaceID,
+      }),
+      undefined,
+      {
+        equals: (previous, next) => previous.directory === next.directory && previous.workspaceID === next.workspaceID,
+      },
+    )
+
     const current = createMemo(() => data.location.info(ref()))
-    const [error, setError] = createSignal<{ readonly location: LocationRef; readonly cause: unknown }>()
-    let generation = 0
+    const [state, setState] = createStore<{ missing?: LocationRef }>({})
 
     createEffect(() => {
       const location = ref()
-      if (serverSDK.connection.status() !== "connected") return
-      const attempt = ++generation
-      setError(undefined)
-      void data.location.sync(location).catch((cause) => {
-        const latest = ref()
-        if (
-          generation !== attempt ||
-          latest.directory !== location.directory ||
-          latest.workspaceID !== location.workspaceID
-        )
-          return
-        setError({ location, cause })
+      let stale = false
+      onCleanup(() => {
+        stale = true
       })
+      setState("missing", undefined)
+
+      if (serverSDK.connection.status() !== "connected") return
+      // Generic sync failures do not prove the directory is missing; only the server's typed
+      // LocationNotFoundError does, and retrying it cannot succeed until the folder changes.
+      void retry(() => (stale ? Promise.resolve() : data.location.sync(location)), {
+        retryIf: (error) => !stale && !isLocationNotFoundError(error),
+      }).catch((error) => {
+        if (stale || !isLocationNotFoundError(error)) return
+        setState("missing", location)
+      })
+    })
+    createEffect(() => {
+      const id = current()?.project.id
+
+      if (!id || serverSDK.connection.status() !== "connected") return
+      // Showing a Location is the demand for its project's worktree inventory (workspace styling, picker).
+      void server.ctx.sync.worktrees.list(id).then(() => server.ctx.sync.worktrees.refresh(id))
     })
 
     const location = createMemo(() => serverSDK.ensureDirSdkContext(current()?.directory ?? ref().directory))
+
     return createMemo<WorkspaceLocation>(() => ({
       ...location(),
       ref: ref(),
       current: current(),
-      error: error(),
+      missing: state.missing,
     }))
   },
 })
 
 export const useWorkspaceLocation: () => Accessor<WorkspaceLocation> = context.use
+
 export const LocationProvider = context.provider

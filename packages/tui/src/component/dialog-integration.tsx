@@ -1,4 +1,5 @@
-import { TextAttributes } from "@opentui/core"
+import { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
+import { useTerminalDimensions } from "@opentui/solid"
 import type {
   ConnectionInfo,
   IntegrationCommandConnectOutput,
@@ -9,24 +10,45 @@ import type {
   FormField,
   FormFields,
   FormValue,
-} from "@opencode-ai/client"
-import open from "open"
-import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js"
+  LocationRef,
+} from "@opencode/client"
+import { openUrl } from "@opencode/util/open"
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
+import { createStore } from "solid-js/store"
+import { useNewDesigns } from "../config"
 import { useClipboard } from "../context/clipboard"
 import { useData } from "../context/data"
 import { useClient } from "../context/client"
 import { Keymap } from "../context/keymap"
+import { useLocation } from "../context/location"
 import { useTheme } from "../context/theme"
-import { useDialog } from "../ui/dialog"
+import {
+  DIALOG_INSET,
+  DIALOG_LIST_INSET,
+  DialogBleed,
+  DialogFooter,
+  DialogHeader,
+  DialogLayout,
+  useDialog,
+} from "../ui/dialog"
 import { DialogPrompt } from "../ui/dialog-prompt"
 import { DialogSelect } from "../ui/dialog-select"
 import { Link } from "../ui/link"
 import { useToast } from "../ui/toast"
-import { formLabel, formToggleMultiselect, formValidateValue, type FormAnswerField } from "../util/form"
+import { errorMessage } from "../util/error"
+import {
+  formInitialValues,
+  formLabel,
+  formRows,
+  formSelected,
+  formToggleMultiselect,
+  formValidateValue,
+  type FormAnswerField,
+} from "../util/form"
 
 const INTEGRATION_PRIORITY: Record<string, number> = {
-  opencode: 0,
-  "opencode-go": 1,
+  "opencode-go": 0,
+  opencode: 1,
   openai: 2,
   "github-copilot": 3,
   anthropic: 4,
@@ -41,10 +63,13 @@ const CANCELLED = Symbol("cancelled")
 const CUSTOM = Symbol("custom")
 const OPEN = Symbol("open")
 const SUBMIT = Symbol("submit")
+// Device-flow codes such as "R283-GOUEO"; when present they are copied instead of the URL.
+const OAUTH_CODE = /[A-Z0-9]{4}-[A-Z0-9]{4,5}/
 
 export function integrationOptions(list: IntegrationInfo[]) {
   return list.toSorted(
     (a, b) =>
+      Number(b.metadata?.source === "mcp") - Number(a.metadata?.source === "mcp") ||
       (INTEGRATION_PRIORITY[a.id] ?? 99) - (INTEGRATION_PRIORITY[b.id] ?? 99) ||
       a.name.localeCompare(b.name) ||
       a.id.localeCompare(b.id),
@@ -63,20 +88,25 @@ export function credentialConnections(integration: IntegrationInfo) {
   )
 }
 
+// A count keeps several long labels from squeezing the integration name off the row.
 export function connectionSummary(integration: IntegrationInfo) {
-  return integration.connections
-    .map((connection) => (connection.type === "credential" ? connection.label : `$${connection.name}`))
-    .join(", ")
+  const connections = integration.connections
+  if (connections.length > 1) return `${connections.length} connections`
+  const connection = connections[0]
+  if (!connection) return ""
+  return connection.type === "credential" ? connection.label : `$${connection.name}`
 }
 
 export function DialogIntegration(
   props: { onConnected?: OnIntegrationConnected; integrationID?: string; autoConnect?: boolean } = {},
 ) {
   const data = useData()
+  const currentLocation = useLocation()
   const dialog = useDialog()
-  const theme = useTheme("elevated")
+  const theme = useTheme().surface("dialog")
+  const location = currentLocation.ref ?? data.location.default()
   const integrations = createMemo(() =>
-    integrationOptions(data.location.integration.list() ?? []).filter(
+    integrationOptions(data.location.integration.list(location) ?? []).filter(
       (integration) => props.integrationID === undefined || integration.id === props.integrationID,
     ),
   )
@@ -87,36 +117,35 @@ export function DialogIntegration(
     if (!integration) return
     const methods = connectMethods(integration)
     if (credentialConnections(integration).length) {
-      manageConnections(integration, methods, dialog, props.onConnected)
+      manageConnections(integration, methods, location, dialog, props.onConnected)
       return
     }
-    selectMethod(integration, methods, dialog, props.onConnected)
+    selectMethod(integration, methods, location, dialog, props.onConnected)
   })
 
   const options = createMemo(() => {
-    const providers = data.location.websearch.list() ?? []
-    const providersByID = new Map(providers.map((provider) => [provider.id, provider]))
     return integrations().map((integration) => {
       const methods = connectMethods(integration)
-      const provider = providersByID.get(integration.id)
       const credentials = credentialConnections(integration)
       let category = "Services"
       if (integration.id in INTEGRATION_PRIORITY) category = "Popular"
-      if (provider) category = "Web search"
+      if (integration.metadata?.source === "mcp") category = "MCP"
+      const status = integration.connections[0]?.status
       return {
         title: integration.name,
         value: integration.id,
         description: methods.length === 0 ? "Environment only" : undefined,
-        footer: connectionSummary(integration) || undefined,
+        footer: status ? "Sign in required →" : connectionSummary(integration) || undefined,
+        footerColor: status ? theme.text.feedback.warning.base : undefined,
         category,
         disabled: methods.length === 0 && credentials.length === 0,
         gutter:
-          integration.connections.length > 0
-            ? () => <text fg={theme.text.feedback.success.default}>✓</text>
+          integration.connections.length > 0 && !status
+            ? () => <text fg={theme.text.feedback.success.base}>✓</text>
             : undefined,
         onSelect: () => {
-          if (credentials.length) return manageConnections(integration, methods, dialog, props.onConnected)
-          return selectMethod(integration, methods, dialog, props.onConnected)
+          if (credentials.length) return manageConnections(integration, methods, location, dialog, props.onConnected)
+          return selectMethod(integration, methods, location, dialog, props.onConnected)
         },
       }
     })
@@ -127,13 +156,13 @@ export function DialogIntegration(
       title="Connect an integration"
       options={options()}
       emptyView={
-        <box paddingLeft={4} paddingRight={4}>
-          <text fg={theme.text.subdued}>No integrations available</text>
+        <box paddingLeft={DIALOG_LIST_INSET} paddingRight={DIALOG_LIST_INSET}>
+          <text fg={theme.text.muted}>No integrations available</text>
         </box>
       }
       noMatchView={
-        <box paddingLeft={4} paddingRight={4}>
-          <text fg={theme.text.subdued}>No integrations found</text>
+        <box paddingLeft={DIALOG_LIST_INSET} paddingRight={DIALOG_LIST_INSET}>
+          <text fg={theme.text.muted}>No integrations found</text>
         </box>
       }
     />
@@ -143,6 +172,7 @@ export function DialogIntegration(
 function manageConnections(
   integration: IntegrationInfo,
   methods: ConnectMethod[],
+  location: LocationRef,
   dialog: ReturnType<typeof useDialog>,
   onConnected?: OnIntegrationConnected,
 ) {
@@ -150,29 +180,107 @@ function manageConnections(
     const data = useData()
     const client = useClient()
     const toast = useToast()
+    const theme = useTheme().surface("dialog")
+    const shortcuts = Keymap.useShortcuts()
+    const newDesigns = useNewDesigns()
+    const [deleting, setDeleting] = createSignal<string>()
+    const [selected, setSelected] = createSignal(methods.length ? "add" : credentialConnections(integration)[0]?.id)
+    const current = createMemo(() =>
+      data.location.integration.list(location)?.find((item) => item.id === integration.id),
+    )
+
     return (
       <DialogSelect
         title={integration.name}
+        current={credentialConnections(current() ?? integration)[0]?.id}
+        focusCurrent={false}
+        preserveSelection
+        onMove={(option) => {
+          setSelected(option.value)
+          setDeleting(undefined)
+        }}
         options={[
           ...(methods.length
             ? [
                 {
-                  title: "Add connection",
+                  title: "Add account",
                   value: "add",
-                  onSelect: () => selectMethod(integration, methods, dialog, onConnected),
+                  onSelect: () => selectMethod(current() ?? integration, methods, location, dialog, onConnected),
                 },
               ]
             : []),
-          ...credentialConnections(integration).map((connection) => ({
-            title: `Disconnect ${connection.label}`,
-            value: connection.id,
-            onSelect: () => {
-              void client.api.credential
-                .remove({ credentialID: connection.id, location: location(data) })
-                .then(() => disconnected(integration.name, data, dialog, toast))
-                .catch(toast.error)
+          ...credentialConnections(current() ?? integration)
+            .toSorted((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id))
+            .map((connection) => {
+              const confirming = deleting() === connection.id
+              return {
+                title: confirming
+                  ? `Press ${shortcuts.get("dialog.integration.delete")} again to confirm`
+                  : connection.label,
+                value: connection.id,
+                footer: connection.status ? "Sign in required →" : undefined,
+                footerColor: connection.status ? theme.text.feedback.warning.base : undefined,
+                category: "Connected accounts",
+                bg: confirming ? theme.background.action.destructive.focused : undefined,
+                fg: confirming ? theme.text.action.destructive.focused : undefined,
+                onSelect: () => {
+                  if (connection.status?.url) return void openUrl(connection.status.url).catch(toast.error)
+                  if (connection.status)
+                    return selectMethod(current() ?? integration, methods, location, dialog, onConnected)
+                  if (credentialConnections(current() ?? integration)[0]?.id === connection.id) return
+                  void client.api.credential.activate({ credentialID: connection.id }).catch(toast.error)
+                },
+              }
+            }),
+        ]}
+        actions={[
+          {
+            command: "dialog.integration.rename",
+            title: "rename",
+            hidden: selected() === "add",
+            disabled: (option) => !option || option.value === "add",
+            onTrigger: (option) => {
+              dialog.replace(() => (
+                <DialogPrompt
+                  title="Rename account"
+                  placeholder="Account name"
+                  value={
+                    credentialConnections(current() ?? integration).find((item) => item.id === option.value)?.label
+                  }
+                  onConfirm={(value) => {
+                    const label = value.trim()
+                    if (!label) return
+                    void client.api.credential
+                      .update({ credentialID: option.value, label })
+                      .then(() => manageConnections(integration, methods, location, dialog, onConnected))
+                      .catch(toast.error)
+                  }}
+                />
+              ))
             },
-          })),
+          },
+          {
+            command: "dialog.integration.delete",
+            title: newDesigns() ? "remove account" : "delete",
+            hidden: selected() === "add",
+            disabled: (option) => !option || option.value === "add",
+            onTrigger: (option) => {
+              if (deleting() !== option.value) return setDeleting(option.value)
+              const final = credentialConnections(current() ?? integration).length === 1
+              void client.api.credential
+                .remove({ credentialID: option.value })
+                .then(() => {
+                  setDeleting(undefined)
+                  if (!final) return
+                  toast.show({ variant: "success", message: `Disconnected ${integration.name}` })
+                  dialog.clear()
+                })
+                .catch((error) => {
+                  setDeleting(undefined)
+                  toast.error(error)
+                })
+            },
+          },
         ]}
       />
     )
@@ -182,42 +290,104 @@ function manageConnections(
 function selectMethod(
   integration: IntegrationInfo,
   methods: ConnectMethod[],
+  location: LocationRef,
   dialog: ReturnType<typeof useDialog>,
   onConnected?: OnIntegrationConnected,
 ) {
-  if (methods.length === 1) return openMethod(integration, methods[0], dialog, onConnected)
-  dialog.replace(() => (
-    <DialogSelect
-      title={`Connect ${integration.name}`}
-      options={methods.map((method) => ({
-        title: method.type === "key" ? (method.label ?? "API key") : method.label,
-        value: method.type === "key" ? "key" : method.id,
-        onSelect: () => openMethod(integration, method, dialog, onConnected),
-      }))}
-    />
-  ))
+  if (methods.length === 1) return openMethod(integration, methods[0], location, dialog, onConnected)
+  dialog.replace(() => {
+    const newDesigns = useNewDesigns()
+    return (
+      <DialogSelect
+        title={`Connect ${integration.name}`}
+        renderFilter={!newDesigns()}
+        options={methods.map((method) => ({
+          title: method.type === "key" ? (method.label ?? "API key") : method.label,
+          value: method.type === "key" ? "key" : method.id,
+          onSelect: () => openMethod(integration, method, location, dialog, onConnected),
+        }))}
+      />
+    )
+  })
 }
 
 function openMethod(
   integration: IntegrationInfo,
   method: ConnectMethod,
+  location: LocationRef,
   dialog: ReturnType<typeof useDialog>,
   onConnected?: OnIntegrationConnected,
 ) {
   if (method.type === "key") {
-    void beginKey(integration, method, dialog, onConnected)
+    void beginKey(integration, method, location, dialog, onConnected)
     return
   }
   if (method.type === "command") {
-    dialog.replace(() => <CommandStarting integration={integration} method={method} onConnected={onConnected} />)
+    dialog.replace(() => (
+      <CommandStarting integration={integration} method={method} location={location} onConnected={onConnected} />
+    ))
     return
   }
-  void beginOAuth(integration, method, dialog, onConnected)
+  if (method.type === "external") {
+    void beginExternal(integration, method, location, dialog, onConnected)
+    return
+  }
+  void beginOAuth(integration, method, location, dialog, onConnected)
+}
+
+async function beginExternal(
+  integration: IntegrationInfo,
+  method: Extract<ConnectMethod, { type: "external" }>,
+  location: LocationRef,
+  dialog: ReturnType<typeof useDialog>,
+  onConnected?: OnIntegrationConnected,
+) {
+  const answer = method.form ? await formAnswer(dialog, method.label, method.form) : undefined
+  if (answer === null) return
+  dialog.replace(() => (
+    <ExternalStarting
+      integration={integration}
+      method={method}
+      location={location}
+      answer={answer}
+      onConnected={onConnected}
+    />
+  ))
+}
+
+function ExternalStarting(props: {
+  integration: IntegrationInfo
+  method: Extract<ConnectMethod, { type: "external" }>
+  location: LocationRef
+  answer?: FormAnswer
+  onConnected?: OnIntegrationConnected
+}) {
+  const data = useData()
+  const dialog = useDialog()
+  const client = useClient()
+  const toast = useToast()
+
+  onMount(() => {
+    void client.api.integration.connect
+      .external({
+        integrationID: props.integration.id,
+        location: locationQuery(props.location),
+        methodID: props.method.id,
+        ...(props.answer ? { answer: props.answer } : {}),
+      })
+      .then(() => connected(props.integration, props.location, data, dialog, toast, props.onConnected))
+      .catch((cause) => {
+        toast.show({ variant: "error", message: errorMessage(cause) })
+        dialog.clear()
+      })
+  })
+  return <OAuthView title={props.method.label} message="Connecting…" />
 }
 
 async function beginKey(
   integration: IntegrationInfo,
   method: Extract<ConnectMethod, { type: "key" }>,
+  location: LocationRef,
   dialog: ReturnType<typeof useDialog>,
   onConnected?: OnIntegrationConnected,
 ) {
@@ -226,16 +396,22 @@ async function beginKey(
     : undefined
   if (answer === null) return
   dialog.replace(() => (
-    <KeyMethod integration={integration} method={method} answer={answer} onConnected={onConnected} />
+    <KeyMethod
+      integration={integration}
+      method={method}
+      location={location}
+      answer={answer}
+      onConnected={onConnected}
+    />
   ))
 }
 
 function CommandStarting(props: {
   integration: IntegrationInfo
   method: Extract<ConnectMethod, { type: "command" }>
+  location: LocationRef
   onConnected?: OnIntegrationConnected
 }) {
-  const data = useData()
   const dialog = useDialog()
   const client = useClient()
   const toast = useToast()
@@ -247,14 +423,14 @@ function CommandStarting(props: {
       .connect({
         integrationID: props.integration.id,
         methodID: props.method.id,
-        location: location(data),
+        location: locationQuery(props.location),
       })
       .then((result) => {
         if (closed) {
           void client.api.integration.command.cancel({
             integrationID: props.integration.id,
             attemptID: result.data.attemptID,
-            location: location(data),
+            location: locationQuery(props.location),
           })
           return
         }
@@ -264,13 +440,14 @@ function CommandStarting(props: {
             integration={props.integration}
             title={props.method.label}
             attempt={result.data}
+            location={props.location}
             onConnected={props.onConnected}
           />
         ))
       })
       .catch((cause) => {
         if (closed) return
-        toast.show({ variant: "error", message: message(cause) })
+        toast.show({ variant: "error", message: errorMessage(cause) })
         dialog.clear()
       })
   })
@@ -278,13 +455,14 @@ function CommandStarting(props: {
     if (!handedOff) closed = true
   })
 
-  return <CommandView title={props.method.label} output="" message="Starting command..." />
+  return <CommandView title={props.method.label} output="" message="Starting command…" />
 }
 
 function CommandPending(props: {
   integration: IntegrationInfo
   title: string
   attempt: CommandAttempt
+  location: LocationRef
   onConnected?: OnIntegrationConnected
 }) {
   const data = useData()
@@ -300,7 +478,7 @@ function CommandPending(props: {
       .status({
         integrationID: props.integration.id,
         attemptID: props.attempt.attemptID,
-        location: location(data),
+        location: locationQuery(props.location),
       })
       .then((result) => {
         const status = result.data
@@ -311,7 +489,7 @@ function CommandPending(props: {
         }
         settled = true
         if (status.status === "complete") {
-          void connected(props.integration, data, dialog, toast, props.onConnected)
+          void connected(props.integration, props.location, data, dialog, toast, props.onConnected)
           return
         }
         toast.show({
@@ -322,7 +500,7 @@ function CommandPending(props: {
       })
       .catch((cause) => {
         settled = true
-        toast.show({ variant: "error", message: message(cause) })
+        toast.show({ variant: "error", message: errorMessage(cause) })
         dialog.clear()
       })
   }
@@ -334,47 +512,42 @@ function CommandPending(props: {
     void client.api.integration.command.cancel({
       integrationID: props.integration.id,
       attemptID: props.attempt.attemptID,
-      location: location(data),
+      location: locationQuery(props.location),
     })
   })
 
-  return <CommandView title={props.title} output={output()} message="Waiting for command to finish..." />
+  return <CommandView title={props.title} output={output()} message="Waiting for command to finish…" />
 }
 
 function CommandView(props: { title: string; output: string; message: string }) {
   const dialog = useDialog()
-  const theme = useTheme("elevated")
-  const overlayTheme = useTheme("overlay")
+  const theme = useTheme().surface("dialog")
+  const overlayTheme = useTheme()
   onMount(() => dialog.setSize("large"))
   return (
-    <box gap={1} paddingBottom={1}>
-      <box flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
-        <text attributes={TextAttributes.BOLD} fg={theme.text.default}>
-          {props.title}
-        </text>
-        <text fg={theme.text.subdued} onMouseUp={() => dialog.clear()}>
-          esc close
-        </text>
+    <DialogLayout header={<DialogHeader title={props.title} closeLabel="esc close" />}>
+      <box gap={1}>
+        <DialogBleed>
+          <box
+            backgroundColor={overlayTheme.background.raised.high}
+            paddingLeft={DIALOG_INSET}
+            paddingRight={DIALOG_INSET}
+            paddingTop={1}
+            paddingBottom={1}
+          >
+            <text fg={overlayTheme.text.base}>{props.output.trim()}</text>
+          </box>
+        </DialogBleed>
+        <text fg={theme.text.muted}>{props.message}</text>
       </box>
-      <box
-        backgroundColor={overlayTheme.background.default}
-        paddingLeft={2}
-        paddingRight={2}
-        paddingTop={1}
-        paddingBottom={1}
-      >
-        <text fg={overlayTheme.text.default}>{props.output.trim()}</text>
-      </box>
-      <box paddingLeft={2} paddingRight={2}>
-        <text fg={theme.text.subdued}>{props.message}</text>
-      </box>
-    </box>
+    </DialogLayout>
   )
 }
 
 function KeyMethod(props: {
   integration: IntegrationInfo
   method: Extract<ConnectMethod, { type: "key" }>
+  location: LocationRef
   answer?: FormAnswer
   onConnected?: OnIntegrationConnected
 }) {
@@ -382,7 +555,7 @@ function KeyMethod(props: {
   const dialog = useDialog()
   const client = useClient()
   const toast = useToast()
-  const theme = useTheme("elevated")
+  const theme = useTheme().surface("dialog")
   const [error, setError] = createSignal<string>()
 
   return (
@@ -394,15 +567,15 @@ function KeyMethod(props: {
         void client.api.integration.connect
           .key({
             integrationID: props.integration.id,
-            location: location(data),
+            location: locationQuery(props.location),
             key,
             ...(props.answer ? { answer: props.answer } : {}),
           })
-          .then(() => connected(props.integration, data, dialog, toast, props.onConnected))
-          .catch((cause) => setError(message(cause)))
+          .then(() => connected(props.integration, props.location, data, dialog, toast, props.onConnected))
+          .catch((cause) => setError(errorMessage(cause)))
       }}
       description={() => (
-        <Show when={error()}>{(value) => <text fg={theme.text.feedback.error.default}>{value()}</text>}</Show>
+        <Show when={error()}>{(value) => <text fg={theme.text.feedback.error.base}>{value()}</text>}</Show>
       )}
     />
   )
@@ -411,23 +584,30 @@ function KeyMethod(props: {
 async function beginOAuth(
   integration: IntegrationInfo,
   method: IntegrationOAuthMethod,
+  location: LocationRef,
   dialog: ReturnType<typeof useDialog>,
   onConnected?: OnIntegrationConnected,
 ) {
   const answer = method.form ? await formAnswer(dialog, method.label, method.form) : undefined
   if (answer === null) return
   dialog.replace(() => (
-    <OAuthStarting integration={integration} method={method} answer={answer} onConnected={onConnected} />
+    <OAuthStarting
+      integration={integration}
+      method={method}
+      location={location}
+      answer={answer}
+      onConnected={onConnected}
+    />
   ))
 }
 
 function OAuthStarting(props: {
   integration: IntegrationInfo
   method: IntegrationOAuthMethod
+  location: LocationRef
   answer?: FormAnswer
   onConnected?: OnIntegrationConnected
 }) {
-  const data = useData()
   const dialog = useDialog()
   const client = useClient()
   const toast = useToast()
@@ -436,7 +616,7 @@ function OAuthStarting(props: {
     void client.api.integration.oauth
       .connect({
         integrationID: props.integration.id,
-        location: location(data),
+        location: locationQuery(props.location),
         methodID: props.method.id,
         ...(props.answer ? { answer: props.answer } : {}),
       })
@@ -447,6 +627,7 @@ function OAuthStarting(props: {
               integration={props.integration}
               title={props.method.label}
               attempt={result.data}
+              location={props.location}
               onConnected={props.onConnected}
             />
           ))
@@ -457,23 +638,25 @@ function OAuthStarting(props: {
             integration={props.integration}
             title={props.method.label}
             attempt={result.data}
+            location={props.location}
             onConnected={props.onConnected}
           />
         ))
       })
       .catch((cause) => {
-        toast.show({ variant: "error", message: message(cause) })
+        toast.show({ variant: "error", message: errorMessage(cause) })
         dialog.clear()
       })
   })
 
-  return <OAuthView title={props.method.label} message="Starting authorization..." />
+  return <OAuthView title={props.method.label} message="Starting authorization…" />
 }
 
 function OAuthAuto(props: {
   integration: IntegrationInfo
   title: string
   attempt: IntegrationAttempt
+  location: LocationRef
   onConnected?: OnIntegrationConnected
 }) {
   const data = useData()
@@ -481,43 +664,42 @@ function OAuthAuto(props: {
   const client = useClient()
   const toast = useToast()
   const clipboard = useClipboard()
+  const newDesigns = useNewDesigns()
   let timer: ReturnType<typeof setTimeout> | undefined
   let settled = false
+
+  const open = () => {
+    openUrl(props.attempt.url).catch(() =>
+      toast.show({
+        message: "Could not open the browser. Copy the URL and continue manually.",
+        variant: "error",
+      }),
+    )
+  }
+
+  const copy = () => {
+    const value = props.attempt.instructions.match(OAUTH_CODE)?.[0] ?? props.attempt.url
+    clipboard
+      .write(value)
+      .then(() => toast.show({ message: "Copied to clipboard", variant: "info" }))
+      .catch(toast.error)
+  }
 
   Keymap.createLayer(() => ({
     mode: "modal",
     commands: [
-      {
-        bind: "o",
-        title: "Open authorization URL",
-        group: "Dialog",
-        run: () => {
-          open(props.attempt.url).catch(() =>
-            toast.show({
-              message: "Could not open the browser. Copy the URL and continue manually.",
-              variant: "error",
-            }),
-          )
-        },
-      },
-      {
-        bind: "c",
-        title: "Copy authorization details",
-        group: "Dialog",
-        run: () => {
-          const value = props.attempt.instructions.match(/[A-Z0-9]{4}-[A-Z0-9]{4,5}/)?.[0] ?? props.attempt.url
-          clipboard
-            .write(value)
-            .then(() => toast.show({ message: "Copied to clipboard", variant: "info" }))
-            .catch(toast.error)
-        },
-      },
+      { bind: newDesigns() ? "return" : "o", title: "Open authorization URL", group: "Dialog", run: open },
+      { bind: "c", title: "Copy authorization details", group: "Dialog", run: copy },
     ],
   }))
 
   const poll = () => {
     void client.api.integration.oauth
-      .status({ integrationID: props.integration.id, attemptID: props.attempt.attemptID, location: location(data) })
+      .status({
+        integrationID: props.integration.id,
+        attemptID: props.attempt.attemptID,
+        location: locationQuery(props.location),
+      })
       .then((result) => {
         const status = result.data
         if (status.status === "pending") {
@@ -526,7 +708,7 @@ function OAuthAuto(props: {
         }
         settled = true
         if (status.status === "complete") {
-          void connected(props.integration, data, dialog, toast, props.onConnected)
+          void connected(props.integration, props.location, data, dialog, toast, props.onConnected)
           return
         }
         toast.show({ variant: "error", message: status.status === "failed" ? status.message : "Authorization expired" })
@@ -534,7 +716,7 @@ function OAuthAuto(props: {
       })
       .catch((cause) => {
         settled = true
-        toast.show({ variant: "error", message: message(cause) })
+        toast.show({ variant: "error", message: errorMessage(cause) })
         dialog.clear()
       })
   }
@@ -546,7 +728,7 @@ function OAuthAuto(props: {
     void client.api.integration.oauth.cancel({
       integrationID: props.integration.id,
       attemptID: props.attempt.attemptID,
-      location: location(data),
+      location: locationQuery(props.location),
     })
   })
 
@@ -555,9 +737,9 @@ function OAuthAuto(props: {
       title={props.title}
       url={props.attempt.url}
       instructions={props.attempt.instructions}
-      message="Waiting for authorization..."
-      copy
-      open
+      message="Waiting for authorization…"
+      onCopy={copy}
+      onOpen={open}
     />
   )
 }
@@ -566,13 +748,15 @@ function OAuthCode(props: {
   integration: IntegrationInfo
   title: string
   attempt: IntegrationAttempt
+  location: LocationRef
   onConnected?: OnIntegrationConnected
 }) {
   const data = useData()
   const dialog = useDialog()
   const client = useClient()
   const toast = useToast()
-  const theme = useTheme("elevated")
+  const theme = useTheme().surface("dialog")
+  const newDesigns = useNewDesigns()
   const [error, setError] = createSignal<string>()
   let settled = false
 
@@ -581,13 +765,14 @@ function OAuthCode(props: {
     void client.api.integration.oauth.cancel({
       integrationID: props.integration.id,
       attemptID: props.attempt.attemptID,
-      location: location(data),
+      location: locationQuery(props.location),
     })
   })
 
   return (
     <DialogPrompt
       title={props.title}
+      subtitle={props.attempt.instructions}
       placeholder="Authorization code"
       onConfirm={(code) => {
         if (!code) return
@@ -595,20 +780,22 @@ function OAuthCode(props: {
           .complete({
             integrationID: props.integration.id,
             attemptID: props.attempt.attemptID,
-            location: location(data),
+            location: locationQuery(props.location),
             code,
           })
           .then(() => {
             settled = true
-            return connected(props.integration, data, dialog, toast, props.onConnected)
+            return connected(props.integration, props.location, data, dialog, toast, props.onConnected)
           })
-          .catch((cause) => setError(message(cause)))
+          .catch((cause) => setError(errorMessage(cause)))
       }}
       description={() => (
         <box gap={1}>
-          <text fg={theme.text.subdued}>{props.attempt.instructions}</text>
+          <Show when={!newDesigns()}>
+            <text fg={theme.text.muted}>{props.attempt.instructions}</text>
+          </Show>
           <Link href={props.attempt.url} fg={theme.markdown.link} />
-          <Show when={error()}>{(value) => <text fg={theme.text.feedback.error.default}>{value()}</text>}</Show>
+          <Show when={error()}>{(value) => <text fg={theme.text.feedback.error.base}>{value()}</text>}</Show>
         </box>
       )}
     />
@@ -620,45 +807,54 @@ function OAuthView(props: {
   url?: string
   instructions?: string
   message: string
-  copy?: boolean
-  open?: boolean
+  onCopy?: () => void
+  onOpen?: () => void
 }) {
-  const dialog = useDialog()
-  const theme = useTheme("elevated")
+  const theme = useTheme().surface("dialog")
   return (
-    <box paddingLeft={2} paddingRight={2} gap={1} paddingBottom={1}>
-      <box flexDirection="row" justifyContent="space-between">
-        <text attributes={TextAttributes.BOLD} fg={theme.text.default}>
-          {props.title}
-        </text>
-        <text fg={theme.text.subdued} onMouseUp={() => dialog.clear()}>
-          esc
-        </text>
-      </box>
-      <Show when={props.url}>
-        {(url) => (
-          <box gap={1}>
-            <Link href={url()} fg={theme.markdown.link} />
-            <Show when={props.instructions}>
-              {(instructions) => <text fg={theme.text.subdued}>{instructions()}</text>}
-            </Show>
-          </box>
-        )}
-      </Show>
-      <text fg={theme.text.subdued}>{props.message}</text>
-      <box flexDirection="row" gap={2}>
-        <Show when={props.open}>
-          <text fg={theme.text.default}>
-            o <span style={{ fg: theme.text.subdued }}>open</span>
-          </text>
+    <DialogLayout
+      header={<DialogHeader title={props.title} />}
+      footer={{
+        actions: {
+          primary: [
+            ...(props.onCopy
+              ? [
+                  {
+                    title: props.instructions?.match(OAUTH_CODE) ? "copy code" : "copy link",
+                    key: "c",
+                    onTrigger: props.onCopy,
+                  },
+                ]
+              : []),
+            ...(props.onOpen ? [{ title: "open link", key: "enter", onTrigger: props.onOpen }] : []),
+          ],
+        },
+      }}
+      legacyFooter={
+        <DialogFooter
+          actions={{
+            secondary: [
+              ...(props.onOpen ? [{ title: "open", key: "o" }] : []),
+              ...(props.onCopy ? [{ title: "copy", key: "c" }] : []),
+            ],
+          }}
+        />
+      }
+    >
+      <box gap={1}>
+        <Show when={props.url}>
+          {(url) => (
+            <box gap={1}>
+              <Link href={url()} fg={theme.markdown.link} />
+              <Show when={props.instructions}>
+                {(instructions) => <text fg={theme.text.muted}>{instructions()}</text>}
+              </Show>
+            </box>
+          )}
         </Show>
-        <Show when={props.copy}>
-          <text fg={theme.text.default}>
-            c <span style={{ fg: theme.text.subdued }}>copy</span>
-          </text>
-        </Show>
+        <text fg={theme.text.muted}>{props.message}</text>
       </box>
-    </box>
+    </DialogLayout>
   )
 }
 
@@ -666,7 +862,7 @@ async function formAnswer(dialog: ReturnType<typeof useDialog>, title: string, f
   const answer: FormAnswer = {}
   for (const field of fields) {
     if (!active(field, answer)) continue
-    const value = await fieldAnswer(dialog, title, field)
+    const value = field.type !== "external" && field.hidden ? field.default : await fieldAnswer(dialog, title, field)
     if (value === CANCELLED) return null
     if (value !== undefined) answer[field.key] = value
   }
@@ -701,6 +897,13 @@ async function selectAnswer(
   title: string,
   field: Extract<FormAnswerField, { type: "boolean" | "string" }>,
 ): Promise<FormValue | undefined | typeof CANCELLED> {
+  if (field.type === "string" && field.custom)
+    return new Promise((resolve) => {
+      dialog.replace(
+        () => <StringChoiceField field={field} onSubmit={resolve} />,
+        () => resolve(CANCELLED),
+      )
+    })
   const options =
     field.type === "boolean"
       ? field.default === false
@@ -717,18 +920,12 @@ async function selectAnswer(
           value: option.value as FormValue,
           description: option.description,
         }))
-  const choice = await new Promise<FormValue | typeof CUSTOM | undefined | typeof CANCELLED>((resolve) => {
+  return new Promise<FormValue | undefined | typeof CANCELLED>((resolve) => {
     dialog.replace(
       () => (
-        <DialogSelect<FormValue | typeof CUSTOM | undefined>
+        <DialogSelect<FormValue | undefined>
           title={formLabel(field) || title}
-          options={[
-            ...options,
-            ...(field.type === "string" && field.custom
-              ? [{ title: "Type your own answer", value: CUSTOM as typeof CUSTOM }]
-              : []),
-            ...(!field.required ? [{ title: "Skip", value: undefined }] : []),
-          ]}
+          options={[...options, ...(!field.required ? [{ title: "Skip", value: undefined }] : [])]}
           current={field.type === "string" ? field.default : undefined}
           onSelect={(option) => resolve(option.value)}
         />
@@ -736,11 +933,167 @@ async function selectAnswer(
       () => resolve(CANCELLED),
     )
   })
-  if (choice === CUSTOM) {
-    if (field.type !== "string") return CANCELLED
-    return textAnswer(dialog, title, field, "")
+}
+
+function StringChoiceField(props: {
+  field: Extract<FormAnswerField, { type: "string" }>
+  onSubmit: (value: string | undefined) => void
+}) {
+  const dialog = useDialog()
+  const theme = useTheme().surface("dialog")
+  const dimensions = useTerminalDimensions()
+  const rows = formRows(props.field)
+  const count = rows.length + (props.field.required ? 1 : 2)
+  const [store, setStore] = createStore({
+    selected: formSelected(props.field, props.field.default),
+    editing: false,
+    text: formInitialValues([props.field]).custom[props.field.key] ?? "",
+    error: "",
+  })
+  const [textarea, setTextarea] = createSignal<TextareaRenderable>()
+  let scroll: ScrollBoxRenderable | undefined
+  createEffect(() => {
+    const row = scroll?.getChildren()[store.selected]
+    if (row) scroll?.scrollChildIntoView(row.id)
+  })
+  const fg = (index: number) => (store.selected === index ? theme.text.formfield.focused : theme.text.formfield.base)
+  const submit = (value: string | undefined) => {
+    const invalid = formValidateValue(props.field, value)
+    if (invalid) return setStore("error", invalid)
+    props.onSubmit(value)
   }
-  return choice
+  const select = (index: number) => {
+    setStore({ selected: index, error: "" })
+    if (index === rows.length) return setStore("editing", true)
+    submit(index < rows.length ? String(rows[index].value) : undefined)
+  }
+  const back = () => setStore({ editing: false, text: textarea()?.plainText ?? store.text, error: "" })
+  Keymap.createLayer(() => ({
+    mode: "modal",
+    enabled: !store.editing,
+    commands: [
+      {
+        id: "dialog.select.prev",
+        title: "Previous answer",
+        group: "Form",
+        run: () => setStore("selected", (store.selected + count - 1) % count),
+      },
+      {
+        id: "dialog.select.next",
+        title: "Next answer",
+        group: "Form",
+        run: () => setStore("selected", (store.selected + 1) % count),
+      },
+      { id: "dialog.select.submit", title: "Select answer", group: "Form", run: () => select(store.selected) },
+    ],
+  }))
+  Keymap.createLayer(() => ({
+    mode: "modal",
+    priority: 1,
+    target: textarea,
+    enabled: store.editing,
+    commands: [
+      {
+        id: "dialog.prompt.submit",
+        title: "Submit answer",
+        group: "Form",
+        run: () => submit(textarea()?.plainText.trim() || undefined),
+      },
+      { bind: "escape", title: "Back to answers", group: "Form", run: back },
+    ],
+  }))
+  return (
+    <DialogLayout
+      header={<DialogHeader title={formLabel(props.field)} onClose={() => (store.editing ? back() : dialog.clear())} />}
+      footer={{
+        actions: {
+          secondary: store.editing
+            ? [
+                { title: "submit", key: "enter", onTrigger: () => submit(textarea()?.plainText.trim() || undefined) },
+                { title: "back", key: "esc", onTrigger: back },
+              ]
+            : [
+                { title: "select", key: "↑/↓" },
+                { title: "confirm", key: "enter", onTrigger: () => select(store.selected) },
+                { title: "cancel", key: "esc", onTrigger: () => dialog.clear() },
+              ],
+        },
+      }}
+    >
+      <box gap={1}>
+        <Show when={props.field.description}>
+          {(description) => <text fg={theme.text.muted}>{description()}</text>}
+        </Show>
+        <scrollbox
+          gap={1}
+          height={Math.min(
+            count + rows.filter((row) => row.description).length,
+            Math.max(3, Math.floor(dimensions().height / 2) - 6),
+          )}
+          scrollbarOptions={{ visible: false }}
+          ref={(value: ScrollBoxRenderable) => {
+            scroll = value
+          }}
+        >
+          <For each={rows}>
+            {(row, index) => (
+              <box onMouseUp={() => select(index())}>
+                <text fg={fg(index())}>
+                  {index() + 1}. {row.label}
+                </text>
+                <Show when={row.description}>
+                  {(description) => (
+                    <box paddingLeft={3}>
+                      <text fg={theme.text.muted}>{description()}</text>
+                    </box>
+                  )}
+                </Show>
+              </box>
+            )}
+          </For>
+          <box flexDirection="row" gap={1} onMouseUp={() => select(rows.length)}>
+            <text fg={fg(rows.length)}>{rows.length + 1}.</text>
+            <Show
+              when={store.editing}
+              fallback={<text fg={fg(rows.length)}>{store.text || "Type your own answer"}</text>}
+            >
+              <textarea
+                height={1}
+                flexGrow={1}
+                wrapMode="none"
+                initialValue={store.text}
+                placeholder={props.field.placeholder ?? "Type your own answer"}
+                placeholderColor={theme.text.muted}
+                textColor={theme.text.formfield.focused}
+                focusedTextColor={theme.text.formfield.focused}
+                cursorColor={theme.text.formfield.focused}
+                ref={(value: TextareaRenderable) => {
+                  setTextarea(value)
+                  value.traits = { status: "ANSWER" }
+                  queueMicrotask(() => {
+                    if (value.isDestroyed) return
+                    value.focus()
+                    value.gotoLineEnd()
+                  })
+                }}
+                onContentChange={() => {
+                  const text = textarea()?.plainText ?? ""
+                  setStore("text", text)
+                  if (store.error && !formValidateValue(props.field, text.trim() || undefined)) setStore("error", "")
+                }}
+              />
+            </Show>
+          </box>
+          <Show when={!props.field.required}>
+            <text fg={fg(rows.length + 1)} onMouseUp={() => select(rows.length + 1)}>
+              {rows.length + 2}. Skip
+            </text>
+          </Show>
+        </scrollbox>
+        <Show when={store.error}>{(error) => <text fg={theme.text.feedback.error.base}>{error()}</text>}</Show>
+      </box>
+    </DialogLayout>
+  )
 }
 
 function textAnswer(
@@ -752,7 +1105,7 @@ function textAnswer(
   return new Promise<FormValue | undefined | typeof CANCELLED>((resolve) => {
     dialog.replace(
       () => {
-        const theme = useTheme("elevated")
+        const theme = useTheme().surface("dialog")
         const [error, setError] = createSignal<string>()
         return (
           <DialogPrompt
@@ -772,9 +1125,9 @@ function textAnswer(
             description={() => (
               <box gap={1}>
                 <Show when={field.description}>
-                  {(description) => <text fg={theme.text.subdued}>{description()}</text>}
+                  {(description) => <text fg={theme.text.muted}>{description()}</text>}
                 </Show>
-                <Show when={error()}>{(value) => <text fg={theme.text.feedback.error.default}>{value()}</text>}</Show>
+                <Show when={error()}>{(value) => <text fg={theme.text.feedback.error.base}>{value()}</text>}</Show>
               </box>
             )}
           />
@@ -879,10 +1232,10 @@ async function externalAnswer(
     if (choice === true) return true
     const result = await new Promise<boolean | typeof CANCELLED>((resolve) => {
       dialog.replace(
-        () => <OAuthView title={formLabel(field) || title} message="Opening link..." />,
+        () => <OAuthView title={formLabel(field) || title} message="Opening link…" />,
         () => resolve(CANCELLED),
       )
-      void open(field.url).then(
+      void openUrl(field.url).then(
         () => resolve(true),
         () => resolve(false),
       )
@@ -894,26 +1247,31 @@ async function externalAnswer(
 
 async function connected(
   integration: IntegrationInfo,
+  location: LocationRef,
   data: ReturnType<typeof useData>,
   dialog: ReturnType<typeof useDialog>,
   toast: ReturnType<typeof useToast>,
   onConnected?: OnIntegrationConnected,
 ) {
-  data.location.integration.invalidate()
-  data.location.model.invalidate()
-  data.location.provider.invalidate()
-  await Promise.all([data.location.integration.sync(), data.location.model.sync(), data.location.provider.sync()])
+  data.location.integration.invalidate(location)
+  data.location.model.invalidate(location)
+  data.location.provider.invalidate(location)
+  await Promise.all([
+    data.location.integration.sync(location),
+    data.location.model.sync(location),
+    data.location.provider.sync(location),
+  ])
   toast.show({ variant: "success", message: `Connected ${integration.name}` })
-  if (onConnected) {
-    onConnected(providerID(data, integration.id))
+  if (onConnected && integration.metadata?.source !== "mcp") {
+    onConnected(providerID(data, location, integration.id))
     return
   }
   dialog.clear()
 }
 
-function providerID(data: ReturnType<typeof useData>, integrationID: string) {
-  const models = data.location.model.list() ?? []
-  const matches = (data.location.provider.list() ?? []).filter(
+function providerID(data: ReturnType<typeof useData>, location: LocationRef, integrationID: string) {
+  const models = data.location.model.list(location) ?? []
+  const matches = (data.location.provider.list(location) ?? []).filter(
     (provider) => provider.integrationID === integrationID || provider.id === integrationID,
   )
   return (
@@ -923,26 +1281,6 @@ function providerID(data: ReturnType<typeof useData>, integrationID: string) {
   )
 }
 
-async function disconnected(
-  name: string,
-  data: ReturnType<typeof useData>,
-  dialog: ReturnType<typeof useDialog>,
-  toast: ReturnType<typeof useToast>,
-) {
-  data.location.integration.invalidate()
-  data.location.model.invalidate()
-  data.location.provider.invalidate()
-  await Promise.all([data.location.integration.sync(), data.location.model.sync(), data.location.provider.sync()])
-  toast.show({ variant: "success", message: `Disconnected ${name}` })
-  dialog.clear()
-}
-
-function location(data: ReturnType<typeof useData>) {
-  const current = data.location.default()
-  return { directory: current.directory, workspace: current.workspaceID }
-}
-
-function message(cause: unknown) {
-  if (cause instanceof Error) return cause.message
-  return "Authentication failed"
+function locationQuery(location: LocationRef) {
+  return { directory: location.directory }
 }

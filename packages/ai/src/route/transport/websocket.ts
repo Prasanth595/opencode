@@ -1,7 +1,13 @@
 import { Cause, Effect, Queue, Stream } from "effect"
-import { Headers } from "effect/unstable/http"
-import { Socket } from "effect/unstable/socket"
-import { AIError, TransportReason, type TransportOperation } from "../../schema/index.js"
+import { Headers } from "effect/http"
+import { Socket } from "effect/socket"
+import {
+  AIError,
+  AIErrorReason,
+  TransportError,
+  type HttpContext,
+  type TransportOperation,
+} from "../../schema/index.js"
 import * as HttpTransport from "./http.js"
 import type { Transport } from "./index.js"
 import type {
@@ -17,6 +23,7 @@ export interface WebSocketRequest {
 }
 
 export interface WebSocketConnection {
+  readonly http?: HttpContext
   readonly sendText: (message: string) => Effect.Effect<void, AIError>
   readonly messages: Stream.Stream<string | Uint8Array, AIError>
   readonly close: Effect.Effect<void, never>
@@ -26,28 +33,24 @@ export interface WebSocketConnector {
   readonly open: (input: WebSocketRequest) => Effect.Effect<WebSocketConnection, AIError>
 }
 
-type WebSocketConstructorWithHeaders = (
-  url: string,
-  options?: { readonly headers?: Headers.Headers },
-) => globalThis.WebSocket
-
 const MAX_FRAME_BYTES = 16 * 1024 * 1024
 const transportError = (
-  method: string,
   message: string,
   input: {
     readonly operation: TransportOperation
     readonly url?: string
     readonly code?: string
-    readonly phase?: TransportReason["phase"]
-    readonly delivery?: TransportReason["delivery"]
+    readonly phase?: TransportError["phase"]
+    readonly delivery?: TransportError["delivery"]
+    readonly body?: string
+    readonly cause?: unknown
   },
 ) =>
   new AIError({
-    module: "WebSocketConnector",
-    method,
-    reason: new TransportReason({
+    reason: new TransportError({
       message,
+      body: input.body,
+      cause: input.cause,
       transport: "websocket",
       operation: input.operation,
       url: input.url,
@@ -59,29 +62,23 @@ const transportError = (
 
 const annotateTransportError = (
   error: AIError,
-  input: { readonly phase: TransportReason["phase"]; readonly delivery: TransportReason["delivery"] },
+  input: { readonly phase: TransportError["phase"]; readonly delivery: TransportError["delivery"] },
 ) =>
   error.reason._tag === "Transport"
     ? new AIError({
-        module: error.module,
-        method: error.method,
-        reason: new TransportReason({
+        reason: new TransportError({
+          ...error.reason,
           message: error.reason.message,
-          transport: error.reason.transport,
-          operation: error.reason.operation,
-          code: error.reason.code,
-          url: error.reason.url,
-          http: error.reason.http,
+          cause: error.reason.cause,
           phase: input.phase,
           delivery: input.delivery,
-          recovery: error.reason.recovery,
         }),
       })
     : error
 
-const eventMessage = (event: Event) => {
+const eventMessage = (event: Socket.WebSocketEvent) => {
   if ("message" in event && typeof event.message === "string") return event.message
-  return event.type
+  return event.type ?? "error"
 }
 
 const binaryMessage = (data: unknown) => {
@@ -91,11 +88,11 @@ const binaryMessage = (data: unknown) => {
   return undefined
 }
 
-const waitOpen = (ws: globalThis.WebSocket, input: WebSocketRequest) => {
+const waitOpen = (ws: Socket.WebSocketLike, input: WebSocketRequest) => {
   if (ws.readyState === globalThis.WebSocket.OPEN) return Effect.void
   if (ws.readyState === globalThis.WebSocket.CLOSING || ws.readyState === globalThis.WebSocket.CLOSED) {
     return Effect.fail(
-      transportError("open", `WebSocket closed before opening (state ${ws.readyState})`, {
+      transportError(`WebSocket closed before opening (state ${ws.readyState})`, {
         url: input.url,
         operation: "request",
         code: "closed",
@@ -113,18 +110,22 @@ const waitOpen = (ws: globalThis.WebSocket, input: WebSocketRequest) => {
     }
     const onAbort = () => {
       cleanup()
-      if (ws.readyState !== globalThis.WebSocket.CLOSED && ws.readyState !== globalThis.WebSocket.CLOSING)
-        ws.close(1000)
+      if (ws.readyState === globalThis.WebSocket.CLOSED || ws.readyState === globalThis.WebSocket.CLOSING) return
+      // Node's ws reports an aborted handshake as an error event on the next tick; with no listener left
+      // after cleanup, EventEmitter would throw it as an uncaught exception.
+      ws.addEventListener("error", () => {}, { once: true })
+      ws.close(1000)
     }
     const onOpen = () => {
       cleanup()
       resume(Effect.void)
     }
-    const onError = (event: Event) => {
+    const onError = (event: Socket.WebSocketEvent) => {
       cleanup()
       resume(
         Effect.fail(
-          transportError("open", `Failed to open WebSocket: ${eventMessage(event)}`, {
+          transportError(`Failed to open WebSocket: ${eventMessage(event)}`, {
+            cause: "error" in event ? (event.error ?? event) : event,
             url: input.url,
             operation: "request",
             phase: "connect",
@@ -133,11 +134,13 @@ const waitOpen = (ws: globalThis.WebSocket, input: WebSocketRequest) => {
         ),
       )
     }
-    const onClose = (event: CloseEvent) => {
+    const onClose = (event: Socket.WebSocketEvent) => {
       cleanup()
       resume(
         Effect.fail(
-          transportError("open", `WebSocket closed before opening with code ${event.code}`, {
+          transportError(`WebSocket closed before opening with code ${event.code}`, {
+            body: event.reason,
+            cause: event,
             url: input.url,
             operation: "request",
             code: String(event.code),
@@ -169,7 +172,8 @@ export const toWebSocketUrl = (value: string) =>
       throw new Error(`Unsupported WebSocket URL protocol ${url.protocol}`)
     },
     catch: (error) =>
-      transportError("prepare", error instanceof Error ? error.message : "Invalid WebSocket URL", {
+      transportError(error instanceof Error ? error.message : "Invalid WebSocket URL", {
+        cause: error,
         url: value,
         operation: "request",
         code: "invalid-url",
@@ -182,14 +186,10 @@ export const open = (input: WebSocketRequest) =>
   Effect.gen(function* () {
     const constructor = yield* Socket.WebSocketConstructor
     const ws = yield* Effect.try({
-      try: () =>
-        // Platform implementations may extend Effect's browser-compatible constructor with handshake options.
-        // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
-        (constructor as unknown as WebSocketConstructorWithHeaders)(input.url, {
-          headers: input.headers,
-        }),
+      try: () => constructor(input.url, { headers: input.headers }),
       catch: (error) =>
-        transportError("open", error instanceof Error ? error.message : "Failed to construct WebSocket", {
+        transportError(error instanceof Error ? error.message : "Failed to construct WebSocket", {
+          cause: error,
           url: input.url,
           operation: "request",
           phase: "connect",
@@ -200,12 +200,14 @@ export const open = (input: WebSocketRequest) =>
   })
 
 export const fromWebSocket = (
-  ws: globalThis.WebSocket,
+  ws: Socket.WebSocketLike,
   input: WebSocketRequest,
 ): Effect.Effect<WebSocketConnection, AIError> =>
   Effect.gen(function* () {
     yield* waitOpen(ws, input)
-    const messages = yield* Queue.bounded<string | Uint8Array, AIError | Cause.Done<void>>(128)
+    // The socket pushes frames synchronously and cannot be paused, so the hand-off to the consumer
+    // fiber must absorb whole read buffers. Bun delivers over a thousand small frames in one tick.
+    const messages = yield* Queue.unbounded<string | Uint8Array, AIError | Cause.Done<void>>()
 
     const oversized = (message: string | Uint8Array) =>
       typeof message === "string" ? new Blob([message]).size > MAX_FRAME_BYTES : message.byteLength > MAX_FRAME_BYTES
@@ -214,7 +216,8 @@ export const fromWebSocket = (
       Queue.failCauseUnsafe(
         messages,
         Cause.fail(
-          transportError("message", "WebSocket message exceeds the 16 MiB limit", {
+          transportError("WebSocket message exceeds the 16 MiB limit", {
+            body: typeof message === "string" ? message : new TextDecoder().decode(message),
             url: input.url,
             operation: "read",
             code: "message-too-large",
@@ -227,28 +230,18 @@ export const fromWebSocket = (
     }
     const offer = (message: string | Uint8Array) => {
       if (rejectOversized(message)) return
-      if (Queue.offerUnsafe(messages, message)) return
-      Queue.failCauseUnsafe(
-        messages,
-        Cause.fail(
-          transportError("message", "WebSocket inbound queue overflow", {
-            url: input.url,
-            operation: "read",
-            code: "queue-overflow",
-            phase: "receive",
-          }),
-        ),
-      )
+      Queue.offerUnsafe(messages, message)
     }
 
-    const onMessage = (event: MessageEvent) => {
+    const onMessage = (event: Socket.WebSocketEvent) => {
       if (typeof event.data === "string") return offer(event.data)
       const binary = binaryMessage(event.data)
       if (binary) return offer(binary)
       Queue.failCauseUnsafe(
         messages,
         Cause.fail(
-          transportError("message", "Unsupported WebSocket message payload", {
+          transportError("Unsupported WebSocket message payload", {
+            cause: event,
             url: input.url,
             operation: "read",
             code: "message",
@@ -257,11 +250,12 @@ export const fromWebSocket = (
         ),
       )
     }
-    const onError = (event: Event) => {
+    const onError = (event: Socket.WebSocketEvent) => {
       Queue.failCauseUnsafe(
         messages,
         Cause.fail(
-          transportError("message", `WebSocket error: ${eventMessage(event)}`, {
+          transportError(`WebSocket error: ${eventMessage(event)}`, {
+            cause: "error" in event ? (event.error ?? event) : event,
             url: input.url,
             operation: "read",
             code: "message",
@@ -270,11 +264,13 @@ export const fromWebSocket = (
         ),
       )
     }
-    const onClose = (event: CloseEvent) => {
+    const onClose = (event: Socket.WebSocketEvent) => {
       Queue.failCauseUnsafe(
         messages,
         Cause.fail(
-          transportError("message", `WebSocket closed with code ${event.code}`, {
+          transportError(`WebSocket closed with code ${event.code}`, {
+            body: event.reason,
+            cause: event,
             url: input.url,
             operation: "read",
             code: String(event.code),
@@ -298,7 +294,7 @@ export const fromWebSocket = (
         Effect.suspend(() => {
           if (ws.readyState !== globalThis.WebSocket.OPEN)
             return Effect.fail(
-              transportError("sendText", `WebSocket is not open (state ${ws.readyState})`, {
+              transportError(`WebSocket is not open (state ${ws.readyState})`, {
                 url: input.url,
                 operation: "write",
                 phase: "send",
@@ -308,7 +304,8 @@ export const fromWebSocket = (
           return Effect.try({
             try: () => ws.send(message),
             catch: (error) =>
-              transportError("sendText", error instanceof Error ? error.message : "Failed to send WebSocket message", {
+              transportError(error instanceof Error ? error.message : "Failed to send WebSocket message", {
+                cause: error,
                 url: input.url,
                 operation: "write",
                 phase: "send",
@@ -349,10 +346,23 @@ export const makeDirect = (connector: WebSocketConnector): WebSocketChannelExecu
         (connection) => connection.close,
       )
       const create = yield* exchange.driver.create(undefined)
-      yield* connection.sendText(create.message)
+      yield* connection.sendText(create.message).pipe(
+        Effect.mapError(
+          (error) =>
+            new AIError({
+              reason: AIErrorReason.make({
+                ...error.reason,
+                message: error.reason.message,
+                cause: error.reason.cause,
+                http: error.reason.http ?? connection.http,
+              }),
+            }),
+        ),
+      )
       const decoder = new TextDecoder()
       let observed = false
       return {
+        http: connection.http,
         frames: connection.messages.pipe(
           Stream.map((message) => {
             observed = true
@@ -364,9 +374,49 @@ export const makeDirect = (connector: WebSocketConnector): WebSocketChannelExecu
               delivery: observed ? "accepted" : "ambiguous",
             }),
           ),
-          Stream.mapEffect((frame) => exchange.driver.observe(create, frame)),
+          Stream.mapEffect((frame) =>
+            exchange.driver.observe(create, frame).pipe(
+              Effect.mapError(
+                (error) =>
+                  new AIError({
+                    reason: AIErrorReason.make({
+                      ...error.reason,
+                      message: error.reason.message,
+                      cause: error.reason.cause,
+                      body: frame,
+                    }),
+                  }),
+              ),
+              Effect.map((observation) =>
+                "error" in observation
+                  ? {
+                      ...observation,
+                      error: new AIError({
+                        reason: AIErrorReason.make({
+                          ...observation.error.reason,
+                          message: observation.error.reason.message,
+                          cause: observation.error.reason.cause,
+                          body: frame,
+                        }),
+                      }),
+                    }
+                  : observation,
+              ),
+            ),
+          ),
           Stream.takeUntil(observationTerminal),
           Stream.mapEffect(observationFrame),
+          Stream.mapError(
+            (error) =>
+              new AIError({
+                reason: AIErrorReason.make({
+                  ...error.reason,
+                  message: error.reason.message,
+                  cause: error.reason.cause,
+                  http: error.reason.http ?? connection.http,
+                }),
+              }),
+          ),
         ),
         complete: Effect.void,
       }
@@ -417,7 +467,7 @@ export const json = <Body, Message>(input: JsonInput<Body, Message>): JsonTransp
     const webSocket = options?.webSocket
     if (!webSocket) {
       return Effect.fail(
-        transportError("json", "WebSocket JSON transport requires StreamOptions.webSocket", {
+        transportError("WebSocket JSON transport requires StreamOptions.webSocket", {
           url: prepared.url,
           operation: "request",
           code: "unavailable",
@@ -435,7 +485,7 @@ export const json = <Body, Message>(input: JsonInput<Body, Message>): JsonTransp
       connect: { url: prepared.url, headers: prepared.headers },
       fallback: () =>
         Stream.fail(
-          transportError("fallback", "WebSocket JSON transport does not provide HTTP fallback", {
+          transportError("WebSocket JSON transport does not provide HTTP fallback", {
             url: prepared.url,
             operation: "request",
             code: "websocket",
