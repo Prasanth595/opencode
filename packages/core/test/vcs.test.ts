@@ -568,8 +568,53 @@ describe("Vcs", () => {
         expect(status).toEqual([
           { file: "gone.txt", additions: 0, deletions: 1, status: "deleted" },
           { file: "keep.txt", additions: 1, deletions: 1, status: "modified" },
-          { file: "new.txt", additions: 2, deletions: 0, status: "added" },
+          { file: "new.txt", additions: 2, deletions: 0, status: "added", untracked: true },
         ])
+      }),
+    ),
+  )
+
+  it.live("reports tracking divergence against upstream", () =>
+    withGit((directory) =>
+      Effect.gen(function* () {
+        yield* Effect.promise(async () => {
+          await fs.writeFile(path.join(directory, "file.txt"), "one\n")
+          await commitAll(directory, "initial")
+          await $`git remote add origin ${directory}`.cwd(directory).quiet()
+          await $`git update-ref refs/remotes/origin/main HEAD`.cwd(directory).quiet()
+          await $`git config branch.main.remote origin`.cwd(directory).quiet()
+          await $`git config branch.main.merge refs/heads/main`.cwd(directory).quiet()
+          await fs.writeFile(path.join(directory, "file.txt"), "two\n")
+          await commitAll(directory, "second")
+        })
+        const vcs = yield* Vcs.Service
+        const bus = yield* Bus.Service
+        const committed = yield* bus
+          .subscribe(VcsEvent.BranchUpdated)
+          .pipe(Stream.take(1), Stream.runHead, Effect.forkScoped({ startImmediately: true }))
+        yield* bus.publish(FileSystem.Event.Changed, {
+          file: path.join(directory, ".git", "refs", "heads", "main"),
+          event: "change",
+        })
+        expect(yield* Fiber.join(committed)).toMatchObject({
+          _tag: "Some",
+          value: { location: { directory }, data: { branch: "main" } },
+        })
+        expect(yield* vcs.info()).toMatchObject({ ahead: 1, behind: 0 })
+
+        const pushed = yield* bus
+          .subscribe(VcsEvent.BranchUpdated)
+          .pipe(Stream.take(1), Stream.runHead, Effect.forkScoped({ startImmediately: true }))
+        yield* Effect.promise(() => $`git update-ref refs/remotes/origin/main HEAD`.cwd(directory).quiet())
+        yield* bus.publish(FileSystem.Event.Changed, {
+          file: path.join(directory, ".git", "refs", "remotes", "origin", "main"),
+          event: "change",
+        })
+        expect(yield* Fiber.join(pushed)).toMatchObject({
+          _tag: "Some",
+          value: { location: { directory }, data: { branch: "main" } },
+        })
+        expect(yield* vcs.info()).toMatchObject({ ahead: 0, behind: 0 })
       }),
     ),
   )
@@ -714,7 +759,7 @@ describe("Vcs", () => {
           await fs.writeFile(path.join(directory, "new.txt"), "hello\n")
         })
         const vcs = yield* Vcs.Service
-        expect(yield* vcs.status()).toEqual([{ file: "new.txt", additions: 1, deletions: 0, status: "added" }])
+        expect(yield* vcs.status()).toEqual([{ file: "new.txt", additions: 1, deletions: 0, status: "added", untracked: true }])
         const diff = yield* vcs.diff("working")
         expect(diff).toHaveLength(1)
         expect(diff[0].patch).toContain("+hello")

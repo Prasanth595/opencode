@@ -53,6 +53,15 @@ interface Data {
   selection?: string
 }
 
+// Refreshes publish whenever any part of the cached info changes, not just the branch name,
+// so ahead/behind stays live after a local commit or a fetch/push.
+const sameInfo = (a: Info, b: Info) =>
+  a.provider === b.provider &&
+  a.branch.current === b.branch.current &&
+  a.branch.default === b.branch.default &&
+  a.ahead === b.ahead &&
+  a.behind === b.behind
+
 export class Service extends Context.Service<Service, Interface>()("@opencode/Vcs") {}
 
 const layer = Layer.effect(
@@ -136,7 +145,7 @@ const layer = Layer.effect(
               provider: provider.id,
             }
           : { branch: {} }
-        const changed = current.info.branch.current !== next.branch.current
+        const changed = !sameInfo(current.info, next)
         current.info = next
         return changed
       }).pipe(Semaphore.withPermit(refreshLock))
@@ -152,19 +161,27 @@ const layer = Layer.effect(
 
     if (vcs) {
       const store = yield* fs.realPath(vcs.store).pipe(Effect.orElseSucceed(() => vcs.store))
-      const isBranchMetadata =
+      // HEAD moves on a branch switch, but a local commit writes refs/heads, a fetch or push
+      // writes refs/remotes, and packed-refs or config can move either without touching HEAD.
+      const refs = path.join(store, "refs")
+      const isInfoMetadata =
         vcs.type === "git"
-          ? (file: string) => path.basename(file) === "HEAD" && FSUtil.contains(store, file)
+          ? (file: string) =>
+              FSUtil.contains(store, file) &&
+              (path.basename(file) === "HEAD" ||
+                path.resolve(file) === path.join(store, "packed-refs") ||
+                path.resolve(file) === path.join(store, "config") ||
+                FSUtil.contains(refs, file))
           : (file: string) => path.resolve(file) === path.join(store, "branch")
       yield* bus.subscribe(FileSystem.Event.Changed).pipe(
-        Stream.filter((event) => isBranchMetadata(event.data.file)),
+        Stream.filter((event) => isInfoMetadata(event.data.file)),
         Stream.runForEach((event) =>
           refresh().pipe(
             Effect.catchCauseIf(
               (cause) => !Cause.hasInterrupts(cause),
               (cause) => Effect.logWarning("vcs refresh failed", { file: event.data.file, cause }),
             ),
-            Effect.withSpan("Vcs.refreshBranch", { attributes: { file: event.data.file } }),
+            Effect.withSpan("Vcs.refreshInfo", { attributes: { file: event.data.file } }),
           ),
         ),
         Effect.forkScoped({ startImmediately: true }),
