@@ -1932,7 +1932,7 @@ ToolRegistry.register({
     const subtitle = createMemo(() => executeToolSubtitle(calls()))
     const code = createMemo(() => (toolInput(props.input).code ?? "").trimEnd())
 
-    // Like the TUI, only a runtime failure shows its output; a failed nested call is marked on its row.
+    // A runtime failure shows its output on the failing row; a successful script shows its result below the calls.
     const error = createMemo(() => {
       if (props.status !== "error" && props.metadata.error !== true) return undefined
       const fallback = i18n.t("ui.toolErrorCard.failed")
@@ -1940,6 +1940,14 @@ ToolRegistry.register({
 
       return text.replace(/^Error:\s*/, "").trim() || fallback
     })
+
+    const output = createMemo(() =>
+      error()
+        ? ""
+        : stripAnsi(props.output ?? "")
+            .replace(/\r\n?/g, "\n")
+            .trim(),
+    )
 
     // A runtime failure belongs to the call that raised it; scripts can also fail outside any call.
     const owner = createMemo(() => calls().findLastIndex((call) => call.status === "error"))
@@ -1953,7 +1961,7 @@ ToolRegistry.register({
       dialog.show(() => (
         <ExecuteDetails
           code={code()}
-          output={stripAnsi(props.output ?? "").replace(/\r\n?/g, "\n").trim()}
+          output={output()}
           error={error()}
           calls={calls().length}
           status={props.status}
@@ -1965,7 +1973,7 @@ ToolRegistry.register({
         {...props}
         icon="console"
         rail={false}
-        hasContent={calls().length > 0 || !!error()}
+        hasContent={calls().length > 0 || !!error() || !!output()}
         compact
         allowOpenWhilePending
         trigger={(open) => (
@@ -1998,6 +2006,13 @@ ToolRegistry.register({
             {(call, index) => <ExecuteCallRow call={call()} error={index === owner() ? error() : undefined} />}
           </Index>
           <Show when={owner() === -1 && error()}>{(text) => <ExecuteCallRow error={text()} />}</Show>
+          <Show when={output()}>
+            {(value) => (
+              <ConsoleOutput copy={value()} variant="shell">
+                <span data-slot="bash-result">{value()}</span>
+              </ConsoleOutput>
+            )}
+          </Show>
         </div>
       </BasicTool>
     )

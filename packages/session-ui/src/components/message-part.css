@@ -502,6 +502,11 @@
       color: var(--v2-text-text-muted);
     }
 
+    /* Code Mode results have no command line above them. */
+    [data-slot="bash-result"]:first-child {
+      border-block-start: 0;
+    }
+
     [data-slot="bash-command"] {
       color: var(--v2-text-text-base);
     }

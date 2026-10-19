@@ -192,6 +192,8 @@
 
   > [data-slot="collapsible-content"] {
     flex-basis: 100%;
+    /* In this row layout, unbreakable content would otherwise widen the content past the tool's width. */
+    min-width: 0;
   }
 }
 

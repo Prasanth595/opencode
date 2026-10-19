@@ -562,6 +562,29 @@ export const executeCodeDocument = document([
         output: "[]",
         metadata: { toolCalls: [{ tool: "browser.tabs.list", status: "completed" }] },
       }),
+      completedTool({
+        id: "tool_execute_long_call",
+        name: "execute",
+        offset: 52_700,
+        args: {
+          code: 'return await tools.mesh.exec({ target: "blade", script: "foreach ($t in \'\\\\opencode-mesh\\\\sync\', \'\\\\opencode-mesh\\\\run\') { schtasks /delete /tn $t /f 2>&1 | Out-Null; \\"deleted $t\\" }" })',
+        },
+        output:
+          "deleted \\opencode-mesh\\sync\ndeleted \\opencode-mesh\\run\nCleanup finished on blade after removing both scheduled tasks and their trigger history.",
+        metadata: {
+          toolCalls: [
+            {
+              tool: "mesh.exec",
+              status: "completed",
+              input: {
+                target: "blade",
+                script:
+                  "foreach ($t in '\\opencode-mesh\\sync', '\\opencode-mesh\\run') { schtasks /delete /tn $t /f 2>&1 | Out-Null; \"deleted $t\" }",
+              },
+            },
+          ],
+        },
+      }),
     ],
   }),
 ] satisfies SessionMessageInfo[])

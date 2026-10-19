@@ -179,6 +179,21 @@ story("opens an execution's code and output from its View code action", async ({
   await expect(dialog.getByRole("button", { name: "Copy output" })).toBeVisible()
 })
 
+story("keeps long execute calls inside the tool and shows the script output", async ({ mount }) => {
+  const timeline = await mount("current-session-terminal-work--execute-code")
+  const tool = timeline.locator('[data-timeline-part-id="tool_execute_long_call"]')
+  const calls = tool.locator('[data-component="execute-tool-calls"]')
+  await expect(calls.locator('[data-slot="execute-tool-call"]')).toHaveText([/mesh\.exec/])
+  await expect(calls.locator('[data-slot="bash-result"]')).toContainText("Cleanup finished on blade")
+
+  const overflow = await tool.evaluate((element) => {
+    const calls = element.querySelector('[data-component="execute-tool-calls"]')
+    if (!calls) return Number.NaN
+    return calls.getBoundingClientRect().right - element.getBoundingClientRect().right
+  })
+  expect(overflow).toBeLessThanOrEqual(0)
+})
+
 story("shows a failed execution's error in place of its output", async ({ mount }) => {
   const timeline = await mount("current-session-terminal-work--execute-failed")
   await timeline.getByRole("button", { name: /^Used 5 / }).click()
