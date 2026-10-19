@@ -1,7 +1,21 @@
 import { Credential } from "@opencode/schema/credential"
-import { Schema } from "effect"
+import { CredentialLegacy } from "@opencode/schema/credential-legacy"
+import { Schema, SchemaGetter } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
 import { ConflictError } from "../errors.js"
+
+// Credentials exported before v2.1 keep key form answers in `configuration`. The wire stays plain JSON so any export is
+// accepted; decoding upgrades that shape and then validates the current credential value.
+const CreateValue = Schema.Json.pipe(
+  Schema.decodeTo(Schema.Unknown, {
+    decode: SchemaGetter.transform(CredentialLegacy.value),
+    encode: SchemaGetter.passthrough({ strict: false }),
+  }),
+  Schema.decodeTo(Credential.Value, {
+    decode: SchemaGetter.passthrough({ strict: false }),
+    encode: SchemaGetter.passthrough({ strict: false }),
+  }),
+)
 
 export const CredentialGroup = HttpApiGroup.make("server.credential")
   .add(
@@ -17,7 +31,9 @@ export const CredentialGroup = HttpApiGroup.make("server.credential")
   )
   .add(
     HttpApiEndpoint.post("credential.create", "/api/credential", {
-      payload: Credential.CreateInput,
+      payload: Schema.Struct({ ...Credential.CreateInput.fields, value: CreateValue }).annotate({
+        identifier: "Credential.CreateInput",
+      }),
       success: Schema.Struct({ data: Credential.Entry }),
       error: ConflictError,
     }).annotateMerge(

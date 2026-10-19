@@ -179,6 +179,37 @@ it.live("activates credentials through the HttpApi", () =>
   }),
 )
 
+it.live("imports key credentials exported before v2.1 with their form answers as metadata", () =>
+  Effect.gen(function* () {
+    const handler = yield* ServerFetch.make(options)
+    const created = yield* Effect.promise(async () => {
+      const response = await handler(
+        new Request("http://opencode.local/api/credential", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            id: "cred_legacy_export",
+            integrationID: "azure",
+            label: "Work",
+            value: { type: "key", key: "secret", configuration: { resourceName: "answered" } },
+          }),
+        }),
+      )
+      return { status: response.status, body: await response.json() }
+    })
+    expect(created).toMatchObject({
+      status: 200,
+      body: {
+        data: {
+          id: "cred_legacy_export",
+          value: { type: "key", key: "secret", metadata: { resourceName: "answered" } },
+        },
+      },
+    })
+    expect(created.body.data.value).not.toHaveProperty("configuration")
+  }),
+)
+
 it.live("serves unauthenticated and answers CORS preflight when no password is configured", () =>
   Effect.gen(function* () {
     const handler = yield* ServerFetch.make(options)
