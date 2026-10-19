@@ -14869,16 +14869,6 @@
           },
           "metadata": {
             "type": "object"
-          },
-          "configuration": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/Form.Answer_1"
-              },
-              {
-                "description": "Deprecated: written before v2.1. Accepted on input, merged into metadata, and never returned."
-              }
-            ]
           }
         },
         "required": ["type", "key"],
@@ -15008,12 +14998,6 @@
         "additionalProperties": false
       },
       "Form.Answer": {
-        "type": "object",
-        "additionalProperties": {
-          "$ref": "#/components/schemas/Form.Value"
-        }
-      },
-      "Form.Answer_1": {
         "type": "object",
         "additionalProperties": {
           "$ref": "#/components/schemas/Form.Value"

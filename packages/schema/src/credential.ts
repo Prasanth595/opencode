@@ -1,12 +1,11 @@
 export * as Credential from "./credential.js"
 
-import { Schema, SchemaTransformation } from "effect"
+import { Schema } from "effect"
 import { optional } from "./schema.js"
 import { ephemeral, inventory } from "./event.js"
 import { IntegrationID, IntegrationMethodID } from "./integration-id.js"
 import { ascending } from "./identifier.js"
 import { NonNegativeInt, statics } from "./schema.js"
-import { Form } from "./form.js"
 
 export const ID = Schema.String.pipe(
   Schema.brand("Credential.ID"),
@@ -39,33 +38,12 @@ export const OAuth = Schema.Struct({
   metadata: optional(Schema.Record(Schema.String, Schema.Unknown)),
 }).annotate({ identifier: "Credential.OAuth" })
 
-const KeyFields = {
+export interface Key extends Schema.Schema.Type<typeof Key> {}
+export const Key = Schema.Struct({
   type: Schema.Literal("key"),
   key: Schema.String,
   metadata: optional(Schema.Record(Schema.String, Schema.Unknown)),
-}
-
-export interface Key extends Schema.Schema.Type<typeof Key> {}
-export const Key = Schema.Struct({
-  ...KeyFields,
-  // Raw optionalKey so the deprecation reaches OpenAPI; this field is never encoded.
-  configuration: Schema.optionalKey(Form.Answer).annotateKey({
-    description: "Deprecated: written before v2.1. Accepted on input, merged into metadata, and never returned.",
-    deprecated: true,
-  }),
-})
-  .annotate({ identifier: "Credential.Key" })
-  .pipe(
-    Schema.decodeTo(
-      Schema.Struct(KeyFields),
-      SchemaTransformation.transform({
-        // Form answers overrode metadata when both reached provider settings, so they keep precedence.
-        decode: ({ configuration, ...key }) =>
-          configuration === undefined ? key : { ...key, metadata: { ...key.metadata, ...configuration } },
-        encode: (key) => key,
-      }),
-    ),
-  )
+}).annotate({ identifier: "Credential.Key" })
 
 /** References a credential source whose secrets and renewal are managed outside the credential store. */
 export interface External extends Schema.Schema.Type<typeof External> {}
