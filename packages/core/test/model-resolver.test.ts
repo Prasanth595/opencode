@@ -1499,6 +1499,22 @@ describe("ModelResolver", () => {
     }),
   )
 
+  it.effect("names the missing package when a configured provider declares none", () =>
+    Effect.gen(function* () {
+      const failure = yield* ModelResolver.fromCatalogModel(model("")).pipe(Effect.flip)
+
+      expect(failure).toMatchObject({
+        _tag: "SessionRunnerModel.UnsupportedPackageError",
+        providerID: "test-provider",
+        modelID: "test-model",
+        package: "",
+      })
+      expect(failure.message).toBe(
+        'No package configured for test-provider/test-model: set "package" on its "providers" entry',
+      )
+    }),
+  )
+
   it.effect("reports provider configuration errors from supported packages", () =>
     Effect.gen(function* () {
       const failure = yield* ModelResolver.fromCatalogModel(

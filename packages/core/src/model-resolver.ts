@@ -34,6 +34,10 @@ export class UnsupportedPackageError extends Schema.TaggedError<UnsupportedPacka
   },
 ) {
   override get message() {
+    // A provider declared under `providers` keeps its model when the package is missing, so this message is
+    // the only place the user learns what to add: normalization only writes the reason to the log.
+    if (this.package === "")
+      return `No package configured for ${this.providerID}/${this.modelID}: set "package" on its "providers" entry`
     return `Unsupported package for ${this.providerID}/${this.modelID}: ${this.package}`
   }
 }

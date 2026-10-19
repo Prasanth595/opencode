@@ -166,6 +166,7 @@ export function normalize(input: unknown): Result {
   )
 
   const legacyProviders = migrateProviders(input.provider, diagnostics)
+  diagnoseNativeProviders(input.providers, diagnostics)
   const nativeProviders = decodeMap(input.providers, ConfigProvider.Info, ["providers"], diagnostics, decodeEncoded)
   mergeMap(
     encoded,
@@ -613,6 +614,67 @@ function diagnoseProviderUnsupported(value: unknown, path: string[], diagnostics
       unsupportedIfPresent(model, "status", [...path, "models", name, "status"], diagnostics)
     if (own(model, "interleaved") && typeof model.interleaved === "boolean")
       unsupportedIfPresent(model, "interleaved", [...path, "models", name, "interleaved"], diagnostics)
+  })
+}
+
+// The native `providers` key decodes straight against ConfigProvider.Info, which keeps the V1 spellings
+// out by design: excess properties are ignored, so `npm` and `options` disappear without a word and the
+// provider is still advertised, then fails to route. Name the replacement instead of the silence.
+const legacyProviderSpelling: Readonly<Record<string, string>> = {
+  api: "`settings.baseURL`",
+  id: "`canonical`",
+  npm: "`package`",
+  options: "`settings`, `headers` and `body`",
+}
+const legacyModelSpelling: Readonly<Record<string, string>> = {
+  id: "`modelID`",
+  options: "`settings`, `headers` and `body`",
+  release_date: "`releaseDate`",
+  tool_call: "`capabilities.tools`",
+  modalities: "`capabilities.input` and `capabilities.output`",
+}
+const legacyModelProviderSpelling: Readonly<Record<string, string>> = {
+  api: "`settings.baseURL`",
+  npm: "`package`",
+}
+// The legacy keys with no native field to point at keep the plain unsupported wording: `whitelist` and
+// `blacklist` filter models rather than grant tool permissions, and a V1 capability flag is not a rename
+// of the structured `capabilities` field it resembles.
+const unreplacedProviderSpelling = unsupportedProvider.filter((key) => !(key in legacyProviderSpelling))
+const unreplacedModelSpelling = unsupportedModel.filter((key) => !(key in legacyModelSpelling))
+
+function diagnoseNativeProviders(value: unknown, diagnostics: Diagnostic[]) {
+  if (!isRecord(value)) return
+  Object.entries(value).forEach(([name, provider]) => {
+    if (!isRecord(provider)) return
+    const path = ["providers", name]
+    diagnoseLegacySpelling(provider, legacyProviderSpelling, path, diagnostics)
+    unreplacedProviderSpelling.forEach((key) => unsupportedIfPresent(provider, key, [...path, key], diagnostics))
+    if (!isRecord(provider.models)) return
+    Object.entries(provider.models).forEach(([id, model]) => {
+      if (!isRecord(model)) return
+      const modelPath = [...path, "models", id]
+      diagnoseLegacySpelling(model, legacyModelSpelling, modelPath, diagnostics)
+      unreplacedModelSpelling.forEach((key) => unsupportedIfPresent(model, key, [...modelPath, key], diagnostics))
+      if (isRecord(model.provider))
+        diagnoseLegacySpelling(model.provider, legacyModelProviderSpelling, [...modelPath, "provider"], diagnostics)
+    })
+  })
+}
+
+function diagnoseLegacySpelling(
+  value: Record<string, unknown>,
+  spellings: Readonly<Record<string, string>>,
+  path: string[],
+  diagnostics: Diagnostic[],
+) {
+  Object.entries(spellings).forEach(([key, replacement]) => {
+    if (!own(value, key)) return
+    diagnostics.push({
+      kind: "unsupported",
+      path: [...path, key],
+      message: `omitted legacy spelling; use ${replacement}`,
+    })
   })
 }
 
