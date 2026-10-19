@@ -277,7 +277,10 @@ story("renders a draft once and supports editing, caret restoration, and failure
 
   // Closing the model picker restores the controller's saved caret through its editor ref.
   await component.locator('[data-action="composer-model"]').click()
-  await page.getByRole("menu").getByRole("textbox").press("Escape")
+  await page
+    .getByRole("dialog", { name: "Select model", exact: true })
+    .getByRole("searchbox", { name: "Search models", exact: true })
+    .press("Escape")
   await expect(input).toBeFocused()
   await input.pressSequentially("!")
   await expect(input).toHaveText("XY!reserve this draft on failure")

@@ -28,6 +28,17 @@ export function parseKeybind(config: string) {
   })
 }
 
+export function matchKeybind(keybinds: ReturnType<typeof parseKeybind>, event: KeyboardEvent) {
+  return keybinds.some(
+    (keybind) =>
+      keybind.key === event.key.toLowerCase() &&
+      keybind.ctrl === event.ctrlKey &&
+      keybind.meta === event.metaKey &&
+      keybind.shift === event.shiftKey &&
+      keybind.alt === event.altKey,
+  )
+}
+
 export function formatKeybind(config: string) {
   return config === "none" ? "" : config
 }
