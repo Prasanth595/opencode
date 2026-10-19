@@ -1,5 +1,6 @@
 import { batch, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
+import { Portal } from "solid-js/web"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { createKeyed, useExtension } from "../sdk"
@@ -10,6 +11,8 @@ import {
   type ProviderMetrics,
   type ProviderMetricState,
 } from "./metrics"
+import MotionWorkspace from "./motion"
+import { motionGlobals, motionTuning } from "@opencode/ui/motion-tuning"
 
 type Mem = Performance & {
   memory?: {
@@ -191,7 +194,7 @@ function ToggleCell(props: {
   )
 }
 
-export default function DebugBar(props: { diagnostics?: boolean; inline?: boolean }) {
+export default function DebugBar(props: { diagnostics?: boolean; inline?: boolean; motion?: boolean }) {
   const ctx = useExtension()
   const router = ctx.router
   const locale = ctx.locale
@@ -245,6 +248,12 @@ export default function DebugBar(props: { diagnostics?: boolean; inline?: boolea
   // Missed events during an outage are never replayed, so live metrics hold only for the target and the outage count
   // they were measured under: after a disconnect the refreshed projection wins until the next live request.
   const outages = createMemo((count: number = 0) => (target()?.server.connected ? count : count + 1))
+  const [workspace, setWorkspace] = createSignal(false)
+  // The Motion workspace's global speed, kept in view while tuning.
+  const [globals, setGlobals] = createSignal({ speed: motionGlobals.speed.value, slow: motionGlobals.slow.value })
+  onCleanup(
+    motionTuning.subscribe(() => setGlobals({ speed: motionGlobals.speed.value, slow: motionGlobals.slow.value })),
+  )
   const [live, setLive] = createSignal<{ target: object; outages: number; metrics: ProviderMetrics }>()
 
   const metrics = () => {
@@ -728,6 +737,39 @@ export default function DebugBar(props: { diagnostics?: boolean; inline?: boolea
               value={ctx.t(state.focus ? "focus.on" : "focus.off")}
               onClick={() => void toggleFocus()}
             />
+          </Show>
+        </Show>
+        <Show when={props.motion}>
+          <div class="ms-auto flex items-center gap-[9px]">
+            <ToggleCell
+              active={globals().speed !== 1}
+              inline={props.inline}
+              label={ctx.t("speed.label")}
+              tip={ctx.t("speed.tip")}
+              value={`${globals().speed.toFixed(2)}×`}
+              onClick={() => motionTuning.set(motionGlobals.speed, 1)}
+            />
+            <ToggleCell
+              active={globals().slow}
+              inline={props.inline}
+              label={ctx.t("slow.label")}
+              tip={ctx.t("slow.tip")}
+              value={ctx.t(globals().slow ? "focus.on" : "focus.off")}
+              onClick={() => motionTuning.set(motionGlobals.slow, !globals().slow)}
+            />
+            <ToggleCell
+              active={workspace()}
+              inline={props.inline}
+              label={ctx.t("motion.label")}
+              tip={ctx.t("motion.tip")}
+              value={ctx.t(workspace() ? "focus.on" : "focus.off")}
+              onClick={() => setWorkspace((value) => !value)}
+            />
+          </div>
+          <Show when={workspace()}>
+            <Portal>
+              <MotionWorkspace title={ctx.t("motion.title")} />
+            </Portal>
           </Show>
         </Show>
       </div>

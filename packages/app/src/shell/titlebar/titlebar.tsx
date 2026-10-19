@@ -821,11 +821,8 @@ function ChannelIndicator(props: { horizontal?: boolean; sidebar?: boolean }) {
 
   const label = () => language.t(`titlebar.channel.${channel}`)
 
-  // An extension may turn the dev badge into a toggle (the debug bar does).
-  const debug = () =>
-    channel === "dev" || channel === "local"
-      ? host.list(TitlebarItem).find((item) => item.placement === "channel")
-      : undefined
+  // An extension may turn the badge into a toggle (the debug bar does).
+  const debug = () => host.list(TitlebarItem).find((item) => item.placement === "channel")
 
   return (
     <Tooltip

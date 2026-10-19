@@ -29,9 +29,7 @@ test("review and terminal tabs follow the session tab and the terminal stays mou
     await expectSessionTitle(page, title)
   }
 
-  const transition = () => chat.evaluate((element) => getComputedStyle(element).transitionDuration)
   await page.getByRole("button", { name: "Toggle review" }).click()
-  await expect.poll(transition).not.toBe("0s")
   await expect(review).toBeVisible()
   await expect(chat).toHaveCSS("width", "580px")
   await expect(reviewTab).toHaveText("Files Changed 2740")
@@ -46,7 +44,6 @@ test("review and terminal tabs follow the session tab and the terminal stays mou
 
   await switchTab(b.title)
   await expect(terminal).toBeHidden()
-  await expect.poll(transition).toBe("0s")
   await expectMarked(terminal)
   await page.getByRole("button", { name: "Toggle review" }).click()
   await expect(review).toBeVisible()

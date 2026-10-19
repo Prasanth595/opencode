@@ -1253,27 +1253,18 @@ for (const direction of ["ltr", "rtl"] as const) {
     await expect.poll(() => toggle.boundingBox()).toEqual(closed)
     await expect(panel).toBeHidden()
 
-    // Pause in the same task as each click so even the first painted state can be inspected.
+    // The panel slides in over its slot and out over the widened chat; check the settled geometry both ways.
+    const presence = page.locator('[data-slot="session-side-panel-presence"]')
+
     for (const opened of [true, false]) {
-      await toggle.evaluate((element) => {
-        // SAFETY: `toggle` is the review toggle, a button.
-        const button = element as HTMLButtonElement
-        button.click()
-        document
-          .getAnimations()
-          .filter((animation) => animation.timeline instanceof DocumentTimeline)
-          .forEach((animation) => animation.pause())
-      })
+      await toggle.click()
       await expect(toggle).toHaveAttribute("aria-expanded", String(opened))
       await expect(panel).toHaveAttribute("aria-hidden", String(!opened))
 
-      for (const progress of [0.25, 0.8]) await expectHeaderClearOfToggle(page, toggle, progress)
-      await page.evaluate(() =>
-        document
-          .getAnimations()
-          .filter((animation) => animation.timeline instanceof DocumentTimeline)
-          .forEach((animation) => animation.finish()),
-      )
+      if (opened) {
+        await expect(presence).toHaveCSS("transform", "none")
+        await expectHeaderClearOfToggle(page, toggle)
+      }
     }
 
     await expect(panel).toBeHidden()
@@ -1308,45 +1299,24 @@ function filesystemEvent(directory: string, file: string, event: "add" | "change
   }
 }
 
-async function expectHeaderClearOfToggle(page: Page, toggle: Locator, progress: number) {
-  const geometry = await page.locator('[data-slot="session-chat-panel"]').evaluate((chat, progress) => {
+async function expectHeaderClearOfToggle(page: Page, toggle: Locator) {
+  const geometry = await page.locator('[data-slot="session-chat-panel"]').evaluate((chat) => {
     const row = chat.parentElement!
-
-    const animations = row
-      .getAnimations({ subtree: true })
-      .filter((animation) => animation.timeline instanceof DocumentTimeline)
-
-    const width = animations.find(
-      (animation) => animation instanceof CSSTransition && animation.transitionProperty === "width",
-    )!
-
-    animations.forEach((animation) => {
-      animation.pause()
-      animation.currentTime = Number(width.effect!.getTiming().duration) * progress
-    })
     const chatBounds = chat.getBoundingClientRect()
     const panelBounds = document.querySelector("#review-panel")!.getBoundingClientRect()
 
     return {
       row: row.getBoundingClientRect().width,
-      panelWidth: panelBounds.width,
       gap:
         getComputedStyle(row).direction === "rtl"
           ? chatBounds.left - panelBounds.right
           : panelBounds.left - chatBounds.right,
-      contentOpacity: Number(getComputedStyle(document.querySelector('[data-slot="session-review-content"]')!).opacity),
       panels: chatBounds.width + panelBounds.width + parseFloat(getComputedStyle(row).columnGap),
     }
-  }, progress)
+  })
 
   expect(geometry.gap).toBeCloseTo(8, 1)
-
-  if (geometry.panelWidth > 0) expect(Math.abs(geometry.row - geometry.panels)).toBeLessThanOrEqual(1)
-
-  if (progress === 0.25) {
-    expect(geometry.contentOpacity).toBeGreaterThan(0)
-    expect(geometry.contentOpacity).toBeLessThan(1)
-  }
+  expect(Math.abs(geometry.row - geometry.panels)).toBeLessThanOrEqual(1)
 
   const clip = (await toggle.boundingBox())!
   // Header contents must make no difference to the pixels behind the fixed toggle.

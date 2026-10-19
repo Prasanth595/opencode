@@ -100,8 +100,6 @@ export function SideRegion(props: {
         class="relative h-full shrink-0 min-w-0 flex overflow-hidden bg-v2-background-bg-base rounded-[10px] shadow-[var(--v2-elevation-raised)] outline-none"
         classList={{
           "pointer-events-none": !open(),
-          "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
-            !props.size.active(),
           "flex-1": tabsVisible(),
         }}
         style={{ width: panelWidth() }}
@@ -255,10 +253,6 @@ export function SideRegion(props: {
               <div
                 id="file-tree-panel"
                 class="relative min-w-0 h-full shrink-0 overflow-hidden"
-                classList={{
-                  "transition-[width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
-                    !props.size.active(),
-                }}
                 style={{ width: treeWidth() }}
               >
                 <div

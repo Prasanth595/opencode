@@ -521,14 +521,14 @@ export interface LinkHandler {
   exists?(link: Link): boolean | Promise<boolean>
 }
 
-/** A titlebar pill, or the dev channel badge as a toggle. */
+/** A titlebar pill, or the channel badge as a toggle. */
 export interface TitlebarItem {
   /** The item's id; the host keeps the pill's element while the id stays. */
   readonly id: string
   /**
    * Where the item shows. Defaults to `titlebar`.
    * - `titlebar`: a pill in the titlebar or tabs footer; the label shows on hover.
-   * - `channel`: makes the dev channel badge a toggle that runs the item.
+   * - `channel`: makes the channel badge a toggle that runs the item.
    */
   readonly placement?: "titlebar" | "channel"
   /** The visible label. */
@@ -666,7 +666,7 @@ export const Server = Registry.define<Server>("server")
 export const LinkHandler = Registry.define<LinkHandler>("link-handler")
 
 /**
- * The registry of titlebar pills, and of the toggle the dev channel badge runs.
+ * The registry of titlebar pills, and of the toggle the channel badge runs.
  *
  * @example
  * ```ts

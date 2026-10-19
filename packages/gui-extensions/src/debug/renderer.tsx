@@ -27,13 +27,13 @@ const setup: Setup<typeof Debug> = (ctx) => {
     render: () => (
       <Show when={visible()}>
         <Suspense>
-          <DebugBar diagnostics={import.meta.env.DEV} inline />
+          <DebugBar diagnostics={import.meta.env.DEV} motion={channel !== "prod"} inline />
         </Suspense>
       </Show>
     ),
   })
 
-  if (channel !== "dev" && channel !== "local") return
+  if (channel === "prod") return
   ctx.add(
     TitlebarItem,
     (): TitlebarItem => ({

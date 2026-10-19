@@ -14,6 +14,7 @@ import { ExtensionSlot } from "@/runtime/extension/render"
 import { useCommand } from "@/shell/commands/command"
 import { useLanguage } from "@/runtime/i18n/language"
 import { CollapsedSidebarToggle } from "@/shell/sidebar-toggle"
+import { createPanelMotion, panelSprings, replayPanelToggle } from "@/shell/panel-motion"
 
 export default function Layout(props: ParentProps) {
   const platform = usePlatform()
@@ -26,12 +27,28 @@ export default function Layout(props: ParentProps) {
   const [state, setState] = createStore<{
     tabsWidth: number
     tabsMount: HTMLElement | undefined
+    tabsLayer: HTMLElement | undefined
   }>({
     tabsWidth: 260,
     tabsMount: undefined,
+    tabsLayer: undefined,
   })
 
   const verticalTabs = () => preferences.appearance.tabLayout() === "vertical" && !mobile()
+
+  const sidebarMotion = createPanelMotion({
+    open: preferences.appearance.sidebarOpen,
+    layer: () => state.tabsLayer,
+    edge: "start",
+    spring: panelSprings.sidebar,
+  })
+
+  replayPanelToggle({
+    id: "sidebar",
+    label: "sidebar",
+    toggle: () => preferences.appearance.setSidebarOpen(!preferences.appearance.sidebarOpen()),
+    spring: panelSprings.sidebar,
+  })
 
   command.register("sidebar", () =>
     verticalTabs()
@@ -74,11 +91,16 @@ export default function Layout(props: ParentProps) {
               id="vertical-tabs-sidebar"
               data-slot="vertical-tabs-sidebar"
               data-state={preferences.appearance.sidebarOpen() ? "open" : "closed"}
-              class="relative h-full min-h-0 shrink-0"
+              class="relative z-10 h-full min-h-0 shrink-0"
               style={{ width: preferences.appearance.sidebarOpen() ? `${state.tabsWidth}px` : "0px" }}
               inert={!preferences.appearance.sidebarOpen()}
             >
-              <div class="absolute inset-0 overflow-hidden">
+              <div
+                ref={(element) => setState("tabsLayer", element)}
+                class="absolute inset-y-0 start-0 overflow-hidden"
+                classList={{ invisible: !sidebarMotion.present() }}
+                style={{ width: `${state.tabsWidth}px` }}
+              >
                 <div
                   ref={(element) => setState("tabsMount", element)}
                   class="flex h-full min-h-0 flex-col bg-v2-background-bg-deep pe-0.5 ps-2.5 pb-[var(--shell-bottom-inset,8px)] pt-[var(--shell-top-inset,8px)]"

@@ -22,10 +22,11 @@ for (const reducedMotion of [false, true]) {
       await expect(thumb).toHaveCSS("visibility", "hidden")
       await page.mouse.up()
       await expect(toggle).toHaveAttribute("aria-expanded", String(opened))
-      await chat.evaluate(async (element) => {
-        await Promise.all(element.getAnimations().map((animation) => animation.finished))
-      })
-      await expect(chat).toHaveAttribute("data-width-animating", "false")
+      const presence = page.locator('[data-slot="session-side-panel-presence"]')
+
+      if (opened) await expect(presence).toHaveCSS("transform", "none")
+
+      if (!opened) await expect(presence).toHaveCount(0)
       await expect(thumb).toHaveCSS("visibility", "hidden")
       // Late scroll anchoring must not bring the thumb back after the panel has settled.
       await viewport.evaluate(

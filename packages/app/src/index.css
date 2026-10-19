@@ -44,14 +44,6 @@
     visibility: hidden;
   }
 
-  [data-slot="session-side-panel-presence"][data-opened="true"] {
-    animation: side-region-presence-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  [data-slot="session-side-panel-presence"][data-opened="false"] {
-    animation: side-region-presence-out 240ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  }
-
   #review-panel {
     container-type: inline-size;
   }
@@ -76,76 +68,6 @@
           transparent calc(100cqi - 40px)
         ),
         linear-gradient(to top, #000 1px, transparent 1px);
-    }
-  }
-
-  /* The panel's width animation supplies the slide; only fade its fixed-width contents. */
-  [data-slot="session-side-region-presence"][data-opened] [data-slot="session-review-content"] {
-    transition: opacity 200ms ease-out 40ms;
-  }
-
-  /* Cached contents must stay transparent even after the presence animation finishes. */
-  #review-panel[aria-hidden="true"] > [data-slot="session-review-content"] {
-    opacity: 0;
-  }
-
-  [data-slot="session-side-region-presence"][data-opened="false"] [data-slot="session-review-content"] {
-    transition: opacity 160ms ease-out;
-  }
-
-  @starting-style {
-    [data-slot="session-side-region-presence"][data-opened="true"] [data-slot="session-review-content"] {
-      opacity: 0;
-    }
-  }
-
-  [data-slot="session-side-region-presence"][data-opened="true"] {
-    animation: side-region-presence-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  [data-slot="session-side-region-presence"][data-opened="false"] {
-    animation: side-region-presence-out 240ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  }
-
-  /* A collapsing frame's elevation outlives its height as a flat line over the panel beside it, so it fades out. */
-  [data-slot="session-side-region-presence"][data-opened="false"] #review-panel {
-    animation: side-panel-frame-out 240ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    [data-slot="session-side-panel-presence"],
-    [data-slot="session-review-content"],
-    [data-slot="session-side-region-presence"],
-    [data-slot="session-side-region-presence"] #review-panel {
-      animation: none !important;
-    }
-
-    [data-slot="session-review-content"] {
-      transition: none !important;
-    }
-  }
-
-  @keyframes side-panel-frame-out {
-    to {
-      box-shadow: none;
-    }
-  }
-
-  /* Presence needs an animation lifetime, but the panel frame must never fade. */
-  @keyframes side-region-presence-in {
-    from,
-    to {
-      opacity: 1;
-    }
-  }
-
-  @keyframes side-region-presence-out {
-    from {
-      opacity: 1;
-    }
-    to {
-      opacity: 1;
-      visibility: hidden;
     }
   }
 
