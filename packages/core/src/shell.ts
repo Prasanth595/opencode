@@ -1,7 +1,7 @@
 export * as Shell from "./shell.js"
 
 import path from "path"
-import { Context, Deferred, Duration, Effect, Fiber, Latch, Layer, Schema, Schedule, Stream } from "effect"
+import { Context, Deferred, Duration, Effect, Exit, Fiber, Latch, Layer, Schema, Schedule, Stream } from "effect"
 import { ChildProcess } from "effect/process"
 import { produce } from "immer"
 import { Shell } from "@opencode/schema/shell"
@@ -47,6 +47,7 @@ type Active = {
   // Resolves with the terminal Info once the command exits, times out, or is killed. A wait
   // started after termination resolves immediately from the already-completed deferred.
   done: Deferred.Deferred<Info, NotFoundError>
+  outputFiber?: Fiber.Fiber<void>
   timeoutFiber?: Fiber.Fiber<void>
   timeout?: (duration: number) => Effect.Effect<void>
 }
@@ -141,15 +142,28 @@ const layer = () =>
       const commands = new Map<Shell.ID, Active>()
       const exitOrder: Shell.ID[] = []
 
-      const outputDir = path.join(global.data, DIRECTORY, location.project.id)
-      const { mkdir, unlink } = yield* Effect.promise(() => import("fs/promises"))
-      const { createWriteStream, createReadStream } = yield* Effect.promise(() => import("fs"))
-      yield* Effect.promise(() => mkdir(outputDir, { recursive: true }))
+      const outputDir = yield* Effect.cachedWithTTL(
+        Effect.gen(function* () {
+          const directory = path.join(
+            location.workspaceID === undefined
+              ? global.data
+              : path.join(yield* environment.files.tempDirectory, "opencode"),
+            DIRECTORY,
+            location.project.id,
+          )
+          yield* environment.files.mkdir(directory)
+          if (location.workspaceID !== undefined)
+            yield* FileRetention.cleanupEnvironment(environment.files, directory, RETENTION)
+          return directory
+        }),
+        (exit) => (Exit.isSuccess(exit) ? Duration.infinity : Duration.zero),
+      )
 
       yield* Effect.addFinalizer(() =>
         Effect.gen(function* () {
           for (const command of commands.values()) {
             if (command.timeoutFiber) yield* Fiber.interrupt(command.timeoutFiber)
+            if (command.outputFiber) yield* Fiber.interrupt(command.outputFiber)
             // Teardown interrupts pending commands; it is not a terminal command failure.
             yield* Deferred.interrupt(command.done)
           }
@@ -171,9 +185,10 @@ const layer = () =>
         if (!command) return
         commands.delete(id)
         if (command.timeoutFiber) yield* Fiber.interrupt(command.timeoutFiber)
+        if (command.outputFiber) yield* Fiber.interrupt(command.outputFiber)
         // Unblock any wait still pending when the command is removed before it terminated.
         yield* Deferred.fail(command.done, new NotFoundError({ id }))
-        yield* Effect.promise(() => unlink(command.file).catch(() => {}))
+        yield* environment.files.remove(command.file).pipe(Effect.ignore)
         yield* bus.publish(Shell.Event.Deleted, { id })
       })
 
@@ -210,24 +225,13 @@ const layer = () =>
         if (cursor >= command.size) return { output: "", cursor: command.size, size: command.size, truncated: false }
         const start = Math.max(0, cursor)
         const length = Math.min(limit, command.size - start)
-        const buffer = Buffer.alloc(length)
-        const bytesRead = yield* Effect.promise(
-          () =>
-            new Promise<number>((resolve) => {
-              const stream = createReadStream(command.file, { start, end: start + length - 1 })
-              let offset = 0
-              stream.on("data", (chunk: string | Buffer) => {
-                const bytes = Buffer.from(chunk)
-                bytes.copy(buffer, offset)
-                offset += bytes.length
-              })
-              stream.on("end", () => resolve(offset))
-              stream.on("error", () => resolve(0))
-            }),
+        const bytes = yield* environment.files.read(command.file, { offset: start, length }).pipe(
+          Effect.map((result) => result.bytes),
+          Effect.orElseSucceed(() => new Uint8Array()),
         )
         return {
-          output: buffer.subarray(0, bytesRead).toString("utf8"),
-          cursor: start + bytesRead,
+          output: Buffer.from(bytes).toString("utf8"),
+          cursor: start + bytes.length,
           size: command.size,
           truncated: false,
         }
@@ -284,7 +288,11 @@ const layer = () =>
 
         const id = Shell.ID.ascending()
         const args = ShellSelect.args(invocation.shell, invocation.command)
-        const file = path.join(outputDir, `${id}.out`)
+        const file = yield* Effect.gen(function* () {
+          const file = path.join(yield* outputDir, `${id}.out`)
+          yield* environment.files.write(file, new Uint8Array())
+          return file
+        }).pipe(Effect.mapError((cause) => new AppProcess.AppProcessError({ command: invocation.command, cause })))
 
         const info: Info = {
           id,
@@ -328,38 +336,22 @@ const layer = () =>
               }
               commands.set(id, command)
 
-              const stream = createWriteStream(file)
               const outputDone = Latch.makeUnsafe()
-              const pump = handle.all.pipe(
-                Stream.runForEach((chunk: Uint8Array) =>
-                  Effect.sync(() => {
-                    stream.write(chunk)
-                    command.size += chunk.length
-                    // Count while streaming so truncation notices never rescan the output file.
-                    for (let index = chunk.indexOf(10); index !== -1; index = chunk.indexOf(10, index + 1))
-                      command.newlines++
-                  }),
+              const pump = environment.files.writeStream(
+                file,
+                handle.all.pipe(
+                  Stream.catch(() => Stream.empty),
+                  Stream.tap((chunk) =>
+                    Effect.sync(() => {
+                      command.size += chunk.length
+                      // Count while streaming so truncation notices never rescan the output file.
+                      for (let index = chunk.indexOf(10); index !== -1; index = chunk.indexOf(10, index + 1))
+                        command.newlines++
+                    }),
+                  ),
                 ),
               )
-              runFork(
-                Effect.gen(function* () {
-                  yield* pump.pipe(Effect.catch(() => Effect.void))
-                  yield* Effect.promise(
-                    () =>
-                      new Promise<void>((resolve) => {
-                        stream.end(() => resolve())
-                      }),
-                  )
-                  yield* outputDone.open
-                }),
-              )
-              yield* Effect.promise(
-                () =>
-                  new Promise<void>((resolve) => {
-                    stream.once("open", () => resolve())
-                    stream.once("error", () => resolve())
-                  }),
-              )
+              command.outputFiber = runFork(pump.pipe(Effect.ensuring(outputDone.open), Effect.orDie))
 
               // The process exit and the timeout race to record how the command ended; the first wins.
               const ended = Deferred.makeUnsafe<Ended>()
