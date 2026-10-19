@@ -1,4 +1,5 @@
 import { onCleanup, onMount } from "solid-js"
+import { createQuads, type Quads, type Rgba } from "./pin-quads"
 import { PinSound } from "./pin-sound"
 
 // The wordmark as a 78×14 pin grid: 1 = counter shadow, 2 = "open", 3 = "code".
@@ -61,7 +62,6 @@ type Pin = {
   t0: number
   duration: number
   lift: number
-  fd: number
 }
 
 /**
@@ -95,13 +95,12 @@ export function NewSessionPinBoard(props: { logo: HTMLElement; sound: () => bool
 
 function mountPinBoard(back: HTMLCanvasElement, front: HTMLCanvasElement, logo: HTMLElement, sound: () => boolean) {
   const stage = back.parentElement!
-  const bctx = back.getContext("2d")!
-  const fctx = front.getContext("2d")!
+  // The pins behind the composer and the ones popped in front of it are each one layer of quads.
+  const layers = { back: createQuads(back, () => wake()), front: createQuads(front, () => wake()) }
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches
   const pins: Pin[] = GRID.flatMap((row, r) =>
     [...row].flatMap((ch, c) => (ch === "." ? [] : [createPin(c, r, Number(ch))])),
   )
-  const band: Pin[] = []
   const orders = new Map<number, Pin[]>()
   const corners = new Float32Array(8)
   const view = {
@@ -403,52 +402,43 @@ function mountPinBoard(back: HTMLCanvasElement, front: HTMLCanvasElement, logo: 
   }
 
   const draw = (now: number) => {
-    const r = view.region
-    const dpr = view.dpr
-    bctx.setTransform(dpr, 0, 0, dpr, -r.x * dpr, -r.y * dpr)
-    bctx.clearRect(r.x, r.y, r.w, r.h)
+    const back = layers.back
+    back.begin()
     drawBoard(now)
 
     const loose = pins.filter((p) => p.state !== HOME)
     const popped = loose.filter((p) => popOf(p, now) > 0.06).sort((a, b) => popOf(a, now) - popOf(b, now))
     const flat = loose.filter((p) => popOf(p, now) <= 0.06)
 
-    bctx.fillStyle = "#000"
     for (const p of loose) {
       const pop = popOf(p, now)
       const offset = view.depth * (0.35 + pop * 5)
       const size = view.size * (1 + pop * 1.6) * (1 + pop * 0.4)
-      bctx.globalAlpha = colors.shadow * (1 - pop * 0.65)
-      bctx.fillRect(
+      back.rect(
         p.x + tilt.x * view.depth - LIGHT[0] * offset - size / 2,
         p.y + tilt.y * view.depth - LIGHT[1] * offset - size / 2,
         size,
         size,
+        [0, 0, 0, colors.shadow * (1 - pop * 0.65)],
       )
     }
-    bctx.globalAlpha = 1
     // Cubes further along the extrusion direction sit in front, so stacked pins overlap correctly.
     flat.sort((a, b) => a.x * tilt.x + a.y * tilt.y - (b.x * tilt.x + b.y * tilt.y))
-    for (const p of flat) {
-      drawCube(bctx, p, 1, true)
-      drawCube(bctx, p, 1, false)
-    }
+    for (const p of flat) drawCube(back, p, 1)
+    back.draw(view.region, view.dpr)
 
     setFront(popped.length > 0)
     if (!popped.length) return
-    fctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    fctx.clearRect(0, 0, view.w, view.h)
-    for (const p of popped) {
-      const scale = 1 + popOf(p, now) * 1.6
-      drawCube(fctx, p, scale, true)
-      drawCube(fctx, p, scale, false)
-    }
+    layers.front.begin()
+    for (const p of popped) drawCube(layers.front, p, 1 + popOf(p, now) * 1.6)
+    layers.front.draw({ x: 0, y: 0, w: view.w, h: view.h }, view.dpr)
   }
 
   // Pins are prisms from their front face back to the board. Drawing them in order of their
   // grid position along the extrusion direction is a correct painter's order for any heights,
-  // and pins on the same diagonal never overlap, so each diagonal is filled as one batch.
+  // since pins on the same diagonal never overlap.
   const drawBoard = (now: number) => {
+    const back = layers.back
     const sx = tilt.x >= 0 ? 1 : -1
     const sy = tilt.y >= 0 ? 1 : -1
     const ox = tilt.x * view.depth
@@ -457,32 +447,20 @@ function mountPinBoard(back: HTMLCanvasElement, front: HTMLCanvasElement, logo: 
     const size = view.size
     const age = now - clock.born
 
-    bctx.fillStyle = "#000"
-    bctx.globalAlpha = colors.shadow
-    bctx.beginPath()
     for (const p of pins) {
       if (p.state !== HOME || age < (p.c / COLS) * 0.45) continue
-      bctx.rect(p.hx + ox - LIGHT[0] * 2.5 - half - 1, p.hy + oy - LIGHT[1] * 2.5 - half - 1, size + 2, size + 2)
+      back.shadow(p.hx + ox - LIGHT[0] * 2.5 - half - 1, p.hy + oy - LIGHT[1] * 2.5 - half - 1, size + 2, size + 2, colors.shadow)
     }
-    bctx.fill()
-    bctx.globalAlpha = 1
 
     // An empty socket: a dark rim with its floor visible through the opening, shifted by the tilt.
-    bctx.fillStyle = colors.socketRim
-    bctx.beginPath()
-    for (const p of pins) if (p.state !== HOME) bctx.rect(p.hx + ox - half, p.hy + oy - half, size, size)
-    bctx.fill()
-    bctx.fillStyle = colors.socketFloor
-    bctx.beginPath()
     for (const p of pins) {
       if (p.state === HOME) continue
-      const x0 = p.hx + ox - half + Math.max(0, ox * 0.45)
-      const y0 = p.hy + oy - half + Math.max(0, oy * 0.45)
+      back.rect(p.hx + ox - half, p.hy + oy - half, size, size, colors.socketRim)
       const w = size - Math.abs(ox * 0.45)
       const h = size - Math.abs(oy * 0.45)
-      if (w > 0 && h > 0) bctx.rect(x0, y0, w, h)
+      if (w > 0 && h > 0)
+        back.rect(p.hx + ox - half + Math.max(0, ox * 0.45), p.hy + oy - half + Math.max(0, oy * 0.45), w, h, colors.socketFloor)
     }
-    bctx.fill()
 
     const key = (sx > 0 ? 1 : 0) + (sy > 0 ? 2 : 0)
     const order =
@@ -496,89 +474,31 @@ function mountPinBoard(back: HTMLCanvasElement, front: HTMLCanvasElement, logo: 
     const sideX = sx > 0 ? Math.round(Math.max(0, LIGHT[0]) * SHADES) : 0
     const sideY = sy < 0 ? Math.round(Math.max(0, -LIGHT[1]) * SHADES) : 0
 
-    const flush = (count: number) => {
-      for (let lv = 1; lv <= 3; lv++) {
-        bctx.fillStyle = colors.side[lv][sideX]
-        bctx.beginPath()
-        for (let i = 0; i < count; i++) {
-          const p = band[i]
-          if (p.lv !== lv) continue
-          const fx = p.hx + ox * p.fd + sx * half
-          const fy = p.hy + oy * p.fd
-          bctx.moveTo(fx, fy - half)
-          bctx.lineTo(p.hx + ox + sx * half, p.hy + oy - half)
-          bctx.lineTo(p.hx + ox + sx * half, p.hy + oy + half)
-          bctx.lineTo(fx, fy + half)
-          bctx.closePath()
-        }
-        bctx.fill()
-        bctx.fillStyle = colors.side[lv][sideY]
-        bctx.beginPath()
-        for (let i = 0; i < count; i++) {
-          const p = band[i]
-          if (p.lv !== lv) continue
-          const fx = p.hx + ox * p.fd
-          const fy = p.hy + oy * p.fd + sy * half
-          bctx.moveTo(fx - half, fy)
-          bctx.lineTo(fx + half, fy)
-          bctx.lineTo(p.hx + ox + half, p.hy + oy + sy * half)
-          bctx.lineTo(p.hx + ox - half, p.hy + oy + sy * half)
-          bctx.closePath()
-        }
-        bctx.fill()
-      }
-      for (let i = 0; i < count; i++) {
-        const p = band[i]
-        bctx.fillStyle = colors.face[p.lv][shadeOf(Math.max(p.e, p.z))]
-        bctx.fillRect(p.hx + ox * p.fd - half, p.hy + oy * p.fd - half, size, size)
-      }
-      if (size < 4) return
-      bctx.fillStyle = colors.highlight
-      bctx.beginPath()
-      for (let i = 0; i < count; i++) {
-        const p = band[i]
-        if (p.lv === 1) continue
-        const x = p.hx + ox * p.fd - half
-        const y = p.hy + oy * p.fd - half
-        bctx.rect(x, y, size, 1)
-        bctx.rect(x + size - 1, y, 1, size)
-      }
-      bctx.fill()
-      bctx.fillStyle = colors.lowlight
-      bctx.beginPath()
-      for (let i = 0; i < count; i++) {
-        const p = band[i]
-        if (p.lv === 1) continue
-        const x = p.hx + ox * p.fd - half
-        const y = p.hy + oy * p.fd - half
-        bctx.rect(x, y + size - 1, size, 1)
-        bctx.rect(x, y, 1, size)
-      }
-      bctx.fill()
-    }
-
-    let current = NaN
-    band.length = 0
     for (const p of order) {
       if (p.state !== HOME) continue
       const grow = Math.min(1, Math.max(0, (age - (p.c / COLS) * 0.45) / 0.3))
       if (!grow) continue
       const height = (p.lv === 1 ? 0.35 : 1) * (1 - Math.max(0, p.z)) + Math.max(0, -p.z) * 0.6
-      p.fd = 1 - height * (1 - Math.pow(1 - grow, 3))
-      const k = p.c * sx + p.r * sy
-      if (k !== current && band.length) {
-        flush(band.length)
-        band.length = 0
-      }
-      current = k
-      band.push(p)
+      const fd = 1 - height * (1 - Math.pow(1 - grow, 3))
+      const fx = p.hx + ox * fd
+      const fy = p.hy + oy * fd
+      const dx = ox * (1 - fd)
+      const dy = oy * (1 - fd)
+      back.quad(fx + sx * half, fy - half, dx, dy, 0, size, colors.side[p.lv][sideX])
+      back.quad(fx - half, fy + sy * half, size, 0, dx, dy, colors.side[p.lv][sideY])
+      back.rect(fx - half, fy - half, size, size, colors.face[p.lv][shadeOf(Math.max(p.e, p.z))])
+      if (size < 4 || p.lv === 1) continue
+      // The lit and shaded edges are split at the corners so no pixel is tinted twice by one of them.
+      back.rect(fx - half, fy - half, size, 1, colors.highlight)
+      back.rect(fx + half - 1, fy - half + 1, 1, size - 1, colors.highlight)
+      back.rect(fx - half, fy + half - 1, size, 1, colors.lowlight)
+      back.rect(fx - half, fy - half, 1, size - 1, colors.lowlight)
     }
-    if (band.length) flush(band.length)
   }
 
   // Loose pins are extruded squares. Each visible side is lit by its own normal, so tumbling pins flicker.
   // Counter pins are recessed and nearly black on the board; out of it they use the loose shade so they read as cubes.
-  const drawCube = (ctx: CanvasRenderingContext2D, p: Pin, scale: number, sides: boolean) => {
+  const drawCube = (layer: Quads, p: Pin, scale: number) => {
     const lv = p.lv === 1 ? LOOSE : p.lv
     const radius = (view.size * scale) / Math.SQRT2
     for (let j = 0; j < 4; j++) {
@@ -588,33 +508,21 @@ function mountPinBoard(back: HTMLCanvasElement, front: HTMLCanvasElement, logo: 
     }
     const ox = tilt.x * view.depth * scale
     const oy = tilt.y * view.depth * scale
-    if (sides) {
-      for (let j = 0; j < 4; j++) {
-        const ax = corners[j * 2]
-        const ay = corners[j * 2 + 1]
-        const bx = corners[((j + 1) % 4) * 2]
-        const by = corners[((j + 1) % 4) * 2 + 1]
-        const nx = (ax + bx) / 2 - p.x
-        const ny = (ay + by) / 2 - p.y
-        if (nx * tilt.x + ny * tilt.y <= 0) continue
-        const n = Math.hypot(nx, ny) || 1
-        ctx.fillStyle = colors.side[lv][Math.round(Math.max(0, (nx * LIGHT[0] + ny * LIGHT[1]) / n) * SHADES)]
-        ctx.beginPath()
-        ctx.moveTo(ax, ay)
-        ctx.lineTo(bx, by)
-        ctx.lineTo(bx + ox, by + oy)
-        ctx.lineTo(ax + ox, ay + oy)
-        ctx.closePath()
-        ctx.fill()
-      }
-      return
+    for (let j = 0; j < 4; j++) {
+      const ax = corners[j * 2]
+      const ay = corners[j * 2 + 1]
+      const bx = corners[((j + 1) % 4) * 2]
+      const by = corners[((j + 1) % 4) * 2 + 1]
+      const nx = (ax + bx) / 2 - p.x
+      const ny = (ay + by) / 2 - p.y
+      if (nx * tilt.x + ny * tilt.y <= 0) continue
+      const n = Math.hypot(nx, ny) || 1
+      const shade = Math.round(Math.max(0, (nx * LIGHT[0] + ny * LIGHT[1]) / n) * SHADES)
+      layer.quad(ax, ay, bx - ax, by - ay, ox, oy, colors.side[lv][shade])
     }
-    ctx.fillStyle = colors.face[lv][shadeOf(p.e)]
-    ctx.beginPath()
-    ctx.moveTo(corners[0], corners[1])
-    for (let j = 1; j < 4; j++) ctx.lineTo(corners[j * 2], corners[j * 2 + 1])
-    ctx.closePath()
-    ctx.fill()
+    const x = corners[0]
+    const y = corners[1]
+    layer.quad(x, y, corners[2] - x, corners[3] - y, corners[6] - x, corners[7] - y, colors.face[lv][shadeOf(p.e)])
   }
 
   const toStage = (event: PointerEvent) => {
@@ -708,6 +616,8 @@ function mountPinBoard(back: HTMLCanvasElement, front: HTMLCanvasElement, logo: 
     stage.removeEventListener("selectstart", onSelect)
     stage.removeEventListener("dragstart", onSelect)
     window.removeEventListener("blur", onUp)
+    layers.back.dispose()
+    layers.front.dispose()
   }
 }
 
@@ -739,7 +649,6 @@ function createPin(c: number, r: number, lv: number): Pin {
     t0: 0,
     duration: 0,
     lift: 0,
-    fd: 0,
   }
 }
 
@@ -769,21 +678,21 @@ function readColors(stage: HTMLElement) {
   const dark = bg[0] * 0.2126 + bg[1] * 0.7152 + bg[2] * 0.0722 < 128
   const black = [0, 0, 0]
   const shades = (fn: (t: number) => readonly number[]) =>
-    Array.from({ length: SHADES + 1 }, (_, i) => css(fn(i / SHADES)))
+    Array.from({ length: SHADES + 1 }, (_, i) => color(fn(i / SHADES)))
   // Sides are the pin's own colour in shadow, so they stay darker than its face in either theme.
   return {
     side: levels.map((level) => shades((t) => mix(black, level, 0.3 + 0.5 * t))),
     face: levels.map((level, lv) => shades((t) => mix(level, brand, t * (lv === 1 ? 0.4 : 0.85)))),
-    socketRim: css(mix(bg, black, dark ? 0.6 : 0.16)),
-    socketFloor: css(mix(bg, black, dark ? 0.35 : 0.08)),
+    socketRim: color(mix(bg, black, dark ? 0.6 : 0.16)),
+    socketFloor: color(mix(bg, black, dark ? 0.35 : 0.08)),
     shadow: dark ? 0.3 : 0.12,
-    highlight: "rgba(255, 255, 255, 0.2)",
-    lowlight: "rgba(0, 0, 0, 0.2)",
+    highlight: color([255, 255, 255], 0.2),
+    lowlight: color(black, 0.2),
   }
 }
 
 const mix = (a: readonly number[], b: readonly number[], t: number) => a.map((v, i) => v + (b[i] - v) * t)
-const css = (c: readonly number[]) => `rgb(${Math.round(c[0])}, ${Math.round(c[1])}, ${Math.round(c[2])})`
+const color = (c: readonly number[], alpha = 1): Rgba => [Math.round(c[0]), Math.round(c[1]), Math.round(c[2]), alpha]
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 const clamp = (v: number) => Math.max(-1, Math.min(1, v))
 const shadeOf = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * SHADES)
