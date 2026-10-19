@@ -73,7 +73,7 @@ const setup: Setup<typeof Terminal> = (ctx) => {
       group: ctx.t("command.category.view"),
       section: "terminal",
       featured: true,
-      bind: "ctrl+`",
+      bind: "ctrl+`,mod+j",
       slash: { name: "terminal", after: "open" },
       editable: true,
       enabled: routed(),
