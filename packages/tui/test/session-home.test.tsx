@@ -145,6 +145,10 @@ test.each([
     const frames = [before]
     const mountCounts: number[] = []
     let navigated = false
+    // Home and End belong to a focused prompt, so transcript jumps use their remaining keys.
+    const press = (message: "first" | "last") => {
+      setup.mockInput.pressKey("g", message === "first" ? { ctrl: true } : { ctrl: true, meta: true })
+    }
     const capture = () => {
       if (visible() !== frames.at(-1)) frames.push(visible())
       if (mode !== "settling-reveal" || scroll.getRenderable("message-0")) mountCounts.push(mounted().length)
@@ -163,7 +167,7 @@ test.each([
     if (mode.startsWith("prepend")) {
       setup.mockInput.pressKey(mode === "prepend-navigation" ? "F9" : "F8")
       await setup.waitFor(() => pages.length === 2)
-      setup.mockInput.pressKey("HOME")
+      press("first")
       await setup.waitForFrame((frame) => frame.includes("Loading session history"))
       prior.resolve()
       await setup.waitFor(() => pages.some((page) => page.end === 360 && page.limit === 200))
@@ -190,9 +194,9 @@ test.each([
       expect(pages).toHaveLength(5)
       return
     }
-    setup.mockInput.pressKey("HOME")
+    press("first")
     await setup.waitForFrame((frame) => frame.includes("Loading session history…"))
-    setup.mockInput.pressKey("HOME")
+    press("first")
     await setup.waitForVisualIdle()
     expect(pages).toEqual([
       { end: 400, limit: 20 },
@@ -237,7 +241,7 @@ test.each([
       await setup.waitForVisualIdle()
       expect(mounted().map((child) => child.id)).toEqual(messages.slice(0, 60).map((message) => message.id))
       expect(scroll.scrollTop).toBeGreaterThan(0)
-      setup.mockInput.pressKey("END")
+      press("last")
       await setup.waitForFrame((frame) => frame.includes("History message 0399") && !frame.includes("Jump to latest"))
       await setup.waitFor(() => scroll.scrollTop === maximum())
       if (mode === "settling-reveal") {
@@ -246,7 +250,7 @@ test.each([
         setup.mockInput.pressKey("F8")
       }
       navigated = false
-      setup.mockInput.pressKey("HOME")
+      press("first")
       await setup.waitFor(() => navigated)
       await setup.waitForVisualIdle()
       expect(mounted().map((child) => child.id)).toEqual(messages.slice(0, 60).map((message) => message.id))
@@ -289,7 +293,7 @@ test.each([
       })
       await setup.waitForFrame((frame) => frame.includes("Live message after failure"))
       expect(mounted()).toHaveLength(21)
-      setup.mockInput.pressKey("HOME")
+      press("first")
       await setup.waitForFrame(
         (frame) => frame.includes("History message 0000") && !frame.includes("Loading session history"),
       )
@@ -313,7 +317,8 @@ test.each([
       return
     }
     if (mode.endsWith("cancel")) {
-      setup.mockInput.pressKey(mode === "cancel" ? "END" : "F7")
+      if (mode === "cancel") press("last")
+      else setup.mockInput.pressKey("F7")
       await setup.waitForFrame(
         (frame) =>
           frame.includes("History message 0399") &&
@@ -330,7 +335,7 @@ test.each([
       expect(pages).toHaveLength(2)
       expect(setup.captureCharFrame()).not.toContain("History message 0000")
       setup.renderer.off("frame", capture)
-      setup.mockInput.pressKey("HOME")
+      press("first")
     }
     if (!mode.endsWith("cancel")) {
       release.resolve()
@@ -367,15 +372,15 @@ test.each([
       (frame) => frame.includes("History message 0059") && !frame.includes("History message 0060"),
     )
 
-    setup.mockInput.pressKey("END")
+    press("last")
     await setup.waitForFrame((frame) => frame.includes("History message 0399") && !frame.includes("Jump to latest"))
     await setup.waitFor(() => scroll.scrollTop === maximum())
     expect(scroll.scrollTop).toBe(maximum())
-    setup.mockInput.pressKey("HOME")
+    press("first")
     await setup.waitForFrame(
       (frame) => frame.includes("History message 0000") && !frame.includes("Loading session history"),
     )
-    setup.mockInput.pressKey("HOME")
+    press("first")
     await setup.waitForVisualIdle()
     expect(scroll.scrollTop).toBe(0)
     expect(mounted()).toHaveLength(60)
