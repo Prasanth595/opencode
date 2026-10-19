@@ -58,13 +58,35 @@ Build is the **default** primary agent with all tools enabled. This is the stand
 
 _Mode_: `primary`
 
-A restricted agent designed for planning and analysis. We use a permission system to give you more control and prevent unintended changes.
-By default, all of the following are set to `ask`:
+A restricted agent designed for planning and analysis. This agent is useful when you want the LLM to analyze code, suggest changes, or create plans without making any actual modifications to your codebase.
 
-- `file edits`: All writes, patches, and edits
-- `bash`: All bash commands
+By default, Plan:
 
-This agent is useful when you want the LLM to analyze code, suggest changes, or create plans without making any actual modifications to your codebase.
+- Denies file edits, writes, and patches outside its plan directory, `~/.opencode/plan/`. These are refused without prompting.
+- Allows the `question` tool, so it can ask you clarifying questions.
+- Does not restrict shell commands. They follow your [permission](/docs/permissions) config.
+
+Plan's defaults are applied before your top-level `permission` config, and the last matching rule wins. A global rule such as `"edit": "allow"` or `"*": "allow"` therefore also applies to Plan. To keep Plan read-only, or to require approval for its shell commands, set its permissions directly:
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "edit": "allow"
+  },
+  "agent": {
+    "plan": {
+      "permission": {
+        "edit": {
+          "*": "deny",
+          "~/.opencode/plan/*": "allow"
+        },
+        "bash": "ask"
+      }
+    }
+  }
+}
+```
 
 ---
 
