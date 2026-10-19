@@ -13,6 +13,25 @@ import { tempLocationLayer } from "./fixture/location"
 const it = testEffect(AppNodeBuilder.build(Ripgrep.node, [Location.node.replace(tempLocationLayer)]))
 
 describe("Ripgrep", () => {
+  it.live("reports malformed glob patterns without rejecting valid empty searches", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* Effect.promise(() => Bun.write(path.join(tmp.path, "visible.ts"), "needle\n"))
+      const ripgrep = yield* Ripgrep.Service
+      for (const search of [
+        ripgrep.glob({ cwd: tmp.path, pattern: "[", limit: 10 }).pipe(Effect.asVoid),
+        ripgrep.find({ cwd: tmp.path, pattern: "[", limit: 10 }).pipe(Effect.asVoid),
+        ripgrep.grep({ cwd: tmp.path, pattern: "needle", include: "[", limit: 10 }).pipe(Effect.asVoid),
+      ]) {
+        const error = yield* search.pipe(Effect.flip)
+        expect(error.message).toContain("error parsing glob")
+        expect(error.message).toContain("unclosed character class")
+      }
+      expect(yield* ripgrep.glob({ cwd: tmp.path, pattern: "*.missing", limit: 10 })).toEqual([])
+      expect(yield* ripgrep.grep({ cwd: tmp.path, pattern: "absent", include: "*.ts", limit: 10 })).toEqual([])
+    }),
+  )
+
   for (const hidden of [undefined, false, true]) {
     for (const limit of hidden ? [10] : [1, 10]) {
       it.live(`glob honors hidden=${hidden} before limit=${limit}`, () =>
