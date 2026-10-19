@@ -6467,7 +6467,7 @@ export type FileFindInput = {
   }["limit"]
 }
 
-export type FileFindOutput = { location: LocationPublicRef; data: Array<FileSystemEntry> }
+export type FileFindOutput = { location: LocationPublicRef; data: Array<FileSystemEntry>; indexTruncated?: boolean }
 
 export type FileWriteInput = {
   readonly location?: {
