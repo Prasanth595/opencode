@@ -247,6 +247,14 @@
     pointer-events: auto;
   }
 
+  /* The bubble looks the same before and after delivery, so a pending steer keeps its Pending label and actions in
+     view from its first frame. */
+  &[data-pending] [data-slot="user-message-copy-wrapper"] {
+    opacity: 1;
+    pointer-events: auto;
+    transition: none;
+  }
+
   .text-text-strong {
     color: var(--v2-text-text-base);
   }
