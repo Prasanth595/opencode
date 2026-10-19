@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test"
 
 export type PromptPosition = { frame: number; top: number | null }
 
-// User bubbles are neutral grey, so paint them a test-only blue that the frame reader can tell from everything else.
+// Paint user bubbles a test-only blue that the frame reader can tell from everything else, whatever the theme colour.
 export async function markPrompt(page: Page) {
   await page.addStyleTag({ content: '[data-slot="user-message-text"] { background: rgb(0 0 255) !important; }' })
 }

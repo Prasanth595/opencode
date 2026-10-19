@@ -946,20 +946,36 @@ for (const delivery of ["steer", "queue"] as const) {
 
     const colors =
       delivery === "steer"
-        ? await userRow(page, userID)
-            .locator('[data-slot="user-message-text"]')
-            .evaluate((element) => ({
-              background: getComputedStyle(element).backgroundColor,
-              text: getComputedStyle(element).color,
-            }))
+        ? {
+            delivered: await userRow(page, userID)
+              .locator('[data-slot="user-message-text"]')
+              .evaluate((element) => ({
+                background: getComputedStyle(element).backgroundColor,
+                text: getComputedStyle(element).color,
+              })),
+            pending: await bubble.evaluate((element) => {
+              const probe = document.createElement("span")
+              probe.style.backgroundColor = "var(--v2-background-bg-layer-02)"
+              probe.style.color = "var(--v2-text-text-base)"
+              element.appendChild(probe)
+
+              const colors = {
+                background: getComputedStyle(probe).backgroundColor,
+                text: getComputedStyle(probe).color,
+              }
+
+              probe.remove()
+
+              return colors
+            }),
+          }
         : undefined
 
     if (colors) {
-      // A pending steer shares the delivered bubble, dimmed, and keeps its Pending row in view without hover.
-      await expect(bubble).toHaveCSS("background-color", colors.background)
-      await expect(bubble).toHaveCSS("color", colors.text)
-      await expect(pending.locator('[data-slot="user-message-body"]')).toHaveCSS("opacity", "0.6")
-      await expect(pending.locator('[data-slot="user-message-body"]')).toHaveCSS("transition-duration", "0s")
+      // A pending steer is grey, switches to it without a transition, and keeps its Pending row in view without hover.
+      await expect(bubble).toHaveCSS("background-color", colors.pending.background)
+      await expect(bubble).toHaveCSS("color", colors.pending.text)
+      await expect(bubble).toHaveCSS("transition-duration", "0s")
       await expect(pending.locator('[data-slot="user-message-copy-wrapper"]')).toHaveCSS("opacity", "1")
       await expect(pending.locator('[data-slot="user-message-meta"]')).toHaveText(
         /^Pending\s*·\s*Build\s*·\s*Queue Model$/,
@@ -1046,15 +1062,13 @@ for (const delivery of ["steer", "queue"] as const) {
     if (colors) {
       await expect(bubble).toHaveAttribute("data-delivery-marker", "pending")
       await expect(pending.locator('[data-slot="user-message-meta"]')).toHaveText(/^Build\s*·\s*Queue Model$/)
-      await expect(bubble).toHaveCSS("background-color", colors.background)
-      await expect(bubble).toHaveCSS("color", colors.text)
-      // Only delivery animates the dim away; reduced motion switches instantly.
-      const body = pending.locator('[data-slot="user-message-body"]')
-      await expect(body).toHaveCSS("transition-property", "opacity")
-      await expect(body).toHaveCSS("opacity", "1")
+      await expect(bubble).toHaveCSS("background-color", colors.delivered.background)
+      await expect(bubble).toHaveCSS("color", colors.delivered.text)
+      // Only delivery animates the colour; reduced motion switches instantly.
+      await expect(bubble).toHaveCSS("transition-property", "background-color, color")
       await transcript.screenshot({ path: testInfo.outputPath("delivered-steer.png") })
       await page.emulateMedia({ reducedMotion: "reduce" })
-      await expect(body).toHaveCSS("transition-duration", "0s")
+      await expect(bubble).toHaveCSS("transition-duration", "0s")
     }
 
     await expect(transcript.locator('[data-timeline-row="UserMessage"]')).toHaveCount(2)
