@@ -75,15 +75,26 @@ export function createHomeController() {
   createEffect(() => {
     // `/?folder=<directory>` opens that directory like launching opencode in it, as VS Code web's `?folder=` does.
     // Wait for the persisted projects and tabs, or their hydration would overwrite the added project and draft.
+    // The page's own server is provided first, so the link opens there rather than on the last focused server.
     const folder = search.folder
-    const conn = focusedServer()
+    const conn = servers.list[0]
 
     if (!folder || !conn || !servers.hydrated() || !tabs.ready()) return
     untrack(() => {
       setSearch({ folder: undefined }, { replace: true })
-      addProjects(global.ensureServerCtx(conn), [folder])
-      setSelection({ server: ServerConnection.key(conn), directory: folder })
-      openProjectNewSession(conn, folder)
+      const ctx = global.ensureServerCtx(conn)
+      void ctx.sdk.api.location
+        .get({ location: { directory: folder } })
+        .then(() => {
+          const directory =
+            ctx.projects.list().find((project) => pathKey(project.worktree) === pathKey(folder))?.worktree ??
+            pathKey(folder)
+
+          addProjects(ctx, [directory])
+          setSelection({ server: ServerConnection.key(conn), directory })
+          openProjectNewSession(conn, directory)
+        })
+        .catch(() => undefined)
     })
   })
 
