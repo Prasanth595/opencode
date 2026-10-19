@@ -212,11 +212,24 @@ export const layer = Layer.effect(
         return { status: "skipped" }
       const native = context.model.compaction?.type === "native"
       const agent = native ? undefined : yield* agents.get(Agent.ID.make("compaction"))
+      // A summary sampled with the session's reasoning variant can spend its whole output limit thinking (at `max`
+      // effort, say) and end with no summary. Without an explicit compaction model it uses the provider default.
       const model =
         (agent?.model &&
           (yield* models
             .resolve({ ...context.session, model: agent.model }, catalog.available)
-            .pipe(Effect.orElseSucceed(() => undefined)))) ??
+            .pipe(Effect.orElseSucceed(() => undefined)))) ||
+        (!native &&
+          context.model.ref.variant !== undefined &&
+          (yield* models
+            .resolve(
+              {
+                ...context.session,
+                model: Model.Ref.make({ id: context.model.ref.id, providerID: context.model.ref.providerID }),
+              },
+              catalog.available,
+            )
+            .pipe(Effect.orElseSucceed(() => undefined)))) ||
         context.model
       const ceiling = calculateCeiling(model.limit, settings.buffer)
       // An unknown window never triggers auto compaction, but the compaction request still needs a size to aim for.

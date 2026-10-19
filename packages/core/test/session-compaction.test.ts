@@ -25,6 +25,7 @@ import { App } from "@opencode/core/app"
 import { Agent } from "@opencode/core/agent"
 import { Provider } from "@opencode/core/provider"
 import { AbsolutePath } from "@opencode/core/schema"
+import { Model } from "@opencode/schema/model"
 import { Money } from "@opencode/schema/money"
 import { Skill } from "@opencode/schema/skill"
 import { Shell } from "@opencode/schema/shell"
@@ -642,5 +643,86 @@ it.effect("forked session compaction reuses the fork root prompt cache key", () 
 
     expect(requests).toHaveLength(1)
     expect(requests[0]?.promptCacheKey).toBe(rootID)
+  }),
+)
+
+const resolvedVariants: Array<Model.VariantID | undefined> = []
+const defaultEffortModel = LanguageModel.make({
+  id: "summary-model-default-effort",
+  provider: "test",
+  route: OpenAIChat.route,
+})
+const itWithVariants = testEffect(
+  AppNodeBuilder.build(
+    LayerNode.group([
+      Database.node,
+      Bus.node,
+      SessionProjector.node,
+      SessionStore.node,
+      SessionCompaction.node,
+      SessionModelRequest.node,
+      PluginHooks.node,
+    ]),
+    [
+      Bus.node.replace(Bus.configured({ persist: true })),
+      llmClient.replace(client),
+      Location.node.replace(Location.boundNode({ directory: AbsolutePath.make("/project") })),
+      SessionRunnerModel.node.replace(
+        Layer.mock(SessionRunnerModel.Service, {
+          resolve: (session) => {
+            resolvedVariants.push(session.model?.variant)
+            return Effect.succeed(
+              SessionRunnerModel.resolved(defaultEffortModel, {
+                capabilities: { tools: true, input: ["text", "image"], output: ["text"] },
+                cost,
+                limit: { context: 200_000, output: 32_000 },
+              }),
+            )
+          },
+        }),
+      ),
+    ],
+  ),
+)
+
+itWithVariants.effect("compaction summarizes without the session's reasoning variant", () =>
+  Effect.gen(function* () {
+    requests = []
+    resolvedVariants.length = 0
+    const session = yield* insertSession(Session.ID.make("ses_variant_compaction"))
+    const messages = [
+      SessionMessage.User.make({
+        id: SessionMessage.ID.create(),
+        type: "user",
+        text: "Summarize the conversation.",
+        time: { created: DateTime.makeUnsafe(0) },
+      }),
+    ]
+    const context = {
+      ...loaded(session, messages),
+      model: SessionRunnerModel.resolved(model, {
+        capabilities: { tools: true, input: ["text", "image"], output: ["text"] },
+        cost,
+        limit: { context: 200_000, output: 32_000 },
+        variant: Model.VariantID.make("max"),
+      }),
+    }
+    const bus = yield* Bus.Service
+    const compaction = yield* SessionCompaction.Service
+    const inputID = SessionMessage.ID.create()
+    yield* bus.publish(SessionEvent.Compaction.Started, {
+      sessionID: session.id,
+      reason: "manual",
+      recent: "",
+      inputID,
+    })
+
+    expect(yield* compaction.compact({ reason: "manual", context, inputID })).toEqual({ status: "completed" })
+
+    // At max effort the model can spend the whole summary output limit on reasoning, so the summary resolves the
+    // model again without the session's variant.
+    expect(resolvedVariants).toEqual([undefined])
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.model.id).toBe(defaultEffortModel.id)
   }),
 )
