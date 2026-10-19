@@ -1,5 +1,6 @@
 export default {
   "command.toggle": "Toggle debug bar",
+  "command.motion": "Toggle motion controls",
   "status.toggle": "Toggle debug tools",
   ariaLabel: "Development performance diagnostics",
   providerAriaLabel: "Provider performance diagnostics",
@@ -37,7 +38,7 @@ export default {
   "motion.title": "Motion",
   "motion.tip": "Tune animation springs live. Changes persist on this device.",
   "speed.label": "SPEED",
-  "speed.tip": "Global animation speed from the Motion workspace. Click to reset to 1×.",
+  "speed.tip": "Global animation speed. Click to step through 0.5× and 0.25× back to 1×.",
   "slow.label": "SLOW",
   "slow.tip": "Run every tuned animation at a quarter speed.",
   "focus.label": "FOCUS",

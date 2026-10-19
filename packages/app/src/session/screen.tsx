@@ -129,7 +129,7 @@ function SessionScreenContent(props: {
 
   replayPanelToggle({
     id: "sidePanel",
-    label: "side panel",
+    group: "Side panel",
     toggle: () => session.layout.view().side.toggle(),
     spring: panelSprings.side,
   })

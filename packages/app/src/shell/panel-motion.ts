@@ -2,21 +2,19 @@ import { createEffect, createSignal, on, onCleanup, type Accessor } from "solid-
 import { frameLoop, prefersReducedMotion, Spring, type DurationOptions } from "@opencode/ui/motion"
 import { motionTuning } from "@opencode/ui/motion-tuning"
 
-const group = "Sidebars"
+const sidebar = motionTuning.spring("sidebar", { label: "Spring", group: "Left sidebar", duration: 0.2, bounce: 0 })
 
-const sidebar = motionTuning.spring("sidebar", { label: "Sidebar", group, duration: 0.2, bounce: 0 })
-
-const side = motionTuning.spring("sidePanel", { label: "Side panel", group, duration: 0.2, bounce: 0 })
+const side = motionTuning.spring("sidePanel", { label: "Spring", group: "Side panel", duration: 0.2, bounce: 0 })
 
 const linked = motionTuning.toggle("sidePanelLinked", {
-  label: "Side panel follows sidebar",
-  group,
+  label: "Follow the left sidebar's spring",
+  group: "Side panel",
   value: true,
 })
 
 const keyboardInstant = motionTuning.toggle("keyboardInstant", {
   label: "Keyboard toggles are instant",
-  group,
+  group: "Global",
   value: true,
 })
 
@@ -25,20 +23,22 @@ export const panelSprings = {
   side: () => (linked() ? sidebar() : side()),
 }
 
-/** Adds buttons that replay a panel's toggle to the Motion workspace while the panel is mounted. */
+/** Adds buttons that play a panel's toggle to its Motion workspace section while the panel is mounted. */
 export function replayPanelToggle(input: {
   id: string
-  label: string
+  group: string
   toggle: () => void
   spring: () => DurationOptions
 }) {
-  onCleanup(motionTuning.action({ id: `${input.id}.toggle`, label: `Toggle ${input.label}`, group, run: input.toggle }))
+  onCleanup(
+    motionTuning.action({ id: `${input.id}.toggle`, label: "Open / close", group: input.group, run: input.toggle }),
+  )
 
   onCleanup(
     motionTuning.action({
       id: `${input.id}.reverse`,
-      label: `Toggle ${input.label}, reverse mid-flight`,
-      group,
+      label: "Toggle, reverse mid-flight",
+      group: input.group,
       run: () => {
         input.toggle()
         setTimeout(input.toggle, input.spring().duration * 350)

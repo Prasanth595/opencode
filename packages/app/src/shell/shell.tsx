@@ -45,7 +45,7 @@ export default function Layout(props: ParentProps) {
 
   replayPanelToggle({
     id: "sidebar",
-    label: "sidebar",
+    group: "Left sidebar",
     toggle: () => preferences.appearance.setSidebarOpen(!preferences.appearance.sidebarOpen()),
     spring: panelSprings.sidebar,
   })

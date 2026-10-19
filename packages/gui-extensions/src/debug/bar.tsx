@@ -1,6 +1,5 @@
 import { batch, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
-import { Portal } from "solid-js/web"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { createKeyed, useExtension } from "../sdk"
@@ -11,7 +10,6 @@ import {
   type ProviderMetrics,
   type ProviderMetricState,
 } from "./metrics"
-import MotionWorkspace from "./motion"
 import { motionGlobals, motionTuning } from "@opencode/ui/motion-tuning"
 
 type Mem = Performance & {
@@ -194,7 +192,11 @@ function ToggleCell(props: {
   )
 }
 
-export default function DebugBar(props: { diagnostics?: boolean; inline?: boolean; motion?: boolean }) {
+export default function DebugBar(props: {
+  diagnostics?: boolean
+  inline?: boolean
+  motion?: { open: boolean; toggle: () => void }
+}) {
   const ctx = useExtension()
   const router = ctx.router
   const locale = ctx.locale
@@ -248,7 +250,6 @@ export default function DebugBar(props: { diagnostics?: boolean; inline?: boolea
   // Missed events during an outage are never replayed, so live metrics hold only for the target and the outage count
   // they were measured under: after a disconnect the refreshed projection wins until the next live request.
   const outages = createMemo((count: number = 0) => (target()?.server.connected ? count : count + 1))
-  const [workspace, setWorkspace] = createSignal(false)
   // The Motion workspace's global speed, kept in view while tuning.
   const [globals, setGlobals] = createSignal({ speed: motionGlobals.speed.value, slow: motionGlobals.slow.value })
   onCleanup(
@@ -747,7 +748,7 @@ export default function DebugBar(props: { diagnostics?: boolean; inline?: boolea
               label={ctx.t("speed.label")}
               tip={ctx.t("speed.tip")}
               value={`${globals().speed.toFixed(2)}×`}
-              onClick={() => motionTuning.set(motionGlobals.speed, 1)}
+              onClick={() => motionTuning.set(motionGlobals.speed, nextSpeed(globals().speed))}
             />
             <ToggleCell
               active={globals().slow}
@@ -758,21 +759,21 @@ export default function DebugBar(props: { diagnostics?: boolean; inline?: boolea
               onClick={() => motionTuning.set(motionGlobals.slow, !globals().slow)}
             />
             <ToggleCell
-              active={workspace()}
+              active={!!props.motion?.open}
               inline={props.inline}
               label={ctx.t("motion.label")}
               tip={ctx.t("motion.tip")}
-              value={ctx.t(workspace() ? "focus.on" : "focus.off")}
-              onClick={() => setWorkspace((value) => !value)}
+              value={ctx.t(props.motion?.open ? "focus.on" : "focus.off")}
+              onClick={() => props.motion?.toggle()}
             />
           </div>
-          <Show when={workspace()}>
-            <Portal>
-              <MotionWorkspace title={ctx.t("motion.title")} />
-            </Portal>
-          </Show>
         </Show>
       </div>
     </aside>
   )
+}
+
+// The bar's speed cell steps through the common slow-downs, then back to full speed.
+function nextSpeed(speed: number) {
+  return [0.5, 0.25, 1].find((step) => step < speed) ?? 1
 }

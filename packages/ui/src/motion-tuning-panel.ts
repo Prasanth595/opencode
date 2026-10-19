@@ -4,16 +4,18 @@ import { motionTuning, type MotionKnob } from "./motion-tuning"
 const global = "Global"
 
 // Kit's palette, applied to every spring at once.
-const palette = { snappy: 0.25, calm: 0.3, smooth: 0.45 }
+const durations = { snappy: 0.25, calm: 0.3, smooth: 0.45 }
 
 /**
  * Mounts the Motion workspace into `container`: a tab per surface, Global on every tab, an action row per replay
- * button, presets and copy as code. knobs loads on first mount, so importing this module costs nothing until then.
- * Works anywhere a surface registered its knobs, including Storybook stories. Returns its removal.
+ * button, a "Jump to" palette over sections, actions and presets, presets and copy as code. knobs loads on first
+ * mount, so importing this module costs nothing until then. Works anywhere a surface registered its knobs, including
+ * Storybook stories. Returns its removal.
  */
-export function mountMotionPanel(container: HTMLElement, options: { title?: string } = {}) {
+export function mountMotionPanel(container: HTMLElement, options: { title?: string; section?: string } = {}) {
   let unmount: (() => void) | undefined
   let disposed = false
+  let section = options.section
 
   void start()
 
@@ -23,7 +25,10 @@ export function mountMotionPanel(container: HTMLElement, options: { title?: stri
   }
 
   async function start() {
-    const { action, defineControls, knob, spring, toggle } = await import("knobs")
+    const [{ action, defineControls, knob, spring, toggle }, { commandPalette, commandsFrom }] = await Promise.all([
+      import("knobs"),
+      import("knobs/ui"),
+    ])
 
     const field = (item: MotionKnob) => {
       const meta = { label: item.label, group: item.group, tab: item.group === global ? undefined : item.group }
@@ -60,6 +65,25 @@ export function mountMotionPanel(container: HTMLElement, options: { title?: stri
       const actions = motionTuning.actions()
       const mounted = identity()
       const springs = list.flatMap((item) => (item.kind === "spring" ? [item] : []))
+      const sections = [...new Set([...list, ...actions].map((item) => item.group))].filter((group) => group !== global)
+
+      const palette = commandPalette({
+        hotkey: false,
+        recents: false,
+        placeholder: "Jump to a section, action or preset",
+        commands: () => [
+          ...sections.map((id) => ({
+            id: `section.${id}`,
+            label: id,
+            section: "Sections",
+            run: () => {
+              section = id
+              mount()
+            },
+          })),
+          ...commandsFrom(controls, { fields: false }).filter((command) => command.label !== "Jump to…"),
+        ],
+      })
 
       const controls = defineControls(
         "opencode-motion",
@@ -71,12 +95,15 @@ export function mountMotionPanel(container: HTMLElement, options: { title?: stri
               action(item.label, { group: item.group, tab: item.group, run: item.run }),
             ]),
           ),
+          ...Object.fromEntries([["jump", action("Jump to…", { group: global, run: () => palette.open() })]]),
         },
         {
+          // knobs enables itself only on localhost; this module is only loaded in developer channels.
+          enabled: true,
           ship: () => import("knobs/panel"),
           persist: "variants",
           presets: Object.fromEntries(
-            Object.entries(palette).map(([name, duration]) => [
+            Object.entries(durations).map(([name, duration]) => [
               name,
               Object.fromEntries(springs.map((item) => [item.id, { duration, bounce: 0 }])),
             ]),
@@ -96,7 +123,9 @@ export function mountMotionPanel(container: HTMLElement, options: { title?: stri
       const stopPanel = controls.mount(container, {
         theme: "auto",
         title: options.title ?? "Motion",
-        tabs: [...new Set([...list, ...actions].map((item) => item.group))].filter((group) => group !== global),
+        tabs: sections,
+        tab: section,
+        onTab: (id) => (section = id),
       })
 
       const stopWatch = motionTuning.subscribe(() => {
@@ -108,6 +137,7 @@ export function mountMotionPanel(container: HTMLElement, options: { title?: stri
       unmount = () => {
         stopWatch()
         stopPanel()
+        palette.dispose()
       }
     }
 
