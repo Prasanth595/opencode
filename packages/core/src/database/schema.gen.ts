@@ -209,6 +209,7 @@ const schema: Omit<DatabaseMigration.Migration, "id"> = {
           \`permission\` text,
           \`agent\` text,
           \`model\` text,
+          \`model_pinned\` integer,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL,
           \`time_idle\` integer,

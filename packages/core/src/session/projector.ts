@@ -168,6 +168,7 @@ const projectFork = Effect.fn("SessionProjector.projectFork")(function* (
       title: forkTitle(parent.title ?? undefined),
       agent: parent.agent,
       model: parent.model,
+      model_pinned: parent.model_pinned,
       metadata: parent.metadata,
       permission: parent.permission,
       version: parent.version,
@@ -459,6 +460,7 @@ const layer = Layer.effectDiscard(
             title: event.data.title,
             agent: event.data.agent,
             model: event.data.model,
+            model_pinned: event.data.modelPinned ?? event.data.model != null,
             metadata: event.data.metadata,
             permission: event.data.permissions,
             version: event.data.version,
@@ -568,7 +570,11 @@ const layer = Layer.effectDiscard(
         yield* run(db, event)
         yield* db
           .update(SessionTable)
-          .set({ model: event.data.model, time_updated: event.created })
+          .set({
+            model: event.data.model,
+            model_pinned: event.data.origin !== "router",
+            time_updated: event.created,
+          })
           .where(eq(SessionTable.id, event.data.sessionID))
           .run()
           .pipe(Effect.orDie)

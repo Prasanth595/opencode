@@ -55,6 +55,7 @@ export const ModelSelected = Schema.Struct({
   type: Schema.tag("model-switched"),
   model: Model.Ref,
   previous: Model.Ref.pipe(optional),
+  origin: Schema.Literals(["user", "router"]).pipe(optional),
 }).annotate({ identifier: "Session.Message.ModelSelected" })
 
 export interface LocationSwitched extends Schema.Schema.Type<typeof LocationSwitched> {}

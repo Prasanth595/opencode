@@ -1234,11 +1234,15 @@ export function Prompt(props: PromptProps) {
         id: newSessionID,
         location: directory ? { directory } : location,
         agent: agent.id,
-        model: {
-          providerID: selection.providerID,
-          id: selection.modelID,
-          variant,
-        },
+        ...(local.model.auto()
+          ? {}
+          : {
+              model: {
+                providerID: selection.providerID,
+                id: selection.modelID,
+                variant,
+              },
+            }),
       })
       if (newSessionID !== undefined) created.request.catch(() => args.restoreNewSessionID(newSessionID))
       sessionID = created.id
@@ -1284,6 +1288,16 @@ export function Prompt(props: PromptProps) {
     }
     const commitModel = () => {
       const model = { providerID: selection.providerID, id: selection.modelID, variant }
+      if (local.model.auto()) {
+        if (!session?.modelPinned) return Promise.resolve()
+        const cancelCommit = local.model.trackSessionCommit(target, session.model ?? model, agent.id)
+        return client.api.session
+          .switchModel({ sessionID: target, model: session.model ?? model, pin: false })
+          .catch((error) => {
+            cancelCommit()
+            throw new Error(`Failed to switch model: ${errorMessage(error)}`, { cause: error })
+          })
+      }
       const cancelCommit = local.model.trackSessionCommit(target, model, agent.id)
       return client.api.session.switchModel({ sessionID: target, model }).catch((error) => {
         cancelCommit()
@@ -1551,7 +1565,7 @@ export function Prompt(props: PromptProps) {
       return {
         agentLabel: agent ? Locale.titlecase(agent.id) : undefined,
         agentColor: agent ? local.agent.color(agent.id) : undefined,
-        modelLabel: model.model,
+        modelLabel: local.model.auto() ? `Auto · ${model.model}` : model.model,
         providerLabel: model.provider,
         variant: local.model.variant.current(),
       }

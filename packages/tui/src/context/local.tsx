@@ -145,6 +145,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         recent: [],
         favorite: [],
         variant: {},
+        auto: false,
       })
       const [selectionState, setSelectionState] = createStore<{
         newSessionModelByLocationAgent: Record<string, ModelPreferenceModel | undefined>
@@ -164,6 +165,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           setPreferences("recent", value.recent)
           setPreferences("favorite", value.favorite)
           setPreferences("variant", value.variant)
+          setPreferences("auto", value.auto)
           setPreferences("ready", true)
         })
       }
@@ -452,10 +454,19 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           setPreferences("recent", recentModels(next, preferences.recent))
           void repository.addRecent(next).catch(() => undefined)
         },
+        auto() {
+          return preferences.auto
+        },
+        setAuto(enabled: boolean) {
+          setPreferences("auto", enabled)
+          void repository.setAuto(enabled).catch(() => undefined)
+        },
         set(model: { providerID: string; modelID: string }, options?: { recent?: boolean }) {
           batch(() => {
             if (!isModelValid(model)) return
             if (!selectModel(model)) return
+            setPreferences("auto", false)
+            void repository.setAuto(false).catch(() => undefined)
             if (options?.recent) {
               setPreferences("recent", recentModels(model, preferences.recent))
               void repository.addRecent(model).catch(() => undefined)

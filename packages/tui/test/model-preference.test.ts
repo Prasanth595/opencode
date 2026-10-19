@@ -16,6 +16,7 @@ test("repairs known model preferences and preserves unrelated fields", () => {
     recent: [{ providerID: "openai", modelID: "gpt-5" }],
     favorite: [],
     variant: { "openai/gpt-5": "high", default: "default" },
+    auto: false,
   })
 })
 
@@ -37,6 +38,7 @@ test("atomically serializes model preference updates", async () => {
     recent: [openai],
     favorite: [],
     variant: { "openai/org/gpt-5": "high", "anthropic/claude/sonnet": "low" },
+    auto: false,
   })
 
   await repository.saveVariant(openai, "default")

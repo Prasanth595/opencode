@@ -217,7 +217,11 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         "session.switchModel",
         Effect.fn(function* (ctx) {
           yield* session
-            .switchModel({ sessionID: ctx.params.sessionID, model: ctx.payload.model })
+            .switchModel({
+              sessionID: ctx.params.sessionID,
+              model: ctx.payload.model,
+              origin: ctx.payload.pin === false ? "router" : "user",
+            })
             .pipe(Effect.catchTag("Session.NotFoundError", missingSession))
           return HttpApiSchema.NoContent.make()
         }),

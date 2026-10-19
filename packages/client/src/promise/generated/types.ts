@@ -128,6 +128,8 @@ export type EventSeq = number
 
 export type WorkspaceID = string
 
+export type SessionEventModelOrigin = "user" | "router"
+
 export type InstructionKey = string
 
 export type InstructionHash = string
@@ -905,6 +907,7 @@ export type SessionMessageModelSelected = {
   type: "model-switched"
   model: ModelRef
   previous?: ModelRef
+  origin?: "user" | "router"
 }
 
 export type SessionProviderContext = { version: 1; provenance: SessionProviderContextProvenance; messages: JsonValue }
@@ -983,7 +986,7 @@ export type SessionModelSelected = {
   type: "session.model.selected"
   durable: { aggregateID: string; seq: EventSeq; version: 1 }
   location?: LocationRef
-  data: { sessionID: SessionID; model: ModelRef; previous?: ModelRef }
+  data: { sessionID: SessionID; model: ModelRef; previous?: ModelRef; origin?: SessionEventModelOrigin }
 }
 
 export type SessionMoved = {
@@ -2112,6 +2115,7 @@ export type SessionInfo = {
   projectID: ProjectID
   agent?: AgentID
   model?: ModelRef
+  modelPinned?: boolean
   cost: MoneyUSD
   tokens: TokenUsageInfo
   outcome?: "succeeded" | "failed" | "interrupted"
@@ -2141,6 +2145,7 @@ export type SessionCreated = {
     title?: string
     agent?: AgentID
     model?: ModelRef
+    modelPinned?: boolean
     metadata?: SessionMetadata
     permissions?: PermissionRuleset
     version: string
@@ -2332,6 +2337,7 @@ export type ConfigEntry =
             resource: string
             effect: "allow" | "deny"
           }>
+          model_route?: boolean
         }
       }
     }
@@ -3210,6 +3216,7 @@ export type SessionImportInput = {
       readonly projectID: string
       readonly agent?: string
       readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly modelPinned?: boolean
       readonly cost: number
       readonly tokens: {
         readonly input: number
@@ -3263,6 +3270,7 @@ export type SessionImportInput = {
           readonly type: "model-switched"
           readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
           readonly previous?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly origin?: "user" | "router"
         }
       | {
           readonly id: string
@@ -3553,6 +3561,7 @@ export type SessionImportInput = {
       readonly projectID: string
       readonly agent?: string
       readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly modelPinned?: boolean
       readonly cost: number
       readonly tokens: {
         readonly input: number
@@ -3606,6 +3615,7 @@ export type SessionImportInput = {
           readonly type: "model-switched"
           readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
           readonly previous?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly origin?: "user" | "router"
         }
       | {
           readonly id: string
@@ -3896,6 +3906,7 @@ export type SessionImportInput = {
       readonly projectID: string
       readonly agent?: string
       readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly modelPinned?: boolean
       readonly cost: number
       readonly tokens: {
         readonly input: number
@@ -3949,6 +3960,7 @@ export type SessionImportInput = {
           readonly type: "model-switched"
           readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
           readonly previous?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly origin?: "user" | "router"
         }
       | {
           readonly id: string
@@ -4265,7 +4277,12 @@ export type SessionSwitchModelInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
   readonly model: {
     readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly pin?: boolean | null
   }["model"]
+  readonly pin?: {
+    readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly pin?: boolean | null
+  }["pin"]
 }
 
 export type SessionSwitchModelOutput = void

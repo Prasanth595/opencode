@@ -102,6 +102,7 @@ const layer = Layer.effect(
               title: input.data.info.title,
               agent: input.data.info.agent,
               model: input.data.info.model,
+              modelPinned: input.data.info.modelPinned,
               metadata: input.data.info.metadata,
               permissions: input.data.info.permissions,
             },

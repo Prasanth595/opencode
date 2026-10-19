@@ -58,6 +58,7 @@ const session = (
   permission: null,
   agent: null,
   model: null,
+  model_pinned: null,
   time_created: 1,
   time_updated: 2,
   time_idle: null,
