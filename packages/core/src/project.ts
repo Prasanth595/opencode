@@ -351,6 +351,32 @@ const layer = Layer.effect(
       }
     })
 
+    const scanSkip = new Set([
+      "node_modules",
+      "target",
+      "dist",
+      "build",
+      ".gradle",
+      ".idea",
+      ".cache",
+      ".opencode",
+      ".git",
+    ])
+
+    const hasChildRepo: (dir: AbsolutePath, depth: number) => Effect.Effect<boolean> = Effect.fnUntraced(
+      function* (dir, depth) {
+        if (depth === 0) return false
+        const entries = yield* fs.readDirectoryEntries(dir).pipe(Effect.catch(() => Effect.succeed([])))
+        for (const entry of entries) {
+          if (entry.type !== "directory" || scanSkip.has(entry.name)) continue
+          const child = AbsolutePath.make(path.join(dir, entry.name))
+          if (yield* fs.existsSafe(path.join(child, ".git"))) return true
+          if (yield* hasChildRepo(child, depth - 1)) return true
+        }
+        return false
+      },
+    )
+
     const resolve = Effect.fn("Project.resolve")(function* (input: AbsolutePath) {
       const directory = AbsolutePath.make(yield* fs.resolve(input))
       const native = yield* fs.up({ targets: [".git", ".hg"], start: directory, mode: "first" }).pipe(
@@ -385,6 +411,15 @@ const layer = Layer.effect(
         return yield* persist({
           ...hg,
           canonical: hg.directory,
+        })
+      }
+
+      if (yield* hasChildRepo(directory, 3)) {
+        return yield* persist({
+          id: ID.make(Hash.fast(`directory:${directory}`)),
+          directory,
+          canonical: directory,
+          vcs: { type: "git" as const, store: directory },
         })
       }
 

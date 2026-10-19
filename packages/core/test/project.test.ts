@@ -362,6 +362,38 @@ describe("Project.resolve", () => {
     }),
   )
 
+  it.live("treats a plain directory containing child repositories as a git workspace", () =>
+    Effect.gen(function* () {
+      const tmp = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+      )
+      const service = path.join(tmp.path, "service")
+      const deep = path.join(tmp.path, "org", "deep")
+      const dependency = path.join(tmp.path, "node_modules", "pkg")
+      yield* Effect.promise(() => fs.mkdir(path.join(service, "nested"), { recursive: true }))
+      yield* Effect.promise(() => fs.mkdir(deep, { recursive: true }))
+      yield* Effect.promise(() => fs.mkdir(dependency, { recursive: true }))
+      const project = yield* Project.Service
+      const empty = yield* project.resolve(abs(tmp.path))
+
+      yield* Effect.promise(() => initRepo(service, { commit: true }))
+      yield* Effect.promise(() => initRepo(path.join(service, "nested"), { commit: true }))
+      yield* Effect.promise(() => initRepo(deep, { commit: true }))
+      yield* Effect.promise(() => initRepo(dependency, { commit: true }))
+
+      const workspace = yield* project.resolve(abs(tmp.path))
+      yield* Effect.promise(() => initGit(tmp.path, "-b", "main"))
+      const repository = yield* project.resolve(abs(tmp.path))
+
+      expect(empty.vcs).toBeUndefined()
+      expect(workspace.vcs?.type).toBe("git")
+      expect(workspace.vcs?.store).toBe(yield* real(tmp.path))
+      expect(workspace.id).toBe(empty.id)
+      expect(repository.vcs?.type).toBe("git")
+    }),
+  )
+
   it.live("repository markers override markerless directory projects", () =>
     Effect.gen(function* () {
       const tmp = yield* Effect.acquireRelease(
