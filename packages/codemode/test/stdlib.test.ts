@@ -1927,6 +1927,30 @@ describe("CodeMode values at intra-CodeMode checkpoints", () => {
 })
 
 describe("Uint8Array callback methods", () => {
+  test.each(["'1'", "true", "false", "null", "{}", "undefined", "NaN"])(
+    "typed-array searches do not coerce %s into a byte",
+    async (search) => {
+      expect(
+        await value(`
+          const bytes = new Uint8Array([0, 1, 2, 1])
+          return [bytes.indexOf(${search}), bytes.lastIndexOf(${search}), bytes.includes(${search})]
+        `),
+      ).toEqual([-1, -1, false])
+    },
+  )
+
+  test("typed-array searches keep numeric matching and start-index coercion", async () => {
+    expect(
+      await value(`
+        const bytes = new Uint8Array([0, 1, 2, 1])
+        return [
+          bytes.indexOf(1, "2"), bytes.lastIndexOf(1, "2"), bytes.includes(2, "3"),
+          bytes.indexOf(-0), bytes.includes(257), bytes.indexOf(1, -1)
+        ]
+      `),
+    ).toEqual([3, 1, false, 0, false, 3])
+  })
+
   test("map and filter return new Uint8Arrays with clamped bytes", async () => {
     expect(
       await value(`

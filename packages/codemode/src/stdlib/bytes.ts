@@ -78,6 +78,8 @@ export const uint8ArrayGlobal = <R>(ctx: Interpreter<R>) => {
 
   const self = (thisValue: Value, name: string) => receiver(Bytes, thisValue, `Uint8Array.prototype.${name}`)
   const optNumber = (value: Value): number | undefined => (value === undefined ? undefined : coerceToInteger(value))
+  // Uint8Array cannot contain NaN, so non-number search values never match a byte.
+  const search = (value: Value) => (typeof value === "number" ? value : NaN)
   const wrapAll = (items: Array<Value>) => new Arr(builtins.Array, items)
   defineAccessor(proto, "length", (thisValue) => self(thisValue, "length").bytes.length)
   methods(builtins, proto, [
@@ -142,25 +144,21 @@ export const uint8ArrayGlobal = <R>(ctx: Interpreter<R>) => {
         })
       },
     ],
-    [
-      "indexOf",
-      1,
-      (thisValue, args) => self(thisValue, "indexOf").bytes.indexOf(coerceToNumber(args[0]), optNumber(args[1])),
-    ],
+    ["indexOf", 1, (thisValue, args) => self(thisValue, "indexOf").bytes.indexOf(search(args[0]), optNumber(args[1]))],
     [
       "lastIndexOf",
       1,
       (thisValue, args) => {
         const target = self(thisValue, "lastIndexOf").bytes
         return args.length < 2
-          ? target.lastIndexOf(coerceToNumber(args[0]))
-          : target.lastIndexOf(coerceToNumber(args[0]), optNumber(args[1]))
+          ? target.lastIndexOf(search(args[0]))
+          : target.lastIndexOf(search(args[0]), optNumber(args[1]))
       },
     ],
     [
       "includes",
       1,
-      (thisValue, args) => self(thisValue, "includes").bytes.includes(coerceToNumber(args[0]), optNumber(args[1])),
+      (thisValue, args) => self(thisValue, "includes").bytes.includes(search(args[0]), optNumber(args[1])),
     ],
     [
       "join",
