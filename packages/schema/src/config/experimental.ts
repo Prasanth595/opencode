@@ -14,4 +14,8 @@ export class Info extends Schema.Class<Info>("ConfigExperimental.Info")({
   policies: ConfigPolicy.Info.pipe(Schema.Array, optional).annotate({
     description: "Deprecated: use top-level policies. Ordered policies controlling access to configured resources",
   }),
+  model_route: Schema.Boolean.pipe(optional).annotate({
+    description:
+      "Route unpinned sessions to a catalog model by prompt complexity. Defaults to true when an evaluation key is available.",
+  }),
 }) {}

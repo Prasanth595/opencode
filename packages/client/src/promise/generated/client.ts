@@ -684,7 +684,7 @@ export function make(options: ClientOptions) {
           {
             method: "POST",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/model`,
-            body: { model: input["model"] },
+            body: { model: input["model"], pin: input["pin"] },
             successStatus: 204,
             declaredStatuses: [400, 401, 404],
             empty: true,

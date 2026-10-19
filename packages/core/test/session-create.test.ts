@@ -1165,12 +1165,12 @@ describe("Session.create", () => {
 
       yield* session.switchModel({ sessionID: created.id, model })
 
-      expect(yield* session.get(created.id)).toMatchObject({ model })
+      expect(yield* session.get(created.id)).toMatchObject({ model, modelPinned: true })
       const bus = Array.from(
         yield* logEvents(session, created.id, true).pipe(Stream.drop(1), Stream.take(1), Stream.runCollect),
       )
       expect(bus).toMatchObject([{ type: "session.model.selected" }])
-      expect(bus[0]?.data).toEqual({ sessionID: created.id, model, previous })
+      expect(bus[0]?.data).toEqual({ sessionID: created.id, model, previous, origin: "user" })
       expect(yield* session.messages({ sessionID: created.id, order: "asc" })).toMatchObject([
         { type: "model-switched", model, previous },
       ])
@@ -1209,6 +1209,21 @@ describe("Session.create", () => {
       expect(
         yield* db.select().from(EventTable).where(eq(EventTable.aggregate_id, created.id)).all().pipe(Effect.orDie),
       ).toHaveLength(1)
+    }),
+  )
+
+  it.effect("leaves sessions unpinned until a user model selection", () =>
+    Effect.gen(function* () {
+      const session = yield* Session.Service
+      const created = yield* session.create({ location })
+      expect(yield* session.get(created.id)).toMatchObject({ modelPinned: false })
+
+      const model = Model.Ref.make({ id: Model.ID.make("sonnet"), providerID: Provider.ID.anthropic })
+      yield* session.switchModel({ sessionID: created.id, model, origin: "router" })
+      expect(yield* session.get(created.id)).toMatchObject({ model, modelPinned: false })
+
+      yield* session.switchModel({ sessionID: created.id, model })
+      expect(yield* session.get(created.id)).toMatchObject({ model, modelPinned: true })
     }),
   )
 

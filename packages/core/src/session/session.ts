@@ -95,16 +95,24 @@ export const make = Effect.fn("Session.make")(function* () {
   })
   const switchModel = Effect.fn("Session.switchModel")(function* (
     sessionID: SessionSchema.ID,
-    input: { model: Model.Ref },
+    input: { model: Model.Ref; origin?: SessionEvent.ModelOrigin },
   ) {
     const session = yield* get(sessionID)
+    const origin = input.origin ?? "user"
+    const pinned = origin !== "router"
     if (
       session.model?.providerID === input.model.providerID &&
       session.model.id === input.model.id &&
-      (session.model.variant ?? "default") === (input.model.variant ?? "default")
+      (session.model.variant ?? "default") === (input.model.variant ?? "default") &&
+      session.modelPinned === pinned
     )
       return
-    yield* bus.publish(SessionEvent.ModelSelected, { sessionID, model: input.model, previous: session.model })
+    yield* bus.publish(SessionEvent.ModelSelected, {
+      sessionID,
+      model: input.model,
+      previous: session.model,
+      origin,
+    })
   })
   const mutatePending = (
     sessionID: SessionSchema.ID,

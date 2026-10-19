@@ -56,6 +56,7 @@ export const SessionTable = sqliteTable(
       providerID: string
       variant?: string
     }>(),
+    model_pinned: integer({ mode: "boolean" }),
     ...Timestamps,
     time_idle: integer(),
     time_viewed: integer(),

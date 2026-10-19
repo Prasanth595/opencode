@@ -39,6 +39,8 @@ export const Info = Schema.Struct({
   projectID: Project.ID,
   agent: Agent.ID.pipe(optional),
   model: Model.Ref.pipe(optional),
+  /** True when the user pinned a model. Router-selected models stay unpinned. */
+  modelPinned: Schema.Boolean.pipe(optional),
   cost: Money.USD,
   tokens: TokenUsage.Info,
   /** Outcome of the last completed execution, recorded at `time.idle`. Absent until a run reaches a terminal transition. */

@@ -114,7 +114,23 @@ export function DialogModel(props: { providerID?: string }) {
       )
     }
 
-    return [...favoriteOptions, ...recentOptions, ...modelOptions]
+    return [
+      {
+        key: { providerID: "auto", modelID: "auto" },
+        value: { providerID: "auto", modelID: "auto" },
+        title: "Auto",
+        releaseDate: 0,
+        description: "Choose a model from prompt complexity",
+        category: connected() ? "Auto" : undefined,
+        onSelect() {
+          local.model.setAuto(true)
+          dialog.clear()
+        },
+      },
+      ...favoriteOptions,
+      ...recentOptions,
+      ...modelOptions,
+    ]
   })
 
   const provider = createMemo(() => (props.providerID ? providers().get(props.providerID) : undefined))
@@ -169,6 +185,7 @@ export function DialogModel(props: { providerID?: string }) {
           title: newDesigns() ? "favorite" : "Favorite",
           hidden: !connected(),
           onTrigger: (option) => {
+            if (option.value.providerID === "auto") return
             local.model.toggleFavorite(option.value as { providerID: string; modelID: string })
           },
         },
@@ -177,7 +194,7 @@ export function DialogModel(props: { providerID?: string }) {
       flat={true}
       skipFilter={true}
       title={title()}
-      current={local.model.current()}
+      current={local.model.auto() ? { providerID: "auto", modelID: "auto" } : local.model.current()}
       focusCurrent={false}
     />
   )

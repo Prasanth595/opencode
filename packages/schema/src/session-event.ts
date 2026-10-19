@@ -58,6 +58,7 @@ export const Created = Event.durable({
     title: Schema.String.pipe(optional),
     agent: Agent.ID.pipe(optional),
     model: Model.Ref.pipe(optional),
+    modelPinned: Schema.Boolean.pipe(optional),
     /** Host-supplied annotations resolved at creation, including any inherited from a parent. */
     metadata: SessionMetadata.pipe(optional),
     permissions: Permission.Ruleset.pipe(optional),
@@ -77,6 +78,9 @@ export const AgentSelected = Event.durable({
 })
 export type AgentSelected = typeof AgentSelected.Type
 
+export const ModelOrigin = Schema.Literals(["user", "router"]).annotate({ identifier: "Session.Event.ModelOrigin" })
+export type ModelOrigin = typeof ModelOrigin.Type
+
 export const ModelSelected = Event.durable({
   type: "session.model.selected",
   ...options,
@@ -84,6 +88,7 @@ export const ModelSelected = Event.durable({
     ...Base,
     model: Model.Ref,
     previous: Model.Ref.pipe(optional),
+    origin: ModelOrigin.pipe(optional),
   },
 })
 export type ModelSelected = typeof ModelSelected.Type

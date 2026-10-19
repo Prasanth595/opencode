@@ -13,6 +13,7 @@ export type ModelPreference = {
   recent: ModelPreferenceModel[]
   favorite: ModelPreferenceModel[]
   variant: Record<string, string | undefined>
+  auto: boolean
 }
 
 export type ModelPreferenceDocument = Record<string, unknown> & ModelPreference
@@ -81,6 +82,7 @@ export function decodeModelPreference(value: unknown): ModelPreferenceDocument {
     recent: models(root.recent),
     favorite: models(root.favorite),
     variant: variants(root.variant),
+    auto: root.auto === true,
   }
 }
 
@@ -89,6 +91,7 @@ function preference(value: ModelPreferenceDocument): ModelPreference {
     recent: value.recent,
     favorite: value.favorite,
     variant: value.variant,
+    auto: value.auto,
   }
 }
 
@@ -97,6 +100,7 @@ function patch(value: Partial<ModelPreference>) {
     ...(value.recent === undefined ? {} : { recent: models(value.recent) }),
     ...(value.favorite === undefined ? {} : { favorite: models(value.favorite) }),
     ...(value.variant === undefined ? {} : { variant: variants(value.variant) }),
+    ...(value.auto === undefined ? {} : { auto: value.auto === true }),
   }
 }
 
@@ -147,6 +151,9 @@ export function createModelPreferenceRepository(filePath: string) {
     },
     setFavorite(model: ModelPreferenceModel, enabled: boolean) {
       return update((current) => ({ favorite: favoriteModels(model, current.favorite, enabled) }))
+    },
+    setAuto(enabled: boolean) {
+      return update(() => ({ auto: enabled }))
     },
     subscribe(listener: (value: ModelPreference) => void) {
       listeners.add(listener)
