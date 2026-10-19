@@ -21,6 +21,31 @@ export default Runtime.handler(Commands, (input) =>
     const requestedDirectory = Option.getOrUndefined(input.directory)
     const requestedServer = Option.getOrUndefined(input.server)
     if (requestedDirectory !== undefined) process.chdir(requestedDirectory)
+    const config = yield* Config.Service
+    const settings = yield* config.get()
+    const screenReader = Option.getOrUndefined(input.screenReader) ?? (yield* Env.screenReader) ?? settings.screen_reader
+    if (screenReader) {
+      // The full-screen interface redraws in place, which screen readers cannot follow. Mini appends to scrollback.
+      const { start } = yield* Effect.promise(() => import("./mini"))
+      return yield* start({
+        server: input.server,
+        standalone: input.standalone,
+        continue: input.continue,
+        session: input.session,
+        fork: false,
+        model: Option.none(),
+        agent: Option.none(),
+        prompt: input.prompt,
+        replay: Option.none(),
+        replayLimit: Option.none(),
+        demo: false,
+        screenReader: Option.some(true),
+        // The full interface honors this setting, so the handoff keeps it.
+        auto: input.auto || settings.session?.permissions === "autoaccept",
+        yolo: input.yolo,
+        dangerouslySkipPermissions: input.dangerouslySkipPermissions,
+      })
+    }
     const preflight = UpdatePreflight.make()
     yield* Effect.addFinalizer(() => Effect.promise(() => preflight.close()))
     const serviceStarts = yield* Queue.unbounded<{
@@ -85,7 +110,6 @@ export default Runtime.handler(Commands, (input) =>
         Effect.forkScoped({ startImmediately: true }),
       )
     preflight.loading()
-    const config = yield* Config.Service
     const npm = yield* Npm.Service
     const fileSystem = yield* FileSystem.FileSystem
     const runServicePromise = Effect.runPromiseWith(Context.make(FileSystem.FileSystem, fileSystem))
