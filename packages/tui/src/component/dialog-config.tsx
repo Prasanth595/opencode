@@ -55,7 +55,7 @@ export const settings: Setting[] = [
     title: "Scrollbar",
     category: "Session",
     path: ["session", "scrollbar"],
-    default: false,
+    default: true,
     values: [false, true],
     labels: ["off", "on"],
     keywords: ["scroll bar"],
