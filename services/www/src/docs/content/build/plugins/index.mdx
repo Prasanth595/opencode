@@ -820,7 +820,7 @@ Rename, interrupt, or wait for a session.
 
 ```ts
 await ctx.session.update({ sessionID, title: "Review" })
-await ctx.session.interrupt({ sessionID, continue: false })
+await ctx.session.interrupt({ sessionID, resume: false })
 await ctx.session.wait({ sessionID })
 ```
 
