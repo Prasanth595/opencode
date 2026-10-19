@@ -89,16 +89,32 @@ describe("GenUISession", () => {
     expect(second.messages).toHaveLength(2)
   })
 
-  test("hides the render tool and says so once a prompt comes without generated UI", async () => {
+  test("says so once a prompt comes without generated UI, keeping the tool list stable for the prompt cache", async () => {
     const plugin = await run()
     await plugin.prompt({ genui: true })
     await plugin.context([Message.user("hi")])
     await plugin.prompt({ genui: false })
     const request = await plugin.context([Message.user(plugin.persisted[0] ?? ""), Message.user("Text only now")])
 
-    expect(Object.keys(request.tools)).toEqual(["read"])
+    expect(Object.keys(request.tools)).toEqual([GenUI.RENDER_TOOL, "read"])
     expect(plugin.persisted).toHaveLength(2)
     expect(plugin.persisted[1]).toContain("no longer available")
+  })
+
+  test("keeps the tool list after a restart forgets which sessions the app prompted", async () => {
+    const before = await run()
+    await before.prompt({ genui: true })
+    await before.context([Message.user("hi")])
+
+    const after = await run()
+    const request = await after.context([
+      Message.user(before.persisted[0] ?? ""),
+      Message.user("hi"),
+      Message.user("next"),
+    ])
+
+    expect(Object.keys(request.tools)).toEqual([GenUI.RENDER_TOOL, "read"])
+    expect(after.persisted).toEqual([])
   })
 
   test("never offers the render tool to a session the app has not prompted, such as a subagent", async () => {

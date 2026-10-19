@@ -15,8 +15,9 @@ ${GenUI.RENDER_TOOL} is no longer available in this session, because the user is
 </system-reminder>`
 
 /**
- * Offers the render tool, and tells the agent it may use it, only while the user can see generated UI: the app marks
- * its prompts with `metadata.genui = true` while the setting is on, so the latest prompt decides.
+ * Tells the agent it may use the render tool only while the user can see generated UI: the app marks its prompts with
+ * `metadata.genui = true` while the setting is on, so the latest prompt decides. Sessions the app never prompted, such
+ * as subagents, never see the tool.
  */
 export const register = Effect.fn("GenUISession.register")(function* (ctx: {
   readonly session: Pick<Context["session"], "hook" | "synthetic">
@@ -33,8 +34,11 @@ export const register = Effect.fn("GenUISession.register")(function* (ctx: {
 
   yield* ctx.session.hook("context", (event) => {
     const offered = available.get(event.sessionID)
-    if (offered !== true) delete event.tools[GenUI.RENDER_TOOL]
     const reminder = lastReminder(event.messages)
+    // The tool list is the head of the cached prompt, so it must not flip with each prompt's source (app, phone,
+    // scheduled prompt) or reset on restart. Once a session has been offered generated UI it keeps the tool, and the
+    // reminders say whether it can be used.
+    if (offered !== true && reminder === undefined) delete event.tools[GenUI.RENDER_TOOL]
     const text =
       offered === true && reminder !== enter ? enter : offered === false && reminder === enter ? leave : undefined
     if (!text) return Effect.void

@@ -48,7 +48,7 @@ export const text = [
   "| Show me this week's API usage | A small dashboard |",
   "| Set up the new package (several options to pick) | A form, then wait for the reply |",
   "",
-  `${GenUI.RENDER_TOOL} is in your tools only while the user is in the OpenCode app with generated UI on. When it is not, answer in text.`,
+  `Use ${GenUI.RENDER_TOOL} only while the user is in the OpenCode app with generated UI on. When a reminder says it is no longer available, answer in text.`,
   "",
   "## In a turn",
   "",
