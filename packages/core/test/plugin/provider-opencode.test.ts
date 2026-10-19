@@ -635,6 +635,40 @@ describe("OpencodePlugin", () => {
     ),
   )
 
+  it.live("removes disabled variants from Console config", () =>
+    Effect.acquireUseRelease(
+      Effect.sync(() =>
+        Bun.serve({
+          port: 0,
+          fetch: () =>
+            Response.json({
+              providers: {
+                remote: {
+                  package: "aisdk:@ai-sdk/openai",
+                  models: {
+                    chat: { variants: [{ id: "kept" }, { id: "dropped", disabled: true }] },
+                  },
+                },
+              },
+            }),
+        }),
+      ),
+      (server) =>
+        Effect.gen(function* () {
+          const credentials = yield* Credential.Service
+          const models = yield* Model.Service
+          yield* credentials.create({
+            integrationID: Integration.ID.make("opencode"),
+            value: Credential.Key.make({ type: "key", key: "secret", metadata: { server: server.url.origin } }),
+          })
+          yield* addPlugin()
+          const chat = required(yield* models.get(Provider.ID.make("remote"), Model.ID.make("chat")))
+          expect(chat.variants.map((variant) => variant.id)).toEqual([Model.VariantID.make("kept")])
+        }),
+      (server) => Effect.promise(() => server.stop(true)),
+    ),
+  )
+
   it.effect("refreshes hosted search with Console config, retains it on failure, and skips unchanged snapshots", () =>
     Effect.acquireUseRelease(
       Effect.sync(() => {

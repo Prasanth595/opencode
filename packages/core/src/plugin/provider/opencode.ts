@@ -311,6 +311,12 @@ export const OpencodePlugin = define<HttpClient.HttpClient | Bus.Service | Manag
                 ),
               ]
             for (const variant of config.variants ?? []) {
+              // A disabled entry removes the variant instead of overriding it, matching the local
+              // configuration owner.
+              if (variant.disabled) {
+                model.variants = model.variants.filter((item) => item.id !== variant.id)
+                continue
+              }
               let existing = model.variants.find((item) => item.id === variant.id)
               if (!existing) {
                 existing = { id: variant.id }
