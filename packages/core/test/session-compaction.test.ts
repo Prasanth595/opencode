@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { GenerationOptions, LLMClient, LLMEvent, LanguageModel, ToolDefinition, type LLMRequest } from "@opencode/ai"
-import { OpenAIChat } from "@opencode/ai/protocols"
+import { AnthropicMessages, OpenAIChat } from "@opencode/ai/protocols"
 import { Database } from "@opencode/core/database/database"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { llmClient } from "@opencode/core/effect/app-node-platform"
@@ -28,11 +28,12 @@ import { AbsolutePath } from "@opencode/core/schema"
 import { Money } from "@opencode/schema/money"
 import { Skill } from "@opencode/schema/skill"
 import { Shell } from "@opencode/schema/shell"
-import { DateTime, Effect, Fiber, Layer, Schema, Stream } from "effect"
+import { DateTime, Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect"
 import { asc, eq } from "drizzle-orm"
 import { testEffect } from "./lib/effect"
 
 let requests: LLMRequest[] = []
+let customStream: ((request: LLMRequest) => Stream.Stream<LLMEvent>) | undefined
 const model = LanguageModel.make({
   id: "summary-model",
   provider: "test",
@@ -48,27 +49,30 @@ const cost = [
     },
   },
 ]
+const defaultStream = (text = "## Objective\n- manual summary") =>
+  Stream.make(
+    LLMEvent.textDelta({ id: "summary", text }),
+    LLMEvent.stepFinish({
+      index: 0,
+      reason: { normalized: "stop" },
+      usage: {
+        inputTokens: 15,
+        outputTokens: 6,
+        nonCachedInputTokens: 10,
+        cacheReadInputTokens: 3,
+        cacheWriteInputTokens: 2,
+        reasoningTokens: 2,
+      },
+    }),
+    LLMEvent.finish({
+      reason: { normalized: "stop" },
+    }),
+  )
 const client = Layer.mock(LLMClient.Service)({
   stream: (request: LLMRequest) => {
     requests.push(request)
-    return Stream.make(
-      LLMEvent.textDelta({ id: "summary", text: "## Objective\n- manual summary" }),
-      LLMEvent.stepFinish({
-        index: 0,
-        reason: { normalized: "stop" },
-        usage: {
-          inputTokens: 15,
-          outputTokens: 6,
-          nonCachedInputTokens: 10,
-          cacheReadInputTokens: 3,
-          cacheWriteInputTokens: 2,
-          reasoningTokens: 2,
-        },
-      }),
-      LLMEvent.finish({
-        reason: { normalized: "stop" },
-      }),
-    )
+    if (customStream) return customStream(request)
+    return defaultStream()
   },
   generate: () => Effect.die("unused"),
 })
@@ -642,5 +646,245 @@ it.effect("forked session compaction reuses the fork root prompt cache key", () 
 
     expect(requests).toHaveLength(1)
     expect(requests[0]?.promptCacheKey).toBe(rootID)
+  }),
+)
+
+const makeUser = (id: string, text: string) =>
+  SessionMessage.User.make({
+    id: SessionMessage.ID.make(id),
+    type: "user",
+    text,
+    time: { created: DateTime.makeUnsafe(0) },
+  })
+
+const makeMeasuredAssistant = (id: string, text: string, input: number, output = 100) =>
+  Schema.decodeUnknownSync(SessionMessage.Assistant)({
+    id: SessionMessage.ID.make(id),
+    type: "assistant",
+    agent: Agent.defaultID,
+    model: { id: "summary-model", providerID: "test" },
+    content: [{ type: "text", text }],
+    tokens: { input, output, reasoning: 0, cache: { read: 0, write: 0 } },
+    time: { created: 0, completed: 1 },
+  })
+
+// Ceiling on 200k window is 180k; 85% threshold is 153k.
+const nearCeiling = [
+  makeUser("msg_u1", "First user question"),
+  makeMeasuredAssistant("msg_a1", "First assistant answer", 80_000),
+  makeUser("msg_u2", "Second user question"),
+  makeMeasuredAssistant("msg_a2", "Second assistant answer", 156_000),
+] as const
+
+const overCeiling = [
+  ...nearCeiling,
+  makeUser("msg_u3", "Third user question"),
+  makeMeasuredAssistant("msg_a3", "Third assistant answer", 182_000),
+] as const
+
+const startPrecompute = (context: SessionContext.Loaded, stream?: typeof customStream) =>
+  Effect.gen(function* () {
+    requests = []
+    customStream = stream
+    const compaction = yield* SessionCompaction.Service
+    yield* compaction.precompute(context)
+    for (let i = 0; i < 50 && requests.length === 0; i++) yield* Effect.yieldNow
+  })
+
+it.effect("precomputes the cached prefix at 85% and swaps it in at 100% without a blocking model call", () =>
+  Effect.gen(function* () {
+    const compaction = yield* SessionCompaction.Service
+    const store = yield* SessionStore.Service
+    const sessionID = Session.ID.make("ses_precompute_swap")
+    const session = yield* insertSession(sessionID)
+
+    const anthropicResolved = SessionRunnerModel.resolved(
+      LanguageModel.make({ id: "claude-sonnet-4-6", provider: "test", route: AnthropicMessages.route }),
+      {
+        capabilities: { tools: true, input: ["text", "image"], output: ["text"] },
+        cost,
+        limit: { context: 200_000, output: 32_000 },
+      },
+    )
+
+    yield* startPrecompute({ ...loaded(session, nearCeiling), model: anthropicResolved })
+
+    expect(requests).toHaveLength(1)
+    const precompReq = requests[0]!
+    // Prefix is [u1, a1, u2] (before anchor a2), plus the summary prompt.
+    expect(precompReq.messages).toHaveLength(4)
+    expect(JSON.stringify(precompReq.messages.slice(0, 3))).toContain("Second user question")
+    expect(JSON.stringify(precompReq.messages.slice(0, 3))).not.toContain("Second assistant answer")
+    // Inline cache breakpoint stays on the last prefix message (u2), with `cache: "none"` preventing a write on the prompt.
+    expect(precompReq.cache).toBe("none")
+    const u2Part = precompReq.messages[2]?.content.at(-1)
+    expect(u2Part && "cache" in u2Part ? u2Part.cache : undefined).toBeDefined()
+    const promptPart = precompReq.messages[3]?.content.at(-1)
+    expect(promptPart && "cache" in promptPart ? promptPart.cache : undefined).toBeUndefined()
+    // No compaction message exists in the session while the precomputed summary is held.
+    expect(yield* store.context(sessionID)).toEqual([])
+
+    const outcome = yield* compaction.compact({
+      reason: "auto",
+      context: { ...loaded(session, overCeiling), model: anthropicResolved },
+    })
+    expect(outcome).toEqual({ status: "completed" })
+    // No additional LLM call was made at 100%.
+    expect(requests).toHaveLength(1)
+
+    expect(yield* store.context(sessionID)).toMatchObject([
+      {
+        type: "compaction",
+        status: "completed",
+        reason: "auto",
+        summary: "## Objective\n- manual summary",
+        recent:
+          "[Assistant]: Second assistant answer\n\n[User]: Third user question\n\n[Assistant]: Third assistant answer",
+        tokens: { input: 10, output: 4, reasoning: 2, cache: { read: 3, write: 2 } },
+      },
+    ])
+  }),
+)
+
+it.effect("precompute enforces the minimum-session-size gate", () =>
+  Effect.gen(function* () {
+    requests = []
+    customStream = undefined
+    const compaction = yield* SessionCompaction.Service
+    const session = yield* insertSession(Session.ID.make("ses_precompute_min_gate"))
+    const smallModel = SessionRunnerModel.resolved(model, {
+      capabilities: { tools: true, input: ["text"], output: ["text"] },
+      cost,
+      limit: { context: 64_000, output: 16_000 },
+    })
+
+    // Ceiling is 48k, 85% is 40.8k. Even at 45k (>= 85%), measured tokens on `older` are < 64k, so precompute skips.
+    const small = [
+      nearCeiling[0],
+      makeMeasuredAssistant("msg_gate_a1", "Answer 1", 20_000),
+      nearCeiling[2],
+      makeMeasuredAssistant("msg_gate_a2", "Answer 2", 45_000),
+    ]
+    yield* compaction.precompute({ ...loaded(session, small), model: smallModel })
+    yield* Effect.yieldNow
+    expect(requests).toHaveLength(0)
+
+    // On a 200k window, a single turn where `older` has no completed assistant message or checkpoint also skips.
+    yield* compaction.precompute(loaded(session, [nearCeiling[0], nearCeiling[3]]))
+    yield* Effect.yieldNow
+    expect(requests).toHaveLength(0)
+  }),
+)
+
+it.effect("joins an in-flight precompute when compaction triggers at 100%", () =>
+  Effect.gen(function* () {
+    const gate = yield* Deferred.make<void>()
+    const compaction = yield* SessionCompaction.Service
+    const store = yield* SessionStore.Service
+    const sessionID = Session.ID.make("ses_precompute_join")
+    const session = yield* insertSession(sessionID)
+
+    yield* startPrecompute(loaded(session, nearCeiling), () =>
+      Stream.fromEffect(Deferred.await(gate)).pipe(
+        Stream.flatMap(() => defaultStream("## Objective\n- joined summary")),
+      ),
+    )
+    expect(requests).toHaveLength(1)
+
+    const compacting = yield* compaction
+      .compact({ reason: "auto", context: loaded(session, overCeiling) })
+      .pipe(Effect.forkScoped)
+    yield* Effect.yieldNow
+    yield* Deferred.succeed(gate, undefined)
+    expect(yield* Fiber.join(compacting)).toEqual({ status: "completed" })
+    expect(requests).toHaveLength(1)
+    expect(yield* store.context(sessionID)).toMatchObject([
+      {
+        type: "compaction",
+        summary: "## Objective\n- joined summary",
+        recent:
+          "[Assistant]: Second assistant answer\n\n[User]: Third user question\n\n[Assistant]: Third assistant answer",
+      },
+    ])
+    customStream = undefined
+  }),
+)
+
+it.effect("incrementally folds a tail that grew past maxRecent instead of keeping a giant tail", () =>
+  Effect.gen(function* () {
+    let call = 0
+    const compaction = yield* SessionCompaction.Service
+    const store = yield* SessionStore.Service
+    const sessionID = Session.ID.make("ses_precompute_fold")
+    const session = yield* insertSession(sessionID)
+
+    yield* startPrecompute(loaded(session, nearCeiling), () =>
+      defaultStream(++call === 1 ? "## Objective\n- prefix summary" : "## Objective\n- folded summary"),
+    )
+    expect(requests).toHaveLength(1)
+
+    // Tail after u2 has a huge exchange (35k tokens > 30k maxRecent) followed by a short recent exchange.
+    const burst = [
+      ...nearCeiling,
+      makeUser("msg_fold_u3", "x".repeat(140_000)),
+      makeMeasuredAssistant("msg_fold_a3", "Processed large burst", 178_000),
+      makeUser("msg_fold_u4", "Final short question"),
+      makeMeasuredAssistant("msg_fold_a4", "Final short answer", 185_000),
+    ]
+    expect(yield* compaction.compact({ reason: "auto", context: loaded(session, burst) })).toEqual({
+      status: "completed",
+    })
+
+    // Second request folded the tail onto the synthetic checkpoint using the update prompt, without resending u1/a1.
+    expect(requests).toHaveLength(2)
+    const foldReq = requests[1]!
+    expect(JSON.stringify(foldReq.messages)).toContain("## Objective\\n- prefix summary")
+    expect(JSON.stringify(foldReq.messages)).not.toContain("First user question")
+    expect(JSON.stringify(foldReq.messages.at(-1))).toContain(
+      "Update the existing checkpoint in the conversation above into one consolidated summary.",
+    )
+
+    expect(yield* store.context(sessionID)).toMatchObject([
+      {
+        type: "compaction",
+        summary: "## Objective\n- folded summary",
+        recent: "[User]: Final short question\n\n[Assistant]: Final short answer",
+      },
+    ])
+    customStream = undefined
+  }),
+)
+
+it.effect("invalidates precomputed summary on revert, model switch, or baseline change", () =>
+  Effect.gen(function* () {
+    let call = 0
+    const bus = yield* Bus.Service
+    const compaction = yield* SessionCompaction.Service
+    const store = yield* SessionStore.Service
+    const sessionID = Session.ID.make("ses_precompute_invalidate")
+    const session = yield* insertSession(sessionID)
+
+    yield* startPrecompute(loaded(session, nearCeiling), () => defaultStream(`## Objective\n- summary ${++call}`))
+    expect(requests).toHaveLength(1)
+
+    yield* bus.publish(SessionEvent.RevertEvent.Staged, {
+      sessionID,
+      revert: { messageID: nearCeiling[2].id },
+    })
+    yield* Effect.yieldNow
+
+    expect(yield* compaction.compact({ reason: "auto", context: loaded(session, overCeiling) })).toEqual({
+      status: "completed",
+    })
+
+    // Because the precomputed summary was invalidated, compact made a fresh model call (call 2).
+    expect(requests).toHaveLength(2)
+    expect(yield* store.context(sessionID)).toMatchObject([
+      {
+        type: "compaction",
+        summary: "## Objective\n- summary 2",
+      },
+    ])
+    customStream = undefined
   }),
 )
