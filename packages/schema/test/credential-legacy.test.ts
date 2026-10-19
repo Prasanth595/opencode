@@ -26,10 +26,10 @@ describe("CredentialLegacy", () => {
   })
 
   test("decodes current values and exported entries unchanged", () => {
-    const current = { type: "key", key: "secret", metadata: { resourceName: "answered" } }
+    const current = { type: "key", key: "secret", metadata: { resourceName: "answered" } } as const
     expect(decode(current)).toEqual(current)
-    const external = { type: "external", methodID: "azure-cli", metadata: { resourceName: "answered" } }
-    expect(decode(external)).toEqual(external)
+    const external = { type: "external", methodID: "azure-cli", metadata: { resourceName: "answered" } } as const
+    expect(Schema.encodeSync(Credential.Value)(decode(external))).toEqual(external)
     expect(
       Schema.decodeUnknownSync(CredentialLegacy.Entry)({
         id: "cred_legacy",
