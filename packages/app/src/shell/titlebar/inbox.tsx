@@ -4,7 +4,11 @@ import { Schema } from "effect"
 import { Persistence } from "@/runtime/persistence/schema"
 import { createStore } from "solid-js/store"
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, startTransition, type JSX } from "solid-js"
+import { Button } from "@opencode/ui/button"
+import { useDialog } from "@opencode/ui/context/dialog"
+import { Dialog, DialogFooter, DialogHeader, DialogTitleGroup } from "@opencode/ui/dialog"
 import { Icon } from "@opencode/ui/icon"
+import { Menu } from "@opencode/ui/menu"
 import { TextShimmer } from "@opencode/ui/text-shimmer"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { displayName } from "@opencode/ui/project-avatar"
@@ -19,13 +23,22 @@ import { sessionBusy, sessionRequests } from "@/shell/layout/project-avatar-stat
 import { SessionTabAvatarView } from "@/shell/layout/session-tab-avatar"
 import { pathKey } from "@/workspaces/path-key"
 import { sessionTabTitle } from "./tab-title"
-import { loadHomeSessionIndex, mergeHomeSessionIndex } from "@/home/sessions/index"
+import { notifySessionTabsRemoved } from "./session-events"
+import { loadHomeSessionIndex } from "@/home/sessions/index"
+import { archiveHomeSession } from "@/home/sessions/archive"
+import { sessionTreeIDs } from "@/session/requests/session-request-tree"
+import { sessionTitle } from "@/session/title"
+import { errorMessage } from "@/shell/layout/helpers"
+import { showToast } from "@/shell/notifications/toast"
 
 // Keep the immutable result opaque so Solid Query does not recursively unwrap every session.
 const selectSessions = (sessions: SessionInfo[]) => () => sessions
 
 // Branch lookups each run git on the server, so load them a few at a time.
 const BRANCH_BATCH = 4
+
+// The Home index excludes archived sessions, so the inbox loads the newest archived ones separately.
+const ARCHIVED_LIMIT = 50
 
 // `since` is when the inbox was first used; Recent only lists sessions that finished a run after it.
 const InboxState = Persistence.struct({
@@ -51,6 +64,7 @@ export function SidebarInbox() {
   const layout = useLayout()
   const tabs = useTabs()
   const language = useLanguage()
+  const dialog = useDialog()
 
   const [state, setState, , ready] = persisted(Persist.global("sidebar.inbox"), InboxState, {
     workingExpanded: true,
@@ -64,10 +78,14 @@ export function SidebarInbox() {
   const connections = createMemo(() => servers.visible.map((conn) => ({ conn, ctx: global.ensureServerCtx(conn) })))
 
   // The inbox stays mounted and rarely refetches the index, so drop sessions the server no longer has.
-  const forget = (conn: ServerConnection.Any, sessionID: string) =>
+  const forget = (conn: ServerConnection.Any, sessionID: string) => {
     queryClient.setQueryData<SessionInfo[]>(["home-sessions", conn], (current) =>
       current?.filter((session) => session.id !== sessionID),
     )
+    queryClient.setQueryData<SessionInfo[]>(["inbox-archived-sessions", conn], (current) =>
+      current?.filter((session) => session.id !== sessionID),
+    )
+  }
 
   createEffect(() => {
     connections().forEach((item) => {
@@ -82,6 +100,22 @@ export function SidebarInbox() {
       enabled: item.ctx.sdk.connection.status() === "connected",
       queryFn: ({ signal }: { signal: AbortSignal }) =>
         loadHomeSessionIndex((input, options) => item.ctx.sdk.api.session.list(input, options), signal),
+      retry: false,
+      staleTime: 30_000,
+      refetchOnMount: true,
+      refetchOnReconnect: true,
+      select: selectSessions,
+    })),
+  }))
+
+  const archivedQueries = useQueries(() => ({
+    queries: connections().map((item) => ({
+      queryKey: ["inbox-archived-sessions", item.conn] as const,
+      enabled: item.ctx.sdk.connection.status() === "connected",
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        item.ctx.sdk.api.session
+          .list({ limit: ARCHIVED_LIMIT, order: "desc", parentID: null, archived: true }, { signal })
+          .then((response) => response.data),
       retry: false,
       staleTime: 30_000,
       refetchOnMount: true,
@@ -119,7 +153,14 @@ export function SidebarInbox() {
           return session.outcome === "failed" ? "failed" : "done"
         }
 
-        return data.session.apply(mergeHomeSessionIndex(queries[index]?.data?.() ?? [], data.session.list())).map(
+        // Locally known sessions come last so live archive and unarchive events win over cached indexes.
+        const sessions = new Map(
+          [...(queries[index]?.data?.() ?? []), ...(archivedQueries[index]?.data?.() ?? []), ...data.session.list()].map(
+            (session) => [session.id, session] as const,
+          ),
+        )
+
+        return data.session.apply([...sessions.values()].filter((session) => !session.parentID)).map(
           (session): InboxEntry => ({
             key: `${server}\0${session.id}`,
             conn: item.conn,
@@ -135,17 +176,19 @@ export function SidebarInbox() {
 
   const sections = createMemo(() => {
     const list = entries()
+    // The most recently finished session comes first.
+    const finished = list
+      .filter((entry) => {
+        const since = state.since
+
+        return !busy(entry.status) && since !== undefined && (entry.session.time.idle ?? 0) >= since
+      })
+      .toSorted((a, b) => (b.session.time.idle ?? 0) - (a.session.time.idle ?? 0))
 
     return {
       needs: list.filter((entry) => entry.status === "approval" || entry.status === "input"),
-      // The most recently finished session comes first.
-      inbox: list
-        .filter((entry) => {
-          const since = state.since
-
-          return !busy(entry.status) && since !== undefined && (entry.session.time.idle ?? 0) >= since
-        })
-        .toSorted((a, b) => (b.session.time.idle ?? 0) - (a.session.time.idle ?? 0)),
+      inbox: finished.filter((entry) => !archived(entry)),
+      archived: finished.filter(archived),
       working: list.filter((entry) => entry.status === "working"),
     }
   })
@@ -211,7 +254,7 @@ export function SidebarInbox() {
   createEffect(() => {
     const visible = sections()
 
-    ;[...visible.needs, ...visible.working, ...visible.inbox].forEach((entry) => {
+    ;[...visible.needs, ...visible.working, ...visible.inbox, ...visible.archived].forEach((entry) => {
       const key = locationKey(entry)
 
       if (queued.has(key)) return
@@ -236,6 +279,83 @@ export function SidebarInbox() {
     })
   }
 
+  // Move the session between the cached indexes so it changes section before either refetches.
+  const move = (entry: InboxEntry, archivedAt: number | undefined) => {
+    const session = { ...entry.session, time: { ...entry.session.time, archived: archivedAt } }
+
+    forget(entry.conn, entry.session.id)
+    queryClient.setQueryData<SessionInfo[]>(
+      [archivedAt === undefined ? "home-sessions" : "inbox-archived-sessions", entry.conn],
+      (current) => current && [session, ...current],
+    )
+  }
+
+  const requestFailed = (cause: unknown) =>
+    showToast({
+      title: language.t("common.requestFailed"),
+      description: errorMessage(cause, language.t("common.requestFailed")),
+    })
+
+  const archive = (entry: InboxEntry) =>
+    archiveHomeSession({
+      server: entry.server,
+      session: entry.session,
+      archive: (sessionID) => entry.ctx.sdk.api.session.update({ sessionID, archived: true }),
+      remove: () => move(entry, Date.now()),
+      onError: requestFailed,
+    })
+
+  const unarchive = (entry: InboxEntry) =>
+    entry.ctx.sdk.api.session
+      .update({ sessionID: entry.session.id, archived: false })
+      .then(() => move(entry, undefined))
+      .catch(requestFailed)
+
+  const remove = (entry: InboxEntry) => {
+    const ids = sessionTreeIDs(entry.ctx.data.session.list(), entry.session.id)
+
+    return entry.ctx.data.session
+      .remove(entry.session.id)
+      .then(() => {
+        forget(entry.conn, entry.session.id)
+        notifySessionTabsRemoved({ server: entry.server, directory: entry.session.location.directory, sessionIDs: ids })
+      })
+      .catch((cause) =>
+        showToast({
+          title: language.t("session.delete.failed.title"),
+          description: errorMessage(cause, language.t("session.delete.failed.title")),
+        }),
+      )
+  }
+
+  function DeleteDialog(props: { entry: InboxEntry }) {
+    const confirm = async () => {
+      await remove(props.entry)
+      dialog.close()
+    }
+
+    return (
+      <Dialog fit>
+        <DialogHeader hideClose>
+          <DialogTitleGroup
+            title={language.t("session.delete.title")}
+            description={language.t("session.delete.confirm", {
+              name: sessionTitle(props.entry.session.title) ?? language.t("command.session.new"),
+            })}
+          />
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="ghost" autofocus onClick={() => dialog.close()}>
+            {language.t("common.cancel")}
+          </Button>
+          <Button variant="danger" onClick={confirm}>
+            {language.t("session.delete.button")}
+          </Button>
+        </DialogFooter>
+      </Dialog>
+    )
+  }
+
   const rows = (list: InboxEntry[]) => (
     <For each={list.map((entry) => entry.key)}>
       {(key) => (
@@ -246,7 +366,11 @@ export function SidebarInbox() {
               selected={selected(entry())}
               now={now()}
               branchLoading={branchLoading(entry())}
+              archived={archived(entry())}
               onOpen={() => open(entry())}
+              onArchive={() => void archive(entry())}
+              onUnarchive={() => void unarchive(entry())}
+              onDelete={() => dialog.show(() => <DeleteDialog entry={entry()} />)}
             />
           )}
         </Show>
@@ -266,7 +390,9 @@ export function SidebarInbox() {
         <Show
           when={sections().inbox.length > 0}
           fallback={
-            <Show when={sections().needs.length === 0 && sections().working.length === 0}>
+            <Show
+              when={sections().needs.length === 0 && sections().working.length === 0 && sections().archived.length === 0}
+            >
               <div class="px-1.5 py-2 text-[13px] leading-4 text-v2-text-text-faint">
                 {language.t("sidebar.inbox.empty")}
               </div>
@@ -277,6 +403,12 @@ export function SidebarInbox() {
             <SectionHeader label={language.t("sidebar.inbox.section.recent")} />
           </Show>
           {rows(sections().inbox)}
+        </Show>
+        <Show when={sections().archived.length > 0}>
+          <div class="flex shrink-0 flex-col gap-px pt-3">
+            <SectionHeader label={language.t("sidebar.inbox.section.archived")} />
+            {rows(sections().archived)}
+          </div>
         </Show>
       </div>
       {/* Working sessions sit in a shelf pinned below the scrolling list. */}
@@ -347,7 +479,11 @@ function InboxRow(props: {
   selected: boolean
   now: number
   branchLoading: boolean
+  archived: boolean
   onOpen: () => void
+  onArchive: () => void
+  onUnarchive: () => void
+  onDelete: () => void
 }) {
   const language = useLanguage()
   const project = createMemo(() => props.entry.ctx.projects.forSession(props.entry.session))
@@ -386,94 +522,118 @@ function InboxRow(props: {
   }
 
   return (
-    <button
-      type="button"
-      data-slot="sidebar-inbox-item"
-      data-status={status()}
-      data-state={props.selected ? "active" : undefined}
-      class="group flex w-full shrink-0 flex-col gap-0.5 rounded-[6px] px-1.5 py-1.5 text-start hover:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none focus-visible:bg-v2-overlay-simple-overlay-hover data-[state=active]:bg-v2-background-bg-layer-02"
-      classList={{
-        "opacity-70 transition-opacity hover:opacity-100 focus-visible:opacity-100":
-          status() === "working" && !props.selected,
-      }}
-      onClick={props.onOpen}
-    >
-      <span class="flex h-4 w-full min-w-0 items-center gap-1.5 text-[12px] leading-4 text-v2-text-text-faint">
-        <span class="flex size-4 shrink-0 items-center justify-center">
-          <SessionTabAvatarView project={project()} directory={props.entry.session.location.directory} unread={false} />
-        </span>
-        <span class="min-w-0 truncate">
-          {displayName(project() ?? { worktree: props.entry.session.location.directory })}
-        </span>
-        <span class="ms-auto shrink-0 tabular-nums" role={status() === "ready" ? undefined : "status"}>
-          <Show when={status() !== "ready"} fallback={age()}>
-            <span
-              classList={{
-                "text-v2-state-fg-warning": status() === "approval" || status() === "input",
-                "text-v2-state-fg-info": status() === "working",
-                "text-v2-state-fg-danger": status() === "failed",
-                "text-v2-state-fg-success": status() === "done",
-              }}
-            >
-              <Show
-                when={status() === "working"}
-                fallback={language.t(`sidebar.inbox.status.${status() as Exclude<InboxStatus, "ready">}`)}
-              >
-                {/* Announce only the status: the ticking duration would be re-read every second. */}
-                <span class="sr-only">{language.t("sidebar.inbox.status.working")}</span>
-                {/* Keep the status colour under the sweep. */}
-                <span
-                  aria-hidden="true"
-                  class="[&_[data-component=text-shimmer]]:[--text-shimmer-base-color:var(--v2-state-fg-info)]"
-                >
-                  <TextShimmer text={language.t("sidebar.inbox.status.workingFor", { duration: elapsed() })} active />
-                </span>
-              </Show>
-            </span>
-          </Show>
-        </span>
-      </span>
-      <span
-        dir="auto"
-        class="w-full min-w-0 truncate text-[13px] leading-4"
-        // Rows recede once read so unread results stand out.
+    <Menu.Context modal={false}>
+      <Menu.Context.Trigger
+        as="button"
+        type="button"
+        data-slot="sidebar-inbox-item"
+        data-status={status()}
+        data-state={props.selected ? "active" : undefined}
+        class="group flex w-full shrink-0 flex-col gap-0.5 rounded-[6px] px-1.5 py-1.5 text-start hover:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none focus-visible:bg-v2-overlay-simple-overlay-hover data-[state=active]:bg-v2-background-bg-layer-02"
         classList={{
-          "font-medium text-v2-text-text-base": unread(),
-          "text-v2-text-text-muted": !unread(),
+          "transition-opacity hover:opacity-100 focus-visible:opacity-100": !props.selected,
+          "opacity-70": status() === "working" && !props.selected,
+          "opacity-50": props.archived && !props.selected,
         }}
+        onClick={props.onOpen}
       >
-        {sessionTabTitle(props.entry.session.title, language.t("session.tab.session"))}
-      </span>
-      <Show when={props.branchLoading || branch() || worktree() || remote()}>
-        <span class="flex h-4 w-full min-w-0 items-center gap-1 text-[12px] leading-4 text-v2-text-text-faint">
-          <Show when={props.branchLoading}>
-            <span
-              aria-hidden="true"
-              class="h-2.5 w-24 max-w-full animate-pulse rounded-full bg-v2-background-bg-layer-03"
+        <span class="flex h-4 w-full min-w-0 items-center gap-1.5 text-[12px] leading-4 text-v2-text-text-faint">
+          <span class="flex size-4 shrink-0 items-center justify-center">
+            <SessionTabAvatarView
+              project={project()}
+              directory={props.entry.session.location.directory}
+              unread={false}
             />
-          </Show>
-          <Show when={!props.branchLoading && (branch() || worktree())}>
-            <span class="flex min-w-0 items-center gap-1">
-              {/* The worktree icon stands in for the branch icon to mark sessions outside the project checkout. */}
-              <Icon name={worktree() ? "outline-worktree" : "branch"} size="small" class="shrink-0" />
-              <Show when={branch()}>
-                {(name) => (
-                  <span dir="ltr" class="min-w-0 truncate">
-                    {name()}
+          </span>
+          <span class="min-w-0 truncate">
+            {displayName(project() ?? { worktree: props.entry.session.location.directory })}
+          </span>
+          <span class="ms-auto shrink-0 tabular-nums" role={status() === "ready" ? undefined : "status"}>
+            <Show when={status() !== "ready"} fallback={age()}>
+              <span
+                classList={{
+                  "text-v2-state-fg-warning": status() === "approval" || status() === "input",
+                  "text-v2-state-fg-info": status() === "working",
+                  "text-v2-state-fg-danger": status() === "failed",
+                  "text-v2-state-fg-success": status() === "done",
+                }}
+              >
+                <Show
+                  when={status() === "working"}
+                  fallback={language.t(`sidebar.inbox.status.${status() as Exclude<InboxStatus, "ready">}`)}
+                >
+                  {/* Announce only the status: the ticking duration would be re-read every second. */}
+                  <span class="sr-only">{language.t("sidebar.inbox.status.working")}</span>
+                  {/* Keep the status colour under the sweep. */}
+                  <span
+                    aria-hidden="true"
+                    class="[&_[data-component=text-shimmer]]:[--text-shimmer-base-color:var(--v2-state-fg-info)]"
+                  >
+                    <TextShimmer text={language.t("sidebar.inbox.status.workingFor", { duration: elapsed() })} active />
                   </span>
-                )}
-              </Show>
-            </span>
-          </Show>
-          <Show when={remote()}>
-            <Tooltip placement="right" value={serverName(props.entry.conn)} class="ms-auto flex shrink-0">
-              <Icon name="server" size="small" aria-label={serverName(props.entry.conn)} />
-            </Tooltip>
-          </Show>
+                </Show>
+              </span>
+            </Show>
+          </span>
         </span>
-      </Show>
-    </button>
+        <span
+          dir="auto"
+          class="w-full min-w-0 truncate text-[13px] leading-4"
+          // Rows recede once read so unread results stand out.
+          classList={{
+            "font-medium text-v2-text-text-base": unread(),
+            "text-v2-text-text-muted": !unread(),
+          }}
+        >
+          {sessionTabTitle(props.entry.session.title, language.t("session.tab.session"))}
+        </span>
+        <Show when={props.branchLoading || branch() || worktree() || remote()}>
+          <span class="flex h-4 w-full min-w-0 items-center gap-1 text-[12px] leading-4 text-v2-text-text-faint">
+            <Show when={props.branchLoading}>
+              <span
+                aria-hidden="true"
+                class="h-2.5 w-24 max-w-full animate-pulse rounded-full bg-v2-background-bg-layer-03"
+              />
+            </Show>
+            <Show when={!props.branchLoading && (branch() || worktree())}>
+              <span class="flex min-w-0 items-center gap-1">
+                {/* The worktree icon stands in for the branch icon to mark sessions outside the project checkout. */}
+                <Icon name={worktree() ? "outline-worktree" : "branch"} size="small" class="shrink-0" />
+                <Show when={branch()}>
+                  {(name) => (
+                    <span dir="ltr" class="min-w-0 truncate">
+                      {name()}
+                    </span>
+                  )}
+                </Show>
+              </span>
+            </Show>
+            <Show when={remote()}>
+              <Tooltip placement="right" value={serverName(props.entry.conn)} class="ms-auto flex shrink-0">
+                <Icon name="server" size="small" aria-label={serverName(props.entry.conn)} />
+              </Tooltip>
+            </Show>
+          </span>
+        </Show>
+      </Menu.Context.Trigger>
+      <Menu.Context.Portal>
+        <Menu.Context.Content>
+          <Show
+            when={props.archived}
+            fallback={<Menu.Item onSelect={props.onArchive}>{language.t("common.archive")}</Menu.Item>}
+          >
+            <Menu.Item onSelect={props.onUnarchive}>{language.t("sidebar.inbox.unarchive")}</Menu.Item>
+          </Show>
+          <Menu.Separator />
+          <Menu.Item onSelect={props.onDelete}>{language.t("common.delete")}…</Menu.Item>
+        </Menu.Context.Content>
+      </Menu.Context.Portal>
+    </Menu.Context>
   )
+}
+
+function archived(entry: InboxEntry) {
+  return typeof entry.session.time.archived === "number"
 }
 
 function busy(status: InboxStatus) {
