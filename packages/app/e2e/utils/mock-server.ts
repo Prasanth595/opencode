@@ -1430,6 +1430,7 @@ function location(config: MockServerConfig, directory = config.directory) {
         (root) => root !== undefined && (directory === root || directory.startsWith(`${root}/`)),
       ),
     )
+
   const root = listed ? (listed.canonical ?? listed.worktree) : undefined
 
   if (listed && root) return { directory, project: { id: listed.id, directory: root, canonical: root } }

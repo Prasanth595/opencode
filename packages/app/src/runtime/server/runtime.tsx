@@ -271,7 +271,7 @@ function createServerController(
 
         return list().find((project) => project.id === location.project.id)
       })
-      .catch((error: unknown) => {
+      .catch((error) => {
         showToast({
           variant: "error",
           title: language.t("common.requestFailed"),
