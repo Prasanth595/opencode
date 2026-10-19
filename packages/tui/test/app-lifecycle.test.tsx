@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { EmbeddedTerminalRenderable } from "@opentui/core"
+import { EmbeddedTerminalRenderable, TextareaRenderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 import { Effect, FileSystem } from "effect"
 import { Global } from "@opencode/util/global"
@@ -1214,6 +1214,41 @@ test("new session inherits the active session model", async () => {
   const frame = setup.captureCharFrame()
   expect(frame).toContain("Session Model")
 })
+
+test.each(process.platform === "win32" ? ["nested"] : ["nested", "literal\\"])(
+  "/cd Tab completion preserves the directory delimiter for %s",
+  async (name) => {
+    await using state = await tmpdir()
+    await using setup = await createAppFixture({
+      state: state.path,
+      width: 100,
+      height: 30,
+      fetch: (url) => {
+        if (url.pathname === "/api/fs/list")
+          return json({
+            location: { directory, project: { id: "proj_test", directory, canonical: directory } },
+            data: [{ path: name, type: "directory" }],
+          })
+        return undefined
+      },
+    })
+    await setup.ready
+    await setup.waitForFrame(() => setup.renderer.currentFocusedRenderable instanceof TextareaRenderable)
+    await setup.mockInput.typeText(`/cd ${name}`)
+    await setup.waitForFrame((frame) => frame.includes(`${name}/`))
+    setup.mockInput.pressTab()
+    await setup.renderOnce()
+    const input = setup.renderer.currentFocusedRenderable
+    if (!(input instanceof TextareaRenderable)) throw new Error("Prompt did not retain focus")
+    try {
+      expect(input.plainText).toBe(`/cd ${name}/`)
+    } finally {
+      setup.mockInput.pressEscape()
+      setup.mockInput.pressKey("c", { ctrl: true })
+      await setup.waitForFrame(() => input.plainText === "")
+    }
+  },
+)
 
 test("keeps the prompt display stable while a new location catalog loads", async () => {
   const source = process.cwd()

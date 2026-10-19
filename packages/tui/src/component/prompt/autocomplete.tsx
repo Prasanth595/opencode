@@ -648,7 +648,9 @@ export function Autocomplete(props: {
     const selectedPath = displayText.startsWith("@") ? displayText.slice(1) : displayText
 
     if (store.visible === "directory") {
-      insertDirectory(selectedPath.endsWith(path.sep) ? selectedPath : selectedPath + path.sep)
+      insertDirectory(
+        selectedPath.endsWith("/") || selectedPath.endsWith(path.sep) ? selectedPath : selectedPath + path.sep,
+      )
       setStore("selected", 0)
       return
     }
