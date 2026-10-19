@@ -901,6 +901,82 @@ test("event.subscribe accepts a fragmented SSE event below the size limit", asyn
   await expect(client.event.subscribe()[Symbol.asyncIterator]().next()).resolves.toEqual({ done: false, value: event })
 })
 
+test("event.subscribe delivers every sub-limit event of a chunk that is over the limit in total", async () => {
+  const first = { id: "evt_first", created: 1, type: "test.large", data: { output: "a".repeat(9 * 1024 * 1024) } }
+  const second = { id: "evt_second", created: 2, type: "test.large", data: { output: "b".repeat(9 * 1024 * 1024) } }
+  const encoded = new TextEncoder().encode(`data: ${JSON.stringify(first)}\n\ndata: ${JSON.stringify(second)}\n\n`)
+  const chunked = (size: number) =>
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          for (let offset = 0; offset < encoded.length; offset += size) {
+            controller.enqueue(encoded.slice(offset, offset + size))
+          }
+          controller.close()
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    )
+  const read = async (size: number) => {
+    const client = OpenCode.make({ baseUrl: "http://localhost:3000", fetch: async () => chunked(size) })
+    const received = []
+    for await (const item of client.event.subscribe()) received.push(item)
+    return received
+  }
+
+  // One delivery of the same bytes is the case that failed: the limit was measured before the first frame left
+  // the buffer, so two individually acceptable events were rejected together.
+  await expect(read(encoded.length)).resolves.toEqual([first, second])
+  await expect(read(64 * 1024)).resolves.toEqual([first, second])
+})
+
+test("event.subscribe rejects a single event above the size limit however the chunks fall", async () => {
+  const event = { id: "evt_oversized", created: 1, type: "test.large", data: { output: "x".repeat(16 * 1024 * 1024) } }
+  const encoded = new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`)
+  const chunked = (size: number) =>
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          for (let offset = 0; offset < encoded.length; offset += size) {
+            controller.enqueue(encoded.slice(offset, offset + size))
+          }
+          controller.close()
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    )
+
+  for (const size of [encoded.length, 64 * 1024]) {
+    const client = OpenCode.make({ baseUrl: "http://localhost:3000", fetch: async () => chunked(size) })
+    await expect(client.event.subscribe()[Symbol.asyncIterator]().next()).rejects.toMatchObject({
+      name: "ClientError",
+      reason: "SseEventTooLarge",
+    })
+  }
+})
+
+test("event.subscribe rejects an unfinished frame once it exceeds the size limit", async () => {
+  const client = OpenCode.make({
+    baseUrl: "http://localhost:3000",
+    fetch: async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            // No frame delimiter anywhere, so nothing can leave the buffer and only the remainder bound applies.
+            for (let index = 0; index < 20; index++) controller.enqueue(new TextEncoder().encode("x".repeat(1024 * 1024)))
+            controller.close()
+          },
+        }),
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+  })
+
+  await expect(client.event.subscribe()[Symbol.asyncIterator]().next()).rejects.toMatchObject({
+    name: "ClientError",
+    reason: "SseEventTooLarge",
+  })
+})
+
 test("event.subscribe rejects an SSE event above the size limit", async () => {
   const client = OpenCode.make({
     baseUrl: "http://localhost:3000",
