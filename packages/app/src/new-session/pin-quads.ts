@@ -110,7 +110,7 @@ export function createQuads(canvas: HTMLCanvasElement, restored: () => void) {
   }
 
   function open() {
-    const gl = canvas.getContext("webgl2", { premultipliedAlpha: true, antialias: false })
+    const gl = canvas.getContext("webgl2", { premultipliedAlpha: true, antialias: false, depth: false })
     if (gl) return { gl, gpu: setup(gl) }
     return { ctx: canvas.getContext("2d")! }
   }
