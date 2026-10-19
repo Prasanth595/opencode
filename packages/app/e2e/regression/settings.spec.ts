@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test"
 import type { ConfigEntry, OpenCodeEvent, WorktreeDirectory } from "@opencode/client/promise"
 import { NO_PROVIDER, REMOTE_SERVER, SERVER, holdRoute, project, session } from "../utils/app"
 import { mockMissingLocation, mockOpenCodeServer } from "../utils/mock-server"
-import { mockRemoteServer, mockWorkspace, openSettings, type WorkspaceInput } from "../utils/workspace"
+import { mockRemoteServer, mockWorkspace, openSession, openSettings, type WorkspaceInput } from "../utils/workspace"
 
 const directory = "C:/Projects/settings-demo"
 
@@ -138,6 +138,7 @@ test("project list menus rename, edit, add, and stay inside the scrollport", asy
   const projects = ["rebase", "dinocms", "opencode", "Playground"].map((name, index) =>
     project({ id: `project-${index}`, directory: `/projects/${name}`, name }),
   )
+
   const added = project({ id: "project-added", directory: "/projects/added", name: "added" })
 
   const { settings } = await open(page, {
@@ -842,6 +843,42 @@ test("providers: OpenCode Go connects with its own methods, not the Console sign
   expect(attempts).toEqual([])
 })
 
+test("providers: the free tier upsell opens Go on its own, sized to its content", async ({ page }) => {
+  const view = await openSession(page, { name: "FreeTier", integrations: consoleIntegrations })
+  await view.push([
+    {
+      id: "evt_free_tier_limit",
+      created: 1700000000000,
+      type: "session.status",
+      location: { directory: view.directory },
+      data: {
+        sessionID: view.session.id,
+        status: {
+          type: "retry",
+          attempt: 1,
+          message: "Free tier limit reached",
+          next: 1700000060000,
+          action: {
+            reason: "free_tier_limit",
+            provider: "opencode",
+            title: "Free tier limit reached",
+            message: "Subscribe to OpenCode Go to keep going.",
+            label: "Continue with OpenCode Go",
+          },
+        },
+      },
+    },
+  ])
+  await page.getByRole("button", { name: "Continue with OpenCode Go", exact: true }).click()
+
+  const dialog = page.getByRole("dialog", { name: "Connect OpenCode Go", exact: true })
+  const container = page.locator('[data-slot="dialog-container"]')
+  await expect(dialog.getByPlaceholder("API key")).toBeVisible()
+  // Nothing to go back to: the upsell opened the dialog straight on Go.
+  await expect(dialog.getByRole("button", { name: "Navigate back", exact: true })).toHaveCount(0)
+  await expect.poll(async () => (await container.boundingBox())?.height).toBeLessThan(512)
+})
+
 test("providers: the connect dialog lists connected providers and manages their accounts", async ({ page }) => {
   const accounts = [
     { type: "credential", id: "cred_work", label: "Work", method: "key" },
@@ -880,9 +917,15 @@ test("providers: the connect dialog lists connected providers and manages their 
   await expect(
     dialog.locator('[data-provider-id="anthropic"]').locator('[data-slot="provider-connected"]'),
   ).toHaveCount(0)
+  const container = page.locator('[data-slot="dialog-container"]')
+  await expect.poll(async () => (await container.boundingBox())?.height).toBe(512)
+  const picker = await container.boundingBox()
   await openai.click()
 
   await expect(page.getByRole("dialog", { name: "OpenAI", exact: true })).toBeVisible()
+  // The provider step fits its content below the list's top edge.
+  await expect.poll(async () => (await container.boundingBox())?.height).toBeLessThan(picker!.height)
+  expect((await container.boundingBox())?.y).toBe(picker!.y)
   const list = dialog.getByRole("radiogroup", { name: "Connected accounts", exact: true })
   await expect(list.getByRole("radio", { name: "Work", exact: true })).toHaveAttribute("aria-checked", "true")
   // Rows keep their order when the active account changes.
