@@ -362,6 +362,22 @@ export const authorize = (input: {
         response.writeHead(404).end("Not found")
         return
       }
+      // Chrome's Private Network Access preflight reaches the loopback listener before the redirect.
+      // Answering it is required for the navigation; it carries no authorization decision.
+      if (request.method === "OPTIONS") {
+        const origin = request.headers.origin
+        response
+          .writeHead(204, {
+            ...(origin ? { "Access-Control-Allow-Origin": origin, Vary: "Origin" } : {}),
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": request.headers["access-control-request-headers"] ?? "*",
+            ...(request.headers["access-control-request-private-network"] === "true"
+              ? { "Access-Control-Allow-Private-Network": "true" }
+              : {}),
+          })
+          .end()
+        return
+      }
       const fail = (reason: string, failure: string) => {
         runFork(Effect.logWarning("mcp oauth callback rejected", { ...fields, reason: failure }))
         Effect.runSync(Deferred.fail(code, new Error(reason)))
@@ -371,8 +387,18 @@ export const authorize = (input: {
       }
       const error = url.searchParams.get("error_description") ?? url.searchParams.get("error")
       if (error) return fail(error, "authorization_error")
-      if (url.searchParams.get("state") !== state) return fail("OAuth state mismatch", "state_mismatch")
+      const stateValue = url.searchParams.get("state")
       const value = url.searchParams.get("code")
+      // Browser probes (favicons, link checks, PNA follow-ups) can reach the loopback listener
+      // without callback parameters. They must not end the login that is still waiting for the
+      // real redirect.
+      if (!value && stateValue === null) {
+        response
+          .writeHead(400, { "Content-Type": "text/html" })
+          .end(OauthCallbackPage.error("Missing authorization code", { provider: input.name }))
+        return
+      }
+      if (stateValue !== state) return fail("OAuth state mismatch", "state_mismatch")
       if (!value) return fail("Missing authorization code", "missing_code")
       // The page waits for the token exchange so the browser never reports success for a rejected code.
       if (
