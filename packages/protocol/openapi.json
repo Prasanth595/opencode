@@ -14549,6 +14549,9 @@
                 },
                 "body": {
                   "type": "object"
+                },
+                "disabled": {
+                  "type": "boolean"
                 }
               },
               "required": ["id"],

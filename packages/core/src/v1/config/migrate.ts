@@ -247,7 +247,10 @@ function migrateModel(info: typeof ConfigProviderV1.Model.Type, npm: string | un
     body: migrated?.body,
     variants:
       info.variants &&
-      Object.entries(info.variants).map(([id, options]) => ({ id, ...split(options) })),
+      Object.entries(info.variants).map(([id, options]) => {
+        const { disabled, ...rest } = options
+        return { id, disabled: disabled === true ? true : undefined, ...split(rest) }
+      }),
     cost: costs,
     disabled: info.status === "deprecated" ? true : undefined,
     limit: info.limit && {

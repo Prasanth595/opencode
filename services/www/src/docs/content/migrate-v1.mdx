@@ -384,6 +384,7 @@ Models remain nested under their provider, but several model fields become more 
 - Cache costs move from `cache_read` and `cache_write` to `cache.read` and `cache.write`.
 - Provider-specific `options` become `settings`.
 - A V1 variants object becomes a V2 array with an `id` on each entry.
+- A variant's `disabled: true` keeps its meaning: the entry removes the matching variant instead of overriding it.
 
 ```jsonc
 // V1
