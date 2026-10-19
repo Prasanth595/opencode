@@ -113,6 +113,21 @@ describe("Permission", () => {
     }),
   )
 
+  it.effect("omits undefined metadata values from pending requests", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const { service, fiber, request } = yield* waitForRequest({
+        metadata: { root: ".", path: undefined, hidden: undefined, limit: undefined },
+      })
+      expect(Object.keys(request.metadata ?? {})).toEqual(["root"])
+      const pending = yield* service.forSession(request.sessionID)
+      expect(pending).toEqual([request])
+      for (const item of pending) expect(Object.keys(item.metadata ?? {})).toEqual(["root"])
+      yield* service.reply({ requestID: request.id, reply: "once" })
+      yield* Fiber.join(fiber)
+    }),
+  )
+
   it.effect("evaluates against an explicit agent", () =>
     Effect.gen(function* () {
       yield* setup([{ action: "read", resource: "*", effect: "allow" }])

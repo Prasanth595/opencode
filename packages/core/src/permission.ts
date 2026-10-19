@@ -118,6 +118,14 @@ interface Pending {
   readonly deferred: Deferred.Deferred<void, DeclinedError | CorrectedError>
 }
 
+// Tools pass optional inputs straight into permission metadata; absent optional fields show up as
+// explicit `undefined` values, which survive the in-memory pending map but fail JSON encoding when
+// `session.permission.list` responds. Strip them once, at the single point Requests are built.
+function stripUndefined(metadata: AssertInput["metadata"]) {
+  if (metadata === undefined) return undefined
+  return Object.fromEntries(Object.entries(metadata).filter(([, value]) => value !== undefined))
+}
+
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -195,7 +203,7 @@ const layer = Layer.effect(
         action: input.action,
         resources: input.resources,
         save: input.save,
-        metadata: input.metadata,
+        metadata: stripUndefined(input.metadata),
         source: input.source,
         message,
       }
