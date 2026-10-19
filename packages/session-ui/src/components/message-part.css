@@ -247,8 +247,23 @@
     pointer-events: auto;
   }
 
-  /* The bubble looks the same before and after delivery, so a pending steer keeps its Pending label and actions in
-     view from its first frame. */
+  [data-slot="user-message-attachments"],
+  [data-slot="user-message-body"] {
+    transition: opacity 150ms ease-out;
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+    }
+  }
+
+  /* A pending steer is dimmed and keeps its Pending label and actions in view. Only delivery animates: a steer can
+     render once before its admission marks it pending, and must not fade down from the delivered look. */
+  &[data-pending] [data-slot="user-message-attachments"],
+  &[data-pending] [data-slot="user-message-body"] {
+    opacity: 0.6;
+    transition: none;
+  }
+
   &[data-pending] [data-slot="user-message-copy-wrapper"] {
     opacity: 1;
     pointer-events: auto;

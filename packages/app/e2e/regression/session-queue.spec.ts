@@ -955,9 +955,11 @@ for (const delivery of ["steer", "queue"] as const) {
         : undefined
 
     if (colors) {
-      // A pending steer shares the delivered bubble and keeps its Pending row in view without hover.
+      // A pending steer shares the delivered bubble, dimmed, and keeps its Pending row in view without hover.
       await expect(bubble).toHaveCSS("background-color", colors.background)
       await expect(bubble).toHaveCSS("color", colors.text)
+      await expect(pending.locator('[data-slot="user-message-body"]')).toHaveCSS("opacity", "0.6")
+      await expect(pending.locator('[data-slot="user-message-body"]')).toHaveCSS("transition-duration", "0s")
       await expect(pending.locator('[data-slot="user-message-copy-wrapper"]')).toHaveCSS("opacity", "1")
       await expect(pending.locator('[data-slot="user-message-meta"]')).toHaveText(
         /^Pending\s*·\s*Build\s*·\s*Queue Model$/,
@@ -1046,7 +1048,13 @@ for (const delivery of ["steer", "queue"] as const) {
       await expect(pending.locator('[data-slot="user-message-meta"]')).toHaveText(/^Build\s*·\s*Queue Model$/)
       await expect(bubble).toHaveCSS("background-color", colors.background)
       await expect(bubble).toHaveCSS("color", colors.text)
+      // Only delivery animates the dim away; reduced motion switches instantly.
+      const body = pending.locator('[data-slot="user-message-body"]')
+      await expect(body).toHaveCSS("transition-property", "opacity")
+      await expect(body).toHaveCSS("opacity", "1")
       await transcript.screenshot({ path: testInfo.outputPath("delivered-steer.png") })
+      await page.emulateMedia({ reducedMotion: "reduce" })
+      await expect(body).toHaveCSS("transition-duration", "0s")
     }
 
     await expect(transcript.locator('[data-timeline-row="UserMessage"]')).toHaveCount(2)
