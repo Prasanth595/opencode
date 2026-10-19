@@ -27,15 +27,18 @@ export const Plugin = define({
     const runSync = Effect.runSyncWith(yield* Effect.context())
     yield* ctx.provider.transform((providers) => {
       const current = policies()
+      const removed: Record<string, string[]> = {}
       for (const record of providers.list()) {
         const policy = current.findLast(
           (policy) => policy.action === "provider.use" && Wildcard.match(record.provider.id, policy.resource),
         )
         if (policy?.effect !== "deny") continue
         providers.remove(record.provider.id)
-        // Removal is otherwise silent: the model later surfaces only as "Model unavailable".
-        runSync(Effect.logInfo("provider removed by policy", { provider: record.provider.id, reason: policy.message }))
+        removed[policy.message] = [...(removed[policy.message] ?? []), record.provider.id]
       }
+      // Removal is otherwise silent: the model later surfaces only as "Model unavailable".
+      for (const [reason, ids] of Object.entries(removed))
+        runSync(Effect.logDebug("providers removed by policy", { reason, providers: ids }))
     })
     yield* ctx.mcp.transform((servers) => {
       const current = policies()
