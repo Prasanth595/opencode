@@ -9,11 +9,13 @@ import { AppProcess } from "@opencode/util/process"
 import { randomBytes, randomUUID } from "node:crypto"
 import { Effect, Option, Redacted, Schema } from "effect"
 import { PersistentPty } from "@opencode/schema/persistent-pty"
-import { HttpServer } from "effect/unstable/http"
+import { HttpServer } from "effect/http"
+import { NetAddress } from "effect/net"
 import { Env } from "./env"
 import { ServiceConfig } from "./services/service-config"
 import { RetainedImage } from "./services/retained-image"
 import { ServiceRegistration } from "./services/service-registration"
+import { RemoteTunnel } from "./services/remote-tunnel"
 import { WebUi } from "./services/web-ui"
 import { databasePath } from "./database-path"
 
@@ -56,7 +58,11 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
           ),
         )
   const global = yield* Global.Service
-  if (options.mode === "service") yield* Effect.sync(() => process.chdir(global.home))
+  // A sandbox may deny $HOME; the service then keeps the cwd it was launched from.
+  if (options.mode === "service")
+    yield* Effect.try(() => process.chdir(global.home)).pipe(
+      Effect.catch((cause) => Effect.logWarning("failed to change service directory to home", { cause })),
+    )
   return yield* Effect.scoped(
     Effect.gen(function* () {
       const foreground = options.mode === "default"
@@ -69,6 +75,8 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
           ? Service.incumbent({ ...serviceOptions, url: serviceURL(hostname, port) })
           : undefined
       if (findIncumbent !== undefined && (yield* findIncumbent) !== undefined) return
+      // Desktop can launch the service directly without injecting its saved environment.
+      Object.assign(process.env, config.env)
       // Keep a package-manager or curl install replaceable while the service runs; Desktop updates its own copy.
       if (options.mode === "service" && process.platform === "win32" && RetainedImage.installed(global.home))
         yield* RetainedImage.retain(global.cache, "service")
@@ -88,6 +96,7 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
       if (!password) return yield* Effect.fail(new Error("Missing server password"))
       const instanceID = randomUUID()
       const transform = yield* WebUi.handler()
+      const remote = { urls: [] as ReadonlyArray<string> }
       const launch = start(
         {
           app: {
@@ -113,6 +122,11 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
             directory: process.env.OPENCODE_CONFIG_DIR,
             project: !truthy(
               process.env.OPENCODE_CONFIG_PROJECT_DISABLE ?? process.env.OPENCODE_DISABLE_PROJECT_CONFIG,
+            ),
+            // .claude is only read for skills, so both flags gate the same roots.
+            claude: !(
+              truthy(process.env.OPENCODE_DISABLE_CLAUDE_CODE) ||
+              truthy(process.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS)
             ),
             file: process.env.OPENCODE_CONFIG,
             content: process.env.OPENCODE_CONFIG_CONTENT,
@@ -144,6 +158,7 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
                 }),
             },
         transform,
+        () => remote.urls,
       )
       const server = yield* launch.pipe(
         Effect.catch((error) => {
@@ -170,6 +185,23 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
         }),
       )
       if (server === undefined) return
+      if (serviceOptions !== undefined && config.remote !== undefined && NetAddress.isInetAddress(server.address)) {
+        const bound = NetAddress.formatIp(server.address.address)
+        // A wildcard bind also listens on loopback, which is all the tunnel needs to reach.
+        const target =
+          bound === "0.0.0.0" || bound === "::"
+            ? `127.0.0.1:${server.address.port}`
+            : NetAddress.formatInet(server.address)
+        yield* Effect.forkScoped(
+          RemoteTunnel.run({
+            route: config.remote.route,
+            target,
+            onURL: (url) => {
+              remote.urls = url === undefined ? [] : [url]
+            },
+          }),
+        )
+      }
       const url = HttpServer.formatAddress(server.address)
       console.log(options.mode === "stdio" ? JSON.stringify({ url }) : `server listening on ${url}`)
       if (foreground && !environmentPassword) console.log(`server password ${password}`)

@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
-import { HttpClientRequest } from "effect/unstable/http"
+import { HttpClientRequest } from "effect/http"
 import {
   CacheHint,
   LLM,
@@ -1962,6 +1962,34 @@ describe("Anthropic Messages route", () => {
         Effect.flip,
       )
 
+      expect(error).toMatchObject({ reason: { _tag: "ProviderInternal" }, message: "overloaded_error: Overloaded" })
+    }),
+  )
+
+  it.effect("ignores untyped stream frames but reads untyped error envelopes as errors", () =>
+    Effect.gen(function* () {
+      const response = yield* LLMClient.generate(request).pipe(
+        Effect.provide(
+          fixedResponse(
+            sseEvents(
+              {},
+              { type: "message_start", message: { usage: { input_tokens: 5 } } },
+              { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+              { gateway: "keep-alive" },
+              { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "OK" } },
+              { type: "content_block_stop", index: 0 },
+              { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 1 } },
+              { type: "message_stop" },
+            ),
+          ),
+        ),
+      )
+      expect(response.text).toBe("OK")
+
+      const error = yield* LLMClient.generate(request).pipe(
+        Effect.provide(fixedResponse(sseEvents({ error: { type: "overloaded_error", message: "Overloaded" } }))),
+        Effect.flip,
+      )
       expect(error).toMatchObject({ reason: { _tag: "ProviderInternal" }, message: "overloaded_error: Overloaded" })
     }),
   )
