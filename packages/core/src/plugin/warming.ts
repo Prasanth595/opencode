@@ -2,8 +2,9 @@ export * as WarmingPlugin from "./warming.js"
 
 import { define } from "@opencode/plugin/effect/plugin"
 import type { SessionHooks } from "@opencode/plugin/effect/session"
+import type { SessionEvent } from "@opencode/schema/session-event"
 import type { Session } from "@opencode/schema/session"
-import { Clock, Duration, Effect, Scope } from "effect"
+import { Clock, Duration, Effect, Scope, Stream } from "effect"
 import { Config } from "../config.js"
 
 const defaults = {
@@ -28,6 +29,44 @@ export const Plugin = define({
 
     const scope = yield* Scope.Scope
     const sessions = new Map<Session.ID, { last: number; expires: number; settings: typeof defaults }>()
+    type ExecutionEvent =
+      | SessionEvent.Execution.Started
+      | SessionEvent.Execution.Succeeded
+      | SessionEvent.Execution.Failed
+      | SessionEvent.Execution.Interrupted
+    // Sessions with a real turn in flight. Warming keeps an idle session's context cached, so a
+    // keep-alive request sent while the session is working only competes with the request it is
+    // meant to keep warm — on a slow single-slot model the two starve each other. Execution events
+    // bracket a busy period, and every terminal outcome clears it (succeeded, failed, interrupted),
+    // unlike a response hook that a failed request never reaches.
+    const working = new Set<Session.ID>()
+    yield* ctx.event.subscribe().pipe(
+      Stream.filter(
+        (event): event is ExecutionEvent =>
+          event.type === "session.execution.started" ||
+          event.type === "session.execution.succeeded" ||
+          event.type === "session.execution.failed" ||
+          event.type === "session.execution.interrupted",
+      ),
+      Stream.runForEach((event) => {
+        const sessionID = event.data.sessionID
+        if (event.type === "session.execution.started") {
+          working.add(sessionID)
+          return Effect.void
+        }
+        working.delete(sessionID)
+        const current = sessions.get(sessionID)
+        if (!current) return Effect.void
+        // Count the next interval from the moment the session went idle. A turn longer than the
+        // interval otherwise leaves `last` on the turn's first request, so the warm landed seconds
+        // after the real response — when the cache is already fresh — and took the single slot just
+        // as the user was about to send the next prompt. The window itself is untouched.
+        return Effect.map(Clock.currentTimeMillis, (now) => {
+          if (sessions.get(sessionID) === current) current.last = now
+        })
+      }),
+      Effect.forkScoped({ startImmediately: true }),
+    )
     const loop: (sessionID: Session.ID) => Effect.Effect<void> = Effect.fn("WarmingPlugin.loop")(
       function* (sessionID) {
         const current = sessions.get(sessionID)
@@ -42,6 +81,16 @@ export const Plugin = define({
         if (now >= current.expires) {
           sessions.delete(sessionID)
           return
+        }
+        // Defer, do not drop: the next wake after the turn settles warms again, and the window
+        // still expires on its own, so a busy period that never reports an outcome cannot keep
+        // warming alive past its configured duration.
+        if (working.has(sessionID)) {
+          yield* Effect.logInfo("deferring session warm while the session is working", { sessionID })
+          yield* Effect.sleep(
+            Duration.millis(Math.min(Duration.toMillis(current.settings.interval), current.expires - now)),
+          )
+          return yield* loop(sessionID)
         }
 
         const last = current.last
