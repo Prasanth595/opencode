@@ -125,11 +125,10 @@ export const dict = {
   "dialog.model.chatgptManageUsage": "Manage usage",
   "dialog.model.favorites": "Favorites",
   "dialog.model.recent": "Recent",
-  "dialog.model.favorite": "Favorite",
-  "dialog.model.unfavorite": "Unfavorite",
   "dialog.model.hint.navigate": "Navigate",
   "dialog.model.hint.variant": "Variant",
   "dialog.model.hint.select": "Select",
+  "dialog.model.hint.favorite": "Favorite",
 
   "dialog.model.unpaid.freeModels.title": "Free models provided by OpenCode",
   "dialog.model.unpaid.addMore.title": "Add more models from popular providers",

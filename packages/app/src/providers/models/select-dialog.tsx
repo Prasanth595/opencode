@@ -32,6 +32,7 @@ import { ExternalLink } from "@/runtime/platform/external-link"
 import { useData } from "@/runtime/server/current"
 import { useWorkspaceLocation } from "@/workspaces/location"
 import { createSafeTriangle } from "@/shell/commands/safe-triangle"
+import { formatKeybindParts, matchKeybind, parseKeybind } from "@/shell/commands/command"
 import { createEventListener } from "@solid-primitives/event-listener"
 import { matchesModelSearch } from "./search"
 import { SettingsList } from "@/settings/list"
@@ -55,6 +56,8 @@ const MobilePanelDrawer = lazy(async () => {
 type ModelState = ModelSelection
 
 type ModelItem = ReturnType<ModelState["list"]>[number]
+
+const favoriteKeybind = parseKeybind("mod+f")
 
 const modelKey = (model: ModelItem) => `${model.provider.id}:${model.id}`
 
@@ -481,7 +484,6 @@ function createModelSelectorController(input: {
       model
         .recent()
         .flatMap((item) => (item && (!input.provider() || item.provider.id === input.provider()) ? [item] : [])),
-    favorite: (item: ModelItem) => model.favorite.list().some((entry) => modelKey(entry) === modelKey(item)),
     toggleFavorite: (item: ModelItem) => model.favorite.toggle({ providerID: item.provider.id, modelID: item.id }),
   }
 }
@@ -738,7 +740,21 @@ export function DialogSelectModel(props: { provider?: string; model?: ModelState
   createEventListener(window, "resize", close)
 
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.isComposing || event.metaKey || event.altKey || event.ctrlKey) return
+    if (event.isComposing) return
+
+    if (matchKeybind(favoriteKeybind, event)) {
+      const item = activeItem()
+
+      if (!item) return
+      event.preventDefault()
+      controller.toggleFavorite(item)
+      // Unfavoriting removes the Favorites row that was highlighted, so keep the model highlighted in its group.
+      setStore({ flyout: "", keyboard: true, active: rowItem(store.active) ? store.active : modelKey(item) })
+
+      return
+    }
+
+    if (event.metaKey || event.altKey || event.ctrlKey) return
 
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault()
@@ -952,6 +968,10 @@ export function DialogSelectModel(props: { provider?: string; model?: ModelState
             <Keybind keys={["↵"]} variant="neutral" />
             {language.t("dialog.model.hint.select")}
           </span>
+          <span>
+            <Keybind keys={formatKeybindParts("mod+f", language.t)} variant="neutral" />
+            {language.t("dialog.model.hint.favorite")}
+          </span>
         </div>
       </DialogBody>
       <Show when={flyoutItem()}>
@@ -965,53 +985,33 @@ export function DialogSelectModel(props: { provider?: string; model?: ModelState
             style={{ left: `${store.position.left}px`, top: `${store.position.top}px` }}
             onMouseEnter={() => triangle.cancel()}
           >
-            <div class="flex flex-col p-0.5">
-              <For each={variantsOf(item()).length > 0 ? [undefined, ...variantsOf(item())] : []}>
-                {(value) => (
-                  <div
-                    data-component="menu-v2-item"
-                    role="menuitemradio"
-                    aria-checked={variant(item()) === value}
-                    data-checked={variant(item()) === value ? "" : undefined}
-                    onMouseEnter={(event) => event.currentTarget.setAttribute("data-highlighted", "")}
-                    onMouseLeave={(event) => event.currentTarget.removeAttribute("data-highlighted")}
-                    onClick={() => choose(item(), value ?? null)}
-                  >
-                    <span data-slot="menu-v2-item-content" class="capitalize">
-                      {value ?? language.t("common.default")}
-                    </span>
-                    <span data-slot="menu-v2-item-indicator" data-checked={variant(item()) === value ? "" : undefined}>
-                      <Icon name="check" size="small" />
-                    </span>
-                  </div>
-                )}
-              </For>
-              <Show when={variantsOf(item()).length > 0}>
-                <div data-slot="menu-v2-separator" />
-              </Show>
-              <div
-                data-component="menu-v2-item"
-                role="menuitem"
-                onMouseEnter={(event) => event.currentTarget.setAttribute("data-highlighted", "")}
-                onMouseLeave={(event) => event.currentTarget.removeAttribute("data-highlighted")}
-                onClick={() => {
-                  controller.toggleFavorite(item())
-                  // Favoriting adds or removes a section above, which moves the row under the flyout.
-                  requestAnimationFrame(() => {
-                    const row = container?.querySelector<HTMLElement>(`[data-option-key="${CSS.escape(store.flyout)}"]`)
-
-                    if (!row) return close()
-                    openFlyout(store.flyout, row)
-                  })
-                }}
-              >
-                <span data-slot="menu-v2-item-content">
-                  {controller.favorite(item())
-                    ? language.t("dialog.model.unfavorite")
-                    : language.t("dialog.model.favorite")}
-                </span>
+            <Show when={variantsOf(item()).length > 0}>
+              <div class="flex flex-col p-0.5">
+                <For each={[undefined, ...variantsOf(item())]}>
+                  {(value) => (
+                    <div
+                      data-component="menu-v2-item"
+                      role="menuitemradio"
+                      aria-checked={variant(item()) === value}
+                      data-checked={variant(item()) === value ? "" : undefined}
+                      onMouseEnter={(event) => event.currentTarget.setAttribute("data-highlighted", "")}
+                      onMouseLeave={(event) => event.currentTarget.removeAttribute("data-highlighted")}
+                      onClick={() => choose(item(), value ?? null)}
+                    >
+                      <span data-slot="menu-v2-item-content" class="capitalize">
+                        {value ?? language.t("common.default")}
+                      </span>
+                      <span
+                        data-slot="menu-v2-item-indicator"
+                        data-checked={variant(item()) === value ? "" : undefined}
+                      >
+                        <Icon name="check" size="small" />
+                      </span>
+                    </div>
+                  )}
+                </For>
               </div>
-            </div>
+            </Show>
             <ModelDetails model={item()} provider={labels.name(item().provider)} compact />
           </div>
         )}
