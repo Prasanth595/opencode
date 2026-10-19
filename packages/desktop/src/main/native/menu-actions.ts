@@ -1,6 +1,7 @@
 import { BrowserWindow } from "electron"
 import type { DesktopMenuAction } from "@opencode/app/desktop-menu"
 import { setZoomFactor } from "../windows"
+import { toggleWindowMode } from "./window-mode"
 
 export type DesktopMenuActionHandlers = Partial<{
   installCli: () => void
@@ -65,7 +66,22 @@ export function runDesktopMenuAction(
 
       return
     case "view.toggleFullscreen":
-      win?.setFullScreen(!win.isFullScreen())
+      if (!win) return
+
+      switch (toggleWindowMode(process.platform, { fullscreen: win.isFullScreen(), maximized: win.isMaximized() })) {
+        case "enter-fullscreen":
+          win.setFullScreen(true)
+          break
+        case "leave-fullscreen":
+          win.setFullScreen(false)
+          break
+        case "maximize":
+          win.maximize()
+          break
+        case "restore":
+          win.unmaximize()
+          break
+      }
 
       return
     case "edit.undo":

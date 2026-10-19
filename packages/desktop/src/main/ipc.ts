@@ -18,6 +18,7 @@ import { IpcPortHandoff, IpcServerProtocolLive } from "./ipc-transport"
 import { ApplicationLifecycle } from "./lifecycle"
 import { showCliInstaller } from "./native/install-cli"
 import { createMenu, sendMenuCommand } from "./native/menu"
+import { runDesktopMenuAction } from "./native/menu-actions"
 import { DesktopCli } from "./service/desktop-cli"
 import { getLastFocusedWindow } from "./windows"
 
@@ -58,9 +59,18 @@ export const registerIpcHandlers = Effect.gen(function* () {
   }
 
   const wire = (win: BrowserWindow) => {
-    win.webContents.on("before-input-event", (_event, input) => {
-      if (input.type !== "keyDown" || input.key !== "Escape") return
-      win.webContents.send(DragCancelEvent)
+    win.webContents.on("before-input-event", (event, input) => {
+      if (input.type !== "keyDown") return
+
+      if (input.key === "Escape") win.webContents.send(DragCancelEvent)
+
+      if (input.key === "F11" && process.platform === "win32") {
+        // Windows keeps the hidden default menu's F11 -> native fullscreen accelerator.
+        // Route it through the same menu action so it maximizes instead of covering the taskbar.
+        event.preventDefault()
+
+        if (!input.isAutoRepeat) runDesktopMenuAction(win, "view.toggleFullscreen")
+      }
     })
 
     const post = () => {
