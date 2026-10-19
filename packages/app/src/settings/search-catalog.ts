@@ -27,7 +27,7 @@ export const clientSettings: Entry<SettingsRootTab>[] = [
     tab: "general",
     label: "settings.general.row.interfaceMode.title",
     target: "settings-tab-layout",
-    keywords: "focus pro mode layout density compact vertical horizontal tabs",
+    keywords: "top side tabs inbox sidebar mode layout vertical horizontal focus pro",
   },
   {
     tab: "general",

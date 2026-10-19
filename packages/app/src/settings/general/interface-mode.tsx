@@ -1,11 +1,12 @@
-import { For, createUniqueId } from "solid-js"
+import { For, Match, Show, Switch, createUniqueId } from "solid-js"
 import { useLanguage } from "@/runtime/i18n/language"
 import { type TabLayout, useSettings } from "@/settings/model"
 import "./interface-mode.css"
 
 const modes = [
-  { id: "focus", layout: "horizontal" },
-  { id: "pro", layout: "vertical" },
+  { id: "top", layout: "horizontal" },
+  { id: "side", layout: "vertical" },
+  { id: "inbox", layout: "inbox" },
 ] as const satisfies { id: string; layout: TabLayout }[]
 
 export function InterfaceModeSetting() {
@@ -32,12 +33,27 @@ export function InterfaceModeSetting() {
               onChange={() => settings.appearance.setTabLayout(mode.layout)}
             />
             <div data-slot="interface-mode-preview" data-mode={mode.id} aria-hidden="true">
-              {mode.id === "focus" ? <FocusPreview /> : <ProPreview />}
+              <Switch>
+                <Match when={mode.id === "top"}>
+                  <TopTabsPreview />
+                </Match>
+                <Match when={mode.id === "side"}>
+                  <SideTabsPreview />
+                </Match>
+                <Match when={mode.id === "inbox"}>
+                  <InboxPreview />
+                </Match>
+              </Switch>
             </div>
             <div data-slot="interface-mode-copy">
-              <span id={`${id}-${mode.id}-title`} data-slot="interface-mode-title">
+              <span data-slot="interface-mode-title">
                 <span data-slot="interface-mode-radio" />
-                {language.t(`settings.general.row.interfaceMode.${mode.id}`)}
+                <span id={`${id}-${mode.id}-title`}>{language.t(`settings.general.row.interfaceMode.${mode.id}`)}</span>
+                <Show when={mode.id === "inbox"}>
+                  <span data-slot="interface-mode-badge">
+                    {language.t("settings.general.row.interfaceMode.experimental")}
+                  </span>
+                </Show>
               </span>
               <span id={`${id}-${mode.id}`} data-slot="interface-mode-description">
                 {language.t(`settings.general.row.interfaceMode.${mode.id}.description`)}
@@ -50,40 +66,88 @@ export function InterfaceModeSetting() {
   )
 }
 
-function FocusPreview() {
+// The modes differ only in where sessions are listed, so every preview shares one workspace.
+function TopTabsPreview() {
   return (
     <>
       <div data-slot="preview-tabs">
-        <span data-active />
-        <span />
-        <span />
-      </div>
-      <div data-slot="preview-chat">
-        <span data-slot="preview-bubble" />
-        <span data-slot="preview-line" style={{ width: "86%" }} />
-        <span data-slot="preview-line" style={{ width: "72%" }} />
-        <span data-slot="preview-line" style={{ width: "48%" }} />
-        <span data-slot="preview-bubble" style={{ width: "34%" }} />
-        <span data-slot="preview-line" style={{ width: "64%" }} />
-        <span data-slot="preview-composer" />
-      </div>
-    </>
-  )
-}
-
-function ProPreview() {
-  return (
-    <>
-      <div data-slot="preview-rail">
-        <For each={[70, 52, 64, 44, 58, 36]}>
+        <For each={[60, 44, 52]}>
           {(width, index) => (
-            <span data-slot="preview-rail-tab" data-active={index() === 1 ? "" : undefined}>
+            <span data-slot="preview-tab" data-active={index() === 0 ? "" : undefined}>
               <i />
               <span style={{ width: `${width}%` }} />
             </span>
           )}
         </For>
       </div>
+      <PreviewWorkspace />
+    </>
+  )
+}
+
+function SideTabsPreview() {
+  return (
+    <div data-slot="preview-body">
+      <div data-slot="preview-rail">
+        <For each={[70, 52, 64, 44, 58, 36]}>
+          {(width, index) => (
+            <span data-slot="preview-tab" data-active={index() === 1 ? "" : undefined}>
+              <i />
+              <span style={{ width: `${width}%` }} />
+            </span>
+          )}
+        </For>
+      </div>
+      <PreviewWorkspace />
+    </div>
+  )
+}
+
+// Mirrors the inbox: sessions that need you, then finished work, then sessions still running.
+const inboxSections = [
+  { rows: [{ width: 68, status: "approval" }] },
+  {
+    rows: [
+      { width: 56, status: "done" },
+      { width: 72, status: "done" },
+    ],
+  },
+  {
+    rows: [
+      { width: 48, status: "working" },
+      { width: 62, status: "working" },
+    ],
+  },
+] as const
+
+function InboxPreview() {
+  return (
+    <div data-slot="preview-body">
+      <div data-slot="preview-rail">
+        <For each={inboxSections}>
+          {(section, sectionIndex) => (
+            <>
+              <span data-slot="preview-rail-heading" />
+              <For each={section.rows}>
+                {(row, index) => (
+                  <span data-slot="preview-tab" data-active={sectionIndex() === 1 && index() === 0 ? "" : undefined}>
+                    <i data-status={row.status} />
+                    <span style={{ width: `${row.width}%` }} />
+                  </span>
+                )}
+              </For>
+            </>
+          )}
+        </For>
+      </div>
+      <PreviewWorkspace />
+    </div>
+  )
+}
+
+function PreviewWorkspace() {
+  return (
+    <div data-slot="preview-body">
       <div data-slot="preview-main">
         <div data-slot="preview-toolbar">
           <i />
@@ -104,6 +168,6 @@ function ProPreview() {
           {(width) => <span data-slot="preview-line" style={{ width: `${width}%` }} />}
         </For>
       </div>
-    </>
+    </div>
   )
 }

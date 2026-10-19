@@ -34,7 +34,7 @@ export default function Layout(props: ParentProps) {
     tabsAside: undefined,
   })
 
-  const verticalTabs = () => preferences.appearance.tabLayout() === "vertical" && !mobile()
+  const verticalTabs = () => preferences.appearance.tabLayout() !== "horizontal" && !mobile()
 
   const sidebarMotion = createPanelMotion({
     open: preferences.appearance.sidebarOpen,

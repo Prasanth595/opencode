@@ -63,7 +63,7 @@ function useCollapsedSlot() {
   const mac = () => platform.platform === "desktop" && platform.os === "macos" && !platform.windowFullscreen?.()
 
   return {
-    visible: () => desktop() && !windows() && settings.appearance.tabLayout() === "vertical",
+    visible: () => desktop() && !windows() && settings.appearance.tabLayout() !== "horizontal",
     open: settings.appearance.sidebarOpen,
     // Keep the toggle clear of the traffic lights, which end 68px from the window edge.
     width: () =>

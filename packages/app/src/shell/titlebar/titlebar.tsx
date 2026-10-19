@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createResource, For, Match, Show, Switch, untrack } from "solid-js"
+import { createEffect, createMemo, createResource, Match, Show, Switch, untrack } from "solid-js"
 import { createStore, unwrap } from "solid-js/store"
 import { Dynamic, Portal } from "solid-js/web"
 import { useLocation, useNavigate } from "@solidjs/router"
@@ -768,7 +768,7 @@ export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
                             <div class="h-4 w-full shrink-0" aria-hidden="true" />
                             <div class="flex min-h-0 flex-1 flex-col gap-1">
                               <Show
-                                when={settings.appearance.sidebarMode() === "inbox"}
+                                when={settings.appearance.tabLayout() === "inbox"}
                                 fallback={
                                   <TitlebarTabStrip
                                     orientation="vertical"
@@ -790,43 +790,11 @@ export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
                                 <SidebarInbox />
                               </Show>
                             </div>
-                            <div data-slot="vertical-tabs-footer" class="mt-2 mb-2 flex w-full shrink-0 flex-col gap-1">
-                              <Show when={titlebarItems.ids().length > 0}>
+                            <Show when={titlebarItems.ids().length > 0}>
+                              <div data-slot="vertical-tabs-footer" class="mt-2 flex w-full shrink-0 flex-col">
                                 <TitlebarItems items={titlebarItems} vertical />
-                              </Show>
-                              <div
-                                data-slot="vertical-sidebar-mode"
-                                role="radiogroup"
-                                class="flex h-7 w-full items-center gap-0.5 rounded-[6px] bg-v2-background-bg-layer-01 p-0.5 [app-region:no-drag]"
-                              >
-                                <For each={["tabs", "inbox"] as const}>
-                                  {(mode) => (
-                                    <Tooltip
-                                      placement="top"
-                                      value={mode === "inbox" ? language.t("sidebar.mode.experimental") : undefined}
-                                      inactive={mode !== "inbox"}
-                                      class="flex h-full min-w-0 flex-1"
-                                    >
-                                      <button
-                                        type="button"
-                                        role="radio"
-                                        aria-checked={settings.appearance.sidebarMode() === mode}
-                                        data-state={settings.appearance.sidebarMode() === mode ? "active" : undefined}
-                                        class="flex h-full min-w-0 flex-1 items-center justify-center gap-1 rounded-[4px] px-1.5 text-[12px] leading-4 text-v2-text-text-faint hover:text-v2-text-text-base data-[state=active]:bg-v2-background-bg-layer-02 data-[state=active]:text-v2-text-text-base focus-visible:outline-none"
-                                        onClick={() => settings.appearance.setSidebarMode(mode)}
-                                      >
-                                        <Icon
-                                          name={mode === "inbox" ? "bullet-list" : "sidebar"}
-                                          size="small"
-                                          class="shrink-0"
-                                        />
-                                        <span class="min-w-0 truncate">{language.t(`sidebar.mode.${mode}`)}</span>
-                                      </button>
-                                    </Tooltip>
-                                  )}
-                                </For>
                               </div>
-                            </div>
+                            </Show>
                           </Portal>
                         )}
                       </Show>
