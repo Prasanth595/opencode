@@ -513,8 +513,9 @@
   }
 }
 
+/* Only a shell's own card; an Execute output card opens inside the content and must not move the rows above it. */
 [data-component="collapsible"].tool-collapsible:has(
-    > [data-slot="collapsible-content"] [data-component="bash-output"][data-variant="shell"]
+    > [data-slot="collapsible-content"] > [data-component="bash-output"][data-variant="shell"]
   ) {
   --tool-content-gap: 8px;
 }

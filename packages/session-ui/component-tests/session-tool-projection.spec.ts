@@ -189,9 +189,12 @@ story("keeps long execute calls inside the tool and shows the script output", as
   // The script output stays collapsed until its row is expanded.
   const result = calls.locator('[data-slot="bash-result"]')
   await expect(result).toHaveCount(0)
+  const top = await rows.first().evaluate((element) => element.getBoundingClientRect().top)
   await rows.nth(1).click()
   await expect(rows.nth(1)).toHaveAttribute("aria-expanded", "true")
   await expect(result).toContainText("Cleanup finished on blade")
+  // Opening the output must not move the rows above it.
+  expect(await rows.first().evaluate((element) => element.getBoundingClientRect().top)).toBe(top)
 
   const overflow = await tool.evaluate((element) => {
     const calls = element.querySelector('[data-component="execute-tool-calls"]')
