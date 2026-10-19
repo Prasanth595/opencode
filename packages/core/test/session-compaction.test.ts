@@ -334,12 +334,13 @@ it.effect("clamps an oversized compaction buffer and waits for an exchange to su
     const status = (messages: readonly SessionMessage.Info[]) =>
       compaction.compact({ reason: "auto", context: context(messages) }).pipe(Effect.map((outcome) => outcome.status))
 
-    // 600k free tokens on a 100k window keeps at most 90% free, so the ceiling is 10% of the window.
-    expect(yield* status([assistant(9_999)])).toBe("skipped")
-    expect(yield* status([assistant(10_000)])).toBe("completed")
+    // 600k free tokens on a 100k window is treated as unset, so the ceiling is the default 16k reserve
+    // below the window.
+    expect(yield* status([assistant(83_999)])).toBe("skipped")
+    expect(yield* status([assistant(84_000)])).toBe("completed")
     // The opening prompt alone has no older exchange; a huge prompt must not summarize itself or
     // surface `compaction.unavailable` as a failed compaction.
-    expect(yield* status([user("x".repeat(60_000))])).toBe("skipped")
+    expect(yield* status([user("x".repeat(400_000))])).toBe("skipped")
   }),
 )
 

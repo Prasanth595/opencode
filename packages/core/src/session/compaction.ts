@@ -923,9 +923,10 @@ const calculateCeiling = (limit: SessionContext.Loaded["model"]["limit"], buffer
   // all, only a provider rejection can limit the request.
   const window = limit.input || limit.context
   if (window <= 0) return Number.POSITIVE_INFINITY
-  // Keep at most 90% of the window free. A larger buffer would make the ceiling negative and every estimate
-  // cross it, so automatic compaction would run on every step, including the first request of a session.
-  if (buffer !== undefined) return window - Math.min(buffer, Math.floor(window * 0.9))
+  // A buffer at or above the window cannot leave room for the request; treat it as unset so the default
+  // reserve applies. Clamping to a fraction instead can put the ceiling below the fixed prompt size
+  // (system, tools, instructions), which makes automatic compaction due on every step.
+  if (buffer !== undefined && buffer < window) return window - buffer
   return window - Math.max(Math.floor(window * 0.1), window >= 2 * RESERVE_MIN ? RESERVE_MIN : 0)
 }
 
