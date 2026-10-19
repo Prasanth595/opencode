@@ -1,6 +1,6 @@
 import { expect, sourceURL, story } from "../../storybook/playwright/story"
-import type { ParentProps } from "solid-js"
-import type { Command } from "@opencode/gui-extensions/sdk"
+import type { Accessor, ParentProps } from "solid-js"
+import type { Command, KeyChord } from "@opencode/gui-extensions/sdk"
 import type { Item } from "../src/runtime/extension/host"
 
 const source = (path: string) => sourceURL(new URL(path, import.meta.url))
@@ -81,15 +81,25 @@ story.beforeEach(async ({ mount, page }) => {
             })
           },
         }),
-      Commands: (props: { close: () => void }) => {
+      Commands: (props: {
+        close: () => void
+        palette: () => void
+        chords: (chords: Accessor<readonly KeyChord[]>) => void
+      }) => {
         const command = commands.useCommand()
         const extensions = host.useExtensionHost()
+        props.chords(command.chords)
         command.register("fixture-session", () => [
           {
             id: "tab.close",
             title: "Close session tab",
             keybind: "mod+w",
             onSelect: props.close,
+          },
+          {
+            id: "command.palette",
+            title: "Command palette",
+            onSelect: props.palette,
           },
         ])
         // Storybook aliases the app's command hook to a no-op. Bridge the real extension contributions
@@ -143,6 +153,38 @@ story("closes a blank browser tab from its address field without closing the ses
   await expect(address).toBeFocused()
   await address.press("ControlOrMeta+w")
   await expect(root.getByRole("tab", { name: "New tab", exact: true })).toHaveCount(0)
+  await expect(root.getByTestId("browser-closes")).toHaveText('["tab_33333333-3333-3333-3333-333333333333"]')
+  await expect(root.getByTestId("session-state")).toHaveText("open")
+})
+
+story("lets a focused page handle ⌘K first and hands unhandled and reserved shortcuts to the pane", async ({ page }) => {
+  const root = page.getByTestId("browser-region-fixture")
+  const mac = await page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.platform))
+  const mod = mac ? "Meta" : "Control"
+  const frame = page.frameLocator('iframe[title="Browser page"]')
+  const editor = frame.getByRole("textbox", { name: "Editor page input", exact: true })
+  const plain = frame.getByRole("textbox", { name: "Plain page input", exact: true })
+  await expect(root.getByText("Registrations: 1", { exact: true })).toBeVisible()
+  await root.getByRole("button", { name: "Beta", exact: true }).click()
+  await expect(root.getByText("Registrations: 2", { exact: true })).toBeVisible()
+  await root.getByRole("button", { name: "First inventory", exact: true }).click()
+  await expect(root.getByRole("tab", { name: "Preview", exact: true })).toHaveAttribute("aria-selected", "true")
+
+  // A page that calls preventDefault() on ⌘K keeps it; the app palette does not run.
+  await editor.focus()
+  await editor.press(`${mod}+k`)
+  await expect(editor).toHaveValue("handled:k")
+  await expect(root.getByTestId("palette-runs")).toHaveText("0")
+
+  // A page that leaves ⌘K unhandled hands it back to the app.
+  await plain.focus()
+  await plain.press(`${mod}+k`)
+  await expect(root.getByTestId("palette-runs")).toHaveText("1")
+
+  // Reserved ⌘W is claimed before the page sees it and runs the pane's close, not the session's.
+  await editor.focus()
+  await editor.press(`${mod}+w`)
+  await expect(editor).toHaveValue("handled:k")
   await expect(root.getByTestId("browser-closes")).toHaveText('["tab_33333333-3333-3333-3333-333333333333"]')
   await expect(root.getByTestId("session-state")).toHaveText("open")
 })

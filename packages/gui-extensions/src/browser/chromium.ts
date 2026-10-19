@@ -2,6 +2,7 @@ import { Browser } from "@opencode/plugin-browser/rpc"
 import electron, { type BrowserWindow, type WebContents } from "electron"
 import type { Protocol } from "devtools-protocol"
 import { Schema } from "effect"
+import type { KeyChord } from "../sdk"
 import type { Embeds } from "../sdk/main"
 import { createCdp, abortError, waitFor } from "./cdp"
 import { createBrowserFiles } from "./files"
@@ -18,6 +19,13 @@ import {
   refusal,
   type Policy,
 } from "./policy"
+import {
+  appShortcut,
+  listenPageShortcuts,
+  pageShortcut,
+  type PageKey,
+  type PendingShortcut,
+} from "./shortcuts"
 import type { PaneElement } from "./ipc"
 
 type Element = { backendID: number; frameID: string; sessionID?: string }
@@ -87,6 +95,12 @@ const inspectOff = { mode: "none", highlightConfig: inspectHighlight }
 // Chromium's zoom presets, so a step lands where it would in the system browser.
 const zoomSteps = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5]
 
+const shortcutWorld = "opencode-browser-shortcuts"
+
+const shortcutBinding = "__opencodeShortcut"
+
+const shortcutScript = `(${listenPageShortcuts.toString()})(window, (payload) => void globalThis[${JSON.stringify(shortcutBinding)}](payload))`
+
 /** A page's icon as a data URL, and its zoom factor, 1 at 100%. */
 export type PageDetail = { icon?: string; zoom: number }
 
@@ -136,6 +150,10 @@ export function createBrowserPage(
     zoomed?: () => void
     /** The user pressed the address shortcut while the page had focus. */
     address?: () => void
+    /** The window's active app keybinds. */
+    shortcuts?: () => readonly KeyChord[]
+    /** Hands a key press to the app to run as a shortcut. */
+    shortcut?: (input: PageKey) => void
     fail: () => void
     /** Adopts a page the document opened; a background one leaves the current tab selected. */
     popup: (options: Electron.BrowserWindowConstructorOptions, background: boolean) => WebContents
@@ -172,8 +190,11 @@ export function createBrowserPage(
 
   const contents = view.webContents
   const detachNetwork = options.network?.attach(contents)
+  let pendingShortcut: PendingShortcut | undefined
   contents.on("before-input-event", (event, input) => {
     if (input.type !== "keyDown") return
+
+    if (!["Control", "Meta", "Shift", "Alt"].includes(input.key)) pendingShortcut = undefined
 
     if (input.key === "F5" && !input.meta && !input.control && !input.alt && !input.shift) {
       event.preventDefault()
@@ -188,6 +209,17 @@ export function createBrowserPage(
 
       return
     }
+
+    const kind = appShortcut(input, options.shortcuts?.() ?? [], process.platform === "darwin")
+
+    if (kind === "reserved") {
+      event.preventDefault()
+      options.shortcut?.(input)
+
+      return
+    }
+
+    if (kind === "page") pendingShortcut = { key: input, at: Date.now() }
 
     if (input.alt || !(process.platform === "darwin" ? input.meta : input.control)) return
 
@@ -316,6 +348,7 @@ export function createBrowserPage(
   const reset = (event: Electron.Event<{ url: string; isMainFrame: boolean; isSameDocument: boolean }>) => {
     if (!event.isMainFrame || event.isSameDocument) return
     failure = undefined
+    pendingShortcut = undefined
     generation++
     documents.clear()
     refs.clear()
@@ -456,6 +489,14 @@ export function createBrowserPage(
       if (context.id === executionContextId && context.sessionID === sessionID) contexts.delete(key)
     })
   })
+  cdp.on("Runtime.bindingCalled", ({ name, payload }) => {
+    if (name !== shortcutBinding) return
+    const pending = pendingShortcut
+    pendingShortcut = undefined
+    const event = pageShortcut(payload, pending, options.shortcuts?.() ?? [], process.platform === "darwin")
+
+    if (event) options.shortcut?.(event)
+  })
   cdp.on("Target.attachedToTarget", ({ sessionId, targetInfo }, parentSessionID) => {
     if (targetInfo.type !== "iframe") return
     const parentID = targetInfo.parentFrameId ?? Array.from(sessions).find(([, id]) => id === parentSessionID)?.[0]
@@ -464,7 +505,7 @@ export function createBrowserPage(
     sessions.set(targetInfo.targetId, sessionId)
     void Promise.all([
       diagnostics.enable(sessionId),
-      cdp.send("Page.enable", {}, sessionId),
+      enableShortcuts(sessionId),
       cdp.send(
         "Target.setAutoAttach",
         {
@@ -536,7 +577,7 @@ export function createBrowserPage(
           }),
         ]),
     diagnostics.enable(),
-    cdp.send("Page.enable"),
+    enableShortcuts(),
     cdp.send("DOM.enable"),
     cdp.send("Target.setAutoAttach", {
       autoAttach: true,
@@ -1523,6 +1564,20 @@ export function createBrowserPage(
     ).join("\n")
 
     return { content: content.slice(0, Browser.MAX_TEXT), truncated: truncated || content.length > Browser.MAX_TEXT }
+  }
+
+  async function enableShortcuts(sessionID?: string) {
+    await cdp.send("Page.enable", {}, sessionID)
+    await cdp.send("Runtime.addBinding", { name: shortcutBinding, executionContextName: shortcutWorld }, sessionID)
+    await cdp.send(
+      "Page.addScriptToEvaluateOnNewDocument",
+      {
+        source: shortcutScript,
+        worldName: shortcutWorld,
+        runImmediately: true,
+      },
+      sessionID,
+    )
   }
 
   async function toggleInspect(enabled: boolean) {

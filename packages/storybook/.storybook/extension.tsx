@@ -94,7 +94,7 @@ export function createStoryHostApis(platform: Build["platform"]) {
   const locale: Locale = { locale: language.intl, direction: language.direction, setDirection: language.setDirection }
   const appearance: Appearance = { font: () => "var(--font-family-mono)" }
   const router: Router = { routing: () => false, path: () => "/" }
-  const keybinds: Keybinds = { keybind: () => [], keys: () => [], matches: () => false }
+  const keybinds: Keybinds = { keybind: () => [], keys: () => [], matches: () => false, chords: () => [] }
   const servers: Servers = { list: () => [], get: () => undefined }
   const workspaces: Workspaces = { on: () => () => {} }
   return {

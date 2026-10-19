@@ -1,3 +1,4 @@
+import type { KeyChord } from "../sdk"
 import type { MainSetup } from "../sdk/main"
 import type definition from "./index"
 import type { Pane } from "./pane"
@@ -8,6 +9,9 @@ type LoadedPane = { pane?: Promise<Pane> }
 
 const setup: MainSetup<typeof definition> = (ctx) => {
   const loaded: LoadedPane = {}
+  // Each window's app keybinds, which its pages hand to it.
+  const shortcuts = new Map<number, readonly KeyChord[]>()
+  ctx.windows.on("close", (window) => shortcuts.delete(window.id))
 
   // The pane brings the CDP driver and the full RPC client with every protocol schema;
   // load it when a window first registers a pane instead of at startup.
@@ -19,6 +23,7 @@ const setup: MainSetup<typeof definition> = (ctx) => {
         storage: ctx.storage,
         refs: ctx.stores.refs,
         embeds: ctx.embeds,
+        shortcuts: (window) => shortcuts.get(window) ?? [],
         emit: (window, value) => provider.emit("event", value, window),
       }),
     ))
@@ -38,6 +43,9 @@ const setup: MainSetup<typeof definition> = (ctx) => {
     site: async (input, caller) => (await existing()).site(caller.window, input.binding, input.tabID),
     clearSite: async (input, caller) => (await existing()).clearSite(caller.window, input.binding, input.tabID),
     close: async (input, caller) => (await existing()).close(caller.window, input.binding),
+    shortcuts: async (input, caller) => {
+      shortcuts.set(caller.window, input.chords)
+    },
   })
 
   // The host withdraws the Ipc before this runs, so windows hear nothing; they suspend on the Ipc going away.

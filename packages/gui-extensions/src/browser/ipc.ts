@@ -52,6 +52,16 @@ export const PaneEvent = Schema.Union([
   }),
   // The page asked for the address field, with the platform's address shortcut.
   Schema.Struct({ type: Schema.Literal("address"), tabID: Browser.TabID }),
+  // The page handed an unhandled or reserved app keybind to the window, which runs it as its own key press.
+  Schema.Struct({
+    type: Schema.Literal("shortcut"),
+    key: text(64),
+    code: detail(64),
+    ctrl: Schema.Boolean,
+    meta: Schema.Boolean,
+    shift: Schema.Boolean,
+    alt: Schema.Boolean,
+  }),
 ])
 
 export type PaneEvent = typeof PaneEvent.Type
@@ -91,6 +101,21 @@ export const BrowserPane = Ipc.define({
     // Deletes the cookies the page's address can read and its origin's stored data, then reloads the page.
     clearSite: { input: Schema.Struct({ binding, tabID: Browser.TabID }) },
     close: { input: Schema.Struct({ binding }) },
+    // The window's app keybinds, which main intercepts when reserved or forwards after the page leaves them unhandled;
+    // sent again whenever they change.
+    shortcuts: {
+      input: Schema.Struct({
+        chords: Schema.Array(
+          Schema.Struct({
+            key: text(64),
+            ctrl: Schema.Boolean,
+            meta: Schema.Boolean,
+            shift: Schema.Boolean,
+            alt: Schema.Boolean,
+          }),
+        ).check(Schema.isMaxLength(1_000)),
+      }),
+    },
   },
   events: {
     event: Schema.Struct({ binding: Schema.String, event: PaneEvent }),

@@ -5,6 +5,7 @@ import { SessionID } from "@opencode/schema/session-id"
 import electron, { type BrowserWindow } from "electron"
 import { Deferred, Effect, ManagedRuntime, Queue, Schedule, Schema, Stream } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
+import type { KeyChord } from "../sdk"
 import type { Embeds, Persisted, ServerEndpoints, Storage, Windows } from "../sdk/main"
 import { createBrowserPage, type BrowserPage, type Shared } from "./chromium"
 import { browserFailure } from "./errors"
@@ -48,6 +49,8 @@ export function createBrowserPane(input: {
   /** The declared store of reserved element refs. */
   readonly refs: Persisted<number, number>
   readonly embeds: Embeds
+  /** The window's app keybinds, which its pages hand to it. */
+  readonly shortcuts: (window: number) => readonly KeyChord[]
   readonly emit: (window: number, value: { readonly binding: string; readonly event: PaneEvent }) => void
 }) {
   const entries = new Map<string, Entry>()
@@ -505,6 +508,21 @@ export function createBrowserPane(input: {
         // The page held keyboard focus; the app's address field needs it back.
         entry.win.webContents.focus()
         publish(entry, { type: "address", tabID: id })
+      },
+      shortcuts: () => input.shortcuts(entry.window),
+      shortcut: (key) => {
+        if (!entry.pages.has(id) || entry.win.isDestroyed()) return
+        // As for the address shortcut: the command runs in the app, which may move focus there.
+        entry.win.webContents.focus()
+        publish(entry, {
+          type: "shortcut",
+          key: key.key,
+          code: key.code,
+          ctrl: key.control,
+          meta: key.meta,
+          shift: key.shift,
+          alt: key.alt,
+        })
       },
       popup: (popupOptions, background) => {
         const popup = create(entry, false, popupOptions)

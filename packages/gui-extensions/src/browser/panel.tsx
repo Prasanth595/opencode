@@ -158,6 +158,7 @@ export default function SessionBrowserPane(props: {
     return tab ? props.model.embed(props.session, tab.id) : undefined
   }
 
+  let root: HTMLElement | undefined
   let box: HTMLDivElement | undefined
   let input: HTMLInputElement | undefined
   let anchor: HTMLFormElement | undefined
@@ -392,6 +393,21 @@ export default function SessionBrowserPane(props: {
       inspectable,
       inspect: toggleInspect,
       focusAddress,
+      // Dispatched inside the pane, so keybinds scoped to it, such as closing the browser tab, apply.
+      press: (event) =>
+        root?.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: event.key,
+            code: event.code,
+            ctrlKey: event.ctrl,
+            metaKey: event.meta,
+            shiftKey: event.shift,
+            altKey: event.alt,
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+          }),
+        ),
     }),
   )
 
@@ -524,7 +540,11 @@ export default function SessionBrowserPane(props: {
   )
 
   return (
-    <aside id="browser-panel" class="relative size-full min-w-0 overflow-hidden bg-v2-background-bg-base flex flex-col">
+    <aside
+      ref={root}
+      id="browser-panel"
+      class="relative size-full min-w-0 overflow-hidden bg-v2-background-bg-base flex flex-col"
+    >
       <div
         data-component="browser-bar"
         class="h-11 shrink-0 flex items-center gap-2 px-3 border-b-[0.5px] border-v2-border-border-muted"

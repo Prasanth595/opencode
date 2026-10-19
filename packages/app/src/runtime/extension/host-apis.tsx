@@ -17,6 +17,7 @@ import { base64Encode } from "@opencode/util/encode"
 import {
   Panel,
   type Build,
+  type KeyChord,
   type Layout,
   type MountedSession,
   type OpenOptions,
@@ -68,6 +69,7 @@ type Attached = {
   path: Accessor<string>
   keybind: (command: string) => readonly string[]
   matches: (command: string, event: KeyboardEvent) => boolean
+  chords: Accessor<readonly KeyChord[]>
   servers: Accessor<readonly string[]>
   server: (id: string) => ServerRef | undefined
 }
@@ -269,6 +271,7 @@ export function createHostApis() {
       keybind: (command) => current()?.keybind(command) ?? [],
       keys: (bind) => formatKeybindParts(bind, language.t),
       matches: (command, event) => current()?.matches(command, event) ?? false,
+      chords: () => current()?.chords() ?? [],
     }),
     servers: () => ({
       list: () => current()?.servers() ?? [],
@@ -785,6 +788,7 @@ export function createExtensionAttachment(apis: HostApis) {
     path: () => `${location.pathname}${location.search}`,
     keybind: command.keybindParts,
     matches: command.matches,
+    chords: command.chords,
     servers: () => global.servers.list().map(ServerConnection.key),
     server,
     // SAFETY: an extension names a page it contributed through `SettingsPage`, which settings lists as an extension tab.

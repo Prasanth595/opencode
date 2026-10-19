@@ -10,6 +10,7 @@ import {
   type Connection,
   type InspectEvent,
   type Registration,
+  type ShortcutEvent,
   type Zoom,
 } from "./connection"
 import { recordable, remember, withIcon } from "./history"
@@ -64,6 +65,8 @@ type PaneHandle = {
   inspect: () => void
   /** Focuses the address field and selects its text. */
   focusAddress: () => void
+  /** Runs a key press the page handed to the app, as if it was pressed in this pane. */
+  press: (event: ShortcutEvent) => void
 }
 
 export type Model = ReturnType<typeof createModel>
@@ -132,6 +135,16 @@ export function createModel(ctx: SetupContext<typeof definition>) {
 
   // The SDK removes the listener when the Ipc's generation ends.
   createKeyed(pane, (current) => current.on("event", (value) => listeners.get(value.binding)?.(value.event)))
+
+  // A focused page receives key presses before the app does; main keeps the window's current keybinds so it can claim
+  // reserved browser chords up front and forward other app chords that the page leaves unhandled.
+  createKeyed(pane, (current) =>
+    createKeyed(
+      () => ctx.keybinds.chords(),
+      (chords) => void current.shortcuts({ chords }).catch(() => undefined),
+      { equals: (previous, next) => JSON.stringify(previous) === JSON.stringify(next) },
+    ),
+  )
 
   const wakeCurrent = () => {
     if (document.visibilityState !== "visible") return
@@ -210,6 +223,8 @@ export function createModel(ctx: SetupContext<typeof definition>) {
           if (visits) history.set({ visits })
         },
         address: (tabID) => addressed.get(id)?.forEach((listener) => listener(tabID)),
+        // Only the pane on screen holds the page that had focus.
+        shortcut: (event) => panes()[0]?.press(event),
         change: (next, mirror, native) => {
           if (next.error === "browser.pane.unsupported") {
             setState("unsupported", ref.server.id, true)

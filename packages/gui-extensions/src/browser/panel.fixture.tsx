@@ -26,6 +26,7 @@ import {
   type Embeds,
   type Ipc,
   type IpcClient,
+  type KeyChord,
   type Keybinds,
   type Layout,
   type Locale,
@@ -50,6 +51,13 @@ import { createModel } from "./model"
 import SessionBrowserPane from "./panel"
 import { BrowserPane, type PaneEvent } from "./ipc"
 import { refusal } from "./policy"
+import {
+  appShortcut,
+  listenPageShortcuts,
+  pageShortcut,
+  type PageKey,
+  type PendingShortcut,
+} from "./shortcuts"
 
 /** The renderer host pieces the pane runs on, passed in by `packages/app/component-tests/browser-pane.spec.ts`. */
 type PaneHost = {
@@ -193,7 +201,7 @@ export function mountBrowserPane(input: PaneHost) {
 
     const base = {
       id: "browser",
-      keybinds: { keybind: () => [], keys: (bind: string) => bind.split("+") },
+      keybinds: { keybind: () => [], keys: (bind: string) => bind.split("+"), chords: () => [] },
       desktop: { zoom: () => 1 },
       embeds,
       t,
@@ -339,6 +347,7 @@ export function mountBrowserPane(input: PaneHost) {
         report()
       },
       close: async () => undefined,
+      shortcuts: async () => undefined,
       state: () => undefined,
       on: (_name, listener) => {
         // SAFETY: the pane's Ipc has one event, whose payload is exactly this binding and PaneEvent.
@@ -593,7 +602,11 @@ type RegionHost = {
   /** Real shell command providers for shortcut cases. */
   Shell: ParentComponent
   /** Shell fallback and the real extension command adapter. */
-  Commands: Component<{ close: () => void }>
+  Commands: Component<{
+    close: () => void
+    palette: () => void
+    chords: (chords: Accessor<readonly KeyChord[]>) => void
+  }>
   /** The real host wrapper that renders an extension in its context. */
   Contribution: Component<{ extension: string; children: () => JSX.Element }>
 }
@@ -607,6 +620,10 @@ type RegionFixtureState = {
   away: boolean
   /** Whether the fixture's shell session was closed by its fallback shortcut. */
   closed: boolean
+  /** How many times the command palette opened from a shortcut. */
+  palette: number
+  /** Active app keybind chords the window sent to main. */
+  shortcuts: readonly KeyChord[]
   /** The page main reports, blank or loaded. */
   blank: boolean
   /** Native browser tab close requests, by tab id. */
@@ -636,12 +653,15 @@ export function mountBrowserRegion(input: RegionHost) {
       registrations: [],
       away: false,
       closed: false,
+      palette: 0,
+      shortcuts: [],
       blank: false,
       closes: [],
     })
 
     // The file tree's state, Changes or All files, as the file extension stores it.
     const [tree, setTree] = createSignal<object>()
+    const [chords, setChords] = createSignal<Accessor<readonly KeyChord[]>>(() => [])
     const strip = (session: string) => store.strips[session] ?? { all: [] }
     const setAll = (session: string, all: string[]) => setStore("strips", session, "all", all)
 
@@ -782,7 +802,14 @@ export function mountBrowserRegion(input: RegionHost) {
     const locale: Locale = { locale: () => "en", direction: () => "ltr", setDirection() {} }
     const appearance: Appearance = { font: () => "monospace" }
     const router: Router = { routing: () => false, path: () => "/" }
-    const keybinds: Keybinds = { keybind: () => [], keys: (bind) => bind.split("+"), matches: () => false }
+
+    const keybinds: Keybinds = {
+      keybind: () => [],
+      keys: (bind) => bind.split("+"),
+      matches: () => false,
+      chords: () => chords()(),
+    }
+
     const servers: Servers = { list: () => [server.id], get: () => undefined }
     const workspaces: Workspaces = { on: () => () => undefined }
 
@@ -812,6 +839,9 @@ export function mountBrowserRegion(input: RegionHost) {
       site: async () => ({ cookies: 0 }),
       clearSite: async () => undefined,
       close: async () => undefined,
+      shortcuts: async (value) => {
+        setStore("shortcuts", value.chords)
+      },
       state: () => undefined,
       on: (_name, listener) => {
         // SAFETY: the pane's Ipc has one event, so every listener takes that event's payload.
@@ -860,6 +890,66 @@ export function mountBrowserRegion(input: RegionHost) {
       listeners.forEach((listener) =>
         listener({ binding, event: { type: "state", state: { tabs: [tab], focusedTabID: tabID } } }),
       )
+    }
+
+    const emitShortcut = (key: PageKey) => {
+      const binding = latest()?.binding
+
+      if (!binding) return
+
+      const event: PaneEvent = {
+        type: "shortcut",
+        key: key.key,
+        code: key.code,
+        ctrl: key.control,
+        meta: key.meta,
+        shift: key.shift,
+        alt: key.alt,
+      }
+
+      listeners.forEach((listener) => listener({ binding, event }))
+    }
+
+    // Wires an embedded page with the same before-input-event + isolated-world shortcut pipeline as chromium.ts.
+    const wirePage = (frame: HTMLIFrameElement) => {
+      const win = frame.contentWindow
+
+      if (!win) return
+      const mac = /(Mac|iPod|iPhone|iPad)/.test(navigator.platform)
+      let pending: PendingShortcut | undefined
+
+      win.addEventListener(
+        "keydown",
+        (event) => {
+          if (["Control", "Meta", "Shift", "Alt"].includes(event.key)) return
+
+          const key: PageKey = {
+            key: event.key,
+            code: event.code,
+            control: event.ctrlKey,
+            meta: event.metaKey,
+            shift: event.shiftKey,
+            alt: event.altKey,
+          }
+
+          const kind = appShortcut(key, store.shortcuts, mac)
+          pending = kind === "page" ? { key, at: Date.now() } : undefined
+
+          if (kind !== "reserved") return
+          event.preventDefault()
+          event.stopImmediatePropagation()
+          emitShortcut(key)
+        },
+        true,
+      )
+
+      listenPageShortcuts(win, (payload) => {
+        const current = pending
+        pending = undefined
+        const event = pageShortcut(payload, current, store.shortcuts, mac)
+
+        if (event) emitShortcut(event)
+      })
     }
 
     // Mounts once every extension is active, as the session screen does.
@@ -955,7 +1045,11 @@ export function mountBrowserRegion(input: RegionHost) {
             }}
             ipc={(token) => (token.id === BrowserPane.id && !store.away ? pane : undefined)}
           >
-            <input.Commands close={() => setStore("closed", true)} />
+            <input.Commands
+              close={() => setStore("closed", true)}
+              palette={() => setStore("palette", (count) => count + 1)}
+              chords={(next) => setChords(() => next)}
+            />
             <h1 style={{ "font-size": "24px", "margin-bottom": "16px" }}>Restored side strip</h1>
             <nav style={{ display: "flex", gap: "12px", margin: "16px 0" }}>
               <button onClick={() => setStore({ session: beta, closed: false })}>Beta</button>
@@ -971,10 +1065,17 @@ export function mountBrowserRegion(input: RegionHost) {
               <button onClick={() => setStore("away", true)}>Pane away</button>
               <button onClick={() => setStore("away", false)}>Pane back</button>
             </nav>
+            <iframe
+              title="Browser page"
+              srcdoc='<!doctype html><input aria-label="Plain page input" /><input aria-label="Editor page input" onkeydown="if ((event.ctrlKey || event.metaKey) &amp;&amp; /^[kw]$/i.test(event.key)) { event.preventDefault(); this.value = &apos;handled:&apos; + event.key.toLowerCase() }" />'
+              onLoad={(event) => wirePage(event.currentTarget)}
+              style={{ height: "48px" }}
+            />
             <p>Registrations: {store.registrations.length}</p>
             <p>Beta restores: {latest()?.restore ?? 0}</p>
             <p data-testid="tree">{JSON.stringify(tree())}</p>
             <p data-testid="session-state">{store.closed ? "closed" : "open"}</p>
+            <p data-testid="palette-runs">{store.palette}</p>
             <p data-testid="browser-closes">{JSON.stringify(store.closes)}</p>
             <Ready>
               <Strip />

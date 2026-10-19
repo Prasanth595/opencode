@@ -82,7 +82,12 @@ const appearance: Appearance = { font: () => "monospace" }
 
 const router: Router = { routing: () => false, path: () => "/" }
 
-const keybinds: Keybinds = { keybind: () => [], keys: (bind) => bind.split("+"), matches: () => false }
+const keybinds: Keybinds = {
+  keybind: () => [],
+  keys: (bind) => bind.split("+"),
+  matches: () => false,
+  chords: () => [],
+}
 
 const servers: Servers = { list: () => [], get: () => undefined }
 
@@ -345,6 +350,7 @@ function standIn(overrides: Partial<Interface>): Interface {
     path: () => "/",
     keybind: () => [],
     matches: () => false,
+    chords: () => [],
     servers: () => ["local"],
     server: () => undefined,
     ...overrides,

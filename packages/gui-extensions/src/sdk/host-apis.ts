@@ -981,6 +981,34 @@ export interface Keybinds {
    * @param event - The keyboard event.
    */
   matches(command: string, event: KeyboardEvent): boolean
+  /**
+   * Every chord that runs something in the app right now: the command palette's and each enabled command's effective
+   * keybind. Empty while the app has keybinds turned off, as when a keybind is being recorded, and before the app
+   * interface mounts. Reactive.
+   *
+   * @example
+   * ```ts
+   * const claimed = () => ctx.keybinds.chords().some((chord) => chord.meta && chord.key === "k")
+   * ```
+   */
+  chords(): readonly KeyChord[]
+}
+
+/** A key with its modifiers, as the app matches a keyboard event against a keybind. */
+export interface KeyChord {
+  /**
+   * The event's `key`, lowercased, with "," as "comma", "+" as "plus" and " " as "space". With Alt, a letter key is
+   * named by its `code` ("KeyT" as "t"), since Alt changes the character it types.
+   */
+  readonly key: string
+  /** Control is held. */
+  readonly ctrl: boolean
+  /** Command on macOS, the Windows key elsewhere, is held. */
+  readonly meta: boolean
+  /** Shift is held. */
+  readonly shift: boolean
+  /** Alt, Option on macOS, is held. */
+  readonly alt: boolean
 }
 
 /** The servers the app lists. */

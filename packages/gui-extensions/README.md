@@ -243,7 +243,7 @@ SDK icon fields use `IconName` from `@opencode/ui/icons/catalog`, a dependency-f
 | `ctx.locale`                 | `Locale`                                                       | Locale and writing direction                                      |
 | `ctx.appearance`             | `Appearance`                                                   | The user's mono font                                              |
 | `ctx.router`                 | `Router`                                                       | The route path, and whether it is changing                        |
-| `ctx.keybinds`               | `Keybinds`                                                     | Display and matching of command keybinds                          |
+| `ctx.keybinds`               | `Keybinds`                                                     | Display and matching of command keybinds, and the chords in use   |
 | `ctx.servers`                | `Servers`                                                      | The servers the app lists, and each one's live `ServerRef`        |
 | `ctx.workspaces`             | `Workspaces`                                                   | `on("remove", …)` when a workspace is removed                     |
 | `ctx.scope` (main)           | `Scope`                                                        | The instance's lifetime                                           |
