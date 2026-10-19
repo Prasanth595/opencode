@@ -5,12 +5,43 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  --image-preview-shadow:
+    0 15px 45px 0 rgba(19, 16, 16, 0.35), 0 3.35px 10.051px 0 rgba(19, 16, 16, 0.25),
+    0 0.998px 2.993px 0 rgba(19, 16, 16, 0.2);
 
   /* The preview dims the page itself, in step with the image's flight, instead of the dialog stack's overlay. */
   [data-slot="image-preview-scrim"] {
     position: fixed;
     inset: 0;
     background-color: var(--v2-overlay-simple-overlay-scrim);
+    pointer-events: none;
+  }
+
+  /* While the image flies, the panel's surface flies with it, from the image's place on the page to the panel; its
+     shadow rises as it lifts off the page. */
+  [data-slot="image-preview-surface"] {
+    display: none;
+    position: fixed;
+    /* Under the panel, whose controls ride it, and over the backdrop. */
+    z-index: 49;
+    background: var(--surface-raised-stronger-non-alpha);
+    pointer-events: none;
+
+    &::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      box-shadow: var(--image-preview-shadow);
+      opacity: var(--image-preview-lift, 1);
+    }
+  }
+
+  /* The origin's outline, carried over the flying image until it becomes the panel. */
+  [data-slot="image-preview-edge"] {
+    display: none;
+    position: fixed;
+    z-index: 51;
     pointer-events: none;
   }
 
@@ -30,12 +61,18 @@
   }
 
   &[data-stage="flying"] {
-    [data-slot="image-preview-flight"] {
+    :is([data-slot="image-preview-surface"], [data-slot="image-preview-flight"], [data-slot="image-preview-edge"]) {
       display: block;
     }
 
     [data-slot="image-preview-image"] {
       visibility: hidden;
+    }
+
+    /* The surface stands in for the panel, so only its controls show, fading in as it lands. */
+    [data-slot="image-preview-container"] [data-slot="image-preview-content"] {
+      background: transparent;
+      box-shadow: none;
     }
   }
 
@@ -58,10 +95,7 @@
       max-height: 100%;
       border-radius: var(--radius-lg);
       background: var(--surface-raised-stronger-non-alpha);
-      box-shadow:
-        0 15px 45px 0 rgba(19, 16, 16, 0.35),
-        0 3.35px 10.051px 0 rgba(19, 16, 16, 0.25),
-        0 0.998px 2.993px 0 rgba(19, 16, 16, 0.2);
+      box-shadow: var(--image-preview-shadow);
       overflow: hidden;
 
       &:focus-visible {

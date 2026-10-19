@@ -5,13 +5,15 @@ import { Spring, type DurationOptions } from "../motion"
  *
  * The flying image is laid out once at `base` and only ever transformed, so the flight runs on transform and
  * clip-path alone. A frame says where the whole image would be drawn (`image`, always the image's own aspect ratio),
- * which part of it shows (`clip`), and the corner radius of that visible part, all in viewport pixels. Each of those
- * numbers rides its own spring, so the visible corners and crop move evenly on screen.
+ * which part of it shows (`clip`), and the corner radius of that visible part, all in viewport pixels. The preview's
+ * panel flies with it as one surface (`surface`, with its own corner radius) that grows out of the visible image, and
+ * `lift` says how far it has become the panel: 0 on the page, 1 open. Each of those numbers rides its own spring, so
+ * the visible corners, crop and panel move evenly on screen.
  */
 
 export type Box = { x: number; y: number; width: number; height: number }
 
-export type FlightFrame = { image: Box; clip: Box; radius: number }
+export type FlightFrame = { image: Box; clip: Box; radius: number; surface: Box; surfaceRadius: number; lift: number }
 
 /**
  * Claude's preview, fitted frame by frame: one critically damped spring for both directions, launched with a push of
@@ -50,12 +52,19 @@ export function createFlight(frame: FlightFrame) {
       return false
     },
     frame(): FlightFrame {
-      const [x, y, width, height, clipX, clipY, clipWidth, clipHeight, radius] = springs.map((spring) => spring.value)
+      const [x, y, width, height, clipX, clipY, clipWidth, clipHeight, radius, ...panel] = springs.map(
+        (spring) => spring.value,
+      )
+
+      const [surfaceX, surfaceY, surfaceWidth, surfaceHeight, surfaceRadius, lift] = panel
 
       return {
         image: { x, y, width, height },
         clip: { x: clipX, y: clipY, width: clipWidth, height: clipHeight },
         radius,
+        surface: { x: surfaceX, y: surfaceY, width: surfaceWidth, height: surfaceHeight },
+        surfaceRadius,
+        lift: lift / 100,
       }
     },
   }
@@ -79,15 +88,25 @@ export function fittedImage(box: Box, natural: { width: number; height: number }
   }
 }
 
-/** The frame of an element showing an image, cropped to the element's box. */
-export function elementFrame(box: Box, natural: { width: number; height: number }, fit: string, radius: number) {
+/**
+ * The frame of an element showing an image, cropped to the element's box and to `visible`, the part of it the page
+ * shows. The panel starts as that visible part.
+ */
+export function elementFrame(
+  box: Box,
+  natural: { width: number; height: number },
+  fit: string,
+  radius: number,
+  visible: Box = box,
+): FlightFrame {
   const image = fittedImage(box, natural, fit)
+  const clip = intersect(intersect(image, box), visible)
 
-  return { image, clip: intersect(image, box), radius }
+  return { image, clip, radius, surface: clip, surfaceRadius: radius, lift: 0 }
 }
 
 /** Styles that move an image laid out at `base` to `frame`, with `transform-origin: 0 0`. */
-export function flightStyle(base: Box, frame: FlightFrame) {
+export function flightStyle(base: Box, frame: Pick<FlightFrame, "image" | "clip" | "radius">) {
   const scale = frame.image.width / base.width
   const top = (frame.clip.y - frame.image.y) / scale
   const right = (frame.image.x + frame.image.width - frame.clip.x - frame.clip.width) / scale
@@ -123,6 +142,13 @@ function values(frame: FlightFrame) {
     frame.clip.width,
     frame.clip.height,
     frame.radius,
+    frame.surface.x,
+    frame.surface.y,
+    frame.surface.width,
+    frame.surface.height,
+    frame.surfaceRadius,
+    // In percent, so the landing threshold, a quarter of a unit, is as fine for it as for the pixels.
+    frame.lift * 100,
   ]
 }
 

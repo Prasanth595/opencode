@@ -73,18 +73,35 @@ describe("flightStyle", () => {
   })
 })
 
+describe("elementFrame", () => {
+  test("starts from the part the page shows, under a sticky bar, with the panel lying flat on it", () => {
+    const box = { x: 100, y: 20, width: 640, height: 360 }
+    const frame = elementFrame(box, natural, "fill", 4, { x: 0, y: 48, width: 1280, height: 752 })
+
+    expect(frame.image).toEqual(box)
+    expect(frame.clip).toEqual({ x: 100, y: 48, width: 640, height: 332 })
+    expect(frame.surface).toEqual(frame.clip)
+    expect(frame.surfaceRadius).toBe(4)
+    expect(frame.lift).toBe(0)
+  })
+})
+
 describe("createFlight", () => {
   const box = (x: number, width: number) => ({ x, y: 100, width, height: width * 0.75 })
 
-  const frame = (x: number, width: number, radius: number): FlightFrame => ({
+  const frame = (x: number, width: number, radius: number, lift: number): FlightFrame => ({
     image: box(x, width),
     clip: box(x, width),
     radius,
+    // On the page the panel is the image itself; open, it is a wider panel around it.
+    surface: lift ? { x: x - 120, y: 60, width: width + 240, height: width * 0.75 + 96 } : box(x, width),
+    surfaceRadius: lift ? 10 : radius,
+    lift,
   })
 
-  const thumbnail = frame(495, 285, 8)
+  const thumbnail = frame(495, 285, 8, 0)
 
-  const preview = frame(314, 651, 6)
+  const preview = frame(314, 651, 6, 1)
 
   const progress = (flight: ReturnType<typeof createFlight>) =>
     (flight.frame().image.width - thumbnail.image.width) / (preview.image.width - thumbnail.image.width)
@@ -99,6 +116,25 @@ describe("createFlight", () => {
     expect(path[2]).toBeCloseTo(0.61, 1)
     expect(path[6]).toBeCloseTo(0.91, 1)
     path.forEach((value) => expect(value).toBeLessThanOrEqual(1))
+    expect(flight.frame()).toEqual(preview)
+  })
+
+  test("grows the panel out of the image on the same flight, lifting it as it lands", () => {
+    const flight = createFlight(thumbnail)
+    flight.to(preview, KICK.open)
+    const path = Array.from({ length: 30 }, () => (flight.step(1 / 60), flight.frame()))
+
+    path.slice(1).forEach((frame, index) => {
+      expect(frame.lift).toBeGreaterThanOrEqual(path[index].lift)
+      expect(frame.surface.width).toBeGreaterThanOrEqual(path[index].surface.width)
+    })
+    // The lift keeps pace with the image's growth, so the shadow rises as the panel does.
+    path.forEach((frame) =>
+      expect(frame.lift).toBeCloseTo(
+        (frame.image.width - thumbnail.image.width) / (preview.image.width - thumbnail.image.width),
+        2,
+      ),
+    )
     expect(flight.frame()).toEqual(preview)
   })
 

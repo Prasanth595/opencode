@@ -47,29 +47,43 @@ const tuning = motionTuning.spring("imagePreview", {
 // Without a flight (reduced motion, or no thumbnail to fly to), the preview only fades.
 const fade = { duration: 0.15, bounce: 0 }
 
-// How long the dialog stays mounted after a close starts, in milliseconds: the flight lands well within this.
-const exitDuration = () => Math.max(tuning().duration, fade.duration) * 1800
+// How long the dialog stays mounted after a close starts, in milliseconds: the flight lands and hands the image back
+// to the page well within this.
+const exitDuration = () => Math.max(tuning().duration, fade.duration) * 3200
 
 const CENTER = { x: 0, y: 0 }
 
 export function ImagePreview(props: ImagePreviewProps) {
   const i18n = useI18n()
   const dialog = useDialogContext()
+  let root!: HTMLDivElement
   let scrim!: HTMLDivElement
   let content!: HTMLDivElement
   let viewport!: HTMLDivElement
   let image!: HTMLImageElement
   let standIn!: HTMLImageElement
+  let surface!: HTMLDivElement
+  let header!: HTMLDivElement
+  let edge!: HTMLDivElement
   let close: HTMLButtonElement | undefined
-  // Nothing shows until the image has loaded and the preview knows where it lands; while flying, a stand-in image
-  // travels above the dialog in place of the real one.
+  // Nothing shows until the image has loaded and the preview knows where it lands; while flying, a stand-in image and
+  // the panel's surface travel above the dialog in place of the real ones.
   const [stage, setStage] = createSignal<"pending" | "flying" | "rest">("pending")
-  // The flight under way: where the stand-in is laid out (the flight only transforms and clips it), its springs, and
-  // what happens when it lands.
-  let course: { at: Box; flight: ReturnType<typeof createFlight>; landed: () => void } | undefined
+
+  // The flight under way: where the stand-in is laid out (the flight only transforms and clips it), the panel at rest
+  // and whether its controls sit at its left, the springs, and what happens when it lands.
+  let course:
+    | { at: Box; panel: Box; rtl: boolean; flight: ReturnType<typeof createFlight>; landed: () => void }
+    | undefined
+
   const dim = Spring.fromDuration(0, FLIGHT_SPRING)
-  // Without a flight the panel and any stand-in fade with the backdrop; with one, the panel follows it more steeply,
-  // so it settles in around the image as it lands and clears before the image leaves.
+  // Once a close lands, the stand-in fades out over the image the page shows again, so whatever the page draws over
+  // its own image (a fade under a sticky bar, say) comes in softly instead of in one frame.
+  const veil = Spring.fromDuration(1, FLIGHT_SPRING)
+
+  // How far the flight has become the panel, as last painted: the origin's outline fades out as it rises.
+  let lift = 0
+  // Without a flight (reduced motion, or nothing on the page to fly to) the panel only fades with the backdrop.
   let plain = false
   let stop: (() => void) | undefined
   const [view, setView] = createSignal(FIT_VIEW)
@@ -146,8 +160,9 @@ export function ImagePreview(props: ImagePreviewProps) {
     }
 
     const flight = createFlight(from)
-    flight.to(restFrame(), KICK.open, tuning())
-    course = { at: place(fitted()), flight, landed: () => setStage("rest") }
+    const rest = restFrame()
+    flight.to(rest, KICK.open, tuning())
+    course = { at: place(fitted()), ...panel(rest), flight, landed: () => setStage("rest") }
     hideOrigin()
     paint()
     setStage("flying")
@@ -168,9 +183,18 @@ export function ImagePreview(props: ImagePreviewProps) {
     }
 
     // A close mid-open turns the flight around where it is, keeping its velocity.
-    course ??= { at: place(fitted()), flight: createFlight(restFrame()), landed: showOrigin }
+    if (!course) {
+      const rest = restFrame()
+      course = { at: place(fitted()), ...panel(rest), flight: createFlight(rest), landed: showOrigin }
+    }
+
     course.flight.to(to, KICK.close, tuning())
-    course.landed = showOrigin
+    course.landed = () => {
+      showOrigin()
+      veil.omega = (2 * Math.PI) / (tuning().duration * 0.75)
+      veil.set(0)
+    }
+
     hideOrigin()
     paint()
     setStage("flying")
@@ -188,6 +212,7 @@ export function ImagePreview(props: ImagePreviewProps) {
     stop ??= frameLoop.add((dt) => {
       const flying = course?.flight.step(dt)
       dim.step(dt)
+      veil.step(dt)
       paint()
 
       // The real image takes over only once the panel holding it is fully opaque, so its brightness doesn't step.
@@ -197,7 +222,7 @@ export function ImagePreview(props: ImagePreviewProps) {
         landed()
       }
 
-      if (course || !dim.resting) return true
+      if (course || !dim.resting || !veil.resting) return true
       stop = undefined
 
       return false
@@ -206,13 +231,30 @@ export function ImagePreview(props: ImagePreviewProps) {
 
   const paint = () => {
     scrim.style.opacity = String(dim.value)
-    content.style.opacity = String(plain ? dim.value : dim.value ** 2)
-    standIn.style.opacity = String(plain ? dim.value : 1)
+    standIn.style.opacity = String(plain ? dim.value : veil.value)
+    // Landed, the surface lies under the stand-in's own outline, so it leaves at once rather than fading in between.
+    surface.style.opacity = course ? "1" : "0"
 
-    if (!course) return
-    const style = flightStyle(course.at, course.flight.frame())
-    standIn.style.transform = style.transform
-    standIn.style.clipPath = style.clipPath
+    if (course) {
+      const frame = course.flight.frame()
+      // The controls ride the panel's top corner on their side, fading in as it lifts.
+      const side = course.rtl ? frame.surface.x - course.panel.x : right(frame.surface) - right(course.panel)
+      header.style.transform = `translate(${side}px, ${frame.surface.y - course.panel.y}px)`
+      const style = flightStyle(course.at, frame)
+      standIn.style.transform = style.transform
+      standIn.style.clipPath = style.clipPath
+      // The surface and the outline are leaf boxes, so sizing them every frame stays cheap; scaling them instead would
+      // stretch their corners and shadow.
+      layout(surface, frame.surface, frame.surfaceRadius)
+      surface.style.setProperty("--image-preview-lift", String(frame.lift))
+      layout(edge, frame.clip, frame.radius)
+      lift = frame.lift
+    }
+
+    if (!course) header.style.transform = ""
+    // Flying, the panel's controls arrive with the surface; without a flight they fade with the backdrop.
+    content.style.opacity = String(plain ? dim.value : course ? lift ** 2 : dim.value ** 2)
+    edge.style.opacity = String((1 - lift) * veil.value)
   }
 
   const place = (box: Box) => {
@@ -226,7 +268,7 @@ export function ImagePreview(props: ImagePreviewProps) {
     return box
   }
 
-  // The image as shown now: zoomed and panned, and cropped to the viewport.
+  // The image as shown now, zoomed and panned and cropped to the viewport, in its panel.
   const restFrame = (): FlightFrame => {
     const shown = image.getBoundingClientRect()
     const clip = intersect(shown, viewport.getBoundingClientRect())
@@ -236,10 +278,15 @@ export function ImagePreview(props: ImagePreviewProps) {
       image: shown,
       clip,
       radius: cropped ? 0 : parseFloat(getComputedStyle(image).borderTopLeftRadius) * view().scale,
+      surface: content.getBoundingClientRect(),
+      surfaceRadius: parseFloat(getComputedStyle(content).borderTopLeftRadius) || 0,
+      lift: 1,
     }
   }
 
-  // The origin's frame, or nothing when it is gone or scrolled out of sight.
+  const panel = (rest: FlightFrame) => ({ panel: rest.surface, rtl: getComputedStyle(content).direction === "rtl" })
+
+  // The origin's frame, cropped to the part the page shows, or nothing when it is gone or out of sight.
   const originFrame = () => {
     const origin = props.origin
 
@@ -247,15 +294,21 @@ export function ImagePreview(props: ImagePreviewProps) {
     const rect = origin.getBoundingClientRect()
 
     if (!rect.width || !rect.height) return
+    // The dialog stack portals the preview with its overlay; both sit over the page it looks through.
+    const visible = visibleBox(origin, root.closest("[data-dialog-layer]")?.parentElement ?? root)
 
-    if (rect.bottom <= 0 || rect.right <= 0 || rect.top >= window.innerHeight || rect.left >= window.innerWidth) return
+    if (!visible) return
     const style = getComputedStyle(origin)
+    // An image's outline is often an overlay, since an inset shadow does not paint over an <img>.
+    edge.style.boxShadow =
+      [style.boxShadow, getComputedStyle(origin, "::after").boxShadow].find((shadow) => shadow !== "none") ?? "none"
 
     return elementFrame(
       rect,
       { width: image.naturalWidth, height: image.naturalHeight },
       style.objectFit,
       parseFloat(style.borderTopLeftRadius) || 0,
+      visible,
     )
   }
 
@@ -368,7 +421,12 @@ export function ImagePreview(props: ImagePreviewProps) {
   )
 
   return (
-    <div data-component="image-preview" data-stage={stage()} style={{ "--image-preview-exit": `${exit()}ms` }}>
+    <div
+      ref={root}
+      data-component="image-preview"
+      data-stage={stage()}
+      style={{ "--image-preview-exit": `${exit()}ms` }}
+    >
       <div ref={scrim} data-slot="image-preview-scrim" />
       <div data-slot="image-preview-container">
         <Kobalte.Content
@@ -380,7 +438,7 @@ export function ImagePreview(props: ImagePreviewProps) {
             close?.focus()
           }}
         >
-          <div data-slot="image-preview-header">
+          <div ref={header} data-slot="image-preview-header">
             <div data-slot="image-preview-zoom">
               <IconButton
                 data-slot="image-preview-zoom-out"
@@ -461,7 +519,9 @@ export function ImagePreview(props: ImagePreviewProps) {
           </div>
         </Kobalte.Content>
       </div>
+      <div data-slot="image-preview-surface" ref={surface} />
       <img data-slot="image-preview-flight" src={props.src} alt="" aria-hidden="true" ref={standIn} />
+      <div data-slot="image-preview-edge" ref={edge} />
     </div>
   )
 }
@@ -550,6 +610,82 @@ function addReplayActions() {
 const SAMPLE = `data:image/svg+xml,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000"><defs><linearGradient id="sky" x2="0" y2="1"><stop offset="0" stop-color="#ff8a5b"/><stop offset="1" stop-color="#ffd27a"/></linearGradient></defs><rect width="1600" height="1000" fill="url(#sky)"/><circle cx="1120" cy="360" r="170" fill="#fff4d6"/><path d="M0 1000V720Q400 580 800 720T1600 700V1000Z" fill="#2f7d48"/></svg>',
 )}`
+
+// The part of `origin` the page under `preview` shows: inside its clipping ancestors and the window, and clear of
+// anything drawn over its top or bottom, such as a sticky title bar. Nothing when none of it shows.
+function visibleBox(origin: HTMLElement, preview: Element): Box | undefined {
+  const clipped = ancestors(origin).reduce(
+    (box: Box, element) => {
+      const style = getComputedStyle(element)
+
+      if (style.overflowX === "visible" && style.overflowY === "visible") return box
+
+      return intersect(box, element.getBoundingClientRect())
+    },
+    intersect(origin.getBoundingClientRect(), { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight }),
+  )
+
+  const rows = Math.floor(clipped.height)
+
+  if (!clipped.width || rows < 1) return
+  const x = clipped.x + clipped.width / 2
+
+  // The origin is hidden while the preview flies, so the page shows it where the topmost element under the preview
+  // holds it.
+  const shows = (y: number) =>
+    document
+      .elementsFromPoint(x, y)
+      .find((element) => !preview.contains(element))
+      ?.contains(origin) ?? false
+
+  const top = covered(rows, (row) => shows(clipped.y + row + 0.5))
+
+  if (top === rows) return
+  const bottom = covered(rows - top, (row) => shows(clipped.y + clipped.height - row - 0.5))
+
+  return { x: clipped.x, y: clipped.y + top, width: clipped.width, height: clipped.height - top - bottom }
+}
+
+function ancestors(element: HTMLElement) {
+  const list: HTMLElement[] = []
+
+  for (let parent = element.parentElement; parent; parent = parent.parentElement) list.push(parent)
+
+  return list
+}
+
+// How many of `rows`, counted in from an edge, are covered before the first that shows; a covering bar is one piece.
+function covered(rows: number, shows: (row: number) => boolean) {
+  let low = 0
+  let high = rows
+
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2)
+
+    if (shows(middle)) {
+      high = middle
+      continue
+    }
+
+    low = middle + 1
+  }
+
+  return low
+}
+
+function right(box: Box) {
+  return box.x + box.width
+}
+
+function layout(element: HTMLElement, frame: Box, radius: number) {
+  Object.assign(element.style, {
+    left: `${frame.x}px`,
+    top: `${frame.y}px`,
+    width: `${frame.width}px`,
+    height: `${frame.height}px`,
+    borderRadius: `${radius}px`,
+  })
+}
 
 function shortcut(key: string) {
   if (key === "=" || key === "+") return "in"
