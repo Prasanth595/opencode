@@ -75,6 +75,15 @@ test("shared packaging defaults", async () => {
   expect(config.mac?.sign).toBeFunction()
   expect(config.dmg?.sign).not.toBe(true)
   expect(config.mac?.extendInfo?.NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac).toBe(true)
+  // macOS shows the folder-access prompt only when the bundle carries a non-empty usage
+  // description; a missing or empty one is denied outright with no prompt at all.
+
+  for (const key of [
+    "NSDocumentsFolderUsageDescription",
+    "NSDesktopFolderUsageDescription",
+    "NSDownloadsFolderUsageDescription",
+  ])
+    expect(config.mac?.extendInfo?.[key]).toMatch(/\S/)
   const include = path.join(import.meta.dirname, "resources/windows/installer.nsh")
   expect(config.nsis?.include).toBe(include)
   expect(await Bun.file(include).exists()).toBe(true)
