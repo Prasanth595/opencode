@@ -7,7 +7,7 @@ summary, so the session can keep going past the model's context limit.
 
 ## How it works
 
-When a session approaches the model's context limit, OpenCode summarizes
+When a session approaches the model's usable input limit, OpenCode summarizes
 everything except the most recent conversation, about 15,000 tokens by default.
 Once the summary is ready, it is placed in front of that recent conversation and
 the session continues from there.
@@ -82,9 +82,24 @@ Add `compaction` to any [OpenCode configuration file](/config):
 | --- | ---: | --- |
 | `auto` | `true` | Compact automatically near the context limit, and recover once when a provider rejects a request as too long. Manual compaction always works. |
 | `keep.tokens` | `15000` | Approximate recent conversation kept beside the summary. Larger values preserve more detail but leave less room for new work. |
-| `buffer` | 10% of the limit | Tokens to keep free below the model's limit. Larger values start automatic compaction earlier. |
+| `buffer` | 10%, with a 16,000-token floor for windows of at least 32,000 tokens | Tokens to keep free below the usable input limit. An explicit value replaces this default reserve. Larger values start automatic compaction earlier. |
 
 `keep.tokens` and `buffer` accept non-negative integers.
+
+### Ceiling
+
+OpenCode uses the model's nonzero `limit.input`, falling back to `limit.context`
+when the input limit is unknown. Automatic compaction starts at that window
+minus the reserve described above. For example, an input limit of 272,000 tokens
+has a default reserve of 27,200 tokens and a ceiling of 244,800 tokens. Windows
+smaller than 32,000 tokens reserve only 10%, rounded down. If both limits are
+unknown, automatic compaction waits for a provider rejection.
+
+Model limit overrides merge per field with the catalog. Raising only
+`limit.context` therefore does not change the ceiling when the catalog still
+supplies a nonzero `limit.input`. Set the supported input limit too when
+[configuring a model's limits](/providers#models). These settings describe
+the provider's capacity; they do not increase it.
 
 ## Providers
 
