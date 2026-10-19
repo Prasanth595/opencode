@@ -234,7 +234,12 @@ export const layer = Layer.effect(
       return yield* compaction.pipe(
         Effect.matchEffect({
           onSuccess: (result) => publish(selected, result),
-          onFailure: (failure) => publish(selected, failure),
+          onFailure: (failure) =>
+            // A skip is not a failed compaction: automatic compaction fires again once there is
+            // something to summarize, and the session keeps working without a user-visible error.
+            trigger.reason === "auto" && failure.error.type === "compaction.unavailable"
+              ? Effect.succeed({ status: "skipped" } as const)
+              : publish(selected, failure),
         }),
       )
     })
@@ -277,6 +282,11 @@ export const layer = Layer.effect(
       const context = trigger.context
       const split = splitConversation(context.messages, keep)
       if (!split) return yield* Effect.fail(NOTHING_TO_COMPACT)
+      // Instructions and the opening prompt are not a conversation to summarize. Automatic compaction
+      // waits for a completed exchange so it cannot summarize itself on the first request; a manual
+      // request still summarizes whatever the history holds.
+      if (trigger.reason === "auto" && !split.older.some((message) => message.type === "assistant"))
+        return yield* Effect.fail(NOTHING_TO_COMPACT)
 
       const previous = previousCompaction(context.messages)
       const prompt = buildPrompt(previous !== undefined, previous?.summary.includes(LEGACY_HEADING) ?? false)
@@ -913,7 +923,10 @@ const calculateCeiling = (limit: SessionContext.Loaded["model"]["limit"], buffer
   // all, only a provider rejection can limit the request.
   const window = limit.input || limit.context
   if (window <= 0) return Number.POSITIVE_INFINITY
-  if (buffer !== undefined) return window - buffer
+  // A buffer at or above the window cannot leave room for the request; treat it as unset so the default
+  // reserve applies. Clamping to a fraction instead can put the ceiling below the fixed prompt size
+  // (system, tools, instructions), which makes automatic compaction due on every step.
+  if (buffer !== undefined && buffer < window) return window - buffer
   return window - Math.max(Math.floor(window * 0.1), window >= 2 * RESERVE_MIN ? RESERVE_MIN : 0)
 }
 

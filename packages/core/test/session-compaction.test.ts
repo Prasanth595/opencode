@@ -295,6 +295,55 @@ it.effect("auto compaction estimates current content against the buffered prompt
   }),
 )
 
+it.effect("clamps an oversized compaction buffer and waits for an exchange to summarize", () =>
+  Effect.gen(function* () {
+    const compaction = yield* SessionCompaction.Service
+    const session = yield* insertSession(Session.ID.make("ses_oversized_buffer"))
+    yield* compaction.transform((editor) => editor.configure({ buffer: 600_000 }))
+
+    const assistant = (tokens: number) =>
+      Schema.decodeUnknownSync(SessionMessage.Assistant)({
+        id: SessionMessage.ID.create(),
+        type: "assistant",
+        agent: Agent.defaultID,
+        model: { id: "summary-model", providerID: "test" },
+        content: [{ type: "text", text: "Done" }],
+        tokens: { input: tokens, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        time: { created: 0, completed: 0 },
+      })
+    const user = (text: string) =>
+      SessionMessage.User.make({
+        id: SessionMessage.ID.create(),
+        type: "user",
+        text,
+        time: { created: DateTime.makeUnsafe(0) },
+      })
+    const context = (messages: readonly SessionMessage.Info[]) => ({
+      ...loaded(session, messages),
+      model: SessionRunnerModel.resolved(model, {
+        capabilities: { tools: true, input: ["text"], output: ["text"] },
+        cost: [],
+        limit: { context: 100_000, output: 10_000 },
+      }),
+      agent: {
+        id: Agent.defaultID,
+        info: { ...Agent.Info.default(Agent.defaultID), system: "You are a helpful assistant." },
+      },
+      initial: "Project instructions.",
+    })
+    const status = (messages: readonly SessionMessage.Info[]) =>
+      compaction.compact({ reason: "auto", context: context(messages) }).pipe(Effect.map((outcome) => outcome.status))
+
+    // 600k free tokens on a 100k window is treated as unset, so the ceiling is the default 16k reserve
+    // below the window.
+    expect(yield* status([assistant(83_999)])).toBe("skipped")
+    expect(yield* status([assistant(84_000)])).toBe("completed")
+    // The opening prompt alone has no older exchange; a huge prompt must not summarize itself or
+    // surface `compaction.unavailable` as a failed compaction.
+    expect(yield* status([user("x".repeat(400_000))])).toBe("skipped")
+  }),
+)
+
 /** Seeds the global project plus one session row, returning the projected session. */
 const insertSession = (id: Session.ID, overrides?: Partial<typeof SessionTable.$inferInsert>) =>
   Effect.gen(function* () {
