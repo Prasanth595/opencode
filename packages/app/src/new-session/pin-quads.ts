@@ -50,10 +50,13 @@ void main() {
 }`
 
 export function createQuads(canvas: HTMLCanvasElement, restored: () => void) {
-  const data = { list: new Float32Array(FLOATS * 1024), count: 0, shadows: 0 }
+  // Each quad's colour is also kept as given, for the 2D fallback.
+  const data = { list: new Float32Array(FLOATS * 1024), tints: [] as Rgba[], count: 0, shadows: 0 }
   // The context is created on first draw, so a layer that never shows pins never holds one.
-  const surface: { current?: { gl: WebGL2RenderingContext; gpu: ReturnType<typeof setup> } | { ctx: CanvasRenderingContext2D } } = {}
-  const styles = new Map<number, string>()
+  const surface: {
+    current?: { gl: WebGL2RenderingContext; gpu: ReturnType<typeof setup> } | { ctx: CanvasRenderingContext2D }
+  } = {}
+  const styles = new WeakMap<Rgba, string>()
 
   const push = (x: number, y: number, ux: number, uy: number, vx: number, vy: number, c: Rgba) => {
     if ((data.count + 1) * FLOATS > data.list.length) {
@@ -62,6 +65,7 @@ export function createQuads(canvas: HTMLCanvasElement, restored: () => void) {
       data.list = grown
     }
     const list = data.list
+    data.tints[data.count] = c
     const i = data.count++ * FLOATS
     const a = c[3]
     list[i] = x
@@ -167,15 +171,8 @@ export function createQuads(canvas: HTMLCanvasElement, restored: () => void) {
     }
     for (let n = data.shadows; n < data.count; n++) {
       const i = n * FLOATS
-      const a = list[i + 9]
-      if (!a) continue
-      const key = Math.round((list[i + 6] / a) * 255) * 65536 + Math.round((list[i + 7] / a) * 255) * 256 + Math.round((list[i + 8] / a) * 255) + Math.round(a * 255) * 16777216
-      const style =
-        styles.get(key) ??
-        styles
-          .set(key, `rgba(${Math.round((list[i + 6] / a) * 255)}, ${Math.round((list[i + 7] / a) * 255)}, ${Math.round((list[i + 8] / a) * 255)}, ${Math.round(a * 255) / 255})`)
-          .get(key)!
-      ctx.fillStyle = style
+      const c = data.tints[n]
+      ctx.fillStyle = styles.get(c) ?? styles.set(c, `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${c[3]})`).get(c)!
       at(list[i], list[i + 1], list[i + 2], list[i + 3], list[i + 4], list[i + 5])
       ctx.fillRect(0, 0, 1, 1)
     }

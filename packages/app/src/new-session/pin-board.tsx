@@ -449,7 +449,13 @@ function mountPinBoard(back: HTMLCanvasElement, front: HTMLCanvasElement, logo: 
 
     for (const p of pins) {
       if (p.state !== HOME || age < (p.c / COLS) * 0.45) continue
-      back.shadow(p.hx + ox - LIGHT[0] * 2.5 - half - 1, p.hy + oy - LIGHT[1] * 2.5 - half - 1, size + 2, size + 2, colors.shadow)
+      back.shadow(
+        p.hx + ox - LIGHT[0] * 2.5 - half - 1,
+        p.hy + oy - LIGHT[1] * 2.5 - half - 1,
+        size + 2,
+        size + 2,
+        colors.shadow,
+      )
     }
 
     // An empty socket: a dark rim with its floor visible through the opening, shifted by the tilt.
@@ -459,7 +465,13 @@ function mountPinBoard(back: HTMLCanvasElement, front: HTMLCanvasElement, logo: 
       const w = size - Math.abs(ox * 0.45)
       const h = size - Math.abs(oy * 0.45)
       if (w > 0 && h > 0)
-        back.rect(p.hx + ox - half + Math.max(0, ox * 0.45), p.hy + oy - half + Math.max(0, oy * 0.45), w, h, colors.socketFloor)
+        back.rect(
+          p.hx + ox - half + Math.max(0, ox * 0.45),
+          p.hy + oy - half + Math.max(0, oy * 0.45),
+          w,
+          h,
+          colors.socketFloor,
+        )
     }
 
     const key = (sx > 0 ? 1 : 0) + (sy > 0 ? 2 : 0)
