@@ -42,6 +42,7 @@ it.live("returns LocationNotFoundError for a missing folder and recovers once it
       "/api/model",
       "/api/integration",
       `/api/session/${session.id}/permission`,
+      `/api/session/${session.id}/instructions/entries`,
       `/api/experimental/session/${session.id}/instructions/entries`,
       `/api/session/${session.id}/form`,
       "/api/session/global/form",
@@ -614,5 +615,47 @@ it.live("stays serviceable when the first request aborts", () =>
 
     const second = yield* Effect.promise(() => handler(new Request("http://opencode.local/api/info")))
     expect(second.status).toBe(200)
+  }),
+)
+
+it.live("serves session instruction entries at stable and deprecated experimental paths", () =>
+  Effect.gen(function* () {
+    const handler = yield* ServerFetch.make(options)
+    const request = (path: string, method = "GET", body?: unknown) =>
+      Effect.promise(async () => {
+        const response = await handler(
+          new Request(`http://opencode.local${path}`, {
+            method,
+            headers: body === undefined ? undefined : { "content-type": "application/json" },
+            body: body === undefined ? undefined : JSON.stringify(body),
+          }),
+        )
+        return {
+          status: response.status,
+          body: response.status === 204 ? undefined : await response.json(),
+        }
+      })
+
+    const created = Schema.decodeUnknownSync(Schema.Struct({ data: Session.Info }))(
+      (yield* request("/api/session", "POST", {})).body,
+    ).data
+
+    const stable = `/api/session/${created.id}/instructions/entries`
+    const experimental = `/api/experimental/session/${created.id}/instructions/entries`
+    for (const [base, alias] of [
+      [stable, experimental],
+      [experimental, stable],
+    ]) {
+      expect(yield* request(base)).toEqual({ status: 200, body: { data: [] } })
+      expect(yield* request(`${base}/review-notes`, "PUT", { value: { text: "Check the diff", priority: 1 } })).toEqual(
+        { status: 204, body: undefined },
+      )
+      expect(yield* request(alias)).toEqual({
+        status: 200,
+        body: { data: [{ key: "review-notes", value: { text: "Check the diff", priority: 1 } }] },
+      })
+      expect(yield* request(`${alias}/review-notes`, "DELETE")).toEqual({ status: 204, body: undefined })
+      expect(yield* request(base)).toEqual({ status: 200, body: { data: [] } })
+    }
   }),
 )
