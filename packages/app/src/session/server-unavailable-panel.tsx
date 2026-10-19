@@ -12,7 +12,7 @@ export function ServerUnavailablePanel(props: { reason: "incompatible" | "unreac
   return (
     <div class="flex-1 min-h-0 overflow-hidden">
       <div class="h-full px-6 pb-42 -mt-4 flex flex-col items-center justify-center text-center gap-4">
-        <Icon name="warning" size="large" class="text-icon-warning-base" />
+        <Icon name="outline-hexagonal-warning" size="large" class="text-v2-state-fg-danger" />
         <div class="flex flex-col items-center gap-2">
           <div class="text-16-medium text-text max-w-md">
             {props.reason === "incompatible"
