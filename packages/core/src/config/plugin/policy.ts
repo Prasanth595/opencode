@@ -24,13 +24,17 @@ export const Plugin = define({
     // Authored documents reverse so user-global policy outranks repository policy; organization statements
     // from the connected Console follow every authored one and have the final say.
     const policies = () => ManagedPolicy.statements(loaded.entries, managed.current())
+    const runSync = Effect.runSyncWith(yield* Effect.context())
     yield* ctx.provider.transform((providers) => {
       const current = policies()
       for (const record of providers.list()) {
         const policy = current.findLast(
           (policy) => policy.action === "provider.use" && Wildcard.match(record.provider.id, policy.resource),
         )
-        if (policy?.effect === "deny") providers.remove(record.provider.id)
+        if (policy?.effect !== "deny") continue
+        providers.remove(record.provider.id)
+        // Removal is otherwise silent: the model later surfaces only as "Model unavailable".
+        runSync(Effect.logInfo("provider removed by policy", { provider: record.provider.id, reason: policy.message }))
       }
     })
     yield* ctx.mcp.transform((servers) => {
