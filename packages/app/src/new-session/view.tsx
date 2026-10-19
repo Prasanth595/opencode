@@ -82,11 +82,10 @@ export function NewSessionView(props: {
               <div
                 data-slot="new-session-composer"
                 classList={{
-                  "rounded-[14px] bg-v2-background-bg-layer-01 shadow-[inset_0_0_0_0.5px_var(--v2-border-border-muted)]":
-                    !!props.project.selected(),
+                  "rounded-xl border border-v2-border-border-base bg-v2-background-bg-deep": !!props.project.selected(),
                 }}
               >
-                <Composer model={props.composer} />
+                <Composer model={props.composer} borderUnderlay={!!props.project.selected()} />
                 <Show when={props.project.selected()}>
                   {(project) => (
                     <NewSessionLocation
@@ -310,7 +309,7 @@ function NewSessionLocation(props: {
             data-action="prompt-project"
             aria-haspopup="dialog"
             aria-description={language.t("session.new.workspace.trigger.tooltip")}
-            class="flex h-7 min-w-0 max-w-full items-center gap-1.5 rounded-full text-start bg-v2-background-bg-layer-02 ps-1.5 pe-2.5 text-v2-text-text-muted transition-colors hover:bg-v2-background-bg-layer-03 hover:text-v2-text-text-base focus-visible:bg-v2-background-bg-layer-03 focus-visible:text-v2-text-text-base focus-visible:outline-none"
+            class="flex h-6 min-w-0 max-w-full items-center gap-1.5 rounded-md text-start ps-1 pe-2 text-v2-text-text-muted transition-colors hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:text-v2-text-text-base focus-visible:outline-none"
             onClick={props.onClick}
           >
             <ProjectAvatar
