@@ -1,6 +1,5 @@
 export default {
   "command.toggle": "Toggle debug bar",
-  "command.motion": "Toggle motion controls",
   "status.toggle": "Toggle debug tools",
   ariaLabel: "Development performance diagnostics",
   providerAriaLabel: "Provider performance diagnostics",

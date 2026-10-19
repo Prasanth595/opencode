@@ -13,8 +13,13 @@ type Knob<Kind extends string, Value> = {
   value: Value
 }
 
+/** The presets every spring offers. Its shipped value is Snappy; Smooth and Calm are slower, all without bounce. */
+export const motionPresets = { snappy: "Snappy", smooth: "Smooth", calm: "Calm" } as const
+
+export type MotionPreset = keyof typeof motionPresets
+
 export type MotionKnob =
-  | Knob<"spring", DurationOptions>
+  | (Knob<"spring", DurationOptions> & { presets: Record<Exclude<MotionPreset, "snappy">, DurationOptions> })
   | Knob<"toggle", boolean>
   | (Knob<"number", number> & { min: number; max: number; step: number; unit?: string })
 
@@ -22,7 +27,8 @@ export type MotionAction = { id: string; label: string; group: string; run: () =
 
 type Meta = { label: string; group: string }
 
-const key = "opencode.motion.v1"
+// Bumped when knobs are merged or renamed, so values saved for the old ones are dropped.
+const key = "opencode.motion.v2"
 
 const knobs = new Map<string, MotionKnob>()
 
@@ -35,8 +41,8 @@ const saved = load()
 
 export const motionTuning = {
   /** The spring to run now: its tuned duration scaled by the global speed and slow motion. */
-  spring(id: string, meta: Meta & DurationOptions) {
-    const initial = { duration: meta.duration, bounce: meta.bounce }
+  spring(id: string, meta: Meta & { presets: Record<MotionPreset, DurationOptions> }) {
+    const initial = meta.presets.snappy
 
     const knob = register({
       kind: "spring",
@@ -44,11 +50,12 @@ export const motionTuning = {
       label: meta.label,
       group: meta.group,
       initial,
-      value: { duration: number(`${id}.duration`, meta.duration), bounce: number(`${id}.bounce`, meta.bounce) },
+      value: { duration: number(`${id}.duration`, initial.duration), bounce: number(`${id}.bounce`, initial.bounce) },
+      presets: { smooth: meta.presets.smooth, calm: meta.presets.calm },
     })
 
     return (): DurationOptions => ({
-      duration: Math.max(0.03, (knob.value.duration * (slow.value ? 4 : 1)) / speed.value),
+      duration: Math.max(0.03, knob.value.duration * timeScale()),
       bounce: Math.min(0.95, Math.max(0, knob.value.bounce)),
     })
   },
@@ -168,6 +175,8 @@ function number(id: string, fallback: number) {
 
 function load(): Record<string, number> {
   try {
+    localStorage.removeItem("opencode.motion.v1")
+
     return JSON.parse(localStorage.getItem(key) ?? "{}")
   } catch {
     return {}

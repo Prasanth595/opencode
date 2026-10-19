@@ -15,10 +15,11 @@ export type FlightFrame = { image: Box; clip: Box; radius: number }
 
 /**
  * Claude's preview, fitted frame by frame: one critically damped spring for both directions, launched with a push of
- * this many times the remaining distance per second. A spring from rest starts too slowly to match.
+ * `KICK` times the remaining distance per second. A spring from rest starts too slowly to match.
  */
 export const FLIGHT_SPRING = { duration: 0.2, bounce: 0 }
 
+/** The launch push on `FLIGHT_SPRING`. Other durations scale it with the spring, so a slower spring keeps its shape. */
 export const KICK = { open: 14, close: 32.5 }
 
 /** A flight frame with one spring per edge, so heading somewhere new mid-flight keeps the velocity it already has. */
@@ -26,13 +27,15 @@ export function createFlight(frame: FlightFrame) {
   const springs = values(frame).map((value) => Spring.fromDuration(value, FLIGHT_SPRING))
 
   return {
-    /** Heads for `frame` on `tuning`, adding a launch velocity of `kick` times the remaining distance per second. */
+    /** Heads for `frame` on `tuning`, launched with a `KICK` push scaled to the spring's duration. */
     to(frame: FlightFrame, kick: number, tuning: DurationOptions = FLIGHT_SPRING) {
+      const push = (kick * FLIGHT_SPRING.duration) / tuning.duration
+
       values(frame).forEach((target, index) => {
         const spring = springs[index]
         spring.omega = (2 * Math.PI) / tuning.duration
         spring.zeta = 1 - tuning.bounce
-        spring.set(target, { velocity: spring.velocity + kick * (target - spring.value) })
+        spring.set(target, { velocity: spring.velocity + push * (target - spring.value) })
       })
     },
     /** Advances `dt` seconds; true until every edge has landed. */

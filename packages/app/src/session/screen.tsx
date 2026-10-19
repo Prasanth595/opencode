@@ -36,7 +36,6 @@ import { TimelineSearchBar } from "./timeline/search-bar"
 import { ActiveSessionComposerRegion, createActiveSessionRegion } from "./composer/region"
 import { SessionIdentityHeader } from "./session-identity-header"
 import { SessionReviewToggle } from "./header/session-header-actions"
-import { createPanelMotion, panelSprings, replayPanelToggle } from "@/shell/panel-motion"
 import { createTimelineCache } from "./timeline/cache"
 
 export function SessionScreenView(props: { session: SessionModel }) {
@@ -110,41 +109,17 @@ function SessionScreenContent(props: {
 
   const sideVisible = createMemo(() => isDesktop() && screen.side.open())
 
-  // The chat keeps its open width as the far end of a close's travel.
-  const chatOpenWidth = createMemo<string>((previous) => (sideVisible() ? screen.panel.width() : previous), "100%")
-  let chat: HTMLDivElement | undefined
-
-  const sideMotion = createPanelMotion({
-    open: sideVisible,
-    spring: panelSprings.side,
-    identity: session.layout.tabKey,
-    // The chat's real width moves the side panel's edge, whose contents keep their open width pinned to it.
-    paint: (closed) => {
-      if (!chat) return
-      const open = chatOpenWidth()
-
-      if (closed === 1) {
-        chat.style.width = "100%"
-
-        return
-      }
-
-      chat.style.width = closed === 0 ? open : `calc(${open} + (100% - ${open}) * ${closed})`
-    },
-    onClosed: () => {
-      setStore("sideRegionPresent", false)
-      setStore("sideTabsPresent", false)
-    },
-  })
-
-  replayPanelToggle({
-    id: "sidePanel",
-    group: "Side panel",
-    toggle: () => session.layout.view().side.toggle(),
-    spring: panelSprings.side,
-  })
-
-  const sideFileTree = createMemo<boolean>((previous) => (sideVisible() ? screen.files.open() : previous), false)
+  // A close unmounts the side region; switching to a layout whose side is closed keeps it, hidden.
+  createEffect(
+    on(
+      () => [sideVisible(), session.layout.tabKey()] as const,
+      ([visible, key], previous) => {
+        if (visible || !previous || previous[1] !== key) return
+        setStore("sideRegionPresent", false)
+        setStore("sideTabsPresent", false)
+      },
+    ),
+  )
 
   const hideTimelineScrollbar = () => setStore("timelineScrollbarHidden", true)
 
@@ -353,10 +328,10 @@ function SessionScreenContent(props: {
             </div>
           </Show>
           <div
-            ref={chat}
             class="@container relative z-10 min-w-0 shrink-0 flex flex-col min-h-0 h-full flex-1 md:flex-none"
             data-slot="session-chat-panel"
             data-scrollbar-hidden={store.timelineScrollbarHidden}
+            style={{ width: screen.panel.width() }}
             onPointerMove={revealTimelineScrollbar}
             onPointerDown={revealTimelineScrollbar}
             on:wheel={{ passive: true, handleEvent: revealTimelineScrollbar }}
@@ -385,13 +360,12 @@ function SessionScreenContent(props: {
             </Show>
           </div>
 
-          <Show when={sideMotion.present() || store.sideTabsPresent}>
+          <Show when={sideVisible() || store.sideTabsPresent}>
             <div
               data-slot="session-side-panel-presence"
               classList={{
-                "relative z-0 min-w-0 h-full flex-1 overflow-visible": sideMotion.present(),
-                "absolute inset-y-0 end-0 z-0 w-0 invisible pointer-events-none overflow-visible":
-                  !sideMotion.present(),
+                "relative z-0 min-w-0 h-full flex-1 overflow-visible": sideVisible(),
+                "absolute inset-y-0 end-0 z-0 w-0 invisible pointer-events-none overflow-visible": !sideVisible(),
               }}
             >
               <div
@@ -404,14 +378,14 @@ function SessionScreenContent(props: {
                     <div
                       data-slot="session-side-region-presence"
                       class="absolute inset-0"
-                      classList={{ invisible: !sideMotion.present() }}
+                      classList={{ invisible: !sideVisible() }}
                     >
                       <SideRegion
                         screen={props.screen}
                         view={props.view()}
                         region={region}
                         sidebar={sidebar}
-                        fileTree={sideFileTree()}
+                        fileTree={screen.files.open()}
                         present={store.sideTabsPresent}
                         size={screen.size}
                       />

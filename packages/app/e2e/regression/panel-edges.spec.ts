@@ -32,7 +32,7 @@ async function trace(page: Page, toggle: Locator, before: string, after: string)
   return frames
 }
 
-test("the content beside a panel follows the panel's edge on every frame of a toggle", async ({ page }) => {
+test("a toggle moves the panel and the content beside it in the same frame, without animating", async ({ page }) => {
   await mockStressTimeline(page)
   await installStressSessionTabs(page)
   await seed(page, { settings: { appearance: { tabLayout: "vertical", sidebarOpen: true } } })
@@ -57,8 +57,8 @@ test("the content beside a panel follows the panel's edge on every frame of a to
 
   for (const run of runs) {
     const frames = await trace(page, run.toggle, run.before, run.after)
-    // The toggle animates over several frames rather than jumping to its end.
-    expect(new Set(frames.map((frame) => Math.round(frame.edge))).size).toBeGreaterThan(3)
+    // The edge jumps straight from where it was to where it lands.
+    expect(new Set(frames.map((frame) => Math.round(frame.edge))).size).toBeLessThanOrEqual(2)
     frames.flatMap((frame) => frame.gap ?? []).forEach((gap) => expect(gap).toBeCloseTo(run.gap, 0))
   }
 })

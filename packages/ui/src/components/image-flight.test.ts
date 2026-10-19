@@ -102,6 +102,17 @@ describe("createFlight", () => {
     expect(flight.frame()).toEqual(preview)
   })
 
+  test("keeps its launch shape on a slower spring, stretched in time", () => {
+    const snappy = createFlight(thumbnail)
+    const calm = createFlight(thumbnail)
+    snappy.to(preview, KICK.open)
+    calm.to(preview, KICK.open, { duration: 0.4, bounce: 0 })
+    snappy.step(1 / 60)
+    calm.step(2 / 60)
+
+    expect(progress(calm)).toBeCloseTo(progress(snappy), 5)
+  })
+
   test("turns around mid-flight from where it is, carrying its velocity", () => {
     const flight = createFlight(thumbnail)
     flight.to(preview, KICK.open)

@@ -33,91 +33,22 @@ const STEP = Math.SQRT2
 
 const group = "Image open"
 
-// Claude's backdrop dims from rest, more gently than the image flies. Without a flight (reduced motion, or no thumbnail
-// to fly to), the preview only fades.
-const claude = {
-  springs: {
-    imageOpen: FLIGHT_SPRING,
-    imageClose: FLIGHT_SPRING,
-    imageScrimOpen: { duration: 0.34, bounce: 0 },
-    imageScrimClose: { duration: 0.2, bounce: 0 },
+// One spring carries the open and the close, and the backdrop dims on it too. Snappy is Claude's measured preview.
+const tuning = motionTuning.spring("imagePreview", {
+  label: "Spring",
+  group,
+  presets: {
+    snappy: FLIGHT_SPRING,
+    smooth: { duration: 0.3, bounce: 0 },
+    calm: { duration: 0.4, bounce: 0 },
   },
-  numbers: { imageOpenKick: KICK.open, imageCloseKick: KICK.close, imageFade: 0.15 },
-}
+})
 
-const presets = {
-  "Claude match": claude,
-  Calm: {
-    springs: {
-      imageOpen: { duration: 0.32, bounce: 0 },
-      imageClose: { duration: 0.26, bounce: 0 },
-      imageScrimOpen: { duration: 0.45, bounce: 0 },
-      imageScrimClose: { duration: 0.28, bounce: 0 },
-    },
-    numbers: { imageOpenKick: 6, imageCloseKick: 16, imageFade: 0.2 },
-  },
-}
-
-const kick = { group, min: 0, max: 60, step: 0.5, unit: "×/s", time: "rate" } as const
-
-const tuning = {
-  open: motionTuning.spring("imageOpen", { label: "Open spring", group, ...claude.springs.imageOpen }),
-  openKick: motionTuning.number("imageOpenKick", {
-    ...kick,
-    label: "Open launch velocity",
-    value: claude.numbers.imageOpenKick,
-  }),
-  close: motionTuning.spring("imageClose", { label: "Close spring", group, ...claude.springs.imageClose }),
-  closeKick: motionTuning.number("imageCloseKick", {
-    ...kick,
-    label: "Close launch velocity",
-    value: claude.numbers.imageCloseKick,
-  }),
-  scrimOpen: motionTuning.spring("imageScrimOpen", { label: "Backdrop in", group, ...claude.springs.imageScrimOpen }),
-  scrimClose: motionTuning.spring("imageScrimClose", {
-    label: "Backdrop out",
-    group,
-    ...claude.springs.imageScrimClose,
-  }),
-  fade: motionTuning.number("imageFade", {
-    label: "Reduced-motion fade",
-    group,
-    value: claude.numbers.imageFade,
-    min: 0.05,
-    max: 1,
-    step: 0.01,
-    unit: "s",
-    time: "duration",
-  }),
-}
-
-Object.entries(presets).forEach(([name, preset]) =>
-  motionTuning.action({
-    id: `imagePreview.preset.${name}`,
-    label: `Preset: ${name}`,
-    group,
-    run: () => {
-      const knobs = motionTuning.list()
-
-      Object.entries(preset.springs).forEach(([id, value]) => {
-        const knob = knobs.find((item) => item.id === id)
-
-        if (knob?.kind === "spring") motionTuning.set(knob, value)
-      })
-
-      Object.entries(preset.numbers).forEach(([id, value]) => {
-        const knob = knobs.find((item) => item.id === id)
-
-        if (knob?.kind === "number") motionTuning.set(knob, value)
-      })
-    },
-  }),
-)
-
-const fade = () => ({ duration: Math.max(0.03, tuning.fade()), bounce: 0 })
+// Without a flight (reduced motion, or no thumbnail to fly to), the preview only fades.
+const fade = { duration: 0.15, bounce: 0 }
 
 // How long the dialog stays mounted after a close starts, in milliseconds: the flight lands well within this.
-const exitDuration = () => Math.max(tuning.close().duration, tuning.scrimClose().duration, tuning.fade()) * 1800
+const exitDuration = () => Math.max(tuning().duration, fade.duration) * 1800
 
 const CENTER = { x: 0, y: 0 }
 
@@ -136,7 +67,7 @@ export function ImagePreview(props: ImagePreviewProps) {
   // The flight under way: where the stand-in is laid out (the flight only transforms and clips it), its springs, and
   // what happens when it lands.
   let course: { at: Box; flight: ReturnType<typeof createFlight>; landed: () => void } | undefined
-  const dim = Spring.fromDuration(0, claude.springs.imageScrimOpen)
+  const dim = Spring.fromDuration(0, FLIGHT_SPRING)
   // Without a flight the panel and any stand-in fade with the backdrop; with one, the panel follows it more steeply,
   // so it settles in around the image as it lands and clears before the image leaves.
   let plain = false
@@ -204,7 +135,7 @@ export function ImagePreview(props: ImagePreviewProps) {
     if (stage() !== "pending" || !dialog.isOpen()) return
     const from = prefersReducedMotion() ? undefined : originFrame()
     holdExit()
-    dimTo(1, from ? tuning.scrimOpen() : fade())
+    dimTo(1, from ? tuning() : fade)
 
     if (!from) {
       plain = true
@@ -215,7 +146,7 @@ export function ImagePreview(props: ImagePreviewProps) {
     }
 
     const flight = createFlight(from)
-    flight.to(restFrame(), tuning.openKick(), tuning.open())
+    flight.to(restFrame(), KICK.open, tuning())
     course = { at: place(fitted()), flight, landed: () => setStage("rest") }
     hideOrigin()
     paint()
@@ -228,7 +159,7 @@ export function ImagePreview(props: ImagePreviewProps) {
 
     if (stage() === "pending") return
     const to = prefersReducedMotion() ? undefined : originFrame()
-    dimTo(0, to ? tuning.scrimClose() : fade())
+    dimTo(0, to ? tuning() : fade)
 
     if (!to) {
       plain = true
@@ -238,7 +169,7 @@ export function ImagePreview(props: ImagePreviewProps) {
 
     // A close mid-open turns the flight around where it is, keeping its velocity.
     course ??= { at: place(fitted()), flight: createFlight(restFrame()), landed: showOrigin }
-    course.flight.to(to, tuning.closeKick(), tuning.close())
+    course.flight.to(to, KICK.close, tuning())
     course.landed = showOrigin
     hideOrigin()
     paint()
@@ -603,7 +534,7 @@ function addReplayActions() {
         // The flight starts once the image has decoded; close a little way into it.
         const wait = () => {
           if (document.querySelector('[data-component="image-preview"][data-stage="flying"]'))
-            return void setTimeout(close, tuning.open().duration * 350)
+            return void setTimeout(close, tuning().duration * 350)
 
           if (performance.now() - start < 2000) requestAnimationFrame(wait)
         }
