@@ -270,6 +270,7 @@ function NewSessionLocation(props: {
 
   const worktree = () => {
     if (props.workspace === "main") return
+
     if (props.workspace === "create") return language.t("workspace.new")
 
     return getFilename(props.workspace)
