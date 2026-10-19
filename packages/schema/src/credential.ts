@@ -48,9 +48,11 @@ const KeyFields = {
 export interface Key extends Schema.Schema.Type<typeof Key> {}
 export const Key = Schema.Struct({
   ...KeyFields,
-  // Deprecated: setup-form answers from credentials written before v2.1. Accepted on input, merged into metadata on
-  // decode, and never encoded.
-  configuration: optional(Form.Answer),
+  // Raw optionalKey so the deprecation reaches OpenAPI; this field is never encoded.
+  configuration: Schema.optionalKey(Form.Answer).annotateKey({
+    description: "Deprecated: written before v2.1. Accepted on input, merged into metadata, and never returned.",
+    deprecated: true,
+  }),
 })
   .annotate({ identifier: "Credential.Key" })
   .pipe(

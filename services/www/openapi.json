@@ -14871,7 +14871,14 @@
             "type": "object"
           },
           "configuration": {
-            "$ref": "#/components/schemas/Form.Answer_1"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Form.Answer_1"
+              },
+              {
+                "description": "Deprecated: written before v2.1. Accepted on input, merged into metadata, and never returned."
+              }
+            ]
           }
         },
         "required": ["type", "key"],
