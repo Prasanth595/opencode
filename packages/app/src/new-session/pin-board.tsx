@@ -461,7 +461,8 @@ function mountPinBoard(back: HTMLCanvasElement, front: HTMLCanvasElement, logo: 
     }
 
     // An empty socket: a dark rim with its floor visible through the opening, shifted by the tilt.
-    for (const p of pins) if (p.state !== HOME) quads.rect(p.hx + ox - half, p.hy + oy - half, size, size, colors.socketRim)
+    for (const p of pins)
+      if (p.state !== HOME) quads.rect(p.hx + ox - half, p.hy + oy - half, size, size, colors.socketRim)
     for (const p of pins) {
       if (p.state === HOME) continue
       const w = size - Math.abs(ox * 0.45)
