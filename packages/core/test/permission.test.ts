@@ -352,7 +352,7 @@ describe("Permission", () => {
       const saved = yield* PermissionSaved.Service
       const service = yield* Permission.Service
       yield* saved.add({ projectID: Project.ID.global, action: "read", resources: ["src/*", "docs/*"] })
-      const [docs, src] = (yield* saved.list()).toSorted((left, right) => left.resource.localeCompare(right.resource))
+      const src = (yield* saved.list()).find((item) => item.resource === "src/*")
 
       expect(yield* saved.update({ id: src!.id, resource: "src/allowed.ts" })).toMatchObject({
         id: src!.id,
@@ -369,7 +369,8 @@ describe("Permission", () => {
 
       expect(yield* saved.update({ id: src!.id, resource: "docs/*" }).pipe(Effect.flip)).toMatchObject({
         _tag: "PermissionSaved.ConflictError",
-        id: docs!.id,
+        id: src!.id,
+        resource: "docs/*",
       })
       expect(
         yield* saved.update({ id: PermissionSaved.ID.make("psv_missing"), action: "edit" }).pipe(Effect.flip),

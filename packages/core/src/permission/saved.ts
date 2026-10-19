@@ -1,7 +1,9 @@
 export * as PermissionSaved from "./saved.js"
 
-import { and, eq, ne } from "drizzle-orm"
-import { Context, DateTime, Effect, Layer, Schema } from "effect"
+import { eq } from "drizzle-orm"
+import { Cause, Context, DateTime, Effect, Layer, Schema } from "effect"
+import { isSqlError } from "effect/sql/SqlError"
+import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors"
 import { Project } from "@opencode/schema/project"
 import { Database } from "../database/database.js"
 import { makeGlobalNode } from "@opencode/util/effect/app-node"
@@ -85,45 +87,28 @@ const layer = Layer.effect(
     })
 
     const update = Effect.fn("PermissionSaved.update")(function* (input: UpdateInput) {
-      // The duplicate check and the write run in one transaction so a concurrent save can't slip between them.
-      return yield* db
-        .transaction((tx) =>
-          Effect.gen(function* () {
-            const current = yield* tx
-              .select()
-              .from(PermissionTable)
-              .where(eq(PermissionTable.id, input.id))
-              .get()
-              .pipe(Effect.orDie)
-            if (!current) return yield* new NotFoundError({ id: input.id })
-            const action = input.action ?? current.action
-            const resource = input.resource ?? current.resource
-            const duplicate = yield* tx
-              .select({ id: PermissionTable.id })
-              .from(PermissionTable)
-              .where(
-                and(
-                  eq(PermissionTable.project_id, current.project_id),
-                  eq(PermissionTable.action, action),
-                  eq(PermissionTable.resource, resource),
-                  ne(PermissionTable.id, input.id),
-                ),
-              )
-              .get()
-              .pipe(Effect.orDie)
-            if (duplicate) return yield* new ConflictError({ id: duplicate.id, action, resource })
-            const updated = yield* tx
-              .update(PermissionTable)
-              .set({ action, resource })
-              .where(eq(PermissionTable.id, input.id))
-              .returning()
-              .get()
-              .pipe(Effect.orDie)
-            if (!updated) return yield* new NotFoundError({ id: input.id })
-            return info(updated)
-          }),
+      const current = yield* db
+        .select()
+        .from(PermissionTable)
+        .where(eq(PermissionTable.id, input.id))
+        .get()
+        .pipe(Effect.orDie)
+      if (!current) return yield* new NotFoundError({ id: input.id })
+      const action = input.action ?? current.action
+      const resource = input.resource ?? current.resource
+      // The unique index rejects an edit that duplicates another saved permission in the project.
+      const updated = yield* db
+        .update(PermissionTable)
+        .set({ action, resource })
+        .where(eq(PermissionTable.id, input.id))
+        .returning()
+        .get()
+        .pipe(
+          Effect.catchIf(isUniqueViolation, () => new ConflictError({ id: input.id, action, resource })),
+          Effect.catchTag("EffectDrizzleQueryError", (error) => Effect.die(error)),
         )
-        .pipe(Effect.catchTag("SqlError", (error) => Effect.die(error)))
+      if (!updated) return yield* new NotFoundError({ id: input.id })
+      return info(updated)
     })
 
     const remove = Effect.fn("PermissionSaved.remove")(function* (id: ID) {
@@ -133,6 +118,16 @@ const layer = Layer.effect(
     return Service.of({ list, add, update, remove })
   }),
 )
+
+// Durable Object SQLite throws a plain Error without SQLite codes, so its unique violation is only in the message.
+const isUniqueViolation = (error: EffectDrizzleQueryError) => {
+  const sql = Cause.isCause(error.cause) ? Cause.squash(error.cause) : error.cause
+  if (!isSqlError(sql)) return false
+  return (
+    sql.reason._tag === "UniqueViolation" ||
+    (sql.reason.cause instanceof Error && sql.reason.cause.message.includes("SQLITE_CONSTRAINT_UNIQUE"))
+  )
+}
 
 const info = (row: typeof PermissionTable.$inferSelect): Info => ({
   id: row.id,
