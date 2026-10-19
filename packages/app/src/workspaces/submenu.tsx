@@ -80,6 +80,21 @@ export function WorkspaceSubmenu(props: {
                     return
                   }
 
+                  if (event.key === "Enter" && !event.isComposing) {
+                    // Focus stays in this field while the pointer highlights rows, and Kobalte only handles
+                    // Enter on the row itself, so forward it to the highlighted row.
+                    const highlighted = list?.querySelector<HTMLElement>('[data-highlighted]:not([data-disabled])')
+
+                    if (highlighted) {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      highlighted.focus({ preventScroll: true })
+                      highlighted.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+                    }
+
+                    return
+                  }
+
                   if (["Escape", "Enter"].includes(event.key)) return
                   event.stopPropagation()
                 }}
