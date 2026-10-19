@@ -13,7 +13,9 @@ import { createEffect, createMemo, type Component, For, Show } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useServerSDK } from "@/runtime/server/client"
+import { useData } from "@/runtime/server/current"
 import { formatServerError } from "@/runtime/server/errors"
+import { OPENAI_COMPATIBLE } from "@/providers/credentials/form"
 import { CONSOLE_INTEGRATION, CONSOLE_PROVIDERS } from "@/providers/connect/controller"
 import { DialogConnectProvider, useProviderConnectController } from "@/providers/connect/dialog"
 import { ProviderModelIcon } from "@/providers/models/provider-group"
@@ -49,6 +51,34 @@ export const SettingsProviders: Component<{
   const integrations = useIntegrations(() => props.directory)
   const providerConnect = useProviderConnectController()
   const accountActions = useProviderAccountActions(() => props.directory)
+  const data = useData()
+  const locationRef = () => (props.directory ? { directory: props.directory } : undefined)
+
+  createEffect(() => {
+    if (serverSdk.connection.status() !== "connected") return
+
+    void data.location.config.sync(locationRef()).catch(() => undefined)
+  })
+
+  const configured = createMemo(() => {
+    const ids = new Set<string>()
+    const custom = new Set<string>()
+
+    for (const entry of data.location.config.list(locationRef()) ?? []) {
+      if (entry.type !== "document") continue
+
+      for (const [id, provider] of Object.entries(entry.info.providers ?? {})) {
+        ids.add(id)
+
+        if (provider.package === OPENAI_COMPATIBLE) custom.add(id)
+      }
+    }
+
+    return { providers: ids, custom }
+  })
+
+  const isConfigured = (id: string) => configured().providers.has(id)
+  const isCustom = (id: string) => configured().custom.has(id)
 
   const [state, setState] = createStore<{
     disconnecting: Record<string, "removing" | "removed" | "absent" | undefined>
@@ -100,6 +130,7 @@ export const SettingsProviders: Component<{
       () => void accountActions
           .refresh()
           .catch(() => undefined)
+          .then(refreshConfig)
           .finally(() => setState("held", undefined)),
     )
   }
@@ -124,6 +155,91 @@ export const SettingsProviders: Component<{
       )
       .toSorted((a, b) => Number(b.id === "opencode-go") - Number(a.id === "opencode-go"))
   })
+
+  const refreshConfig = () => data.location.config.sync(locationRef()).catch(() => undefined)
+
+  const refreshProviderData = async () => {
+    data.location.integration.invalidate(locationRef())
+    data.location.provider.invalidate(locationRef())
+    data.location.model.invalidate(locationRef())
+    data.location.config.invalidate(locationRef())
+
+    await Promise.all([
+      data.location.integration.sync(locationRef()),
+      data.location.provider.sync(locationRef()),
+      data.location.model.sync(locationRef()),
+      data.location.config.sync(locationRef()),
+    ]).catch(() => undefined)
+  }
+
+  const ensureConfigured = async () => {
+    if (data.location.config.list(locationRef()) !== undefined) return
+
+    await refreshConfig()
+  }
+
+  // The reactive map can lag a provider that was just added. The remove flow falls back to the
+  // server's config so removing the last custom-provider account still deletes its definition.
+  const customProvider = async (id: string) => {
+    await ensureConfigured()
+
+    if (isCustom(id)) return true
+
+    const entries = await serverSdk.api.config.get()
+
+    return entries.some(
+      (entry) => entry.type === "document" && entry.info.providers?.[id]?.package === OPENAI_COMPATIBLE,
+    )
+  }
+
+  const waitForProviderAbsent = async (id: string) => {
+    const deadline = Date.now() + 10_000
+
+    while (data.location.provider.list(locationRef())?.some((provider) => provider.id === id)) {
+      if (Date.now() >= deadline) break
+
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      await refreshProviderData()
+    }
+  }
+
+  const removeProvider = async (provider: ProviderItem, name: string) => {
+    const id = provider.id
+    const integrationID = provider.integrationID ?? id
+
+    if (state.disconnecting[id]) return
+
+    setState("held", available())
+    updateDisconnecting([id], "removing")
+
+    try {
+      const integration = await serverSdk.api.integration.get({ integrationID, location: locationRef() })
+      const credentials = integration.data?.connections.filter((connection) => connection.type === "credential") ?? []
+
+      await Promise.all(
+        credentials.map((credential) => serverSdk.api.credential.remove({ credentialID: credential.id })),
+      )
+      await serverSdk.api.config.update({ providers: { [id]: null } })
+      await refreshProviderData()
+      await waitForProviderAbsent(id)
+      updateDisconnecting([id], "removed")
+      showToast({
+        variant: "success",
+        icon: "circle-check",
+        title: language.t("provider.remove.toast.removed.title", { provider: name }),
+        description: language.t("provider.remove.toast.removed.description", { provider: name }),
+      })
+    } catch (err) {
+      updateDisconnecting([id], undefined)
+      const message = formatServerError(err, language.t)
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: language.tDynamic("provider.remove.toast.failed.description", message, { provider: name }),
+      })
+    } finally {
+      setState("held", undefined)
+    }
+  }
 
   createEffect(() => {
     const ids = new Set(available().map((item) => item.id))
@@ -272,12 +388,26 @@ export const SettingsProviders: Component<{
   }
 
   const remove = async (provider: ProviderItem, providerName: string, account: ProviderAccount) => {
-    setState({ credentialID: account.id, held: available() })
+    const final = providerAccounts(integration(provider)).length === 1
+
+    setState("credentialID", account.id)
+
+    // Removing the final account of a custom provider removes the provider itself. Its config entry
+    // is the provider definition, so leaving it behind would keep the provider listed as configured.
+    if (final && (await customProvider(provider.id).catch(() => false))) {
+      await removeProvider(provider, providerName)
+
+      setState("credentialID", undefined)
+
+      return
+    }
+
+    setState("held", available())
     await accountActions.remove({
       integrationID: provider.integrationID ?? provider.id,
       provider: providerName,
       account,
-      final: providerAccounts(integration(provider)).length === 1,
+      final,
     })
     setState({ credentialID: undefined, held: undefined })
   }
@@ -381,8 +511,18 @@ export const SettingsProviders: Component<{
                   if (account) void remove(menuProps.provider, name(), account)
                 }}
               >
-                {language.t("dialog.provider.accounts.remove")}
+                {language.t(
+                  accounts().length === 1 && isCustom(menuProps.provider.id)
+                    ? "settings.providers.removeProvider"
+                    : "dialog.provider.accounts.remove",
+                )}
               </Menu.Item>
+              <Show when={isCustom(menuProps.provider.id) && accounts().length > 1}>
+                <Menu.Separator />
+                <Menu.Item onSelect={() => void removeProvider(menuProps.provider, name())}>
+                  {language.t("settings.providers.removeProvider")}
+                </Menu.Item>
+              </Show>
             </Menu.Content>
           </Menu.Portal>
         </Menu>
@@ -432,19 +572,34 @@ export const SettingsProviders: Component<{
                             when={canManageAccounts(item)}
                             fallback={
                               <Show
-                                when={canDisconnect(item)}
+                                when={isConfigured(item.id)}
                                 fallback={
-                                  <span class="settings-provider-env-hint">
-                                    {language.t("settings.providers.connected.environmentDescription")}
-                                  </span>
+                                  <Show
+                                    when={canDisconnect(item)}
+                                    fallback={
+                                      <Show when={source(item) === "env"}>
+                                        <span class="settings-provider-env-hint">
+                                          {language.t("settings.providers.connected.environmentDescription")}
+                                        </span>
+                                      </Show>
+                                    }
+                                  >
+                                    <Button
+                                      size="normal"
+                                      variant="ghost-muted"
+                                      onClick={() => void disconnect(item, item.name)}
+                                    >
+                                      {language.t("common.disconnect")}
+                                    </Button>
+                                  </Show>
                                 }
                               >
                                 <Button
                                   size="normal"
                                   variant="ghost-muted"
-                                  onClick={() => void disconnect(item, item.name)}
+                                  onClick={() => void removeProvider(item, item.name)}
                                 >
-                                  {language.t("common.disconnect")}
+                                  {language.t("settings.providers.remove")}
                                 </Button>
                               </Show>
                             }

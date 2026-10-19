@@ -114,7 +114,12 @@ export class Info extends Schema.Class<Info>("Config.Info")({
 }) {}
 
 export const Patch = Schema.Struct({
-  shell: Schema.NullOr(Schema.String),
+  shell: optional(Schema.NullOr(Schema.String)),
+  // The patch crosses the HTTP boundary as encoded config, so its decoded value stays plain JSON.
+  // A null provider removes its config entry, which is how a custom provider is deleted.
+  providers: optional(
+    Schema.Record(Schema.String, Schema.NullOr(Schema.toEncoded(ConfigProvider.Info))),
+  ),
 }).annotate({ identifier: "Config.Patch" })
 export interface Patch extends Schema.Schema.Type<typeof Patch> {}
 

@@ -253,6 +253,9 @@ export const dict = {
   "provider.disconnect.toast.disconnected.description": "{{provider}} models are no longer available.",
   "provider.disconnect.toast.noCredentials.description": "No removable credentials found for {{provider}}",
   "provider.disconnect.toast.failed.description": "Failed to disconnect {{provider}}.",
+  "provider.remove.toast.removed.title": "{{provider}} removed",
+  "provider.remove.toast.removed.description": "Provider configuration and stored credentials were removed.",
+  "provider.remove.toast.failed.description": "Failed to remove {{provider}}.",
 
   "model.tag.free": "Free",
   "model.tag.latest": "Latest",
@@ -931,6 +934,8 @@ export const dict = {
   "settings.providers.section.connected": "Connected providers",
   "settings.providers.connected.empty": "No connected providers",
   "settings.providers.connected.environmentDescription": "Connected from your environment variables",
+  "settings.providers.remove": "Remove",
+  "settings.providers.removeProvider": "Remove provider",
   "settings.providers.account.manage": "Manage {{provider}} accounts",
   "settings.providers.account.group": "Accounts",
   "settings.providers.account.add": "Add account",

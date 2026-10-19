@@ -23,6 +23,7 @@ import { Location } from "@opencode/core/location"
 import { Project } from "@opencode/core/project"
 import { Provider } from "@opencode/core/provider"
 import { AbsolutePath } from "@opencode/core/schema"
+import { parse } from "jsonc-parser"
 import { WellKnown } from "@opencode/core/wellknown"
 import { KV } from "@opencode/core/kv"
 import { ManagedPolicy } from "@opencode/core/managed-policy"
@@ -2011,6 +2012,166 @@ describe("Config", () => {
             ),
           )
         })
+      }),
+    ),
+  )
+
+  it.live("writes, deletes, and re-adds provider patches in the global config", () =>
+    Effect.acquireDisposable(Effect.promise(() => tmpdir())).pipe(
+      Effect.flatMap((tmp) => {
+        const global = path.join(tmp.path, "global")
+        const file = path.join(global, "opencode.jsonc")
+        return Effect.promise(async () => {
+          await fs.mkdir(global, { recursive: true })
+          await fs.writeFile(
+            file,
+            `{
+  // keep this comment
+  "shell": "/bin/sh",
+  "disabled_providers": ["custom", "other"],
+  "providers": {
+    "other": {
+      "name": "Other",
+      "package": "aisdk:@ai-sdk/openai-compatible",
+      "models": { "model-b": { "name": "Model B" } }
+    }
+  }
+}
+`,
+          )
+        }).pipe(
+          Effect.andThen(
+            Effect.gen(function* () {
+              const config = yield* Config.Service
+              yield* config.update!({
+                providers: {
+                  custom: {
+                    name: "Custom",
+                    package: "aisdk:@ai-sdk/openai-compatible",
+                    settings: { baseURL: "https://api.example.com" },
+                    models: { "model-a": { name: "Model A" } },
+                  },
+                },
+              })
+              expect(parse(yield* Effect.promise(() => fs.readFile(file, "utf8")))).toEqual({
+                shell: "/bin/sh",
+                disabled_providers: ["other"],
+                providers: {
+                  other: {
+                    name: "Other",
+                    package: "aisdk:@ai-sdk/openai-compatible",
+                    models: { "model-b": { name: "Model B" } },
+                  },
+                  custom: {
+                    name: "Custom",
+                    package: "aisdk:@ai-sdk/openai-compatible",
+                    settings: { baseURL: "https://api.example.com" },
+                    models: { "model-a": { name: "Model A" } },
+                  },
+                },
+              })
+
+              yield* config.update!({ providers: { custom: null } })
+              const deleted = yield* Effect.promise(() => fs.readFile(file, "utf8"))
+              expect(deleted).toContain("// keep this comment")
+              expect(parse(deleted)).toEqual({
+                shell: "/bin/sh",
+                disabled_providers: ["other"],
+                providers: {
+                  other: {
+                    name: "Other",
+                    package: "aisdk:@ai-sdk/openai-compatible",
+                    models: { "model-b": { name: "Model B" } },
+                  },
+                },
+              })
+
+              yield* config.update!({
+                providers: {
+                  custom: {
+                    name: "Custom",
+                    package: "aisdk:@ai-sdk/openai-compatible",
+                    settings: { baseURL: "https://api.example.org" },
+                    models: { "model-a": { name: "Model A" } },
+                  },
+                },
+              })
+              expect(parse(yield* Effect.promise(() => fs.readFile(file, "utf8")))).toEqual({
+                shell: "/bin/sh",
+                disabled_providers: ["other"],
+                providers: {
+                  other: {
+                    name: "Other",
+                    package: "aisdk:@ai-sdk/openai-compatible",
+                    models: { "model-b": { name: "Model B" } },
+                  },
+                  custom: {
+                    name: "Custom",
+                    package: "aisdk:@ai-sdk/openai-compatible",
+                    settings: { baseURL: "https://api.example.org" },
+                    models: { "model-a": { name: "Model A" } },
+                  },
+                },
+              })
+            }).pipe(Effect.provide(testLayer(path.join(tmp.path, "project"), global))),
+          ),
+        )
+      }),
+    ),
+  )
+
+  it.live("removes native and migrated V1 provider entries", () =>
+    Effect.acquireDisposable(Effect.promise(() => tmpdir())).pipe(
+      Effect.flatMap((tmp) => {
+        const global = path.join(tmp.path, "global")
+        const file = path.join(global, "opencode.jsonc")
+        return Effect.promise(async () => {
+          await fs.mkdir(global, { recursive: true })
+          await fs.writeFile(
+            file,
+            `{
+  "disabled_providers": ["native", "legacy", "other"],
+  "provider": {
+    "legacy": {
+      "name": "Legacy",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": { "baseURL": "https://legacy.example.com" },
+      "models": { "legacy-model": { "name": "Legacy Model" } }
+    }
+  },
+  "providers": {
+    "native": {
+      "name": "Native",
+      "package": "aisdk:@ai-sdk/openai-compatible",
+      "settings": { "baseURL": "https://native.example.com" },
+      "models": { "native-model": { "name": "Native Model" } }
+    },
+    "other": {
+      "name": "Other",
+      "package": "aisdk:@ai-sdk/openai-compatible",
+      "models": { "other-model": { "name": "Other Model" } }
+    }
+  }
+}
+`,
+          )
+        }).pipe(
+          Effect.andThen(
+            Effect.gen(function* () {
+              const config = yield* Config.Service
+              yield* config.update!({ providers: { native: null, legacy: null } })
+              const updated = parse(yield* Effect.promise(() => fs.readFile(file, "utf8")))
+              expect(updated.disabled_providers).toEqual(["other"])
+              expect(updated.provider?.legacy).toBeUndefined()
+              expect(updated.providers?.native).toBeUndefined()
+              expect(updated.providers?.other).toEqual({
+                name: "Other",
+                package: "aisdk:@ai-sdk/openai-compatible",
+                models: { "other-model": { name: "Other Model" } },
+              })
+            }).pipe(Effect.provide(testLayer(path.join(tmp.path, "project"), global))),
+          ),
+        )
       }),
     ),
   )
