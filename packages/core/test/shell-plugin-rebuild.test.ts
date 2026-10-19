@@ -201,11 +201,9 @@ const scenario = (rebuild: boolean) =>
           yield* plugins.activate(rebuild ? [shellGen] : [prefix, shellGen])
 
           const result = yield* jobs.wait({ id: shellID })
-          yield* Effect.promise(() => Bun.sleep(1500))
+          const deadline = Date.now() + 2_000
+          while (notices.length === 0 && Date.now() < deadline) yield* Effect.sleep("25 millis")
           const pending = yield* jobs.pendingBackground
-          console.log(
-            JSON.stringify({ rebuild, starts, job: result.info?.status, notices: notices.length, pending }, null, 1),
-          )
           expect(result.info?.status).toBe("completed")
           expect(notices.length).toBe(1)
           expect(pending.length).toBe(0)

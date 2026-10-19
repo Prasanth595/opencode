@@ -9,6 +9,7 @@ import { Deferred, Effect, Schema, Scope } from "effect"
 import { Config } from "../../config.js"
 import { Environment } from "../../environment/index.js"
 import { Job } from "../../job.js"
+import { Location } from "../../location.js"
 import { FileAccess } from "../../file-access.js"
 import { Permission } from "../../permission.js"
 import { NonNegativeInt } from "../../schema.js"
@@ -133,14 +134,29 @@ const reclaimBackground = (
     yield* jobs.completeBackground(background.notificationID)
   })
 
-const reclaimBackgrounds = (jobs: Job.Interface, sessions: Session.Interface): Effect.Effect<void, unknown> =>
+const reclaimBackgrounds = (
+  jobs: Job.Interface,
+  sessions: Session.Interface,
+  location: Location.Info,
+): Effect.Effect<void, unknown> =>
   Effect.gen(function* () {
     const pending = yield* jobs.pendingBackground
-    yield* Effect.forEach(
-      pending.filter((background) => background.recovery.kind === "shell"),
-      (background) => reclaimBackground(jobs, sessions, background),
-      { concurrency: "unbounded", discard: true },
-    )
+    const owned: Job.Background[] = []
+    for (const background of pending) {
+      const recovery = background.recovery
+      if (recovery.kind !== "shell") continue
+      // Job is process-global, so every location sees every marker. Reclaim only shells whose
+      // session lives here; another location's live observer still owns those.
+      const session = yield* sessions.get(recovery.sessionID).pipe(Effect.orElseSucceed(() => undefined))
+      if (!session) continue
+      if (session.location.directory !== location.directory) continue
+      if (session.location.workspaceID !== location.workspaceID) continue
+      owned.push(background)
+    }
+    yield* Effect.forEach(owned, (background) => reclaimBackground(jobs, sessions, background), {
+      concurrency: "unbounded",
+      discard: true,
+    })
   })
 
 export const Plugin = {
@@ -149,6 +165,7 @@ export const Plugin = {
     const sessions = yield* Session.Service
     const jobs = yield* Job.Service
     const scope = yield* Scope.Scope
+    const location = yield* Location.Service
     const environment = yield* Environment.Service
     const access = yield* FileAccess.Service
     const shell = yield* Shell.Service
@@ -234,7 +251,7 @@ export const Plugin = {
     // A rebuilt activation closes the scope that owned the previous notification observers. Reclaim
     // persisted backgrounds owned by this process so their completion still reaches the Session.
     // Jobs from a previous process are unknown here and stay for restart recovery.
-    yield* reclaimBackgrounds(jobs, sessions).pipe(Effect.forkIn(scope, { startImmediately: true }))
+    yield* reclaimBackgrounds(jobs, sessions, location).pipe(Effect.forkIn(scope, { startImmediately: true }))
 
     yield* ctx.tool
       .transform((editor) =>
