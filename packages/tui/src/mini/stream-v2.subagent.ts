@@ -853,7 +853,7 @@ export function createSubagentTracker(input: SubagentTrackerInput): SubagentTrac
           name: part?.name ?? "tool",
           executed: event.data.executed,
           native: part?.native,
-          providerResultState: event.data.resultState,
+          resultNative: event.data.resultNative,
           state: failed
             ? {
                 status: "error",

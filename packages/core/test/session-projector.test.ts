@@ -720,7 +720,7 @@ describe("SessionProjector", () => {
         content: [
           { type: "text", native: { signature: "text" } },
           { type: "reasoning", native: { signature: "reasoning" } },
-          { type: "tool", native: { call: "kept" }, providerResultState: { result: "kept" } },
+          { type: "tool", native: { call: "kept" }, resultNative: { result: "kept" } },
         ],
       })
       expect(readCompaction).toMatchObject({ native: { compaction: "kept" } })
@@ -729,7 +729,7 @@ describe("SessionProjector", () => {
         (yield* Stream.runCollect(bus.log({ aggregateID: sessionID }))).filter((item) => !Bus.isSynced(item)),
       ).toMatchObject([
         { type: "session.tool.called", data: { native: { call: "kept" } } },
-        { type: "session.tool.success", data: { resultState: { result: "kept" } } },
+        { type: "session.tool.success", data: { resultNative: { result: "kept" } } },
       ])
 
       // Re-delivering an event that is already stored in its legacy shape stays idempotent.
@@ -766,13 +766,13 @@ describe("SessionProjector", () => {
         content: [
           { type: "text", native: { signature: "text" } },
           { type: "reasoning", native: { signature: "reasoning" } },
-          { type: "tool", native: { call: "kept" }, providerResultState: { result: "kept" } },
+          { type: "tool", native: { call: "kept" }, resultNative: { result: "kept" } },
         ],
       })
       expect(rewritten.content.map((part: Record<string, unknown>) => Object.keys(part).toSorted())).toEqual([
         ["native", "text", "type"],
         ["native", "text", "type"],
-        ["executed", "id", "name", "native", "providerResultState", "state", "time", "type"],
+        ["executed", "id", "name", "native", "resultNative", "state", "time", "type"],
       ])
     }),
   )

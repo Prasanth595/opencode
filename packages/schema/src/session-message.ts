@@ -166,7 +166,7 @@ export const AssistantTool = Schema.Struct({
   name: Schema.String,
   executed: Schema.Boolean.pipe(optional),
   native: Native.pipe(optional),
-  providerResultState: Native.pipe(optional),
+  resultNative: Native.pipe(optional),
   state: ToolState,
   time: Schema.Struct({
     created: DateTimeUtcFromMillis,

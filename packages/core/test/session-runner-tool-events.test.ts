@@ -132,7 +132,7 @@ test("provider-executed success derives content and retains provider result stat
       { type: "text", text: "Image read successfully" },
       { type: "file", uri: `data:image/png;base64,${base64}`, mime: "image/png" },
     ],
-    resultState: { result: { type: "content" } },
+    resultNative: { result: { type: "content" } },
   })
 })
 
@@ -556,7 +556,7 @@ test("provider-executed tool metadata is flattened using the route key", async (
     native: { itemId: "call" },
   })
   expect(published.find((event) => event.type === "session.tool.success.2")?.data).toMatchObject({
-    resultState: { itemId: "result" },
+    resultNative: { itemId: "result" },
   })
 })
 
@@ -575,14 +575,14 @@ test("success event data can carry provider-executed result state", () => {
     id: "call-old",
     content: [{ type: "file", uri: `data:image/png;base64,${base64}`, mime: "image/png" }],
     executed: true,
-    resultState: {
+    resultNative: {
       result: {
         type: "content",
         value: [{ type: "file", uri: `data:image/png;base64,${base64}`, mime: "image/png" }],
       },
     },
   })
-  expect(decoded.resultState).toMatchObject({ result: { type: "content" } })
+  expect(decoded.resultNative).toMatchObject({ result: { type: "content" } })
 })
 
 test("step start waits for the pending start snapshot", async () => {

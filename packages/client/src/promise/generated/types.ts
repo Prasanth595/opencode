@@ -1873,7 +1873,7 @@ export type SessionToolSuccess = {
     content: [ToolContent1, ...Array<ToolContent1>]
     metadata?: { [x: string]: JsonValue }
     executed: boolean
-    resultState?: SessionMessageNative1
+    resultNative?: SessionMessageNative1
   }
 }
 
@@ -1892,7 +1892,7 @@ export type SessionToolFailed = {
     content?: [ToolContent1, ...Array<ToolContent1>]
     metadata?: { [x: string]: JsonValue }
     executed: boolean
-    resultState?: SessionMessageNative1
+    resultNative?: SessionMessageNative1
   }
 }
 
@@ -2344,7 +2344,7 @@ export type SessionMessageAssistantTool = {
   name: string
   executed?: boolean
   native?: SessionMessageNative
-  providerResultState?: SessionMessageNative
+  resultNative?: SessionMessageNative
   state:
     | SessionMessageToolStateStreaming
     | SessionMessageToolStateRunning
@@ -2365,7 +2365,7 @@ export type SessionMessageAssistantTool1 = {
   name: string
   executed?: boolean
   native?: SessionMessageNative1
-  providerResultState?: SessionMessageNative1
+  resultNative?: SessionMessageNative1
   state:
     | SessionMessageToolStateStreaming
     | SessionMessageToolStateRunning1

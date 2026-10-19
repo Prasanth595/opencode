@@ -2,8 +2,9 @@ export * as SessionLegacy from "./session-legacy.js"
 
 /**
  * Storage and wire compatibility for current-architecture data written before v2.1 (not V1 contracts). Native data
- * was then named `state` or `providerState`; stored events, projected messages, and exported transcripts keep
- * whichever shape they were written with, so these upgrade them before decoding.
+ * was then named `state` or `providerState`, and tool result native data `resultState` or `providerResultState`;
+ * stored events, projected messages, and exported transcripts keep whichever shape they were written with, so these
+ * upgrade them before decoding.
  */
 
 const renames: Record<string, readonly [string, string]> = {
@@ -14,6 +15,8 @@ const renames: Record<string, readonly [string, string]> = {
   "session.step.ended": ["providerState", "native"],
   "session.step.failed": ["providerState", "native"],
   "session.compaction.ended": ["providerState", "native"],
+  "session.tool.success": ["resultState", "resultNative"],
+  "session.tool.failed": ["resultState", "resultNative"],
 }
 
 /** Upgrades a durable event payload by event type. */
@@ -45,7 +48,7 @@ function part(value: unknown) {
   if (!isRecord(value)) return value
   if (value.type === "text" || value.type === "reasoning") return rename(value, "state", "native")
   // A tool part's own `state` is its lifecycle status, not native data.
-  if (value.type === "tool") return rename(value, "providerState", "native")
+  if (value.type === "tool") return rename(rename(value, "providerState", "native"), "providerResultState", "resultNative")
   return value
 }
 
