@@ -551,7 +551,14 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         "session.instructions.entry.put",
         Effect.fn(function* (ctx) {
           const instructions = yield* InstructionEntry.Service
-          yield* instructions.put({ sessionID: ctx.params.sessionID, key: ctx.params.key, value: ctx.payload.value })
+          yield* instructions
+            .put({ sessionID: ctx.params.sessionID, key: ctx.params.key, value: ctx.payload.value })
+            .pipe(
+              Effect.catchTag(
+                "InstructionEntryInvalidKeyError",
+                (error) => new InvalidRequestError({ message: error.message, field: "key" }),
+              ),
+            )
           return HttpApiSchema.NoContent.make()
         }),
       )
@@ -559,7 +566,14 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         "session.instructions.entry.remove",
         Effect.fn(function* (ctx) {
           const instructions = yield* InstructionEntry.Service
-          yield* instructions.remove({ sessionID: ctx.params.sessionID, key: ctx.params.key })
+          yield* instructions
+            .remove({ sessionID: ctx.params.sessionID, key: ctx.params.key })
+            .pipe(
+              Effect.catchTag(
+                "InstructionEntryInvalidKeyError",
+                (error) => new InvalidRequestError({ message: error.message, field: "key" }),
+              ),
+            )
           return HttpApiSchema.NoContent.make()
         }),
       )
