@@ -23,9 +23,10 @@ export function createSessionRequestModel() {
     const id = params.id
 
     if (!id || serverSDK.connection.status() !== "connected") return
-    void Promise.all([data.shell.sync({ directory: sdk().directory }), data.session.permission.sync(id)]).catch(
-      () => undefined,
-    )
+    void Promise.all([
+      data.shell.sync({ directory: sdk().directory }),
+      ...sessionTreeIDs(data.session.list(), id).map((sessionID) => data.session.permission.sync(sessionID)),
+    ]).catch(() => undefined)
   })
   createEffect(() => {
     const id = params.id

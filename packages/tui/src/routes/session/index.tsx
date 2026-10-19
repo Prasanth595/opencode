@@ -112,6 +112,7 @@ import {
 } from "./rows"
 import { switchLabel } from "../../util/model"
 import { findMessageBoundary, messageNavigationSlack } from "./message-navigation"
+import { sessionTreeIDs } from "../../util/session"
 import { stringWidth } from "../../util/string-width"
 import { useArgs } from "../../context/args"
 import { withTimestampedFallback } from "@opencode/util/session-title-fallback"
@@ -195,16 +196,21 @@ export function Session(props: {
     setEpilogue(sessionEpilogue({ title, sessionID: session()?.id }))
   })
   onCleanup(() => setEpilogue())
-  const descendantSessionIDs = createMemo(() => {
-    if (session()?.parentID) return []
-    return data.session.family(route.sessionID).filter((id) => id !== route.sessionID)
-  })
-  const permissions = createMemo(() => {
-    if (session()?.parentID) return []
-    return [route.sessionID, ...descendantSessionIDs()].flatMap(
-      (sessionID) => data.session.permission.list(sessionID) ?? [],
+  const treeSessionIDs = createMemo(() => {
+    const root = route.sessionID
+    const family = data.session.family(root)
+    const known = family.includes(root) ? family : [root, ...family]
+    return sessionTreeIDs(
+      known.map((id) => ({ id, parentID: data.session.get(id)?.parentID })),
+      root,
     )
   })
+  const descendantSessionIDs = createMemo(() => treeSessionIDs().filter((id) => id !== route.sessionID))
+  // Child views used to drop every request, so the prompt never opened and auto-accept
+  // approved nothing. Keep this session and its descendants.
+  const permissions = createMemo(() =>
+    treeSessionIDs().flatMap((sessionID) => data.session.permission.list(sessionID) ?? []),
+  )
   const promptedPermissions = createMemo(() => (local.permission.mode === "autoaccept" ? [] : permissions()))
   const forms = createMemo(() => {
     const global = data.session.form.list("global", location()) ?? []
@@ -1466,7 +1472,10 @@ export function Session(props: {
               <Slot path="session.composer.top" input={{ sessionID: route.sessionID }} />
               <Composer
                 sessionID={route.sessionID}
-                open={composer.open || (!!session()?.parentID && forms().length === 0)}
+                open={
+                  composer.open ||
+                  (!!session()?.parentID && forms().length === 0 && promptedPermissions().length === 0)
+                }
                 defaultTab={composer.tab ?? (session()?.parentID ? "subagents" : undefined)}
                 onClose={() => {
                   const parent = session()?.parentID
@@ -1480,7 +1489,14 @@ export function Session(props: {
                 visibleTerminalID={props.visibleTerminalID}
               />
               <Switch>
-                <Match when={composer.open || (!!session()?.parentID && forms().length === 0)}>{null}</Match>
+                <Match
+                  when={
+                    composer.open ||
+                    (!!session()?.parentID && forms().length === 0 && promptedPermissions().length === 0)
+                  }
+                >
+                  {null}
+                </Match>
                 <Match when={promptedPermissions().length > 0}>
                   <Show when={promptedPermissions()[0]?.id} keyed>
                     {(_) => {

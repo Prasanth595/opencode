@@ -19,7 +19,8 @@ export function createSessionComposerRegionController(input: {
     setDockRef: input.setDockRef,
     parentID: input.parentID,
     child: () => !!input.parentID(),
-    showComposer: () => !input.state.blocked() || !!input.parentID(),
+    // A subagent placeholder used to stay up even while blocked, covering the permission dock.
+    showComposer: () => !input.state.blocked(),
   }
 }
 
