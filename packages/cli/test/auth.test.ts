@@ -261,7 +261,7 @@ describe("auth command", () => {
     expect(result.stdout).not.toContain("\n    at ")
   })
 
-  test("imports exported credentials unchanged so the server can upgrade older shapes", async () => {
+  test("imports credentials exported before v2.1 with their form answers as metadata", async () => {
     const created: unknown[] = []
     using server = authServer(async (request, url) => {
       if (url.pathname === "/api/credential" && request.method === "GET") return Response.json({ data: [] })
@@ -286,7 +286,15 @@ describe("auth command", () => {
     const [stderr, exitCode] = await Promise.all([new Response(child.stderr).text(), child.exited])
 
     expect({ exitCode, stderr: stderr.trim() }).toEqual({ exitCode: 0, stderr: "Imported 1 credential" })
-    expect(created).toEqual([{ id: "cred_legacy", integrationID: "azure", label: "Work", value, activate: true }])
+    expect(created).toEqual([
+      {
+        id: "cred_legacy",
+        integrationID: "azure",
+        label: "Work",
+        value: { type: "key", key: "secret", metadata: { resourceName: "answered" } },
+        activate: true,
+      },
+    ])
   })
 
   test("removes a selected stored credential", async () => {

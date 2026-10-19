@@ -1,11 +1,12 @@
 export * as Credential from "./credential.js"
 
-import { Schema } from "effect"
+import { Schema, SchemaTransformation } from "effect"
 import { optional } from "./schema.js"
 import { ephemeral, inventory } from "./event.js"
 import { IntegrationID, IntegrationMethodID } from "./integration-id.js"
 import { ascending } from "./identifier.js"
 import { NonNegativeInt, statics } from "./schema.js"
+import { Form } from "./form.js"
 
 export const ID = Schema.String.pipe(
   Schema.brand("Credential.ID"),
@@ -38,12 +39,32 @@ export const OAuth = Schema.Struct({
   metadata: optional(Schema.Record(Schema.String, Schema.Unknown)),
 }).annotate({ identifier: "Credential.OAuth" })
 
-export interface Key extends Schema.Schema.Type<typeof Key> {}
-export const Key = Schema.Struct({
+const KeyFields = {
   type: Schema.Literal("key"),
   key: Schema.String,
   metadata: optional(Schema.Record(Schema.String, Schema.Unknown)),
-}).annotate({ identifier: "Credential.Key" })
+}
+
+export interface Key extends Schema.Schema.Type<typeof Key> {}
+export const Key = Schema.Struct({
+  ...KeyFields,
+  configuration: optional(Form.Answer).annotate({
+    description:
+      "Deprecated. Setup-form answers from credentials written before v2.1; accepted on input, merged into metadata, and never returned.",
+  }),
+})
+  .annotate({ identifier: "Credential.Key" })
+  .pipe(
+    Schema.decodeTo(
+      Schema.Struct(KeyFields),
+      SchemaTransformation.transform({
+        // Form answers overrode metadata when both reached provider settings, so they keep precedence.
+        decode: ({ configuration, ...key }) =>
+          configuration === undefined ? key : { ...key, metadata: { ...key.metadata, ...configuration } },
+        encode: (key) => key,
+      }),
+    ),
+  )
 
 /** References a credential source whose secrets and renewal are managed outside the credential store. */
 export interface External extends Schema.Schema.Type<typeof External> {}

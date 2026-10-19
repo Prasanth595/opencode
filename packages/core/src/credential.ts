@@ -3,7 +3,6 @@ export * as Credential from "./credential.js"
 import { asc, desc, eq } from "drizzle-orm"
 import { Cause, Context, Effect, Layer, Schema } from "effect"
 import { Credential } from "@opencode/schema/credential"
-import { CredentialLegacy } from "@opencode/schema/credential-legacy"
 import { Integration } from "@opencode/schema/integration"
 import { Database } from "./database/database.js"
 import { Bus } from "./bus.js"
@@ -75,7 +74,7 @@ const layer = Layer.effect(
         id: row.id,
         integrationID: row.integration_id,
         label: row.label,
-        value: decode(CredentialLegacy.value(row.value)),
+        value: decode(row.value),
       })
     }
     const storedRows = (rows: ReadonlyArray<typeof CredentialTable.$inferSelect>) =>
