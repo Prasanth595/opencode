@@ -375,8 +375,11 @@ export const arrayGlobal = <R>(ctx: Interpreter<R>) => {
           for (let index = 0; index < length; index += 1) {
             if (!(index in target.items)) continue
             const mapped = yield* apply([target.items[index], index, target], args[1])
-            if (mapped instanceof Arr) values.push(...mapped.items)
-            else values.push(mapped)
+            if (mapped instanceof Arr) {
+              mapped.items.forEach((item) => values.push(item))
+              continue
+            }
+            values.push(mapped)
           }
           return wrap(values)
         })
