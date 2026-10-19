@@ -162,7 +162,11 @@ describe("plan plugin reminders", () => {
       expect(persisted[0]).toContain("You are in Plan mode")
       expect(persisted[0]).toContain("Do not create or update plan files unless the user explicitly asks you to")
       expect(persisted[0]).toContain(planDirectory)
-      expect(persisted[0]).toContain("Do not modify any other files")
+      expect(persisted[0]).toContain(
+        "Do not modify files outside the Plan directory or delegate file modifications to a subagent",
+      )
+      expect(persisted[0]).toContain("You may use the `explore` subagent to research the codebase")
+      expect(persisted[0]).toContain("Do not use the `general` subagent for this")
       expect(persisted[1]).toContain("NO LONGER in Plan mode")
     }),
   )
