@@ -80,7 +80,7 @@ export function DialogModel(props: { providerID?: string }) {
             title: model.name,
             releaseDate: model.time.released,
             description: favorite ? "(Favorite)" : undefined,
-            category: connected() ? (provider?.name ?? model.providerID) : undefined,
+            category: provider?.name ?? model.providerID,
             footer: free(model) ? "Free" : undefined,
             onSelect() {
               onSelect(model.providerID, model.id)
