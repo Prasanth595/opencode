@@ -8,8 +8,6 @@
 }
 
 [data-component="user-message"] {
-  --user-message-mention-prefix-color: var(--v2-blue-500);
-
   font-family: var(--font-family-sans);
   font-size: var(--font-size-base);
   font-style: normal;
@@ -177,13 +175,6 @@
     border: none;
     padding: 8px 12px;
     border-radius: 10px;
-    transition:
-      background-color 200ms ease,
-      color 200ms ease;
-
-    @media (prefers-reduced-motion: reduce) {
-      transition: none;
-    }
 
     [data-highlight="file"],
     [data-highlight="agent"] {
@@ -194,12 +185,7 @@
     }
 
     [data-slot="user-message-mention-prefix"] {
-      color: var(--user-message-mention-prefix-color);
-      transition: color 200ms ease;
-
-      @media (prefers-reduced-motion: reduce) {
-        transition: none;
-      }
+      color: var(--v2-text-text-accent);
     }
 
     max-width: 100%;
@@ -1493,51 +1479,4 @@
 
 :root[data-color-scheme="light"] body [data-component="user-message"] [data-slot="user-message-text"] {
   background: var(--v2-background-bg-layer-02);
-}
-
-:root
-  body
-  [data-workspace-session]
-  [data-component="user-message"]:not([data-pending])
-  [data-slot="user-message-text"] {
-  --user-message-mention-prefix-color: var(--v2-blue-300);
-
-  background: var(--v2-background-bg-accent);
-  color: var(--v2-text-text-contrast);
-}
-
-:root body [data-local-session] [data-component="user-message"] [data-slot="user-message-text"] {
-  border-radius: 8px;
-}
-
-:root[data-color-scheme="light"]
-  body
-  [data-local-session]
-  [data-component="user-message"]:not([data-pending])
-  [data-slot="user-message-text"] {
-  background: var(--v2-blue-100);
-  color: var(--v2-blue-700);
-}
-
-:root[data-color-scheme="dark"]
-  body
-  [data-local-session]
-  [data-component="user-message"]:not([data-pending])
-  [data-slot="user-message-text"] {
-  background: var(--v2-blue-1200);
-  color: var(--v2-blue-300);
-}
-
-/* Only delivery animates. A steer can render once before its admission marks it pending, and must not fade from the
-   delivered color. */
-:root body [data-component="user-message"][data-pending] [data-slot="user-message-text"] {
-  --user-message-mention-prefix-color: currentColor;
-
-  background: var(--v2-background-bg-layer-02);
-  color: var(--v2-text-text-base);
-  transition: none;
-
-  [data-slot="user-message-mention-prefix"] {
-    transition: none;
-  }
 }

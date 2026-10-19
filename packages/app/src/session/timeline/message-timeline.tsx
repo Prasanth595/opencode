@@ -430,7 +430,6 @@ function MessageTimelineView(
 
   return (
     <VirtualizedTimeline
-      workspaceSession={workspaceSession}
       bottomSpacer={<Show when={!activityRow()}>{activity()}</Show>}
       deferred={(row) => {
         if (!Predicate.isTagged(row, "AssistantPart") || row.group.type !== "part") return false
