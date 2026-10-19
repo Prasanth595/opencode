@@ -19,7 +19,8 @@ const setup: Setup<typeof Debug> = (ctx) => {
     setMotion((value) => !value)
   }
 
-  const developer = channel !== "prod"
+  // Motion tuning is a dev-server tool: no built app (dev, beta or prod channel) ships its button or panel.
+  const motionTools = import.meta.env.DEV
 
   ctx.add(
     Command,
@@ -31,7 +32,7 @@ const setup: Setup<typeof Debug> = (ctx) => {
     }),
   )
 
-  if (developer)
+  if (motionTools)
     ctx.add(
       Command,
       (): Command => ({
@@ -50,12 +51,12 @@ const setup: Setup<typeof Debug> = (ctx) => {
           <Suspense>
             <DebugBar
               diagnostics={import.meta.env.DEV}
-              motion={developer ? { open: motion(), toggle: toggleMotion } : undefined}
+              motion={motionTools ? { open: motion(), toggle: toggleMotion } : undefined}
               inline
             />
           </Suspense>
         </Show>
-        <Show when={developer}>
+        <Show when={motionTools}>
           <Suspense>
             <Motion open={motion()} button={!visible()} toggle={toggleMotion} title={ctx.t("motion.title")} />
           </Suspense>
@@ -64,7 +65,7 @@ const setup: Setup<typeof Debug> = (ctx) => {
     ),
   })
 
-  if (!developer) return
+  if (channel !== "dev" && channel !== "local") return
   ctx.add(
     TitlebarItem,
     (): TitlebarItem => ({
