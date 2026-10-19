@@ -676,10 +676,6 @@ export const dict = {
   "session.error.incompatible.description":
     "\u2068{{server}}\u2069 نسخه OpenCode \u2068{{version}}\u2069 را اجرا می‌کند که با این برنامه سازگار نیست. برای ادامه، سرور را به OpenCode V2 ارتقا دهید.",
   "session.background.moveInline": "برای انتقال کار در حال اجرا به پس‌زمینه، \u2068{{keybind}}\u2069 را فشار دهید",
-  "settings.general.row.terminalPlacement.title": "جایگاه ترمینال",
-  "settings.general.row.terminalPlacement.description": "محل باز شدن ترمینال در جلسه‌ها را انتخاب کنید",
-  "settings.general.row.terminalPlacement.side": "کنار",
-  "settings.general.row.terminalPlacement.bottom": "پایین",
   "desktop.menu.installCli": "نصب CLI...",
   "desktop.cli.installed.title": "CLI نصب شد",
   "desktop.cli.installed.message":

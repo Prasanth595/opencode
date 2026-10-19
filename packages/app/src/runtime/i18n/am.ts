@@ -661,10 +661,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} OpenCode {{version}}ን እያስኬደ ነው፣ ይህም ከዚህ መተግበሪያ ጋር ተኳሃኝ አይደለም። ለመቀጠል አገልጋዩን ወደ OpenCode V2 ያሻሽሉት።",
   "session.background.moveInline": "እየሄደ ያለውን ሥራ ወደ ዳራ ለማንቀሳቀስ {{keybind}}ን ይጫኑ",
-  "settings.general.row.terminalPlacement.title": "የተርሚናል አቀማመጥ",
-  "settings.general.row.terminalPlacement.description": "ተርሚናሉ በክፍለ ጊዜዎች ውስጥ የት እንደሚከፈት ይምረጡ",
-  "settings.general.row.terminalPlacement.side": "ጎን",
-  "settings.general.row.terminalPlacement.bottom": "ታች",
   "dialog.server.menu.hide": "ከፕሮጀክት ዝርዝር ደብቅ",
   "dialog.server.menu.show": "በፕሮጀክት ዝርዝር ውስጥ አሳይ",
   "session.queue.count.one": "{{count}} ወረፋ ላይ",

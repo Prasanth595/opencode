@@ -768,10 +768,6 @@ export const dict = {
   "session.error.incompatible.description":
     "На сервері {{server}} працює OpenCode {{version}}, несумісний із застосунком. Щоб продовжити, оновіть сервер до OpenCode V2.",
   "session.background.moveInline": "Натисніть {{keybind}}, щоб перемістити поточну роботу у фоновий режим",
-  "settings.general.row.terminalPlacement.title": "Розташування термінала",
-  "settings.general.row.terminalPlacement.description": "Виберіть, де відкриватиметься термінал у сеансах",
-  "settings.general.row.terminalPlacement.side": "Збоку",
-  "settings.general.row.terminalPlacement.bottom": "Знизу",
   "dialog.server.menu.hide": "Сховати зі списку проєктів",
   "dialog.server.menu.show": "Показати у списку проєктів",
   "session.queue.count.one": "{{count}} елемент у черзі",

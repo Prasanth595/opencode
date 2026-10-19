@@ -198,7 +198,6 @@ export const ReviewPlusTerminal = {
       description={description}
       document={{ ...terminalPassedDocument, diffs: editThenTestDocument.diffs }}
       reviewOpened
-      terminal={{ title: "Terminal 1", lines: ["$ bun test", "27 pass", "0 fail"] }}
     />
   ),
 }

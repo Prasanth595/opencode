@@ -726,10 +726,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} 正在執行 OpenCode {{version}}，與此應用程式不相容。請將伺服器升級至 OpenCode V2 以繼續。",
   "session.background.moveInline": "按下 {{keybind}} 將執行中的工作移至背景",
-  "settings.general.row.terminalPlacement.title": "終端機位置",
-  "settings.general.row.terminalPlacement.description": "選擇終端機在工作階段中的開啟位置",
-  "settings.general.row.terminalPlacement.side": "側邊",
-  "settings.general.row.terminalPlacement.bottom": "底部",
   "dialog.server.menu.hide": "從專案清單中隱藏",
   "dialog.server.menu.show": "在專案清單中顯示",
   "session.queue.count.one": "{{count}} 個已排入佇列",

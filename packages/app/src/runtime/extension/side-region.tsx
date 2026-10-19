@@ -43,7 +43,6 @@ export function SideRegion(props: {
   fileTree: boolean
   present?: boolean
   size: Sizing
-  stacked?: boolean
 }) {
   const layout = useLayout()
   const language = useLanguage()
@@ -98,10 +97,8 @@ export function SideRegion(props: {
         aria-label={language.t("session.panel.reviewAndFiles")}
         aria-hidden={!open()}
         inert={!open()}
-        class="relative min-w-0 flex overflow-hidden bg-v2-background-bg-base rounded-[10px] shadow-[var(--v2-elevation-raised)] outline-none"
+        class="relative h-full shrink-0 min-w-0 flex overflow-hidden bg-v2-background-bg-base rounded-[10px] shadow-[var(--v2-elevation-raised)] outline-none"
         classList={{
-          "h-full shrink-0": !props.stacked,
-          "h-full min-h-0": props.stacked,
           "pointer-events-none": !open(),
           "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
             !props.size.active(),
@@ -333,6 +330,10 @@ function AddButton(props: { item: SessionPanelMenuItem }): JSX.Element {
 function AddMenu(props: { items: readonly SessionPanelMenuItem[] }): JSX.Element {
   const language = useLanguage()
   const command = useCommand()
+  // A chosen item runs once the closing menu has returned focus to "+", and the tab strip has passed it on to the
+  // selected tab. Releasing that focus first lets the item move it where its tab needs it, e.g. into a new terminal,
+  // without the strip taking it back for the tab it remembers.
+  let chosen: SessionPanelMenuItem | undefined
 
   return (
     <Tooltip value={language.t("session.tab.add")} placement="bottom" class="flex items-center">
@@ -348,7 +349,18 @@ function AddMenu(props: { items: readonly SessionPanelMenuItem[] }): JSX.Element
           onPointerDown={(event: PointerEvent) => event.preventDefault()}
         />
         <Menu.Portal>
-          <Menu.Content>
+          <Menu.Content
+            onCloseAutoFocus={() => {
+              const item = chosen
+
+              if (!item) return
+              chosen = undefined
+              setTimeout(() => {
+                if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+                item.run()
+              })
+            }}
+          >
             <For each={props.items}>
               {(item) => {
                 const keybind = createMemo(() => (item.keybind ? command.keybindParts(item.keybind) : []))
@@ -356,7 +368,7 @@ function AddMenu(props: { items: readonly SessionPanelMenuItem[] }): JSX.Element
                 return (
                   <Menu.Item
                     class="!gap-6"
-                    onSelect={() => item.run()}
+                    onSelect={() => (chosen = item)}
                     shortcut={
                       <Show when={keybind().length > 0}>
                         <Keybind keys={keybind()} variant="neutral" />

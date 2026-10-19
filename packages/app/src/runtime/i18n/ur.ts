@@ -686,10 +686,6 @@ export const dict = {
   "session.error.incompatible.description":
     "\u2068{{server}}\u2069 پر OpenCode \u2068{{version}}\u2069 چل رہا ہے، جو اس ایپ کے ساتھ مطابقت نہیں رکھتا۔ جاری رکھنے کے لیے سرور کو OpenCode V2 پر اپ گریڈ کریں۔",
   "session.background.moveInline": "جاری کام کو پس منظر میں منتقل کرنے کے لیے \u2068{{keybind}}\u2069 دبائیں",
-  "settings.general.row.terminalPlacement.title": "ٹرمینل کی جگہ",
-  "settings.general.row.terminalPlacement.description": "منتخب کریں کہ سیشنز میں ٹرمینل کہاں کھلے",
-  "settings.general.row.terminalPlacement.side": "کنارے پر",
-  "settings.general.row.terminalPlacement.bottom": "نیچے",
   "dialog.server.menu.hide": "پروجیکٹ کی فہرست سے چھپائیں",
   "dialog.server.menu.show": "پروجیکٹ کی فہرست میں دکھائیں",
   "session.queue.count.one": "\u2068{{count}}\u2069 قطار میں",

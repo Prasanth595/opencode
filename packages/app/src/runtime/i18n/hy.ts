@@ -675,10 +675,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}}-ում աշխատում է OpenCode {{version}}-ը, որն անհամատեղելի է այս հավելվածի հետ։ Շարունակելու համար սերվերը թարմացրեք OpenCode V2-ի։",
   "session.background.moveInline": "Սեղմեք {{keybind}}՝ ընթացիկ աշխատանքը հետին պլան տեղափոխելու համար",
-  "settings.general.row.terminalPlacement.title": "Տերմինալի տեղադրություն",
-  "settings.general.row.terminalPlacement.description": "Ընտրեք, թե նիստերում որտեղ բացվի տերմինալը",
-  "settings.general.row.terminalPlacement.side": "Կողքից",
-  "settings.general.row.terminalPlacement.bottom": "Ներքևում",
   "dialog.server.menu.hide": "Թաքցնել նախագծերի ցանկից",
   "dialog.server.menu.show": "Ցույց տալ նախագծերի ցանկում",
   "session.queue.count.one": "{{count}} հերթում",

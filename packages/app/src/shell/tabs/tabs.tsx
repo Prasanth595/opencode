@@ -38,9 +38,9 @@ export type PendingSession = {
 
 export type TabInfo = typeof TabStorage.Info.Type
 
-export type TabRegion = "dock" | "side"
+export type TabRegion = "side"
 
-export type TabRegionSize = "dockHeight" | "sessionWidth"
+export type TabRegionSize = "sessionWidth"
 
 export const draftHref = (draftID: string) => `/new-session?draftId=${encodeURIComponent(draftID)}`
 

@@ -699,10 +699,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} používa OpenCode {{version}}, ktorý nie je kompatibilný s touto aplikáciou. Ak chcete pokračovať, inovujte server na OpenCode V2.",
   "session.background.moveInline": "Stlačením {{keybind}} presuniete prebiehajúcu prácu na pozadie",
-  "settings.general.row.terminalPlacement.title": "Umiestnenie terminálu",
-  "settings.general.row.terminalPlacement.description": "Vyberte, kde sa má terminál v reláciách otvárať",
-  "settings.general.row.terminalPlacement.side": "Na boku",
-  "settings.general.row.terminalPlacement.bottom": "Dole",
   "dialog.server.menu.hide": "Skryť zo zoznamu projektov",
   "dialog.server.menu.show": "Zobraziť v zozname projektov",
   "session.queue.count.one": "{{count}} položka vo fronte",

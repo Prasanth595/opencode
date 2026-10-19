@@ -674,10 +674,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} ກຳລັງໃຊ້ OpenCode {{version}} ທີ່ບໍ່ເຂົ້າກັນກັບແອັບນີ້. ອັບເກຣດເຊີບເວີເປັນ OpenCode V2 ເພື່ອສືບຕໍ່.",
   "session.background.moveInline": "ກົດ {{keybind}} ເພື່ອຍ້າຍວຽກທີ່ກຳລັງເຮັດໄປເບື້ອງຫຼັງ",
-  "settings.general.row.terminalPlacement.title": "ຕຳແໜ່ງສະຖານີ",
-  "settings.general.row.terminalPlacement.description": "ເລືອກບ່ອນທີ່ສະຖານີຈະເປີດໃນເຊດຊັນ",
-  "settings.general.row.terminalPlacement.side": "ດ້ານຂ້າງ",
-  "settings.general.row.terminalPlacement.bottom": "ດ້ານລຸ່ມ",
   "dialog.server.menu.hide": "ເຊື່ອງຈາກລາຍຊື່ໂຄງການ",
   "dialog.server.menu.show": "ສະແດງໃນລາຍຊື່ໂຄງການ",
   "session.queue.count.one": "ລໍຖ້າຢູ່ {{count}} ລາຍການ",

@@ -698,10 +698,6 @@ export const dict = {
   "session.background.runningCount.two": "عدد العناصر قيد التشغيل في الخلفية: {{count}}",
   "session.background.runningCount.few": "{{count}} عناصر قيد التشغيل في الخلفية",
   "session.background.runningCount.many": "{{count}} عنصرًا قيد التشغيل في الخلفية",
-  "settings.general.row.terminalPlacement.title": "موضع المحطة الطرفية",
-  "settings.general.row.terminalPlacement.description": "اختر مكان فتح المحطة الطرفية في الجلسات",
-  "settings.general.row.terminalPlacement.side": "الجانب",
-  "settings.general.row.terminalPlacement.bottom": "الأسفل",
   "desktop.menu.installCli": "تثبيت CLI...",
   "desktop.cli.installed.title": "تم تثبيت CLI",
   "desktop.cli.installed.message":

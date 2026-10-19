@@ -673,10 +673,6 @@ export const dict = {
     "\u2068{{server}}\u2069 מריץ את OpenCode \u2068{{version}}\u2069, שאינו תואם ליישום זה. יש לשדרג את השרת ל-OpenCode V2 כדי להמשיך.",
   "session.background.moveInline": "יש ללחוץ על \u2068{{keybind}}\u2069 כדי להעביר עבודה פעילה לרקע",
   "session.background.runningCount.two": "{{count}} פריטים פועלים ברקע",
-  "settings.general.row.terminalPlacement.title": "מיקום המסוף",
-  "settings.general.row.terminalPlacement.description": "בחר היכן המסוף ייפתח בהפעלות",
-  "settings.general.row.terminalPlacement.side": "בצד",
-  "settings.general.row.terminalPlacement.bottom": "למטה",
   "desktop.menu.installCli": "התקנת CLI...",
   "desktop.cli.installed.title": "CLI הותקן",
   "desktop.cli.installed.message":

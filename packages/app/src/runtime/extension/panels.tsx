@@ -1,20 +1,6 @@
-import {
-  createEffect,
-  createMemo,
-  For,
-  mergeProps,
-  on,
-  onCleanup,
-  onMount,
-  Show,
-  type Accessor,
-  type JSX,
-} from "solid-js"
-import { createStore } from "solid-js/store"
+import { createEffect, createMemo, For, mergeProps, on, onCleanup, Show, type Accessor, type JSX } from "solid-js"
 import { Schema } from "effect"
-import { makeEventListener } from "@solid-primitives/event-listener"
 import { createMediaQuery } from "@solid-primitives/media"
-import { ResizeHandle } from "@opencode/ui/resize-handle"
 import {
   SESSION_REVIEW_V2_SIDEBAR_WIDTH_DEFAULT,
   SESSION_REVIEW_V2_SIDEBAR_WIDTH_MAX,
@@ -32,8 +18,6 @@ import {
 import { same } from "@/runtime/persistence/equality"
 import { Persist, persisted } from "@/runtime/persistence/storage"
 import { Persistence } from "@/runtime/persistence/schema"
-import { createSizing } from "@/session/helpers"
-import { useSessionLayout } from "@/session/session-layout"
 import { useExtensionHost } from "./host"
 import { Contribution } from "./render"
 import { useExtensionAttachment } from "./attachment"
@@ -380,164 +364,6 @@ function panelInput<T extends object>(view: Accessor<MountedSession>, screen: Se
       screen,
     },
     fields,
-  )
-}
-
-/** The dock region: host frame, sizing, and resize around the dock panel an extension renders. */
-export function DockRegion(props: {
-  view: MountedSession
-  screen: SessionScreen
-  sidebar: PanelSidebar
-  stacked?: boolean
-  fill?: boolean
-  framed?: boolean
-  present?: boolean
-  contentHeight?: string
-  embedded?: boolean
-  animate?: boolean
-  reserve?: boolean
-}) {
-  const host = useExtensionHost()
-  const { view } = useSessionLayout()
-  const isDesktop = createMediaQuery("(min-width: 768px)")
-  const size = createSizing()
-
-  const [store, setStore] = createStore({
-    viewport: typeof window === "undefined" ? 1000 : (window.visualViewport?.height ?? window.innerHeight),
-  })
-
-  const entry = createMemo(() =>
-    host
-      .items(Panel)
-      .filter((item) => item.value.region === "dock")
-      .flatMap((item) =>
-        item.value.list(panelInput(() => props.view, props.screen, { open: [] })).map(
-          (tab): RegionEntry => ({
-            key: panelKey(item.extension, tab.id),
-            extension: item.extension,
-            tab,
-            provider: item.value,
-          }),
-        ),
-      )
-      .at(0),
-  )
-
-  const opened = createMemo(() => view().dock.opened())
-  const height = createMemo(() => view().dock.height())
-  const max = () => store.viewport * 0.6
-  const regionHeight = () => Math.min(height(), max())
-  const stacked = createMemo(() => isDesktop() && !!props.stacked)
-
-  const panelHeight = createMemo(() => {
-    if (props.fill) return "100%"
-
-    if (!opened()) return "0px"
-
-    if (isDesktop()) return stacked() ? `${regionHeight()}px` : "100%"
-
-    return `${regionHeight()}px`
-  })
-
-  const contentHeight = createMemo(
-    () => props.contentHeight ?? (isDesktop() ? (stacked() ? `${regionHeight()}px` : "100%") : `${regionHeight()}px`),
-  )
-
-  const present = createMemo(() => opened() || !!props.present)
-  let root: HTMLElement | undefined
-
-  onMount(() => {
-    const sync = () => setStore("viewport", window.visualViewport?.height ?? window.innerHeight)
-    sync()
-    makeEventListener(window, "resize", sync)
-
-    if (window.visualViewport) makeEventListener(window.visualViewport, "resize", sync)
-  })
-
-  createEffect(() => {
-    if (opened()) return
-    const active = document.activeElement
-
-    if (!(active instanceof HTMLElement)) return
-
-    if (!root?.contains(active)) return
-    active.blur()
-  })
-
-  return (
-    <aside
-      ref={root}
-      id="terminal-panel"
-      data-component="terminal-panel"
-      data-opened={opened()}
-      data-size-animated={props.animate !== false && !props.embedded && !size.active() && (!isDesktop() || stacked())}
-      role="region"
-      aria-label={entry()?.tab.title}
-      aria-hidden={!opened()}
-      inert={!opened()}
-      class="relative shrink-0 overflow-hidden bg-v2-background-bg-base"
-      classList={{
-        "w-full": !isDesktop() || stacked(),
-        "min-w-0 h-full flex-1": isDesktop() && present() && !stacked(),
-        "w-0 h-full pointer-events-none": isDesktop() && !present(),
-        "rounded-[10px] shadow-[var(--v2-elevation-raised)]": isDesktop() && (props.framed ?? true),
-        "will-change-[height]": !props.embedded && !size.active() && (!isDesktop() || stacked()),
-      }}
-      style={{ height: panelHeight(), "--terminal-panel-height": contentHeight() }}
-    >
-      <div classList={{ "md:hidden": !stacked(), hidden: stacked() || props.embedded }} onPointerDown={size.start}>
-        <ResizeHandle
-          class="-top-1"
-          direction="vertical"
-          size={regionHeight()}
-          min={100}
-          max={max()}
-          collapseThreshold={50}
-          onResize={(next) => {
-            size.touch()
-            view().dock.resize(next)
-          }}
-          onCollapse={() => view().dock.close()}
-        />
-      </div>
-      <div
-        data-slot="terminal-panel-content"
-        class="absolute inset-x-0 top-0 flex flex-col overflow-hidden"
-        classList={{
-          "border-t border-border-weak-base": opened() && !isDesktop() && !props.embedded,
-          "pointer-events-none": !opened(),
-        }}
-        style={{ height: contentHeight() }}
-      >
-        <Show when={entry()?.extension} keyed>
-          {(extension) => (
-            <PanelContext.Provider
-              value={{
-                visible: opened,
-                present,
-                placement: () => (props.embedded ? "mobile" : stacked() ? "bottom" : "side"),
-                reserve: () => !!props.reserve,
-                animate: () => !size.active(),
-                sidebar: props.sidebar,
-                open: () => [],
-              }}
-            >
-              <Contribution extension={extension}>
-                {() =>
-                  entry()!.provider.render(
-                    panelInput(() => props.view, props.screen, {
-                      get tab() {
-                        return entry()!.tab
-                      },
-                    }),
-                  )
-                }
-              </Contribution>
-            </PanelContext.Provider>
-          )}
-        </Show>
-      </div>
-    </aside>
   )
 }
 

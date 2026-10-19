@@ -95,7 +95,6 @@ describe("settings schema", () => {
         showCustomAgents: false,
         showTurnDiffs: false,
         mobileTitlebarPosition: "top",
-        terminalPlacement: "side",
         followUpBehavior: "steer",
       },
       appearance: {

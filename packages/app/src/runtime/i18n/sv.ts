@@ -878,10 +878,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} kör OpenCode {{version}}, som inte är kompatibelt med den här appen. Uppgradera servern till OpenCode V2 för att fortsätta.",
   "session.background.moveInline": "Tryck på {{keybind}} för att flytta pågående arbete till bakgrunden",
-  "settings.general.row.terminalPlacement.title": "Terminalplacering",
-  "settings.general.row.terminalPlacement.description": "Välj var terminalen öppnas i sessioner",
-  "settings.general.row.terminalPlacement.side": "Sidan",
-  "settings.general.row.terminalPlacement.bottom": "Nederst",
   "command.session.location.cycle": "Växla sessionsplats",
   "dialog.provider.anthropic.note": "Direktåtkomst till Claude-modeller via API-nyckel",
   "provider.connect.title.anthropicProMax": "Logga in med Anthropic",

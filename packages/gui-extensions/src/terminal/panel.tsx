@@ -1,4 +1,4 @@
-import { For, Show, createMemo, onCleanup, onMount, untrack } from "solid-js"
+import { For, Show, createMemo, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { DragDropProvider, PointerSensor } from "@dnd-kit/solid"
@@ -35,7 +35,11 @@ type TerminalPanelState = {
   workspaces: string[]
 }
 
-export default function TerminalPanel(props: { model: TerminalModel; session: MountedSession; onClose: () => void }) {
+/**
+ * The terminals of the routed session's workspace. In the side region each terminal is its own strip tab and `tab`
+ * names the one to show; the narrow-screen view has no strip, so it lists the terminals in its own tabs.
+ */
+export default function TerminalPanel(props: { model: TerminalModel; session: MountedSession; tab: () => string }) {
   const extension = useExtension()
   const keybinds = extension.keybinds
   const frame = usePanel()
@@ -43,7 +47,8 @@ export default function TerminalPanel(props: { model: TerminalModel; session: Mo
   const workspaceKey = () => terminal().key
   const opened = frame.visible
   const present = frame.present
-  const close = () => props.onClose()
+  const mobile = () => frame.placement() === "mobile"
+  const active = () => (mobile() ? terminal().active() : terminal().byTab(props.tab())?.id)
   let tabList: HTMLDivElement | undefined
 
   onCleanup(() => terminal().cancelFocus())
@@ -60,47 +65,40 @@ export default function TerminalPanel(props: { model: TerminalModel; session: Mo
     })
   })
 
-  // While the dock shows, a workspace first observed empty gets its first terminal, once per workspace in a row.
-  createKeyed(opened, () => {
-    const seen = { workspace: "" }
-
-    createKeyed(
-      () => {
-        const workspace = terminal()
-
-        return workspace.ready() ? workspace : undefined
-      },
-      (workspace) => {
-        if (seen.workspace === workspace.key) return
-
-        seen.workspace = workspace.key
-
-        if (workspace.all().length === 0) workspace.new()
-      },
-    )
-  })
-
-  // The dock closes when the shown workspace loses its last terminal, e.g. when its shell exits.
+  // While the narrow-screen view shows, a workspace first observed empty gets its first terminal, once per workspace in
+  // a row. In the side region the user opens each terminal from the strip.
   createKeyed(
-    () => (terminal().all().length > 0 ? terminal() : undefined),
-    (workspace) =>
-      onCleanup(() =>
-        untrack(() => {
-          if (terminal() === workspace && workspace.all().length === 0 && opened()) close()
-        }),
-      ),
+    () => opened() && mobile(),
+    () => {
+      const seen = { workspace: "" }
+
+      createKeyed(
+        () => {
+          const workspace = terminal()
+
+          return workspace.ready() ? workspace : undefined
+        },
+        (workspace) => {
+          if (seen.workspace === workspace.key) return
+
+          seen.workspace = workspace.key
+
+          if (workspace.all().length === 0) void workspace.new()
+        },
+      )
+    },
   )
 
-  // Focuses the active terminal once the dock shows it and a focus request names it.
+  // Focuses the shown terminal once the panel is visible and a focus request names it.
   createKeyed(
     () => {
-      const id = terminal().active()
+      const id = active()
 
       return opened() && id && terminal().focusRequested(id) ? { id } : undefined
     },
     (request) =>
       requestAnimationFrame(() => {
-        if (!opened() || terminal().active() !== request.id || !terminal().focusRequested(request.id)) return
+        if (!opened() || active() !== request.id || !terminal().focusRequested(request.id)) return
 
         focusTerminalById(request.id)
       }),
@@ -136,14 +134,13 @@ export default function TerminalPanel(props: { model: TerminalModel; session: Mo
     return props.model.handoff.get(workspaceKey()) ?? []
   })
 
-  const all = () => terminal().all()
-
-  // Keeps each shown terminal mounted for the workspaces shown last, so switching back keeps its screen and session.
+  // Keeps each shown terminal mounted for the workspaces shown last, so switching back keeps its screen and session. A
+  // terminal mounts, and connects, once it is shown, not while the panel only holds its tab hidden.
   createKeyed(
     () => ({
       workspace: workspaceKey(),
       ready: terminal().ready(),
-      active: terminal().active(),
+      active: opened() ? active() : undefined,
       ptys: terminal().all(),
     }),
     (current) => {
@@ -199,7 +196,7 @@ export default function TerminalPanel(props: { model: TerminalModel; session: Mo
     if (!store.surfaces[index]?.focus) return
     setStore("surfaces", index, "focus", false)
 
-    if (!opened() || terminal().active() !== id) return
+    if (!opened() || active() !== id) return
     focusTerminalById(id)
     terminal().consumeFocus(id)
   }
@@ -214,145 +211,138 @@ export default function TerminalPanel(props: { model: TerminalModel; session: Mo
     })
   }
 
-  return (
-    <Show
-      when={terminal().ready() || store.surfaces.length > 0}
-      fallback={
-        <div class="flex flex-col h-full pointer-events-none">
+  const surfaces = () => (
+    <div class="flex-1 min-h-0 relative">
+      <For each={store.surfaces}>
+        {(surface) => (
           <div
-            class="h-10 flex items-center gap-2 px-2 border-b border-border-weaker-base bg-v2-background-bg-base overflow-hidden"
-            classList={{ "pe-12": frame.reserve() }}
+            id={`terminal-wrapper-${surface.pty.id}`}
+            class="absolute inset-0"
+            classList={{
+              hidden: !present() || surface.workspace !== workspaceKey() || surface.pty.id !== active(),
+            }}
           >
-            <For each={handoff()}>
-              {(title) => (
-                <div class="px-2 py-1 rounded-md bg-surface-base text-14-regular text-text-weak truncate max-w-40">
-                  {title}
-                </div>
-              )}
-            </For>
-            <div class="flex-1" />
-            <div class="text-text-weak pr-2">
-              {extension.t("common.loading")}
-              {extension.t("common.loading.ellipsis")}
-            </div>
+            <Terminal
+              pty={surface.pty}
+              server={surface.ops.server()}
+              directory={surface.ops.directory}
+              ghostty={props.model.ghostty}
+              autoFocus={terminal().focusRequested(surface.pty.id)}
+              onAutoFocus={() => {
+                focusTerminalById(surface.pty.id)
+                terminal().consumeFocus(surface.pty.id)
+              }}
+              class="!px-[14px]"
+              onConnect={() =>
+                markTerminalConnected(surface.key, surface.pty.id, (terminalID) => surface.ops.trim(terminalID))
+              }
+              onCleanup={(terminal) => surface.ops.update(terminal)}
+              onConnectError={() =>
+                recoverTerminal(surface.key, surface.pty.id, (terminalID) => surface.ops.clone(terminalID))
+              }
+            />
           </div>
-          <div class="flex-1 flex items-center justify-center text-text-weak">{extension.t("loading")}</div>
-        </div>
-      }
-    >
-      <DragDropProvider
-        sensors={[
-          PointerSensor.configure({
-            activationConstraints: [new PointerActivationConstraints.Distance({ value: 4 })],
-            preventActivation: (event) =>
-              event.target instanceof Element &&
-              !!event.target.closest('[data-slot="tabs-trigger-close-button"], input, [contenteditable="true"]'),
-          }),
-        ]}
-        modifiers={[RestrictToHorizontalAxis, RestrictToElement.configure({ element: () => tabList ?? null })]}
-        plugins={(defaults) => [
-          ...defaults.filter((plugin) => plugin !== Accessibility),
-          AutoScroller.configure({ acceleration: 8, threshold: { x: 0.05, y: 0 } }),
-          Feedback.configure({ dropAnimation: null }),
-        ]}
-        onDragEnd={(event) => {
-          const source = event.operation.source
+        )}
+      </For>
+    </div>
+  )
 
-          if (!event.canceled && isSortable(source) && source.initialIndex !== source.index) {
-            terminal().move(source.id.toString(), source.index)
-          }
-
-          handleTerminalDragEnd()
-        }}
-      >
-        <div class="flex flex-col h-full">
-          <div class="h-[49px] shrink-0 flex border-b border-border-weaker-base">
-            <Tabs
-              variant="panel"
-              value={terminal().active()}
-              onChange={(id) => terminal().open(id)}
-              class="!h-full min-w-0 !flex-1"
-            >
-              <Tabs.List
-                ref={tabList}
-                class="!border-b-0"
-                onPointerDown={(event: PointerEvent & { currentTarget: HTMLDivElement }) => {
-                  const active = document.activeElement
-
-                  if (event.target === active) return
-
-                  if (active instanceof HTMLInputElement && event.currentTarget.contains(active)) active.blur()
-                }}
-              >
-                <For each={all()}>
-                  {(pty, index) => (
-                    <SortableTerminalTab terminal={pty} workspace={terminal()} index={index()} onClose={close} />
+  return (
+    <div id="terminal-panel" class="flex flex-col size-full">
+      <Show
+        when={terminal().ready() || store.surfaces.length > 0}
+        fallback={
+          <div class="flex flex-col h-full pointer-events-none">
+            <Show when={mobile()}>
+              <div class="h-10 flex items-center gap-2 px-2 border-b border-border-weaker-base bg-v2-background-bg-base overflow-hidden">
+                <For each={handoff()}>
+                  {(title) => (
+                    <div class="px-2 py-1 rounded-md bg-surface-base text-14-regular text-text-weak truncate max-w-40">
+                      {title}
+                    </div>
                   )}
                 </For>
-                <div class="h-full flex items-center justify-center">
-                  <Tooltip
-                    value={
-                      <>
-                        {extension.t("command.new")}
-                        <Show when={newTerminalKeybind().length > 0}>
-                          <Keybind keys={newTerminalKeybind()} variant="neutral" />
-                        </Show>
-                      </>
-                    }
-                    placement="bottom"
-                    class="flex items-center"
-                  >
-                    <IconButton
-                      icon={<Icon name="plus-small" size="large" />}
-                      variant="ghost"
-                      onClick={() => terminal().new()}
-                      aria-label={extension.t("command.new")}
-                    />
-                  </Tooltip>
-                </div>
-              </Tabs.List>
-            </Tabs>
-            {/* Reserve outside the scroll viewport so overflowing tabs cannot cover the toggle. */}
-            <Show when={frame.reserve()}>
-              <div class="w-12 shrink-0" aria-hidden />
+              </div>
             </Show>
+            <div class="flex-1 flex items-center justify-center text-text-weak">{extension.t("loading")}</div>
           </div>
-          <div class="flex-1 min-h-0 relative">
-            <For each={store.surfaces}>
-              {(surface) => (
-                <div
-                  id={`terminal-wrapper-${surface.pty.id}`}
-                  class="absolute inset-0"
-                  classList={{
-                    hidden:
-                      !present() || surface.workspace !== workspaceKey() || surface.pty.id !== terminal().active(),
+        }
+      >
+        <Show when={mobile()} fallback={surfaces()}>
+          <DragDropProvider
+            sensors={[
+              PointerSensor.configure({
+                activationConstraints: [new PointerActivationConstraints.Distance({ value: 4 })],
+                preventActivation: (event) =>
+                  event.target instanceof Element &&
+                  !!event.target.closest('[data-slot="tabs-trigger-close-button"], input, [contenteditable="true"]'),
+              }),
+            ]}
+            modifiers={[RestrictToHorizontalAxis, RestrictToElement.configure({ element: () => tabList ?? null })]}
+            plugins={(defaults) => [
+              ...defaults.filter((plugin) => plugin !== Accessibility),
+              AutoScroller.configure({ acceleration: 8, threshold: { x: 0.05, y: 0 } }),
+              Feedback.configure({ dropAnimation: null }),
+            ]}
+            onDragEnd={(event) => {
+              const source = event.operation.source
+
+              if (!event.canceled && isSortable(source) && source.initialIndex !== source.index) {
+                terminal().move(source.id.toString(), source.index)
+              }
+
+              handleTerminalDragEnd()
+            }}
+          >
+            <div class="h-[49px] shrink-0 flex border-b border-border-weaker-base">
+              <Tabs
+                variant="panel"
+                value={terminal().active()}
+                onChange={(id) => terminal().open(id)}
+                class="!h-full min-w-0 !flex-1"
+              >
+                <Tabs.List
+                  ref={tabList}
+                  class="!border-b-0"
+                  onPointerDown={(event: PointerEvent & { currentTarget: HTMLDivElement }) => {
+                    const focused = document.activeElement
+
+                    if (event.target === focused) return
+
+                    if (focused instanceof HTMLInputElement && event.currentTarget.contains(focused)) focused.blur()
                   }}
                 >
-                  <Terminal
-                    pty={surface.pty}
-                    server={surface.ops.server()}
-                    directory={surface.ops.directory}
-                    ghostty={props.model.ghostty}
-                    autoFocus={terminal().focusRequested(surface.pty.id)}
-                    onAutoFocus={() => {
-                      focusTerminalById(surface.pty.id)
-                      terminal().consumeFocus(surface.pty.id)
-                    }}
-                    class="!px-[14px]"
-                    onConnect={() =>
-                      markTerminalConnected(surface.key, surface.pty.id, (terminalID) => surface.ops.trim(terminalID))
-                    }
-                    onCleanup={(terminal) => surface.ops.update(terminal)}
-                    onConnectError={() =>
-                      recoverTerminal(surface.key, surface.pty.id, (terminalID) => surface.ops.clone(terminalID))
-                    }
-                  />
-                </div>
-              )}
-            </For>
-          </div>
-        </div>
-      </DragDropProvider>
-    </Show>
+                  <For each={terminal().all()}>
+                    {(pty, index) => <SortableTerminalTab terminal={pty} workspace={terminal()} index={index()} />}
+                  </For>
+                  <div class="h-full flex items-center justify-center">
+                    <Tooltip
+                      value={
+                        <>
+                          {extension.t("command.new")}
+                          <Show when={newTerminalKeybind().length > 0}>
+                            <Keybind keys={newTerminalKeybind()} variant="neutral" />
+                          </Show>
+                        </>
+                      }
+                      placement="bottom"
+                      class="flex items-center"
+                    >
+                      <IconButton
+                        icon={<Icon name="plus-small" size="large" />}
+                        variant="ghost"
+                        onClick={() => void terminal().new()}
+                        aria-label={extension.t("command.new")}
+                      />
+                    </Tooltip>
+                  </div>
+                </Tabs.List>
+              </Tabs>
+            </div>
+            {surfaces()}
+          </DragDropProvider>
+        </Show>
+      </Show>
+    </div>
   )
 }

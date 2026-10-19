@@ -678,10 +678,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} पर OpenCode {{version}} चल रहा है, जो इस ऐप के साथ संगत नहीं है। जारी रखने के लिए सर्वर को OpenCode V2 में अपग्रेड करें।",
   "session.background.moveInline": "चल रहे कार्य को बैकग्राउंड में ले जाने के लिए {{keybind}} दबाएँ",
-  "settings.general.row.terminalPlacement.title": "टर्मिनल का स्थान",
-  "settings.general.row.terminalPlacement.description": "चुनें कि सेशन में टर्मिनल कहाँ खुले",
-  "settings.general.row.terminalPlacement.side": "किनारे",
-  "settings.general.row.terminalPlacement.bottom": "नीचे",
   "dialog.server.menu.hide": "प्रोजेक्ट सूची से छिपाएँ",
   "dialog.server.menu.show": "प्रोजेक्ट सूची में दिखाएँ",
   "session.queue.count.one": "{{count}} कतार में",

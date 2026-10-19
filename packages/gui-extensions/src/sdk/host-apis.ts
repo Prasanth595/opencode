@@ -621,10 +621,10 @@ export interface Sessions {
 
 /**
  * Where a panel key stands in a session.
- * - `closed`: not in the strip (a dock: not open).
+ * - `closed`: not in the strip.
  * - `open`: in the strip, not selected.
  * - `active`: selected, with the side region closed.
- * - `visible`: selected and on screen (a dock: open).
+ * - `visible`: selected and on screen.
  */
 export type PanelState = "closed" | "open" | "active" | "visible"
 
@@ -636,11 +636,11 @@ export interface OpenOptions {
    * - `preview`: select it as the new preview tab.
    * - `append`: add it at the end without selecting it, changing neither the region nor the preview tab.
    * - `select`: add it at the end and select it, keeping the preview tab. Like `background`, it keeps the
-   *   narrow-screen view and the dock, and opens the side region.
+   *   narrow-screen view, and opens the side region.
    */
   readonly tab?: "open" | "preview" | "append" | "select"
   /**
-   * On narrow screens, keep the current view and the dock, and open the side region so the tab shows when the window
+   * On narrow screens, keep the current view, and open the side region so the tab shows when the window
    * is wide. Pass it when the user stays where they are (a palette pick, a composer chip) or the agent opened the tab.
    * Defaults to false.
    */
@@ -648,7 +648,7 @@ export interface OpenOptions {
 }
 
 /**
- * The session layout: side panel tabs, the dock, scroll offsets, and the settings and project dialogs. Panel keys are
+ * The session layout: side panel tabs, scroll offsets, and the settings and project dialogs. Panel keys are
  * `${extension}:${tab id}`. Nothing throws before the app interface mounts: `ready()` is false, reads return what an
  * empty layout holds (each says its default), and writes (`open`, `close`, `toggle`, `side.toggle`, `scroll.set`,
  * `settings`, `project`) wait and apply in call order once it mounts.
@@ -659,10 +659,9 @@ export interface Layout {
   /** Stored layout (tabs, scroll) has loaded; false before the app interface mounts. Reactive. */
   ready(): boolean
   /**
-   * Opens a panel tab. Works for sessions that are not mounted. A key of a `dock` panel opens the dock. On narrow
-   * screens, an `open` or `preview` selects the panel's mobile view and closes the dock; opening a tab its panel does
-   * not list, or a `transient` tab, stores nothing. A transient tab is never selected on narrow screens, but a stored
-   * one stays the preview slot. Writes (`open`, `close`, `toggle`, `scroll.set`) made while `session.location` is
+   * Opens a panel tab. Works for sessions that are not mounted. On narrow screens, an `open` or `preview` selects the
+   * panel's mobile view; opening a tab its panel does not list, or a `transient` tab, stores nothing. A transient tab
+   * is never selected on narrow screens, but a stored one stays the preview slot. Writes (`open`, `close`, `toggle`, `scroll.set`) made while `session.location` is
    * unknown wait until it is known, and apply in order.
    *
    * @param key - `${extension}:${tab id}`.
@@ -671,7 +670,7 @@ export interface Layout {
    */
   open(key: string, session: SessionRef, options?: OpenOptions): void
   /**
-   * Removes a tab from the strip (closes the dock for a dock key) and calls its panel's `close`.
+   * Removes a tab from the strip and calls its panel's `close`.
    *
    * @param key - `${extension}:${tab id}`.
    * @param session - The session whose strip changes.
@@ -721,21 +720,6 @@ export interface Layout {
   readonly sidebar: {
     /** The inner sidebar is open; true until a session screen shows the preference. Reactive. */
     opened(): boolean
-  }
-  /** The dock, where `dock` panels render. */
-  readonly dock: {
-    /**
-     * The dock is open; false before the app interface mounts. Reactive.
-     *
-     * @param session - Any session.
-     */
-    opened(session: SessionRef): boolean
-    /**
-     * Where the user placed the dock; `side`, the setting's default, before the app interface mounts. Reactive.
-     * - `side`: beside the timeline.
-     * - `bottom`: below the timeline.
-     */
-    placement(): "side" | "bottom"
   }
   /** Scroll offsets the host stores per session and key. */
   readonly scroll: {

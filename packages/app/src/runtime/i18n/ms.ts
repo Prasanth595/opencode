@@ -679,10 +679,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} menjalankan OpenCode {{version}}, yang tidak serasi dengan aplikasi ini. Tingkatkan pelayan kepada OpenCode V2 untuk meneruskan.",
   "session.background.moveInline": "Tekan {{keybind}} untuk mengalihkan kerja yang sedang berjalan ke latar belakang",
-  "settings.general.row.terminalPlacement.title": "Kedudukan terminal",
-  "settings.general.row.terminalPlacement.description": "Pilih tempat terminal dibuka dalam sesi",
-  "settings.general.row.terminalPlacement.side": "Sisi",
-  "settings.general.row.terminalPlacement.bottom": "Bawah",
   "dialog.server.menu.hide": "Sembunyikan daripada senarai projek",
   "dialog.server.menu.show": "Tunjukkan dalam senarai projek",
   "session.queue.count.one": "{{count}} dalam baris gilir",

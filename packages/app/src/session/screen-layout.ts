@@ -17,22 +17,17 @@ export function createSessionScreenLayout(
   const size = createSizing()
   const view = session.layout.view
   const tabsOpen = createMemo(() => session.isDesktop() && view().side.opened() && !!session.identity.params.id)
-  const dockOpen = createMemo(() => view().dock.opened())
-  const dockSide = createMemo(() => session.isDesktop() && settings.general.terminalPlacement() === "side")
-  const dockBottom = createMemo(() => session.isDesktop() && settings.general.terminalPlacement() === "bottom")
-  const dockSideOpen = createMemo(() => dockOpen() && dockSide())
 
   const fileTreeOpen = createMemo(
     () => session.isDesktop() && input.sidebar() && settings.visibility.fileTree() && layout.fileTree.opened(),
   )
 
-  const resizable = createMemo(() => tabsOpen() || dockSideOpen())
-  const besideOpen = createMemo(() => resizable() || fileTreeOpen())
-  const [rowSize, setRowSize] = createStore<{ width?: number; height?: number }>({})
+  const besideOpen = createMemo(() => tabsOpen() || fileTreeOpen())
+  const [rowSize, setRowSize] = createStore<{ width?: number }>({})
   let row: HTMLDivElement | undefined
   createResizeObserver(
     () => row,
-    ({ width, height }) => setRowSize({ width, height }),
+    ({ width }) => setRowSize({ width }),
   )
 
   const available = createMemo<number | undefined>(() => {
@@ -56,7 +51,7 @@ export function createSessionScreenLayout(
   const panelWidth = createMemo(() => {
     if (!besideOpen()) return "100%"
 
-    if (resizable()) return `${resizedWidth()}px`
+    if (tabsOpen()) return `${resizedWidth()}px`
 
     return `calc(100% - ${layout.fileTree.width()}px)`
   })
@@ -69,33 +64,12 @@ export function createSessionScreenLayout(
     return sessionPanelWidthMax({ available: width, split: splitSide() })
   })
 
-  const panelLayout = createMemo(() => ({
-    visible: tabsOpen() || dockSideOpen() || fileTreeOpen(),
-    stacked: tabsOpen() && dockSideOpen(),
-  }))
-
-  const sideRegionOpen = createMemo(() => tabsOpen() || fileTreeOpen())
-
-  const dockRegion = createMemo(() =>
-    Math.min(view().dock.height(), typeof window === "undefined" ? 600 : window.innerHeight * 0.6),
-  )
-
-  const dockRegionHeight = createMemo(() => `${dockRegion()}px`)
-  const sideHeight = createMemo(() => rowSize.height)
-  const fullSideHeight = createMemo(() => (sideHeight() === undefined ? "100%" : `${sideHeight()}px`))
-
-  const stackedRegionHeight = createMemo(() => {
-    const height = sideHeight()
-
-    if (height === undefined) return `calc(100% - ${dockRegionHeight()} - 8px)`
-
-    return `${Math.max(0, height - dockRegion() - 8)}px`
-  })
+  const sideOpen = createMemo(() => tabsOpen() || fileTreeOpen())
 
   const sideContentWidth = createMemo<string>((previous) => {
     const width = available()
 
-    if (resizable() && width !== undefined) return `${Math.max(0, width - resizedWidth())}px`
+    if (tabsOpen() && width !== undefined) return `${Math.max(0, width - resizedWidth())}px`
 
     if (fileTreeOpen()) return `${layout.fileTree.width()}px`
 
@@ -110,42 +84,16 @@ export function createSessionScreenLayout(
       ref: (element: HTMLDivElement) => {
         row = element
       },
-      resizable,
+      resizable: tabsOpen,
       resizedWidth,
       width: panelWidth,
     },
     side: {
       contentWidth: sideContentWidth,
-      gap: { height: createMemo(() => (panelLayout().stacked ? "8px" : "0px")) },
-      layout: panelLayout,
-      region: {
-        height: createMemo(() => {
-          if (!sideRegionOpen()) return "0px"
-
-          if (dockSideOpen()) return stackedRegionHeight()
-
-          return fullSideHeight()
-        }),
-        open: sideRegionOpen,
-      },
+      open: sideOpen,
       tabs: { open: tabsOpen },
-      dock: {
-        contentHeight: createMemo(() => (sideRegionOpen() ? dockRegionHeight() : fullSideHeight())),
-        height: createMemo(() => {
-          if (!dockSideOpen()) return "0px"
-
-          if (sideRegionOpen()) return dockRegionHeight()
-
-          return fullSideHeight()
-        }),
-      },
     },
     size,
-    dock: {
-      bottom: dockBottom,
-      open: dockOpen,
-      side: dockSide,
-    },
   }
 }
 

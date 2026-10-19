@@ -29,10 +29,6 @@ export type LocalProject = Partial<Project> & { worktree: string; expanded: bool
 export type HomeProjectSelection = typeof layoutSchema.Type.home.selection
 
 export type TabRegions = {
-  dockOpened: Accessor<boolean>
-  setDockOpened(opened: boolean): void
-  dockHeight: Accessor<number | undefined>
-  setDockHeight(height: number): void
   sideOpened: Accessor<boolean>
   setSideOpened(opened: boolean): void
   sessionWidth: Accessor<number | undefined>
@@ -489,7 +485,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           return message
         },
       },
-      /** The dock and side regions of a shell tab, and the session panel width beside them. */
+      /** The side region of a shell tab, and the session panel width beside it. */
       view(sessionKey: string | Accessor<string>, regions: TabRegions) {
         const key = createSessionKeyReader(sessionKey, ensureKey)
 
@@ -499,17 +495,6 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           },
           setScroll(tab: string, pos: SessionScroll) {
             scroll.setScroll(key(), tab, pos)
-          },
-          dock: {
-            opened: regions.dockOpened,
-            height: createMemo(() => regions.dockHeight() ?? DEFAULT_DOCK_HEIGHT),
-            resize: regions.setDockHeight,
-            open() {
-              regions.setDockOpened(true)
-            },
-            close() {
-              regions.setDockOpened(false)
-            },
           },
           side: {
             opened: regions.sideOpened,

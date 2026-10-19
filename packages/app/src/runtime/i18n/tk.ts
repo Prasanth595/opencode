@@ -672,10 +672,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} şu programma bilen gabat gelmeýän OpenCode {{version}} wersiýasyny işledýär. Dowam etmek üçin serweri OpenCode V2-ä täzeläň.",
   "session.background.moveInline": "Işleýän işi fona geçirmek üçin {{keybind}} basyň",
-  "settings.general.row.terminalPlacement.title": "Terminalyň ýerleşişi",
-  "settings.general.row.terminalPlacement.description": "Sessiýalarda terminalyň nirede açyljakdygyny saýlaň",
-  "settings.general.row.terminalPlacement.side": "Gapdalda",
-  "settings.general.row.terminalPlacement.bottom": "Aşakda",
   "dialog.server.menu.hide": "Taslama sanawyndan gizläň",
   "dialog.server.menu.show": "Taslama sanawynda görkeziň",
   "session.queue.count.one": "{{count}} nobatda",

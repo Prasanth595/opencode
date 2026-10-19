@@ -33,10 +33,6 @@ export const useSessionLayout = () => {
   })
 
   const regions = {
-    dockOpened: () => tabs.region(currentTab(), "dock"),
-    setDockOpened: (opened: boolean) => tabs.setRegion(currentTab(), "dock", opened),
-    dockHeight: () => tabs.regionSize(currentTab(), "dockHeight"),
-    setDockHeight: (height: number) => tabs.setRegionSize(currentTab(), "dockHeight", height),
     sideOpened: () => tabs.region(currentTab(), "side"),
     setSideOpened: (opened: boolean) => tabs.setRegion(currentTab(), "side", opened),
     sessionWidth: () => tabs.regionSize(currentTab(), "sessionWidth"),

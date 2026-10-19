@@ -217,7 +217,7 @@ SDK icon fields use `IconName` from `@opencode/ui/icons/catalog`, a dependency-f
 | --------------------------------------- | ------- | ------------------------------------------------------------------------------------------- |
 | [`Command`](src/sdk/registries.ts)      | window  | A palette command with an optional keybind and slash command                                |
 | [`MenuItem`](src/sdk/registries.ts)     | window  | An item of a host menu: the side panel + menu, Add server, a server row                     |
-| [`Panel`](src/sdk/registries.ts)        | window  | Tabs in the session's side region, or the dock                                              |
+| [`Panel`](src/sdk/registries.ts)        | window  | Tabs in the session's side region                                                           |
 | [`SettingsPage`](src/sdk/registries.ts) | window  | A settings page, a section on a host page, or rows in a host section                        |
 | [`Server`](src/sdk/registries.ts)       | window  | A source of servers, such as SSH hosts                                                      |
 | [`LinkHandler`](src/sdk/registries.ts)  | window  | Opens local links, such as file paths in messages, and says whether their target exists     |
@@ -230,7 +230,7 @@ SDK icon fields use `IconName` from `@opencode/ui/icons/catalog`, a dependency-f
 
 | Property                     | Type ([window](src/sdk/host-apis.ts), [main](src/sdk/main.ts)) | What it does                                                      |
 | ---------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `ctx.layout`                 | `Layout`                                                       | Side panel tabs, the dock, scroll offsets, settings, open project |
+| `ctx.layout`                 | `Layout`                                                       | Side panel tabs, scroll offsets, settings, open project           |
 | `ctx.sessions`               | `Sessions`                                                     | Sessions of open tabs, and the mounted `MountedSession`           |
 | `ctx.screen`                 | `Screen`                                                       | The session screen's files, comments and composer                 |
 | `ctx.storage`                | `Storage`                                                      | Stores for keys known only at runtime, and window memory          |

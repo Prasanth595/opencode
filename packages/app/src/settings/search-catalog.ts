@@ -44,12 +44,6 @@ export const clientSettings: Entry<SettingsRootTab>[] = [
   },
   {
     tab: "general",
-    label: "settings.general.row.terminalPlacement.title",
-    target: "settings-terminal-placement",
-    keywords: "terminal side bottom position",
-  },
-  {
-    tab: "general",
     label: "settings.general.row.followUpBehavior.title",
     target: "settings-follow-up-behavior",
     keywords: "queue steer follow up",

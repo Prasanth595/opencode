@@ -672,10 +672,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} හි OpenCode {{version}} ධාවනය වන අතර එය මෙම යෙදුම සමඟ නොගැළපේ. ඉදිරියට යාමට සේවාදායකය OpenCode V2 වෙත උත්ශ්‍රේණි කරන්න.",
   "session.background.moveInline": "ධාවනය වන කාර්යය පසුබිමට ගෙන යාමට {{keybind}} ඔබන්න",
-  "settings.general.row.terminalPlacement.title": "ටර්මිනලයේ පිහිටීම",
-  "settings.general.row.terminalPlacement.description": "සැසි තුළ ටර්මිනලය විවෘත වන ස්ථානය තෝරන්න",
-  "settings.general.row.terminalPlacement.side": "පැත්තේ",
-  "settings.general.row.terminalPlacement.bottom": "පහළ",
   "dialog.server.menu.hide": "ව්‍යාපෘති ලැයිස්තුවෙන් සඟවන්න",
   "dialog.server.menu.show": "ව්‍යාපෘති ලැයිස්තුවේ පෙන්වන්න",
   "session.queue.count.one": "{{count}} ක් පෝලිමේ",

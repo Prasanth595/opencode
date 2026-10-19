@@ -677,10 +677,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} OpenCode {{version}}-ро иҷро мекунад, ки бо ин барнома мувофиқ нест. Барои идома серверро ба OpenCode V2 навсозӣ кунед.",
   "session.background.moveInline": "Барои ба замина гузаронидани кори иҷрошаванда {{keybind}}-ро пахш кунед",
-  "settings.general.row.terminalPlacement.title": "Ҷойгиршавии терминал",
-  "settings.general.row.terminalPlacement.description": "Интихоб кунед, ки терминал дар сессияҳо дар куҷо кушода шавад",
-  "settings.general.row.terminalPlacement.side": "Канор",
-  "settings.general.row.terminalPlacement.bottom": "Поён",
   "dialog.server.menu.hide": "Аз рӯйхати лоиҳаҳо пинҳон кунед",
   "dialog.server.menu.show": "Дар рӯйхати лоиҳаҳо нишон диҳед",
   "session.queue.count.one": "{{count}} дар навбат",

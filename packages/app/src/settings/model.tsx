@@ -13,8 +13,6 @@ export type WorkspaceDefaultDestination = Settings["workspaces"]["defaultDestina
 
 export type WorkspaceLastUsed = Settings["workspaces"]["lastUsed"][string]
 
-export type TerminalPlacement = Settings["general"]["terminalPlacement"]
-
 export type FollowUpBehavior = Settings["general"]["followUpBehavior"]
 
 export type TabLayout = Settings["appearance"]["tabLayout"]
@@ -120,7 +118,6 @@ const generalSchema = Persistence.struct({
   mobileTitlebarPosition: Schema.Literals(["top", "bottom"]),
   // Owned by the review extension, which copies it out once; kept so settings rewrites cannot drop it first.
   mobileDiffWrap: Persistence.optional(Schema.Boolean),
-  terminalPlacement: Schema.Literals(["side", "bottom"]),
   followUpBehavior: Schema.Literals(["queue", "steer"]),
 })
 
@@ -281,7 +278,6 @@ export const defaultSettings: Settings = {
     showCustomAgents: false,
     showTurnDiffs: false,
     mobileTitlebarPosition: "top",
-    terminalPlacement: "side",
     followUpBehavior: "steer",
   },
   appearance: { fontSize: 14, mono: "", sans: "", terminal: "", tabLayout: "horizontal" },
@@ -363,13 +359,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         ),
         setMobileTitlebarPosition(value: "top" | "bottom") {
           setStore("general", "mobileTitlebarPosition", value)
-        },
-        terminalPlacement: withFallback(
-          () => store.general?.terminalPlacement,
-          defaultSettings.general.terminalPlacement,
-        ),
-        setTerminalPlacement(value: TerminalPlacement) {
-          setStore("general", "terminalPlacement", value)
         },
         followUpBehavior: withFallback(() => store.general?.followUpBehavior, defaultSettings.general.followUpBehavior),
         setFollowUpBehavior(value: FollowUpBehavior) {

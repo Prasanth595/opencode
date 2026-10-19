@@ -681,10 +681,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} bu tətbiqlə uyğun olmayan OpenCode {{version}} versiyasını işlədir. Davam etmək üçün serveri OpenCode V2-yə yeniləyin.",
   "session.background.moveInline": "İşləyən işi arxa plana keçirmək üçün {{keybind}} basın",
-  "settings.general.row.terminalPlacement.title": "Terminalın yerləşməsi",
-  "settings.general.row.terminalPlacement.description": "Sessiyalarda terminalın harada açılacağını seçin",
-  "settings.general.row.terminalPlacement.side": "Yan tərəf",
-  "settings.general.row.terminalPlacement.bottom": "Aşağı",
   "dialog.server.menu.hide": "Layihə siyahısından gizlət",
   "dialog.server.menu.show": "Layihə siyahısında göstər",
   "session.queue.count.one": "{{count}} növbədədir",

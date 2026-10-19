@@ -628,10 +628,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} གིས་ གློག་རིམ་འདི་དང་མཐུན་འགྱུར་མེད་པའི་ OpenCode {{version}} གཡོག་བཀོལ་དོ། འཕྲོ་མཐུད་ཀྱི་དོན་ལུ་ སར་བར་འདི་ OpenCode V2 ལུ་ཡར་སེང་འབད།",
   "session.background.moveInline": "གཡོག་བཀོལ་དོ་ཡོད་པའི་ལཱ་འདི་རྒྱབ་ཁར་སྤོ་ནིའི་དོན་ལུ་ {{keybind}} ཨེབ།",
-  "settings.general.row.terminalPlacement.title": "ཊར་མི་ནཱལ་བཞག་ས།",
-  "settings.general.row.terminalPlacement.description": "ལཱ་ཡུན་ཚུ་ནང་ ཊར་མི་ནཱལ་ག་ཏེ་ཁ་ཕྱེ་ནི་ཨིན་ན་གདམ་ཁ་རྐྱབས།",
-  "settings.general.row.terminalPlacement.side": "ཟུར་ཁ།",
-  "settings.general.row.terminalPlacement.bottom": "མཇུག་ལུ།",
   "command.session.background": "རྒྱབ་ཁར་སྤོ།",
   "settings.tab.preferences": "དགའ་གདམ་ཚུ།",
   "settings.tab.notifications": "བརྡ་བསྐུལ་ཚུ།",

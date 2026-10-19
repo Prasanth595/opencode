@@ -210,6 +210,11 @@ export interface MobileView {
   readonly kind: "tab" | "menu" | "drawer"
   /** The view's icon in the More drawer. */
   readonly icon?: IconName
+  /**
+   * Once shown, the view stays mounted while another view is shown, e.g. a terminal that keeps its shell's screen.
+   * Defaults to false: the view mounts each time it is shown.
+   */
+  readonly cached?: boolean
 }
 
 /**
@@ -226,17 +231,15 @@ export interface PanelProps {
   readonly screen: SessionScreen
 }
 
-/** A panel: the tabs an extension shows in a session's side region, or its dock. */
+/** A panel: the tabs an extension shows in a session's side region. */
 export interface Panel {
   /** The panel's id, unique within the extension. Its mobile view's key is `${extension}:${id}`. */
   readonly id: string
   /**
    * Where the panel renders.
    * - `side`: tabs in the side region's strip.
-   * - `dock`: the dock, below or beside the timeline. The host renders the first tab `list` returns (with `open`
-   *   empty) of the first dock panel.
    */
-  readonly region: "side" | "dock"
+  readonly region: "side"
   /** Asks for the wider session minimum while the side region is open. Reactive. */
   readonly wide?: boolean
   /** Tabs are not restored: stored keys this panel stops listing leave the strip. See also `PanelTab.transient`. */
@@ -618,7 +621,7 @@ export const Command = Registry.define<Command>("command")
 export const MenuItem = Registry.define<MenuItem>("menu-item")
 
 /**
- * The registry of panels: tabs in the session's side region, or the dock.
+ * The registry of panels: tabs in the session's side region.
  *
  * @example
  * ```ts

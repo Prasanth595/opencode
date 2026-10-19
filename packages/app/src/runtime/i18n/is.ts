@@ -677,10 +677,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} keyrir OpenCode {{version}}, sem er ekki samhæft þessu forriti. Uppfærðu netþjóninn í OpenCode V2 til að halda áfram.",
   "session.background.moveInline": "Ýttu á {{keybind}} til að færa verk sem er í gangi í bakgrunn",
-  "settings.general.row.terminalPlacement.title": "Staðsetning skjáhermis",
-  "settings.general.row.terminalPlacement.description": "Veldu hvar skjáhermirinn opnast í setum",
-  "settings.general.row.terminalPlacement.side": "Til hliðar",
-  "settings.general.row.terminalPlacement.bottom": "Neðst",
   "dialog.server.menu.hide": "Fela á verkefnalista",
   "dialog.server.menu.show": "Sýna á verkefnalista",
   "session.queue.count.one": "{{count}} í biðröð",

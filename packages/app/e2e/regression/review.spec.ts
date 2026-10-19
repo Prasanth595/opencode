@@ -2,6 +2,7 @@ import type { OpenCodeEvent, SessionMessageInfo } from "@opencode/client/promise
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { base64Encode } from "@opencode/util/encode"
 import { SERVER, holdRoute, project, provider, session, workspaceKey } from "../utils/app"
+import { openFileLauncher } from "../utils/side-panel"
 import { mockOpenCodeServer } from "../utils/mock-server"
 import { fileDiff, fileNode, openSession } from "../utils/workspace"
 import { expectSessionTitle } from "../utils/waits"
@@ -146,11 +147,10 @@ test("open file tab browses, searches, and tracks missing files", async ({ page 
   const sidebar = panel.locator('[data-slot="session-review-v2-sidebar"]')
   const sidebarToggle = panel.getByRole("button", { name: "Toggle file tree" })
   const contextButton = page.getByRole("button", { name: "Toggle session context" })
-  const openFile = panel.getByRole("button", { name: "Open file" })
   const tab = (name: string) => panel.getByRole("tab", { name, exact: true })
   await contextButton.click()
   await expect(tab("Context")).toHaveAttribute("aria-selected", "true")
-  await openFile.click()
+  await openFileLauncher(panel)
   await expect(tab("Open file")).toHaveAttribute("aria-selected", "true")
   await expect(sidebarToggle).toBeDisabled()
   await expect(sidebar).toBeVisible()
@@ -158,7 +158,7 @@ test("open file tab browses, searches, and tracks missing files", async ({ page 
   await expect(tab("Context")).toHaveAttribute("aria-selected", "true")
   await expect(tab("Open file")).toHaveAttribute("aria-selected", "false")
   await expect(sidebar).toBeHidden()
-  await openFile.click()
+  await openFileLauncher(panel)
   const filter = panel.getByRole("combobox", { name: "Filter files" })
   await expect(filter).toBeFocused()
   await expect(tab("Open file")).toHaveAttribute("aria-selected", "true")
@@ -192,7 +192,7 @@ test("open file tab browses, searches, and tracks missing files", async ({ page 
   await expect(tab("README.md")).toHaveAttribute("aria-selected", "true")
   await expect(panel.getByText("contents:README.md", { exact: true })).toBeVisible()
 
-  await openFile.click()
+  await openFileLauncher(panel)
   await expect(tab("README.md")).toHaveCount(0)
   await expect(sidebar).toBeVisible()
   await filter.fill("nested")
@@ -205,7 +205,7 @@ test("open file tab browses, searches, and tracks missing files", async ({ page 
   await expect(panel.getByText("contents:src/nested.ts", { exact: true })).toBeVisible()
   expect(searches).toContainEqual({ query: "nested", dirs: "file", limit: 200 })
 
-  await openFile.click()
+  await openFileLauncher(panel)
   await expect(tab("nested.ts")).toHaveCount(1)
   await expect(tab("Open file")).toHaveAttribute("aria-selected", "true")
   await expect(sidebarToggle).toBeDisabled()
@@ -284,7 +284,7 @@ for (const listed of [false, true]) {
       },
     })
     const panel = page.locator("#review-panel")
-    await panel.getByRole("button", { name: "Open file" }).click()
+    await openFileLauncher(panel)
     await expect(panel.getByRole("button", { name: "README.md" })).toBeVisible()
     await expect(panel.locator('[data-slot="session-review-v2-sidebar-title"]')).toHaveText(
       listed ? "Custom app" : "app",
@@ -451,7 +451,7 @@ test("file tree expands Windows paths and scrolls long names in both directions"
   })
 
   const panel = page.locator("#review-panel")
-  await panel.getByRole("button", { name: "Open file" }).click()
+  await openFileLauncher(panel)
   await expect(panel.getByRole("tab", { name: "Open file" })).toHaveAttribute("aria-selected", "true")
   const sidebar = panel.locator('[data-component="session-review-v2-sidebar-root"]')
   const frontend = panel.locator('[data-slot="file-tree-v2-row"][data-path="frontend"]')
@@ -847,7 +847,7 @@ test("video files over 25 MB play in the viewer, expand into the theatre overlay
   )
 
   const panel = page.locator("#review-panel")
-  await panel.getByRole("button", { name: "Open file" }).click()
+  await openFileLauncher(panel)
   await panel.getByRole("button", { name: file }).click()
   await expect(panel.getByRole("tab", { name: file, exact: true })).toHaveAttribute("aria-selected", "true")
 
@@ -936,7 +936,7 @@ test("restores review state and the side-panel tab per session", async ({ page }
   await toggle.click()
   await page.getByRole("button", { name: "gamma.ts" }).click()
   await selectedFile("gamma.ts")
-  await panel.getByRole("button", { name: "Open file" }).click()
+  await openFileLauncher(panel)
   await panel.getByRole("button", { name: "README.md" }).click()
   await selectedTab("README.md")
 
@@ -952,7 +952,7 @@ test("restores review state and the side-panel tab per session", async ({ page }
 
   await switchSession("Gamma review state")
   await toggle.click()
-  await panel.getByRole("button", { name: "Open file" }).click()
+  await openFileLauncher(panel)
   await selectedTab("Open file")
 
   await switchSession("Alpha review state")
@@ -1223,7 +1223,7 @@ for (const direction of ["ltr", "rtl"] as const) {
 
     for (const control of [
       panel.locator('[data-slot="session-side-panel-actions"]'),
-      panel.getByRole("button", { name: "Open file", exact: true }),
+      panel.getByRole("button", { name: "Add tab", exact: true }),
     ]) {
       await expect
         .poll(async () => {

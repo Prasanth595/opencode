@@ -674,10 +674,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}}-ზე გაშვებულია OpenCode {{version}}, რომელიც ამ აპთან თავსებადი არ არის. გასაგრძელებლად განაახლეთ სერვერი OpenCode V2-მდე.",
   "session.background.moveInline": "მიმდინარე სამუშაოს ფონურ რეჟიმში გადასატანად დააჭირეთ {{keybind}}-ს",
-  "settings.general.row.terminalPlacement.title": "ტერმინალის მდებარეობა",
-  "settings.general.row.terminalPlacement.description": "აირჩიეთ, სად გაიხსნას ტერმინალი სესიებში",
-  "settings.general.row.terminalPlacement.side": "გვერდით",
-  "settings.general.row.terminalPlacement.bottom": "ქვემოთ",
   "dialog.server.menu.hide": "პროექტების სიიდან დამალვა",
   "dialog.server.menu.show": "პროექტების სიაში ჩვენება",
   "session.queue.count.one": "{{count}} რიგშია",

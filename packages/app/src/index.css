@@ -112,82 +112,16 @@
     animation: side-panel-frame-out 240ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
   }
 
-  [data-slot="terminal-panel-presence"][data-opened="true"] {
-    animation: terminal-panel-presence-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  [data-slot="terminal-panel-presence"][data-opened="false"] {
-    animation: terminal-panel-presence-out 200ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  }
-
-  [data-slot="side-terminal-panel-presence"][data-opened="true"] {
-    animation: side-terminal-panel-presence-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  [data-slot="side-terminal-panel-presence"][data-opened="false"] {
-    animation: side-terminal-panel-presence-out 240ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  }
-
-  [data-component="terminal-panel"][data-size-animated="true"][data-opened="true"] {
-    animation: terminal-panel-size-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  [data-component="terminal-panel"][data-size-animated="true"][data-opened="false"] {
-    animation: terminal-panel-size-out 200ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
   @media (prefers-reduced-motion: reduce) {
-    [data-slot="terminal-panel-presence"],
-    [data-slot="side-terminal-panel-presence"],
     [data-slot="session-side-panel-presence"],
     [data-slot="session-review-content"],
     [data-slot="session-side-region-presence"],
-    [data-slot="session-side-region-presence"] #review-panel,
-    [data-component="terminal-panel"] {
+    [data-slot="session-side-region-presence"] #review-panel {
       animation: none !important;
     }
 
     [data-slot="session-review-content"] {
       transition: none !important;
-    }
-  }
-
-  @keyframes terminal-panel-presence-in {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  @keyframes terminal-panel-presence-out {
-    from {
-      opacity: 1;
-    }
-    to {
-      opacity: 0;
-    }
-  }
-
-  @keyframes side-terminal-panel-presence-in {
-    from {
-      opacity: 0.999999;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  /* Like `side-panel-frame-out`, the collapsing terminal frame drops its elevation. */
-  @keyframes side-terminal-panel-presence-out {
-    from {
-      opacity: 1;
-    }
-    to {
-      opacity: 0.999999;
-      visibility: hidden;
-      box-shadow: none;
     }
   }
 
@@ -212,24 +146,6 @@
     to {
       opacity: 1;
       visibility: hidden;
-    }
-  }
-
-  @keyframes terminal-panel-size-in {
-    from {
-      height: 0;
-    }
-    to {
-      height: var(--terminal-panel-height);
-    }
-  }
-
-  @keyframes terminal-panel-size-out {
-    from {
-      height: var(--terminal-panel-height);
-    }
-    to {
-      height: 0;
     }
   }
 

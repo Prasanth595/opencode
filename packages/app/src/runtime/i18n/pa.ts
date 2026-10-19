@@ -685,10 +685,6 @@ export const dict = {
   "session.error.incompatible.description":
     "\u2068{{server}}\u2069 تے OpenCode \u2068{{version}}\u2069 چل رہیا اے، جہڑا ایس ایپ نال میل نئیں کھاندا۔ جاری رکھن لئی سرور نوں OpenCode V2 تے اپ گریڈ کرو۔",
   "session.background.moveInline": "چلدا کم پس منظر وچ لے جان لئی \u2068{{keybind}}\u2069 دباؤ",
-  "settings.general.row.terminalPlacement.title": "ٹرمینل دی تھاں",
-  "settings.general.row.terminalPlacement.description": "چنو کہ سیشناں وچ ٹرمینل کتھے کھلے",
-  "settings.general.row.terminalPlacement.side": "پاسے",
-  "settings.general.row.terminalPlacement.bottom": "تھلے",
   "dialog.server.menu.hide": "پروجیکٹ دی فہرست توں لُکاؤ",
   "dialog.server.menu.show": "پروجیکٹ دی فہرست وچ وکھاؤ",
   "session.queue.count.one": "\u2068{{count}}\u2069 قطار وچ",

@@ -692,10 +692,6 @@ export const dict = {
   "session.error.incompatible.description":
     "\u2068{{server}}\u2069 ގައި ހިނގަނީ OpenCode \u2068{{version}}\u2069 އެވެ، އެއީ މި އެޕް އާއި އެއްގޮތް ނޫނެވެ. ކުރިއަށް ގެންދިއުމަށް ސަރވަރ OpenCode V2 އަށް އަޕްގްރޭޑް ކުރާށެވެ.",
   "session.background.moveInline": "ހިނގަމުންދާ މަސައްކަތް ބެކްގްރައުންޑަށް ލުމަށް \u2068{{keybind}}\u2069 ފިއްތާށެވެ",
-  "settings.general.row.terminalPlacement.title": "ޓާމިނަލް ބަހައްޓާ ތަން",
-  "settings.general.row.terminalPlacement.description": "ސެޝަންތަކުގައި ޓާމިނަލް ހުޅުވާނެ ތަން ހޮވާށެވެ",
-  "settings.general.row.terminalPlacement.side": "އަރިމަތީގައި",
-  "settings.general.row.terminalPlacement.bottom": "ތިރީގައި",
   "dialog.server.menu.hide": "ޕްރޮޖެކްޓް ލިސްޓުން ފޮރުވާށެވެ",
   "dialog.server.menu.show": "ޕްރޮޖެކްޓް ލިސްޓުގައި ދައްކާށެވެ",
   "session.queue.count.one": "\u2068{{count}}\u2069 ކިއޫގައި",

@@ -674,10 +674,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} កំពុងដំណើរការ OpenCode {{version}} ដែលមិនត្រូវគ្នាជាមួយកម្មវិធីនេះទេ។ ដំឡើងកំណែម៉ាស៊ីនមេទៅ OpenCode V2 ដើម្បីបន្ត។",
   "session.background.moveInline": "ចុច {{keybind}} ដើម្បីផ្លាស់ទីការងារដែលកំពុងដំណើរការទៅផ្ទៃខាងក្រោយ",
-  "settings.general.row.terminalPlacement.title": "ទីតាំងស្ថានីយ",
-  "settings.general.row.terminalPlacement.description": "ជ្រើសរើសទីតាំងដែលស្ថានីយបើកក្នុងសម័យ",
-  "settings.general.row.terminalPlacement.side": "ចំហៀង",
-  "settings.general.row.terminalPlacement.bottom": "ខាងក្រោម",
   "dialog.server.menu.hide": "លាក់ពីបញ្ជីគម្រោង",
   "dialog.server.menu.show": "បង្ហាញក្នុងបញ្ជីគម្រោង",
   "session.queue.count.one": "បានដាក់ក្នុងជួរ {{count}}",

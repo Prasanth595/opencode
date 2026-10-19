@@ -97,10 +97,15 @@ describe("tab migration", () => {
     expect(Schema.decodeUnknownSync(TabStorage.Infos)({ tab: { title: "Title", directory: "/project" } })).toEqual({
       tab: { title: "Title", directory: "/project" },
     })
-    const regions = Schema.decodeUnknownSync(TabStorage.Regions)({ tab: { terminal: true, terminalHeight: 300 } })
-    expect(regions).toEqual({ tab: { dock: true, dockHeight: 300 } })
-    expect(Schema.encodeSync(TabStorage.Regions)(regions)).toEqual({ tab: { terminal: true, terminalHeight: 300 } })
-    expect(() => Schema.decodeUnknownSync(TabStorage.Regions)({ tab: { terminal: "yes" } })).toThrow()
+
+    // The removed terminal dock's fields decode away.
+    const regions = Schema.decodeUnknownSync(TabStorage.Regions)({
+      tab: { review: true, sessionWidth: 300, terminal: true, terminalHeight: 300 },
+    })
+
+    expect(regions).toEqual({ tab: { side: true, sessionWidth: 300 } })
+    expect(Schema.encodeSync(TabStorage.Regions)(regions)).toEqual({ tab: { review: true, sessionWidth: 300 } })
+    expect(() => Schema.decodeUnknownSync(TabStorage.Regions)({ tab: { review: "yes" } })).toThrow()
   })
 })
 

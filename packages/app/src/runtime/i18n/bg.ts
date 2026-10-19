@@ -680,10 +680,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} работи с OpenCode {{version}}, който не е съвместим с приложението. Надстройте сървъра до OpenCode V2, за да продължите.",
   "session.background.moveInline": "Натиснете {{keybind}}, за да преместите текущата работа във фонов режим",
-  "settings.general.row.terminalPlacement.title": "Разположение на терминала",
-  "settings.general.row.terminalPlacement.description": "Изберете къде да се отваря терминалът в сесиите",
-  "settings.general.row.terminalPlacement.side": "Отстрани",
-  "settings.general.row.terminalPlacement.bottom": "Отдолу",
   "dialog.server.menu.hide": "Скриване от списъка с проекти",
   "dialog.server.menu.show": "Показване в списъка с проекти",
   "session.queue.count.one": "{{count}} заявка на опашката",

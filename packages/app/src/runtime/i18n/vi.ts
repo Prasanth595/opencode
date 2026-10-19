@@ -684,10 +684,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} đang chạy OpenCode {{version}}, không tương thích với ứng dụng này. Hãy nâng cấp máy chủ lên OpenCode V2 để tiếp tục.",
   "session.background.moveInline": "Nhấn {{keybind}} để chuyển tác vụ đang chạy sang nền",
-  "settings.general.row.terminalPlacement.title": "Vị trí terminal",
-  "settings.general.row.terminalPlacement.description": "Chọn vị trí mở terminal trong các phiên",
-  "settings.general.row.terminalPlacement.side": "Bên cạnh",
-  "settings.general.row.terminalPlacement.bottom": "Phía dưới",
   "dialog.server.menu.hide": "Ẩn khỏi danh sách dự án",
   "dialog.server.menu.show": "Hiển thị trong danh sách dự án",
   "session.queue.count.one": "{{count}} mục đang chờ",

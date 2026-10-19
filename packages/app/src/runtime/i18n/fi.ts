@@ -878,10 +878,6 @@ export const dict = {
   "session.error.incompatible.description":
     "Palvelimessa {{server}} on käytössä OpenCode {{version}}, joka ei ole yhteensopiva tämän sovelluksen kanssa. Jatka päivittämällä palvelin OpenCode V2:een.",
   "session.background.moveInline": "Siirrä käynnissä oleva työ taustalle painamalla {{keybind}}",
-  "settings.general.row.terminalPlacement.title": "Terminaalin sijainti",
-  "settings.general.row.terminalPlacement.description": "Valitse, mihin terminaali avautuu istunnoissa",
-  "settings.general.row.terminalPlacement.side": "Sivulla",
-  "settings.general.row.terminalPlacement.bottom": "Alhaalla",
   "command.session.location.cycle": "Vaihda istunnon sijaintia",
   "dialog.provider.anthropic.note": "Suora pääsy Claude-malleihin API-avaimella",
   "provider.connect.title.anthropicProMax": "Kirjaudu sisään Anthropiciin",

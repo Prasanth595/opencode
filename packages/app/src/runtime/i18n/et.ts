@@ -669,10 +669,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} käitab OpenCode'i versiooni {{version}}, mis ei ühildu selle rakendusega. Jätkamiseks uuenda server OpenCode V2-le.",
   "session.background.moveInline": "Vajuta {{keybind}}, et teisaldada käimasolev töö taustale",
-  "settings.general.row.terminalPlacement.title": "Terminali paigutus",
-  "settings.general.row.terminalPlacement.description": "Vali, kus terminal seanssides avaneb",
-  "settings.general.row.terminalPlacement.side": "Küljel",
-  "settings.general.row.terminalPlacement.bottom": "All",
   "dialog.server.menu.hide": "Peida projektide loendist",
   "dialog.server.menu.show": "Kuva projektide loendis",
   "session.queue.count.one": "{{count}} järjekorras",

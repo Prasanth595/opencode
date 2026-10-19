@@ -11,6 +11,7 @@ import {
   session,
   sessionHref,
 } from "../utils/app"
+import { openFileLauncher } from "../utils/side-panel"
 import { mockServers } from "../utils/mock-server"
 import { fixture, mockStressTimeline } from "../utils/session-fixture"
 import { fileNode, mockWorkspace, openSession } from "../utils/workspace"
@@ -808,7 +809,7 @@ test("each session tab shows its own file tab after a switch to a session in ano
   }
 
   const open = async (file: string) => {
-    await panel.getByRole("button", { name: "Open file" }).click()
+    await openFileLauncher(panel)
     await panel.getByRole("button", { name: file, exact: true }).click()
     await shows(file)
   }
@@ -850,7 +851,7 @@ test("tab shortcuts cycle side-panel tabs when the side panel is focused with mu
   const fileTab = panel.getByRole("tab", { name: "README.md", exact: true })
   const composer = page.getByRole("textbox", { name: "Prompt", exact: true })
 
-  await panel.getByRole("button", { name: "Open file" }).click()
+  await openFileLauncher(panel)
   await panel.getByRole("button", { name: "README.md", exact: true }).click()
   await expect(fileTab).toHaveAttribute("aria-selected", "true")
   await expect(panel.getByText("contents:README.md", { exact: true })).toBeVisible()

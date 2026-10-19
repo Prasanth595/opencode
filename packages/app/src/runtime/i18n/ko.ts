@@ -688,10 +688,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}}에서 실행 중인 OpenCode {{version}}은(는) 이 앱과 호환되지 않습니다. 계속하려면 서버를 OpenCode V2로 업그레이드하세요.",
   "session.background.moveInline": "{{keybind}} 키를 눌러 실행 중인 작업을 백그라운드로 이동",
-  "settings.general.row.terminalPlacement.title": "터미널 위치",
-  "settings.general.row.terminalPlacement.description": "세션에서 터미널이 열릴 위치를 선택합니다",
-  "settings.general.row.terminalPlacement.side": "측면",
-  "settings.general.row.terminalPlacement.bottom": "하단",
   "dialog.server.menu.hide": "프로젝트 목록에서 숨기기",
   "dialog.server.menu.show": "프로젝트 목록에 표시",
   "session.queue.count.one": "{{count}}개 대기 중",

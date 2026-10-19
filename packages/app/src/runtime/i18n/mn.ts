@@ -679,10 +679,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} уг апптай нийцэхгүй OpenCode {{version}} хувилбарыг ажиллуулж байна. Үргэлжлүүлэхийн тулд серверийг OpenCode V2 болгон шинэчилнэ үү.",
   "session.background.moveInline": "Ажиллаж буй ажлыг арын горимд шилжүүлэхийн тулд {{keybind}} дарна уу",
-  "settings.general.row.terminalPlacement.title": "Терминалын байрлал",
-  "settings.general.row.terminalPlacement.description": "Сессүүдэд терминал хаана нээгдэхийг сонгоно уу",
-  "settings.general.row.terminalPlacement.side": "Хажууд",
-  "settings.general.row.terminalPlacement.bottom": "Доор",
   "dialog.server.menu.hide": "Төслийн жагсаалтаас нуух",
   "dialog.server.menu.show": "Төслийн жагсаалтад харуулах",
   "session.queue.count.one": "{{count}} дараалалд байна",

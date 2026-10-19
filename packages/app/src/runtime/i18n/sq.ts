@@ -674,10 +674,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} po ekzekuton OpenCode {{version}}, i cili nuk përputhet me këtë aplikacion. Për ta vazhduar, përmirësoni serverin në OpenCode V2.",
   "session.background.moveInline": "Shtypni {{keybind}} për ta zhvendosur punën në ekzekutim në sfond",
-  "settings.general.row.terminalPlacement.title": "Vendosja e terminalit",
-  "settings.general.row.terminalPlacement.description": "Zgjidhni ku hapet terminali në sesione",
-  "settings.general.row.terminalPlacement.side": "Anash",
-  "settings.general.row.terminalPlacement.bottom": "Poshtë",
   "dialog.server.menu.hide": "Fshih nga lista e projekteve",
   "dialog.server.menu.show": "Shfaq në listën e projekteve",
   "session.queue.count.one": "{{count}} në radhë",

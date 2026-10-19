@@ -699,10 +699,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} uporablja OpenCode {{version}}, ki ni združljiv s to aplikacijo. Za nadaljevanje strežnik nadgradite na OpenCode V2.",
   "session.background.moveInline": "Pritisnite {{keybind}}, da premaknete trenutno delo v ozadje",
-  "settings.general.row.terminalPlacement.title": "Položaj terminala",
-  "settings.general.row.terminalPlacement.description": "Izberite, kje se terminal odpre v sejah",
-  "settings.general.row.terminalPlacement.side": "Ob strani",
-  "settings.general.row.terminalPlacement.bottom": "Spodaj",
   "dialog.server.menu.hide": "Skrij s seznama projektov",
   "dialog.server.menu.show": "Prikaži na seznamu projektov",
   "session.queue.count.one": "{{count}} element v čakalni vrsti",

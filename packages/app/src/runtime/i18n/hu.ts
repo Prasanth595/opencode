@@ -684,10 +684,6 @@ export const dict = {
   "session.error.incompatible.description":
     "A(z) {{server}} az OpenCode {{version}} verzióját futtatja, amely nem kompatibilis ezzel az alkalmazással. A folytatáshoz frissítse a kiszolgálót OpenCode V2-re.",
   "session.background.moveInline": "Nyomja meg a(z) {{keybind}} billentyűt a futó munka háttérbe helyezéséhez",
-  "settings.general.row.terminalPlacement.title": "Terminál elhelyezése",
-  "settings.general.row.terminalPlacement.description": "Válassza ki, hol nyíljon meg a terminál a munkamenetekben",
-  "settings.general.row.terminalPlacement.side": "Oldalt",
-  "settings.general.row.terminalPlacement.bottom": "Alul",
   "dialog.server.menu.hide": "Elrejtés a projektlistából",
   "dialog.server.menu.show": "Megjelenítés a projektlistában",
   "session.queue.count.one": "{{count}} várakozik",

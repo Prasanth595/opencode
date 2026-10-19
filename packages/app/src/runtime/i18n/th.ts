@@ -737,10 +737,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} กำลังใช้งาน OpenCode {{version}} ซึ่งไม่เข้ากันกับแอปนี้ โปรดอัปเกรดเซิร์ฟเวอร์เป็น OpenCode V2 เพื่อดำเนินการต่อ",
   "session.background.moveInline": "กด {{keybind}} เพื่อย้ายงานที่กำลังทำงานไปยังเบื้องหลัง",
-  "settings.general.row.terminalPlacement.title": "ตำแหน่งเทอร์มินัล",
-  "settings.general.row.terminalPlacement.description": "เลือกตำแหน่งที่เทอร์มินัลจะเปิดในเซสชัน",
-  "settings.general.row.terminalPlacement.side": "ด้านข้าง",
-  "settings.general.row.terminalPlacement.bottom": "ด้านล่าง",
   "dialog.server.menu.hide": "ซ่อนจากรายการโปรเจกต์",
   "dialog.server.menu.show": "แสดงในรายการโปรเจกต์",
   "session.queue.count.one": "อยู่ในคิว {{count}} รายการ",

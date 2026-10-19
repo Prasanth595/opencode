@@ -6,12 +6,7 @@ import { TimelineDetailControl } from "@/settings/timeline-detail"
 import { useLanguage } from "@/runtime/i18n/language"
 import { usePlatform } from "@/runtime/platform/platform"
 import { ExtensionSettingsSections } from "@/runtime/extension/settings-page-view"
-import {
-  type FollowUpBehavior,
-  type TerminalPlacement,
-  type WorkspaceDefaultDestination,
-  useSettings,
-} from "@/settings/model"
+import { type FollowUpBehavior, type WorkspaceDefaultDestination, useSettings } from "@/settings/model"
 import { formatKeybind } from "@/shell/commands/command"
 import { SettingsList } from "@/settings/list"
 import { SettingsRow } from "@/settings/row"
@@ -98,34 +93,6 @@ export const ShellSetting: Component<{ controller: ShellSettingsController }> = 
           return `${option.name} (${language.t("settings.general.row.shell.terminalOnly")})`
         }}
         onSelect={(option) => option && props.controller.select(option.value)}
-      />
-    </SettingsRow>
-  )
-}
-
-const TerminalPlacementSetting: Component = () => {
-  const language = useLanguage()
-  const settings = useSettings()
-
-  const options = createMemo((): { value: TerminalPlacement; label: string }[] => [
-    { value: "side", label: language.t("settings.general.row.terminalPlacement.side") },
-    { value: "bottom", label: language.t("settings.general.row.terminalPlacement.bottom") },
-  ])
-
-  return (
-    <SettingsRow
-      title={language.t("settings.general.row.terminalPlacement.title")}
-      description={language.t("settings.general.row.terminalPlacement.description")}
-    >
-      <Select
-        data-action="settings-terminal-placement"
-        options={options()}
-        current={options().find((option) => option.value === settings.general.terminalPlacement())}
-        value={(option) => option.value}
-        label={(option) => option.label}
-        placement="bottom-end"
-        gutter={6}
-        onSelect={(option) => option && settings.general.setTerminalPlacement(option.value)}
       />
     </SettingsRow>
   )
@@ -260,7 +227,6 @@ export const SettingsGeneral: Component = () => {
           </div>
         </SettingsRow>
 
-        <TerminalPlacementSetting />
         <FollowUpBehaviorSetting />
 
         <Show when={desktop()}>

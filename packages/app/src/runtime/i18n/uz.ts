@@ -679,10 +679,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} ushbu ilovaga mos kelmaydigan OpenCode {{version}} versiyasini ishlatmoqda. Davom etish uchun serverni OpenCode V2 versiyasiga yangilang.",
   "session.background.moveInline": "Bajarilayotgan ishni fonga o‘tkazish uchun {{keybind}} tugmasini bosing",
-  "settings.general.row.terminalPlacement.title": "Terminal joylashuvi",
-  "settings.general.row.terminalPlacement.description": "Sessiyalarda terminal qayerda ochilishini tanlang",
-  "settings.general.row.terminalPlacement.side": "Yon tomonda",
-  "settings.general.row.terminalPlacement.bottom": "Pastda",
   "dialog.server.menu.hide": "Loyihalar ro‘yxatidan yashirish",
   "dialog.server.menu.show": "Loyihalar ro‘yxatida ko‘rsatish",
   "session.queue.count.one": "{{count}} ta navbatda",

@@ -308,10 +308,6 @@ export function createHostApis() {
         toggle: (session) => write((value) => value.layout.side.toggle(session)),
       },
       sidebar: { opened: () => current()?.layout.sidebar.opened() ?? true },
-      dock: {
-        opened: (session) => current()?.layout.dock.opened(session) ?? false,
-        placement: () => current()?.layout.dock.placement() ?? "side",
-      },
       scroll: {
         get: (session, key) => current()?.layout.scroll.get(session, key),
         set: (session, key, value) => write((connected) => connected.layout.scroll.set(session, key, value)),
@@ -553,8 +549,6 @@ export function createExtensionAttachment(apis: HostApis) {
     findSessionTab(tabs.store, ServerConnection.Key.make(session.server.id), session.id)
 
   const sideOpened = (session: SessionRef) => !!tabs.region(shellTab(session), "side")
-  const dockOpened = (session: SessionRef) => !!tabs.region(shellTab(session), "dock")
-  const setDock = (session: SessionRef, opened: boolean) => tabs.setRegion(shellTab(session), "dock", opened)
 
   // A token per session whose side region is open, new each time the region opens.
   const sideVisits = createMemo<ReadonlyMap<string, object>>(
@@ -571,12 +565,11 @@ export function createExtensionAttachment(apis: HostApis) {
   // a new token, so a region reopened any other way belongs to the user.
   const openedFor = new WeakMap<object, string>()
 
-  // Keys are `${extension}:${tab id}`; the extension's panel decides the region.
+  // Keys are `${extension}:${tab id}`.
   const provider = (key: string) => {
     const extension = key.slice(0, key.indexOf(":"))
-    const matches = host.items(Panel).filter((item) => item.extension === extension)
 
-    return matches.find((item) => item.value.region === "side") ?? matches[0]
+    return host.items(Panel).find((item) => item.extension === extension)
   }
 
   const mountedSession = (session: SessionRef) => {
@@ -590,8 +583,7 @@ export function createExtensionAttachment(apis: HostApis) {
 
   // The narrow-screen view belongs to the routed, mounted session for one visit, and reads as the conversation once
   // another visit starts. A view selected for a session that is not routed (e.g. a file link that opens Files on
-  // another session) belongs to the next visit, which the navigation that follows starts. The dock's view follows
-  // the dock's own per-session state instead.
+  // another session) belongs to the next visit, which the navigation that follows starts.
   const [mobile, setMobile] = createStore<{ session: string | undefined; view: string; visit: number }>({
     session: undefined,
     view: "session",
@@ -641,7 +633,6 @@ export function createExtensionAttachment(apis: HostApis) {
   const open = (key: string, session: SessionRef, options?: OpenOptions) => {
     const item = provider(key)
 
-    if (item?.value.region === "dock") return setDock(session, true)
     const value = stateKey(session)
 
     if (!value) return located.hold(session, () => open(key, session, options))
@@ -650,7 +641,7 @@ export function createExtensionAttachment(apis: HostApis) {
     // An append adds the tab quietly: no selection, no region change, no preview replacement.
     if (placement === "append") return layout.panel.append(value, key)
 
-    // A select keeps the narrow-screen view and dock, as a background open does, and opens the side region too.
+    // A select keeps the narrow-screen view, as a background open does, and opens the side region too.
     if (placement === "select")
       return batch(() => {
         tabs.setRegion(shellTab(session), "side", true)
@@ -663,8 +654,6 @@ export function createExtensionAttachment(apis: HostApis) {
     const first = known.some((entry) => entry.key === key && entry.tab.first)
     batch(() => {
       if (narrow() && !options?.background) {
-        setDock(session, false)
-
         if (item?.value.mobile) selectMobile(session, `${item.extension}:${item.value.id}`)
 
         // A tab its panel does not list, or a transient one, stays unstored: the open only selects the panel's view.
@@ -685,7 +674,6 @@ export function createExtensionAttachment(apis: HostApis) {
   const close = (key: string, session: SessionRef) => {
     const item = provider(key)
 
-    if (item?.value.region === "dock") return setDock(session, false)
     const value = stateKey(session)
 
     if (!value) return located.hold(session, () => close(key, session))
@@ -709,7 +697,6 @@ export function createExtensionAttachment(apis: HostApis) {
   )
 
   const state = (key: string, session: SessionRef): PanelState => {
-    if (provider(key)?.value.region === "dock") return dockOpened(session) ? "visible" : "closed"
     const value = stateKey(session)
 
     if (!value) return "closed"
@@ -754,7 +741,6 @@ export function createExtensionAttachment(apis: HostApis) {
   })
 
   const toggle = (key: string, session: SessionRef) => {
-    if (provider(key)?.value.region === "dock") return setDock(session, !dockOpened(session))
     const value = stateKey(session)
 
     if (!value) return located.hold(session, () => toggle(key, session))
@@ -825,10 +811,6 @@ export function createExtensionAttachment(apis: HostApis) {
       },
       // Open is the stored preference's default, which holds until a session screen shows the preference.
       sidebar: { opened: () => sidebar()?.opened() ?? true },
-      dock: {
-        opened: dockOpened,
-        placement: settings.general.terminalPlacement,
-      },
       scroll: {
         get(session, key) {
           const value = stateKey(session)

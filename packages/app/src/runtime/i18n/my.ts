@@ -687,10 +687,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} တွင် လုပ်ဆောင်နေသော OpenCode {{version}} သည် ဤအက်ပ်နှင့် မကိုက်ညီပါ။ ဆက်လက်လုပ်ဆောင်ရန် ဆာဗာကို OpenCode V2 သို့ အဆင့်မြှင့်ပါ။",
   "session.background.moveInline": "လုပ်ဆောင်နေသည့် အလုပ်ကို နောက်ခံသို့ ရွှေ့ရန် {{keybind}} ကို နှိပ်ပါ",
-  "settings.general.row.terminalPlacement.title": "Terminal နေရာချထားမှု",
-  "settings.general.row.terminalPlacement.description": "ဆက်ရှင်များတွင် Terminal ဖွင့်မည့်နေရာကို ရွေးချယ်ပါ",
-  "settings.general.row.terminalPlacement.side": "ဘေးဘက်",
-  "settings.general.row.terminalPlacement.bottom": "အောက်ဘက်",
   "dialog.server.menu.hide": "ပရောဂျက်စာရင်းမှ ဝှက်ပါ",
   "dialog.server.menu.show": "ပရောဂျက်စာရင်းတွင် ပြပါ",
   "session.queue.count.one": "{{count}} ခု တန်းစီထားသည်",

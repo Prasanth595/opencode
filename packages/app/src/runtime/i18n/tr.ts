@@ -693,10 +693,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}}, bu uygulamayla uyumlu olmayan OpenCode {{version}} sürümünü çalıştırıyor. Devam etmek için sunucuyu OpenCode V2'ye yükseltin.",
   "session.background.moveInline": "Çalışan işi arka plana taşımak için {{keybind}} tuşuna basın",
-  "settings.general.row.terminalPlacement.title": "Terminal yerleşimi",
-  "settings.general.row.terminalPlacement.description": "Oturumlarda terminalin nerede açılacağını seçin",
-  "settings.general.row.terminalPlacement.side": "Yan",
-  "settings.general.row.terminalPlacement.bottom": "Alt",
 
   "command.session.background": "Arka plana taşı",
 

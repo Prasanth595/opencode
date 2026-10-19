@@ -938,10 +938,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} kører OpenCode {{version}}, som ikke er kompatibel med denne app. Opgrader serveren til OpenCode V2 for at fortsætte.",
   "session.background.moveInline": "Tryk på {{keybind}} for at flytte igangværende arbejde til baggrunden",
-  "settings.general.row.terminalPlacement.title": "Terminalplacering",
-  "settings.general.row.terminalPlacement.description": "Vælg, hvor terminalen åbnes i sessioner",
-  "settings.general.row.terminalPlacement.side": "Side",
-  "settings.general.row.terminalPlacement.bottom": "Nederst",
   "command.session.location.cycle": "Skift mellem sessionsplaceringer",
   "dialog.provider.anthropic.note": "Direkte adgang til Claude-modeller via API-nøgle",
   "provider.connect.title.anthropicProMax": "Log ind med Anthropic",

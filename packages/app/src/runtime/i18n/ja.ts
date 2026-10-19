@@ -688,10 +688,6 @@ export const dict = {
   "session.error.incompatible.description":
     "{{server}} では、このアプリと互換性のない OpenCode {{version}} が実行されています。続行するには、サーバーを OpenCode V2 にアップグレードしてください。",
   "session.background.moveInline": "{{keybind}} を押して実行中の作業をバックグラウンドに移動",
-  "settings.general.row.terminalPlacement.title": "ターミナルの配置",
-  "settings.general.row.terminalPlacement.description": "セッションでターミナルを開く位置を選択します",
-  "settings.general.row.terminalPlacement.side": "横",
-  "settings.general.row.terminalPlacement.bottom": "下",
   "dialog.server.menu.hide": "プロジェクト一覧に表示しない",
   "dialog.server.menu.show": "プロジェクト一覧に表示",
   "session.queue.count.one": "{{count}}件がキューに入っています",

@@ -683,10 +683,6 @@ export const dict = {
   "session.error.incompatible.description":
     "Ο διακομιστής {{server}} εκτελεί το OpenCode {{version}}, το οποίο δεν είναι συμβατό με αυτήν την εφαρμογή. Αναβαθμίστε τον διακομιστή σε OpenCode V2 για να συνεχίσετε.",
   "session.background.moveInline": "Πατήστε {{keybind}} για να μετακινήσετε την εργασία που εκτελείται στο παρασκήνιο",
-  "settings.general.row.terminalPlacement.title": "Τοποθέτηση τερματικού",
-  "settings.general.row.terminalPlacement.description": "Επιλέξτε πού ανοίγει το τερματικό στις συνεδρίες",
-  "settings.general.row.terminalPlacement.side": "Στο πλάι",
-  "settings.general.row.terminalPlacement.bottom": "Κάτω",
   "dialog.server.menu.hide": "Απόκρυψη από τη λίστα έργων",
   "dialog.server.menu.show": "Εμφάνιση στη λίστα έργων",
   "session.queue.count.one": "{{count}} στην ουρά",
