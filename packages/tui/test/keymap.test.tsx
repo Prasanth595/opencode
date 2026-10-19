@@ -148,6 +148,8 @@ test("keypad CSI-u sequences reach commands bound to their kp names", async () =
       commands: [
         { id: "session.last", run: () => void calls.push("session.last") },
         { id: "session.parent", run: () => void calls.push("session.parent") },
+        { id: "diff.first", run: () => void calls.push("diff.first") },
+        { id: "diff.last", run: () => void calls.push("diff.last") },
       ],
     }))
     return <box />
@@ -165,7 +167,9 @@ test("keypad CSI-u sequences reach commands bound to their kp names", async () =
     // (57424 = KP_End, 57423 = KP_Home) even outside full kitty mode.
     await app.mockInput.pressKeys(["\u001b[57424u", "\u001b[57423u"])
     await app.renderOnce()
-    expect(calls).toEqual(["session.last"])
+    // Transcript jumps no longer claim Home and End, including their keypad
+    // mirrors, so the prompt keeps the caret keys.
+    expect(calls).toEqual(["diff.last", "diff.first"])
   } finally {
     app.renderer.destroy()
   }

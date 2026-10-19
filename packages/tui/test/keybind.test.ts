@@ -18,7 +18,12 @@ test("binds keypad mirrors for every default using a bare navigation key", () =>
     pagedown: "kppagedown",
   } as const
 
+  // Home and End belong to the focused prompt inside a session, so the two
+  // transcript jumps must not claim them, with or without a keypad mirror.
+  const exempt = new Set(["session.first", "session.last"])
+
   const violations = Object.entries(TuiKeybind.Definitions).flatMap(([id, definition]) => {
+    if (exempt.has(id)) return []
     const value = definition.default
     if (typeof value !== "string") return []
     const tokens = value.split(",").map((token) => token.trim())
